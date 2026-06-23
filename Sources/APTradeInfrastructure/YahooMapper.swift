@@ -30,7 +30,7 @@ enum YahooMapper {
     static func history(from data: Data) throws -> [PricePoint] {
         let item = try firstResult(from: data)
         guard let stamps = item.timestamp,
-              let closes = item.indicators.quote.first?.close else { return [] }
+              let closes = item.indicators.quote?.first?.close else { return [] }
         let currency = item.meta.currency ?? "USD"
         var points: [PricePoint] = []
         for (i, stamp) in stamps.enumerated() where i < closes.count {

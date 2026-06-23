@@ -27,4 +27,18 @@ final class YahooMapperTests: XCTestCase {
             XCTAssertEqual(error as? AppError, .decoding)
         }
     }
+
+    // Yahoo returns a valid `result` with `meta` but an empty `indicators` (no `quote`
+    // array) for some symbols. The quote must still map from meta; history is empty.
+    func test_missingQuoteArray_stillMapsQuote_andEmptyHistory() throws {
+        let json = """
+        {"chart":{"result":[{"meta":{"symbol":"AAPL","currency":"USD",
+        "regularMarketPrice":294.3,"chartPreviousClose":296.42},
+        "timestamp":[1782000000],"indicators":{}}],"error":null}}
+        """
+        let data = Data(json.utf8)
+        let q = try YahooMapper.quote(from: data)
+        XCTAssertEqual(q.price, Money(amount: Decimal(string: "294.3")!))
+        XCTAssertEqual(try YahooMapper.history(from: data).count, 0)
+    }
 }

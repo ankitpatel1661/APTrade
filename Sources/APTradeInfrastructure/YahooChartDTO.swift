@@ -23,6 +23,6 @@ struct YahooChartResponse: Decodable {
         let longName: String?
         let shortName: String?
     }
-    struct Indicators: Decodable { let quote: [QuoteBlock] }
+    struct Indicators: Decodable { let quote: [QuoteBlock]? }
     struct QuoteBlock: Decodable { let close: [Double?]? }
 }
