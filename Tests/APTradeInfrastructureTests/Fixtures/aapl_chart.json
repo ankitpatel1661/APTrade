@@ -1,0 +1,24 @@
+{
+  "chart": {
+    "result": [
+      {
+        "meta": {
+          "symbol": "AAPL",
+          "currency": "USD",
+          "instrumentType": "EQUITY",
+          "regularMarketPrice": 294.3,
+          "chartPreviousClose": 296.42,
+          "longName": "Apple Inc.",
+          "shortName": "Apple Inc."
+        },
+        "timestamp": [1782000000, 1782086400, 1782172800],
+        "indicators": {
+          "quote": [
+            { "close": [299.24, null, 298.01] }
+          ]
+        }
+      }
+    ],
+    "error": null
+  }
+}
