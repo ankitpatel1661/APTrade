@@ -40,8 +40,7 @@ public struct SearchSymbolUseCase: Sendable {
     public func callAsFunction(query: String) async throws -> Asset {
         let symbol = query.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard !symbol.isEmpty else { throw AppError.notFound }
-        _ = try await repository.quote(for: symbol)   // validates existence
-        let kind: AssetKind = symbol.hasSuffix("-USD") ? .crypto : .stock
-        return Asset(symbol: symbol, name: symbol, kind: kind)
+        // Resolves the real name + kind from provider metadata (and validates existence).
+        return try await repository.profile(for: symbol)
     }
 }

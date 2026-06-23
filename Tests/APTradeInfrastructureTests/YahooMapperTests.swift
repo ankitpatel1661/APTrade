@@ -22,6 +22,34 @@ final class YahooMapperTests: XCTestCase {
         XCTAssertEqual(points.first?.close, Money(amount: Decimal(string: "299.24")!))
     }
 
+    func test_asset_mapsNameAndKindFromMeta() throws {
+        let asset = try YahooMapper.asset(from: fixture())
+        XCTAssertEqual(asset.symbol, "AAPL")
+        XCTAssertEqual(asset.name, "Apple Inc.")     // longName
+        XCTAssertEqual(asset.kind, .stock)           // EQUITY
+    }
+
+    func test_asset_etfInstrumentType_mapsToEtf() throws {
+        let json = """
+        {"chart":{"result":[{"meta":{"symbol":"SPY","currency":"USD",
+        "instrumentType":"ETF","regularMarketPrice":1,"chartPreviousClose":1,
+        "longName":"SPDR S&P 500 ETF Trust"},"indicators":{}}],"error":null}}
+        """
+        let asset = try YahooMapper.asset(from: Data(json.utf8))
+        XCTAssertEqual(asset.name, "SPDR S&P 500 ETF Trust")
+        XCTAssertEqual(asset.kind, .etf)
+    }
+
+    func test_asset_missingInstrumentType_infersCryptoFromSuffix() throws {
+        let json = """
+        {"chart":{"result":[{"meta":{"symbol":"BTC-USD","currency":"USD",
+        "regularMarketPrice":1,"chartPreviousClose":1},"indicators":{}}],"error":null}}
+        """
+        let asset = try YahooMapper.asset(from: Data(json.utf8))
+        XCTAssertEqual(asset.name, "BTC-USD")        // no longName/shortName
+        XCTAssertEqual(asset.kind, .crypto)
+    }
+
     func test_malformedJson_throwsDecoding() {
         XCTAssertThrowsError(try YahooMapper.quote(from: Data("{}".utf8))) { error in
             XCTAssertEqual(error as? AppError, .decoding)

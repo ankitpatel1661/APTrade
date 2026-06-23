@@ -41,4 +41,9 @@ public final class YahooMarketDataRepository: MarketDataRepository {
         let data = try await fetch(symbol: symbol, range: timeframe.yahooRange, interval: timeframe.yahooInterval)
         return try YahooMapper.history(from: data)
     }
+
+    public func profile(for symbol: String) async throws -> Asset {
+        let data = try await fetch(symbol: symbol, range: "1d", interval: "1d")
+        return try YahooMapper.asset(from: data)
+    }
 }

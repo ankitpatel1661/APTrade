@@ -27,6 +27,22 @@ enum YahooMapper {
         )
     }
 
+    static func asset(from data: Data) throws -> Asset {
+        let meta = try firstResult(from: data).meta
+        let name = meta.longName ?? meta.shortName ?? meta.symbol
+        return Asset(symbol: meta.symbol, name: name, kind: kind(of: meta))
+    }
+
+    private static func kind(of meta: YahooChartResponse.Meta) -> AssetKind {
+        switch meta.instrumentType?.uppercased() {
+        case "ETF": return .etf
+        case "CRYPTOCURRENCY": return .crypto
+        case "EQUITY": return .stock
+        default:
+            return meta.symbol.uppercased().hasSuffix("-USD") ? .crypto : .stock
+        }
+    }
+
     static func history(from data: Data) throws -> [PricePoint] {
         let item = try firstResult(from: data)
         guard let stamps = item.timestamp,

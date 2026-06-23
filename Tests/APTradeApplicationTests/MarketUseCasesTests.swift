@@ -17,6 +17,19 @@ final class FakeRepo: MarketDataRepository, @unchecked Sendable {
     }
 }
 
+/// Repository that resolves profiles from metadata, overriding the suffix-based default.
+final class ProfilingRepo: MarketDataRepository, @unchecked Sendable {
+    var profiles: [String: Asset] = [:]
+    func quote(for symbol: String) async throws -> Quote {
+        Quote(symbol: symbol, price: Money(amount: 1), previousClose: Money(amount: 1))
+    }
+    func history(for symbol: String, timeframe: Timeframe) async throws -> [PricePoint] { [] }
+    func profile(for symbol: String) async throws -> Asset {
+        guard let asset = profiles[symbol] else { throw AppError.notFound }
+        return asset
+    }
+}
+
 final class MarketUseCasesTests: XCTestCase {
     func makeRepo() -> FakeRepo {
         let r = FakeRepo()
@@ -43,6 +56,14 @@ final class MarketUseCasesTests: XCTestCase {
         let asset = try await SearchSymbolUseCase(repository: repo)(query: " btc-usd ")
         XCTAssertEqual(asset.symbol, "BTC-USD")
         XCTAssertEqual(asset.kind, .crypto)
+    }
+
+    func test_search_usesRepositoryProfile_forNameAndKind() async throws {
+        let repo = ProfilingRepo()
+        repo.profiles["SPY"] = Asset(symbol: "SPY", name: "SPDR S&P 500 ETF Trust", kind: .etf)
+        let asset = try await SearchSymbolUseCase(repository: repo)(query: " spy ")
+        XCTAssertEqual(asset.name, "SPDR S&P 500 ETF Trust")
+        XCTAssertEqual(asset.kind, .etf)
     }
 
     func test_search_unknownSymbol_throwsNotFound() async {
