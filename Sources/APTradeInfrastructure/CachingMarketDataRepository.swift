@@ -2,37 +2,46 @@ import Foundation
 import APTradeApplication
 import APTradeDomain
 
-public final class CachingMarketDataRepository: MarketDataRepository, @unchecked Sendable {
+/// A short-TTL quote cache implemented as an `actor`, so concurrent access is
+/// serialized without manual locking. Concurrent fetches for the same symbol are
+/// coalesced into a single inner request via an in-flight task table.
+public actor CachingMarketDataRepository: MarketDataRepository {
     private struct Entry { let quote: Quote; let at: Date }
     private let inner: MarketDataRepository
     private let ttl: TimeInterval
-    private let now: () -> Date
+    private let now: @Sendable () -> Date
     private var cache: [String: Entry] = [:]
-    private let lock = NSLock()
+    private var inFlight: [String: Task<Quote, Error>] = [:]
 
-    public init(wrapping inner: MarketDataRepository, ttl: TimeInterval = 15, now: @escaping () -> Date = Date.init) {
+    public init(wrapping inner: MarketDataRepository, ttl: TimeInterval = 15, now: @escaping @Sendable () -> Date = Date.init) {
         self.inner = inner
         self.ttl = ttl
         self.now = now
     }
 
     public func quote(for symbol: String) async throws -> Quote {
-        // Scoped lock for the read; released before the await so we never hold
-        // the lock across a suspension point.
-        if let cached = lock.withLock({ cachedQuote(for: symbol) }) {
-            return cached
+        if let entry = cache[symbol], now().timeIntervalSince(entry.at) < ttl {
+            return entry.quote
         }
-        let fresh = try await inner.quote(for: symbol)
-        lock.withLock { cache[symbol] = Entry(quote: fresh, at: now()) }
+        // Coalesce: a concurrent caller for the same symbol awaits the same task
+        // rather than firing a second inner request.
+        if let existing = inFlight[symbol] {
+            return try await existing.value
+        }
+        let inner = self.inner
+        let task = Task { try await inner.quote(for: symbol) }
+        inFlight[symbol] = task
+        defer { inFlight[symbol] = nil }
+        let fresh = try await task.value
+        cache[symbol] = Entry(quote: fresh, at: now())
         return fresh
-    }
-
-    private func cachedQuote(for symbol: String) -> Quote? {
-        guard let entry = cache[symbol], now().timeIntervalSince(entry.at) < ttl else { return nil }
-        return entry.quote
     }
 
     public func history(for symbol: String, timeframe: Timeframe) async throws -> [PricePoint] {
         try await inner.history(for: symbol, timeframe: timeframe)
+    }
+
+    public func profile(for symbol: String) async throws -> Asset {
+        try await inner.profile(for: symbol)
     }
 }
