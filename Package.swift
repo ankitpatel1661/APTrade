@@ -19,5 +19,6 @@ let package = Package(
             dependencies: ["APTradeInfrastructure", "APTradeApplication", "APTradeDomain"],
             resources: [.process("Fixtures")]
         ),
+        .testTarget(name: "APTradeAppTests", dependencies: ["APTradeApp", "APTradeApplication", "APTradeDomain"]),
     ]
 )

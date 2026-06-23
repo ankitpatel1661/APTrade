@@ -1,6 +1,6 @@
 import APTradeDomain
 
-public struct FetchQuotesUseCase {
+public struct FetchQuotesUseCase: Sendable {
     private let repository: MarketDataRepository
     public init(repository: MarketDataRepository) { self.repository = repository }
 
@@ -24,7 +24,7 @@ public struct FetchQuotesUseCase {
     }
 }
 
-public struct FetchHistoryUseCase {
+public struct FetchHistoryUseCase: Sendable {
     private let repository: MarketDataRepository
     public init(repository: MarketDataRepository) { self.repository = repository }
 
@@ -33,7 +33,7 @@ public struct FetchHistoryUseCase {
     }
 }
 
-public struct SearchSymbolUseCase {
+public struct SearchSymbolUseCase: Sendable {
     private let repository: MarketDataRepository
     public init(repository: MarketDataRepository) { self.repository = repository }
 
