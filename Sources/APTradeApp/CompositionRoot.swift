@@ -20,6 +20,19 @@ enum CompositionRoot {
         UserDefaultsWatchlistStore(seed: seed)
     }
 
+    /// A single shared portfolio store so the Portfolio view and trade sheets read and
+    /// write the same persisted state.
+    static let portfolioStore: PortfolioStore = UserDefaultsPortfolioStore()
+
+    static func makePortfolioViewModel() -> PortfolioViewModel {
+        let repo = makeRepository()
+        return PortfolioViewModel(
+            fetchPortfolio: FetchPortfolioUseCase(store: portfolioStore),
+            fetchQuotes: FetchQuotesUseCase(repository: repo),
+            resetPortfolio: ResetPortfolioUseCase(store: portfolioStore)
+        )
+    }
+
     static func makeWatchlistViewModel() -> WatchlistViewModel {
         let repo = makeRepository()
         let store = makeStore()
