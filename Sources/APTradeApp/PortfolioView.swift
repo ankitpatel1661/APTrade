@@ -4,6 +4,7 @@ import APTradeDomain
 struct PortfolioView: View {
     @State private var viewModel = CompositionRoot.makePortfolioViewModel()
     @State private var selectedAsset: Asset?
+    @State private var showResetConfirm = false
 
     var body: some View {
         NavigationStack {
@@ -24,6 +25,11 @@ struct PortfolioView: View {
                 await viewModel.runLiveUpdates()
             }
             .refreshable { await viewModel.refresh() }
+            .confirmationDialog("Reset portfolio to $100,000 cash and clear all holdings?",
+                                isPresented: $showResetConfirm, titleVisibility: .visible) {
+                Button("Reset", role: .destructive) { viewModel.reset() }
+                Button("Cancel", role: .cancel) {}
+            }
         }
         .frame(minWidth: 560, minHeight: 640)
         .preferredColorScheme(.dark)
@@ -40,10 +46,23 @@ struct PortfolioView: View {
                     SuperscriptPrice(money: viewModel.valuation.totalValue, size: 40, weight: .semibold)
                 }
                 Spacer()
-                if viewModel.isRefreshing {
-                    ProgressView().controlSize(.small)
-                } else if viewModel.isLive {
-                    LiveBadge()
+                HStack(spacing: 10) {
+                    if viewModel.isRefreshing {
+                        ProgressView().controlSize(.small)
+                    } else if viewModel.isLive {
+                        LiveBadge()
+                    }
+                    Menu {
+                        Button("Reset portfolio", systemImage: "arrow.counterclockwise", role: .destructive) {
+                            showResetConfirm = true
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 16))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
                 }
             }
             HStack(spacing: 22) {
