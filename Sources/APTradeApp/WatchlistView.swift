@@ -160,6 +160,9 @@ struct WatchlistView: View {
 
     private var addBar: some View {
         VStack(spacing: 8) {
+            if !viewModel.suggestions.isEmpty {
+                suggestionList
+            }
             if let error = viewModel.addError {
                 Text(error)
                     .font(.system(size: 12))
@@ -169,10 +172,11 @@ struct WatchlistView: View {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(Theme.textTertiary)
-                TextField("Add symbol — AAPL, VOO, SOL-USD", text: $newSymbol)
+                TextField("Search symbol or name — Apple, VOO, SOL", text: $newSymbol)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 14).monospacedDigit())
+                    .font(.system(size: 14))
                     .foregroundStyle(Theme.textPrimary)
+                    .onChange(of: newSymbol) { _, text in viewModel.updateQuery(text) }
                     .onSubmit(submit)
                 if !newSymbol.trimmingCharacters(in: .whitespaces).isEmpty {
                     Button("Add", action: submit)
@@ -194,9 +198,58 @@ struct WatchlistView: View {
         .background(Theme.bgBottom)
     }
 
+    private var suggestionList: some View {
+        VStack(spacing: 0) {
+            ForEach(viewModel.suggestions, id: \.symbol) { asset in
+                Button {
+                    newSymbol = ""
+                    Task { await viewModel.addSuggestion(asset) }
+                } label: {
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(asset.name)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Theme.textPrimary)
+                                .lineLimit(1)
+                            Text(asset.symbol)
+                                .font(.system(size: 11, weight: .medium).monospacedDigit())
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        Spacer()
+                        Text(kindChipLabel(asset.kind))
+                            .font(.system(size: 10, weight: .bold))
+                            .tracking(0.6)
+                            .foregroundStyle(Theme.textSecondary)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Theme.surfaceHi, in: Capsule())
+                    }
+                    .contentShape(Rectangle())
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                }
+                .buttonStyle(.plain)
+                if asset.symbol != viewModel.suggestions.last?.symbol {
+                    Divider().overlay(Theme.hairline)
+                }
+            }
+        }
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
+    }
+
+    private func kindChipLabel(_ kind: AssetKind) -> String {
+        switch kind {
+        case .stock: return "STOCK"
+        case .etf: return "ETF"
+        case .crypto: return "CRYPTO"
+        }
+    }
+
     private func submit() {
         let query = newSymbol
         newSymbol = ""
+        viewModel.clearSuggestions()
         Task { await viewModel.add(query: query) }
     }
 }

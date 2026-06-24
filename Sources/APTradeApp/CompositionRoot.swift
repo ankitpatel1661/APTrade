@@ -29,7 +29,8 @@ enum CompositionRoot {
             remove: RemoveFromWatchlistUseCase(store: store),
             fetchQuotes: FetchQuotesUseCase(repository: repo),
             fetchHistory: FetchHistoryUseCase(repository: repo),
-            search: SearchSymbolUseCase(repository: repo)
+            search: SearchSymbolUseCase(repository: repo),
+            searchAssets: SearchAssetsUseCase(repository: repo)
         )
     }
 

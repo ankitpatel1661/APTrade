@@ -11,6 +11,9 @@ final class WatchlistViewModel {
     private let fetchQuotes: FetchQuotesUseCase
     private let fetchHistory: FetchHistoryUseCase
     private let search: SearchSymbolUseCase
+    private let searchAssets: SearchAssetsUseCase
+    private(set) var suggestions: [Asset] = []
+    private var searchTask: Task<Void, Never>?
 
     private(set) var rows: [RowState] = []
     var isRefreshing = false
@@ -67,13 +70,15 @@ final class WatchlistViewModel {
          remove: RemoveFromWatchlistUseCase,
          fetchQuotes: FetchQuotesUseCase,
          fetchHistory: FetchHistoryUseCase,
-         search: SearchSymbolUseCase) {
+         search: SearchSymbolUseCase,
+         searchAssets: SearchAssetsUseCase) {
         self.load = load
         self.add = add
         self.remove = remove
         self.fetchQuotes = fetchQuotes
         self.fetchHistory = fetchHistory
         self.search = search
+        self.searchAssets = searchAssets
     }
 
     private func reloadRows() {
@@ -175,5 +180,34 @@ final class WatchlistViewModel {
     func remove(symbol: String) {
         _ = remove(symbol: symbol)
         reloadRows()
+    }
+
+    /// Debounced autocomplete. Cancels any in-flight search and, after a 250ms pause,
+    /// fetches ranked matches for the current query. Best-effort: errors clear results.
+    func updateQuery(_ text: String) {
+        searchTask?.cancel()
+        let query = text.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { suggestions = []; return }
+        searchTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled, let self else { return }
+            let results = (try? await self.searchAssets(query: query)) ?? []
+            if !Task.isCancelled { self.suggestions = results }
+        }
+    }
+
+    /// Adds a chosen suggestion to the watchlist and clears the dropdown.
+    func addSuggestion(_ asset: Asset) async {
+        clearSuggestions()
+        _ = add(asset)
+        reloadRows()
+        selectedKind = asset.kind
+        await refresh()
+        await loadSparklines()
+    }
+
+    func clearSuggestions() {
+        searchTask?.cancel()
+        suggestions = []
     }
 }
