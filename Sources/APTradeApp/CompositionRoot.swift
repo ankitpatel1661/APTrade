@@ -63,7 +63,8 @@ enum CompositionRoot {
         return AssetDetailViewModel(
             asset: asset,
             fetchHistory: FetchHistoryUseCase(repository: repo),
-            fetchQuotes: FetchQuotesUseCase(repository: repo)
+            fetchQuotes: FetchQuotesUseCase(repository: repo),
+            fetchPortfolio: FetchPortfolioUseCase(store: portfolioStore)
         )
     }
 }

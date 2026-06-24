@@ -3,6 +3,13 @@ import XCTest
 import APTradeApplication
 import APTradeDomain
 
+private final class MemoryStore: PortfolioStore, @unchecked Sendable {
+    var portfolio: Portfolio
+    init(_ portfolio: Portfolio) { self.portfolio = portfolio }
+    func load() -> Portfolio { portfolio }
+    func save(_ portfolio: Portfolio) { self.portfolio = portfolio }
+}
+
 final class DetailFakeRepo: MarketDataRepository, @unchecked Sendable {
     var failHistory = false
     var historyByTf: [Timeframe: [PricePoint]] = [:]
@@ -20,9 +27,11 @@ final class AssetDetailViewModelTests: XCTestCase {
     let asset = Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock)
 
     func makeVM(_ repo: DetailFakeRepo) -> AssetDetailViewModel {
-        AssetDetailViewModel(asset: asset,
+        let store = MemoryStore(Portfolio(cash: Money(amount: 10_000)))
+        return AssetDetailViewModel(asset: asset,
                              fetchHistory: FetchHistoryUseCase(repository: repo),
-                             fetchQuotes: FetchQuotesUseCase(repository: repo))
+                             fetchQuotes: FetchQuotesUseCase(repository: repo),
+                             fetchPortfolio: FetchPortfolioUseCase(store: store))
     }
 
     func test_load_setsQuoteAndPoints_loaded() async {

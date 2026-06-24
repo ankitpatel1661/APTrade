@@ -4,6 +4,7 @@ import APTradeDomain
 
 struct AssetDetailView: View {
     @State private var viewModel: AssetDetailViewModel
+    @State private var tradeSide: TradeSide?
 
     init(asset: Asset) {
         _viewModel = State(initialValue: CompositionRoot.makeDetailViewModel(for: asset))
@@ -19,11 +20,13 @@ struct AssetDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
                     header
+                    tradeButtons
                     chart
                     TimeframeBar(selection: viewModel.timeframe) { tf in
                         Task { await viewModel.select(tf) }
                     }
                     keyStats
+                    positionPanel
                 }
                 .padding(24)
             }
@@ -32,6 +35,11 @@ struct AssetDetailView: View {
         .task {
             await viewModel.load()
             await viewModel.runLiveUpdates()
+        }
+        .sheet(item: $tradeSide) { side in
+            TradeSheet(asset: viewModel.asset, side: side) {
+                viewModel.reloadPosition()
+            }
         }
         .frame(minWidth: 560, minHeight: 560)
     }
@@ -138,6 +146,64 @@ struct AssetDetailView: View {
             .background(Theme.surface.opacity(0.5), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
         }
+    }
+
+    // MARK: Trade buttons
+
+    private var tradeButtons: some View {
+        HStack(spacing: 12) {
+            tradeButton(title: "Buy", side: .buy, filled: true)
+            tradeButton(title: "Sell", side: .sell, filled: false)
+        }
+    }
+
+    private func tradeButton(title: String, side: TradeSide, filled: Bool) -> some View {
+        Button { tradeSide = side } label: {
+            Text(title)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(filled ? Theme.bgBottom : Theme.gold)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(
+                    AnyShapeStyle(filled ? AnyShapeStyle(Theme.goldGradient) : AnyShapeStyle(Color.clear)),
+                    in: Capsule()
+                )
+                .overlay(Capsule().stroke(Theme.gold.opacity(filled ? 0 : 0.5), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(side == .sell && (viewModel.position == nil))
+    }
+
+    // MARK: Position panel
+
+    @ViewBuilder
+    private var positionPanel: some View {
+        if let position = viewModel.position, let quote = viewModel.quote {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("YOUR POSITION")
+                    .font(.system(size: 11, weight: .bold)).tracking(1.8)
+                    .foregroundStyle(Theme.textSecondary)
+                let columns = [GridItem(.flexible(), spacing: 24), GridItem(.flexible(), spacing: 24)]
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
+                    StatTile(label: "Shares", value: position.quantity.formatted)
+                    StatTile(label: "Average cost", value: position.averageCost.formatted)
+                    StatTile(label: "Market value", value: position.marketValue(at: quote.price).formatted)
+                    StatTile(label: "Unrealized P&L",
+                             value: signed(position.unrealizedPnL(at: quote.price)),
+                             valueColor: pnlColor(position.unrealizedPnL(at: quote.price)))
+                }
+            }
+            .padding(20)
+            .background(Theme.surface.opacity(0.5), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
+        }
+    }
+
+    /// Green for a gain, red for a loss — P&L direction is data, not branding.
+    private func pnlColor(_ money: Money) -> Color {
+        if money.amount > 0 { return Theme.up }
+        if money.amount < 0 { return Theme.down }
+        return Theme.textPrimary
     }
 
     private var typeLabel: String {
