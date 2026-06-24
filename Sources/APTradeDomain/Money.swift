@@ -14,6 +14,11 @@ public struct Money: Equatable, Hashable, Codable, Sendable {
         return Money(amount: lhs.amount - rhs.amount, currencyCode: lhs.currencyCode)
     }
 
+    public static func + (lhs: Money, rhs: Money) -> Money {
+        precondition(lhs.currencyCode == rhs.currencyCode, "currency mismatch")
+        return Money(amount: lhs.amount + rhs.amount, currencyCode: lhs.currencyCode)
+    }
+
     public var formatted: String {
         let f = NumberFormatter()
         f.locale = Locale(identifier: "en_US")
