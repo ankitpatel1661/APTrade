@@ -12,11 +12,16 @@ public final class UserDefaultsPortfolioStore: PortfolioStore, @unchecked Sendab
     }
 
     public func load() -> Portfolio {
-        guard let data = defaults.data(forKey: key),
-              let portfolio = try? JSONDecoder().decode(Portfolio.self, from: data) else {
+        guard let data = defaults.data(forKey: key) else {
             let seed = Portfolio.starting()
             save(seed)
             return seed
+        }
+        guard let portfolio = try? JSONDecoder().decode(Portfolio.self, from: data) else {
+            // Data exists but failed to decode (corruption / schema drift).
+            // Do NOT overwrite the stored bytes — return an in-memory fallback only,
+            // so the undecodable data is preserved for future recovery/migration.
+            return Portfolio.starting()
         }
         return portfolio
     }

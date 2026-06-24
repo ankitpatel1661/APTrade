@@ -23,4 +23,17 @@ final class UserDefaultsPortfolioStoreTests: XCTestCase {
         XCTAssertEqual(store.load().position(for: "AAPL")?.quantity, Quantity(Decimal(1)))
         XCTAssertEqual(store.load().cash, Money(amount: 99_900))
     }
+
+    func test_load_withCorruptData_doesNotOverwriteStoredBytes() {
+        let defaults = makeDefaults()
+        let originalGarbage = Data("not json".utf8)
+        defaults.set(originalGarbage, forKey: "pf")
+        let store = UserDefaultsPortfolioStore(defaults: defaults, key: "pf")
+
+        let loaded = store.load()
+
+        XCTAssertEqual(loaded.cash, Money(amount: 100_000))
+        XCTAssertTrue(loaded.positions.isEmpty)
+        XCTAssertEqual(defaults.data(forKey: "pf"), originalGarbage)
+    }
 }
