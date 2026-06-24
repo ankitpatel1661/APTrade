@@ -7,7 +7,7 @@ struct APTradeApp: App {
 
     var body: some Scene {
         WindowGroup("APTrade Lite") {
-            WatchlistView()
+            RootView()
         }
     }
 }
