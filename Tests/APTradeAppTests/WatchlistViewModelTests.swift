@@ -13,12 +13,15 @@ final class VMFakeStore: WatchlistStore, @unchecked Sendable {
 final class VMFakeRepo: MarketDataRepository, @unchecked Sendable {
     var quotes: [String: Quote] = [:]
     var bad: Set<String> = []
+    var histories: [String: [PricePoint]] = [:]
     func quote(for symbol: String) async throws -> Quote {
         if bad.contains(symbol) { throw AppError.network }
         guard let q = quotes[symbol] else { throw AppError.notFound }
         return q
     }
-    func history(for symbol: String, timeframe: Timeframe) async throws -> [PricePoint] { [] }
+    func history(for symbol: String, timeframe: Timeframe) async throws -> [PricePoint] {
+        histories[symbol] ?? []
+    }
 }
 
 @MainActor
@@ -29,6 +32,7 @@ final class WatchlistViewModelTests: XCTestCase {
             add: AddToWatchlistUseCase(store: store),
             remove: RemoveFromWatchlistUseCase(store: store),
             fetchQuotes: FetchQuotesUseCase(repository: repo),
+            fetchHistory: FetchHistoryUseCase(repository: repo),
             search: SearchSymbolUseCase(repository: repo)
         )
     }
@@ -61,6 +65,44 @@ final class WatchlistViewModelTests: XCTestCase {
         await vm.add(query: "NOPE")
         XCTAssertNotNil(vm.addError)
         XCTAssertTrue(vm.rows.isEmpty)
+    }
+
+    func test_sections_groupByKind_inFixedOrder_skippingEmpties() async {
+        let store = VMFakeStore([
+            Asset(symbol: "BTC-USD", name: "Bitcoin", kind: .crypto),
+            Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock),
+            Asset(symbol: "SPY", name: "SPDR S&P 500 ETF", kind: .etf),
+            Asset(symbol: "MSFT", name: "Microsoft", kind: .stock),
+        ])
+        let vm = makeVM(store: store, repo: VMFakeRepo())
+        await vm.onAppear()
+        let sections = vm.sections
+        XCTAssertEqual(sections.map { $0.kind }, [.stock, .etf, .crypto])
+        XCTAssertEqual(sections[0].rows.map { $0.asset.symbol }, ["AAPL", "MSFT"])
+        XCTAssertEqual(sections[1].rows.map { $0.asset.symbol }, ["SPY"])
+        XCTAssertEqual(sections[2].rows.map { $0.asset.symbol }, ["BTC-USD"])
+        XCTAssertEqual(sections.map { $0.title }, ["Stocks", "ETFs", "Crypto"])
+    }
+
+    func test_onAppear_loadsSparklineFromHistory() async {
+        let aapl = Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock)
+        let store = VMFakeStore([aapl])
+        let repo = VMFakeRepo()
+        repo.quotes["AAPL"] = Quote(symbol: "AAPL", price: Money(amount: 10), previousClose: Money(amount: 9))
+        repo.histories["AAPL"] = [
+            PricePoint(date: Date(timeIntervalSince1970: 0), close: Money(amount: 9)),
+            PricePoint(date: Date(timeIntervalSince1970: 300), close: Money(amount: 10)),
+        ]
+        let vm = makeVM(store: store, repo: repo)
+        await vm.onAppear()
+        XCTAssertEqual(vm.rows.first?.spark, [9, 10])
+    }
+
+    func test_sections_omitsKindsWithNoRows() async {
+        let store = VMFakeStore([Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock)])
+        let vm = makeVM(store: store, repo: VMFakeRepo())
+        await vm.onAppear()
+        XCTAssertEqual(vm.sections.map { $0.kind }, [.stock])
     }
 
     func test_remove_dropsRow() async {

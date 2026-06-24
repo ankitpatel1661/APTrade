@@ -13,8 +13,9 @@ final class AssetDetailViewModel {
 
     private(set) var quote: Quote?
     private(set) var points: [PricePoint] = []
-    var timeframe: Timeframe = .oneMonth
+    var timeframe: Timeframe = .oneDay
     private(set) var loadState: LoadState = .idle
+    private(set) var isLive = false
 
     init(asset: Asset, fetchHistory: FetchHistoryUseCase, fetchQuotes: FetchQuotesUseCase) {
         self.asset = asset
@@ -31,6 +32,22 @@ final class AssetDetailViewModel {
             loadState = .loaded
         } catch {
             loadState = .failed
+        }
+    }
+
+    /// Polls the live quote (and, on the intraday timeframe, the chart itself) every 15s
+    /// until the surrounding task is cancelled on disappear.
+    func runLiveUpdates() async {
+        isLive = true
+        defer { isLive = false }
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(15))
+            if Task.isCancelled { break }
+            let quotes = await fetchQuotes(symbols: [asset.symbol])
+            if case .success(let q) = quotes[asset.symbol] { quote = q }
+            if timeframe == .oneDay, let fresh = try? await fetchHistory(symbol: asset.symbol, timeframe: .oneDay) {
+                points = fresh
+            }
         }
     }
 

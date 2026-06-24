@@ -4,48 +4,194 @@ import APTradeDomain
 struct WatchlistView: View {
     @State private var viewModel = CompositionRoot.makeWatchlistViewModel()
     @State private var newSymbol = ""
+    @State private var selectedAsset: Asset?
+    @State private var hoveredSymbol: String?
 
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(viewModel.rows) { row in
-                    NavigationLink(value: row.asset) {
-                        WatchlistRow(row: row)
-                    }
-                }
-                .onDelete { indexSet in
-                    for index in indexSet {
-                        viewModel.remove(symbol: viewModel.rows[index].asset.symbol)
-                    }
+            ZStack {
+                Theme.background.ignoresSafeArea()
+                VStack(spacing: 0) {
+                    header
+                    Divider().overlay(Theme.hairline)
+                    content
                 }
             }
-            .navigationTitle("Watchlist")
-            .navigationDestination(for: Asset.self) { asset in
+            .navigationDestination(item: $selectedAsset) { asset in
                 AssetDetailView(asset: asset)
             }
             .safeAreaInset(edge: .bottom) { addBar }
-            .task { await viewModel.onAppear() }
+            .toolbar(.hidden, for: .windowToolbar)
+            .task {
+                await viewModel.onAppear()
+                await viewModel.runLiveUpdates()
+            }
             .refreshable { await viewModel.refresh() }
         }
-        .frame(minWidth: 420, minHeight: 520)
+        .frame(minWidth: 560, minHeight: 640)
         .preferredColorScheme(.dark)
     }
 
-    private var addBar: some View {
-        VStack(spacing: 4) {
-            if let error = viewModel.addError {
-                Text(error).font(.caption).foregroundStyle(.red)
+    // MARK: Header — toggle + day pulse
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 10) {
+                BrandMark()
+                Spacer()
+                if viewModel.isRefreshing {
+                    ProgressView().controlSize(.small)
+                } else if viewModel.isLive {
+                    LiveBadge()
+                }
             }
-            HStack {
-                TextField("Add symbol (e.g. NVDA, SOL-USD)", text: $newSymbol)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { submit() }
-                Button("Add") { submit() }
-                    .disabled(newSymbol.trimmingCharacters(in: .whitespaces).isEmpty)
+
+            KindToggle(selection: $viewModel.selectedKind, counts: viewModel.counts)
+
+            pulse
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 20)
+        .padding(.bottom, 18)
+    }
+
+    private var pulse: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(viewModel.averageChange?.formatted ?? "—")
+                    .font(.system(size: 34, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(Theme.changeColor(viewModel.averageChange))
+                    .contentTransition(.numericText())
+                    .animation(.easeOut(duration: 0.3), value: viewModel.averageChange)
+                Text("avg. day change")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            if !viewModel.visibleRows.isEmpty {
+                PulseBar(advancers: viewModel.advancers, decliners: viewModel.decliners)
+                    .frame(width: 180)
+                HStack(spacing: 14) {
+                    legend(count: viewModel.advancers, label: "advancing", color: Theme.up)
+                    legend(count: viewModel.decliners, label: "declining", color: Theme.down)
+                }
             }
         }
-        .padding()
-        .background(.thinMaterial)
+    }
+
+    private func legend(count: Int, label: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text("\(count) \(label)")
+                .font(.system(size: 12).monospacedDigit())
+                .foregroundStyle(Theme.textSecondary)
+        }
+    }
+
+    // MARK: Content
+
+    @ViewBuilder
+    private var content: some View {
+        if viewModel.visibleRows.isEmpty {
+            emptyState
+        } else {
+            list
+        }
+    }
+
+    private var list: some View {
+        List {
+            ForEach(viewModel.visibleRows) { row in
+                WatchlistRow(
+                    row: row,
+                    isHovered: hoveredSymbol == row.id,
+                    onOpen: { selectedAsset = row.asset },
+                    onRemove: { viewModel.remove(symbol: row.asset.symbol) }
+                )
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .onHover { hovering in
+                    if hovering { hoveredSymbol = row.id }
+                    else if hoveredSymbol == row.id { hoveredSymbol = nil }
+                }
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .animation(.easeInOut(duration: 0.2), value: viewModel.selectedKind)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Spacer()
+            Image(systemName: iconForKind)
+                .font(.system(size: 32, weight: .light))
+                .foregroundStyle(Theme.textTertiary)
+            Text("No \(kindLabel) yet")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
+            Text("Add a symbol below to start tracking it here.")
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.textSecondary)
+                .multilineTextAlignment(.center)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(40)
+    }
+
+    private var iconForKind: String {
+        switch viewModel.selectedKind {
+        case .stock: return "building.columns"
+        case .etf: return "square.stack.3d.up"
+        case .crypto: return "bitcoinsign.circle"
+        }
+    }
+
+    private var kindLabel: String {
+        switch viewModel.selectedKind {
+        case .stock: return "stocks"
+        case .etf: return "ETFs"
+        case .crypto: return "crypto"
+        }
+    }
+
+    // MARK: Add bar
+
+    private var addBar: some View {
+        VStack(spacing: 8) {
+            if let error = viewModel.addError {
+                Text(error)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.down)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(Theme.textTertiary)
+                TextField("Add symbol — AAPL, VOO, SOL-USD", text: $newSymbol)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14).monospacedDigit())
+                    .foregroundStyle(Theme.textPrimary)
+                    .onSubmit(submit)
+                if !newSymbol.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Button("Add", action: submit)
+                        .buttonStyle(.plain)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(Theme.bgBottom)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(Theme.goldGradient, in: Capsule())
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 11)
+            .background(Theme.surface, in: Capsule())
+            .overlay(Capsule().stroke(Theme.hairline, lineWidth: 1))
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 16)
+        .background(Theme.bgBottom)
     }
 
     private func submit() {
@@ -55,29 +201,92 @@ struct WatchlistView: View {
     }
 }
 
+// MARK: - Row
+
 private struct WatchlistRow: View {
     let row: RowState
+    let isHovered: Bool
+    let onOpen: () -> Void
+    let onRemove: () -> Void
+
+    private var directionColor: Color {
+        Theme.changeColor(row.quote?.changePercent)
+    }
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading) {
-                Text(row.asset.symbol).font(.headline)
-                Text(row.asset.name).font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            if let quote = row.quote {
-                VStack(alignment: .trailing) {
-                    Text(quote.price.formatted).font(.headline.monospacedDigit())
-                    Text(quote.changePercent.formatted)
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(Theme.changeColor(quote.changePercent))
+        ZStack(alignment: .trailing) {
+            Button(action: onOpen) {
+                HStack(spacing: 14) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(row.asset.name)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Theme.textPrimary)
+                            .lineLimit(1)
+                        Text(row.asset.symbol)
+                            .font(.system(size: 12, weight: .medium).monospacedDigit())
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    Spacer(minLength: 12)
+                    if row.spark.count > 1 {
+                        Sparkline(values: row.spark, color: directionColor)
+                            .frame(width: 72, height: 32)
+                    }
+                    priceColumn
                 }
-            } else if row.failed {
-                Text("—").foregroundStyle(.secondary)
-            } else {
-                ProgressView().controlSize(.small)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+
+            removeButton
+                .opacity(isHovered ? 1 : 0)
+                .offset(x: 4)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 13)
+        .padding(.horizontal, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(isHovered ? Theme.surface : .clear)
+        )
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Theme.hairline)
+                .frame(height: 1)
+                .padding(.horizontal, 10)
+                .opacity(isHovered ? 0 : 1)
+        }
+        .contextMenu {
+            Button("Remove from Watchlist", systemImage: "trash", role: .destructive, action: onRemove)
+        }
+    }
+
+    private var removeButton: some View {
+        Button(action: onRemove) {
+            Image(systemName: "minus.circle.fill")
+                .font(.system(size: 18))
+                .foregroundStyle(Theme.textTertiary)
+                .background(Circle().fill(Theme.surfaceHi).padding(2))
+        }
+        .buttonStyle(.plain)
+        .help("Remove from watchlist")
+    }
+
+    @ViewBuilder
+    private var priceColumn: some View {
+        if let quote = row.quote {
+            VStack(alignment: .trailing, spacing: 5) {
+                SuperscriptPrice(money: quote.price, size: 18, weight: .semibold)
+                ChangePill(percent: quote.changePercent)
+            }
+            .frame(minWidth: 104, alignment: .trailing)
+        } else if row.failed {
+            Text("—")
+                .font(.system(size: 15))
+                .foregroundStyle(Theme.textSecondary)
+                .frame(minWidth: 104, alignment: .trailing)
+        } else {
+            ProgressView()
+                .controlSize(.small)
+                .frame(minWidth: 104, alignment: .trailing)
+        }
     }
 }

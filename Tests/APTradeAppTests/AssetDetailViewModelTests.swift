@@ -27,11 +27,13 @@ final class AssetDetailViewModelTests: XCTestCase {
 
     func test_load_setsQuoteAndPoints_loaded() async {
         let repo = DetailFakeRepo()
-        repo.historyByTf[.oneMonth] = [PricePoint(date: Date(timeIntervalSince1970: 0), close: Money(amount: 5))]
+        // Detail opens on the live intraday timeframe (1D) by default.
+        repo.historyByTf[.oneDay] = [PricePoint(date: Date(timeIntervalSince1970: 0), close: Money(amount: 5))]
         let vm = makeVM(repo)
         await vm.load()
         XCTAssertEqual(vm.loadState, .loaded)
         XCTAssertEqual(vm.quote?.symbol, "AAPL")
+        XCTAssertEqual(vm.timeframe, .oneDay)
         XCTAssertEqual(vm.points.count, 1)
     }
 
