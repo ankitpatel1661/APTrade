@@ -27,3 +27,8 @@ public protocol WatchlistStore: Sendable {
     func load() -> [Asset]
     func save(_ assets: [Asset])
 }
+
+public protocol PortfolioStore: Sendable {
+    func load() -> Portfolio
+    func save(_ portfolio: Portfolio)
+}
