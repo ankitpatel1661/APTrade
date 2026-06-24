@@ -33,6 +33,17 @@ enum CompositionRoot {
         )
     }
 
+    static func makeTradeViewModel(for asset: Asset) -> TradeViewModel {
+        let repo = makeRepository()
+        return TradeViewModel(
+            asset: asset,
+            buy: BuyAssetUseCase(repository: repo, store: portfolioStore),
+            sell: SellAssetUseCase(repository: repo, store: portfolioStore),
+            fetchPortfolio: FetchPortfolioUseCase(store: portfolioStore),
+            fetchQuotes: FetchQuotesUseCase(repository: repo)
+        )
+    }
+
     static func makeWatchlistViewModel() -> WatchlistViewModel {
         let repo = makeRepository()
         let store = makeStore()
