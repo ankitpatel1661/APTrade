@@ -7,11 +7,13 @@ import APTradeDomain
 /// coalesced into a single inner request via an in-flight task table.
 public actor CachingMarketDataRepository: MarketDataRepository {
     private struct Entry { let quote: Quote; let at: Date }
+    private struct SearchEntry { let results: [Asset]; let at: Date }
     private let inner: MarketDataRepository
     private let ttl: TimeInterval
     private let now: @Sendable () -> Date
     private var cache: [String: Entry] = [:]
     private var inFlight: [String: Task<Quote, Error>] = [:]
+    private var searchCache: [String: SearchEntry] = [:]
 
     public init(wrapping inner: MarketDataRepository, ttl: TimeInterval = 15, now: @escaping @Sendable () -> Date = Date.init) {
         self.inner = inner
@@ -43,5 +45,15 @@ public actor CachingMarketDataRepository: MarketDataRepository {
 
     public func profile(for symbol: String) async throws -> Asset {
         try await inner.profile(for: symbol)
+    }
+
+    public func search(query: String) async throws -> [Asset] {
+        let key = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let entry = searchCache[key], now().timeIntervalSince(entry.at) < ttl {
+            return entry.results
+        }
+        let results = try await inner.search(query: query)
+        searchCache[key] = SearchEntry(results: results, at: now())
+        return results
     }
 }

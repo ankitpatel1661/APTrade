@@ -5,6 +5,8 @@ public protocol MarketDataRepository: Sendable {
     func history(for symbol: String, timeframe: Timeframe) async throws -> [PricePoint]
     /// Resolves an asset's display name and kind, validating that the symbol exists.
     func profile(for symbol: String) async throws -> Asset
+    /// Returns ranked asset matches for a free-text query (autocomplete).
+    func search(query: String) async throws -> [Asset]
 }
 
 public extension MarketDataRepository {
@@ -16,6 +18,9 @@ public extension MarketDataRepository {
         let kind: AssetKind = symbol.uppercased().hasSuffix("-USD") ? .crypto : .stock
         return Asset(symbol: symbol, name: symbol, kind: kind)
     }
+
+    /// Default: no search capability. Concrete repositories override this.
+    func search(query: String) async throws -> [Asset] { [] }
 }
 
 public protocol WatchlistStore: Sendable {
