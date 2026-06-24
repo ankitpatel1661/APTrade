@@ -1,6 +1,6 @@
 import Foundation
 
-public struct Position: Equatable, Sendable {
+public struct Position: Equatable, Codable, Sendable {
     public let asset: Asset
     public let quantity: Quantity
     public let averageCost: Money

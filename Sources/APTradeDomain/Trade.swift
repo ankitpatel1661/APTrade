@@ -10,7 +10,7 @@ public enum TradeError: Error, Equatable, Sendable {
     case invalidQuantity
 }
 
-public struct Transaction: Identifiable, Equatable, Sendable {
+public struct Transaction: Identifiable, Equatable, Codable, Sendable {
     public let id: UUID
     public let symbol: String
     public let side: TradeSide

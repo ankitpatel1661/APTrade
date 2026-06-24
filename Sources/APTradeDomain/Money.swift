@@ -1,6 +1,6 @@
 import Foundation
 
-public struct Money: Equatable, Hashable, Sendable {
+public struct Money: Equatable, Hashable, Codable, Sendable {
     public let amount: Decimal
     public let currencyCode: String
 
