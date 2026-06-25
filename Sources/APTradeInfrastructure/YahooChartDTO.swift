@@ -24,5 +24,10 @@ struct YahooChartResponse: Decodable {
         let shortName: String?
     }
     struct Indicators: Decodable { let quote: [QuoteBlock]? }
-    struct QuoteBlock: Decodable { let close: [Double?]? }
+    struct QuoteBlock: Decodable {
+        let open: [Double?]?
+        let high: [Double?]?
+        let low: [Double?]?
+        let close: [Double?]?
+    }
 }

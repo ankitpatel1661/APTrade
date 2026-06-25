@@ -43,6 +43,10 @@ public actor CachingMarketDataRepository: MarketDataRepository {
         try await inner.history(for: symbol, timeframe: timeframe)
     }
 
+    public func candles(for symbol: String, timeframe: Timeframe) async throws -> [Candle] {
+        try await inner.candles(for: symbol, timeframe: timeframe)
+    }
+
     public func profile(for symbol: String) async throws -> Asset {
         try await inner.profile(for: symbol)
     }

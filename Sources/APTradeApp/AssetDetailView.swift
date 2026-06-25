@@ -3,9 +3,21 @@ import Charts
 import APTradeDomain
 
 struct AssetDetailView: View {
+    enum ChartStyle: String, CaseIterable { case area = "Area", candles = "Candles" }
+    enum Indicator: String, CaseIterable, Identifiable {
+        case sma = "SMA 20", ema = "EMA 12", rsi = "RSI 14"
+        var id: String { rawValue }
+    }
+
+    private static let smaPeriod = 20
+    private static let emaPeriod = 12
+    private static let rsiPeriod = 14
+
     @State private var viewModel: AssetDetailViewModel
     @State private var tradeSide: TradeSide?
     @State private var hoverPoint: PricePoint?
+    @State private var chartStyle: ChartStyle = .area
+    @State private var indicators: Set<Indicator> = []
 
     init(asset: Asset) {
         _viewModel = State(initialValue: CompositionRoot.makeDetailViewModel(for: asset))
@@ -25,7 +37,11 @@ struct AssetDetailView: View {
                 VStack(alignment: .leading, spacing: 28) {
                     header
                     tradeButtons
+                    chartControls
                     chart
+                    if indicators.contains(.rsi) {
+                        rsiPane
+                    }
                     TimeframeBar(selection: viewModel.timeframe) { tf in
                         Task { await viewModel.select(tf) }
                     }
@@ -83,16 +99,17 @@ struct AssetDetailView: View {
 
     // MARK: Chart
 
-    /// Pads the chart's Y range to the data's own min/max so the line reads with
-    /// visible movement, instead of Charts' default AreaMark baseline of 0.
+    /// Pads the chart's Y range to the data's own min/max (using candle highs/lows so
+    /// wicks stay in frame) instead of Charts' default AreaMark baseline of 0.
     private var yDomain: ClosedRange<Double> {
-        let values = viewModel.points.map { ($0.close.amount as NSDecimalNumber).doubleValue }
-        guard let lo = values.min(), let hi = values.max(), hi > lo else {
-            return 0...1
-        }
+        let lows = viewModel.candles.map { dbl($0.low) }
+        let highs = viewModel.candles.map { dbl($0.high) }
+        guard let lo = lows.min(), let hi = highs.max(), hi > lo else { return 0...1 }
         let padding = (hi - lo) * 0.12
         return (lo - padding)...(hi + padding)
     }
+
+    private func dbl(_ money: Money) -> Double { (money.amount as NSDecimalNumber).doubleValue }
 
     private var xAxisFormat: Date.FormatStyle {
         switch viewModel.timeframe {
@@ -101,6 +118,56 @@ struct AssetDetailView: View {
         case .oneMonth: return .dateTime.month(.abbreviated).day()
         case .oneYear: return .dateTime.month(.abbreviated).year(.twoDigits)
         }
+    }
+
+    /// Chart-style toggle (Area / Candles) plus the indicator chips.
+    private var chartControls: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 4) {
+                ForEach(ChartStyle.allCases, id: \.self) { style in
+                    let selected = chartStyle == style
+                    Button { withAnimation(.easeInOut(duration: 0.2)) { chartStyle = style } } label: {
+                        Text(style.rawValue)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(selected ? Theme.bgBottom : Theme.textSecondary)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background { if selected { Capsule().fill(Theme.goldGradient) } }
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(3)
+            .background(Theme.surface, in: Capsule())
+            .overlay(Capsule().stroke(Theme.hairline, lineWidth: 1))
+
+            Spacer()
+
+            ForEach(Indicator.allCases) { indicator in
+                indicatorChip(indicator)
+            }
+        }
+    }
+
+    private func indicatorChip(_ indicator: Indicator) -> some View {
+        let on = indicators.contains(indicator)
+        return Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                if on { indicators.remove(indicator) } else { indicators.insert(indicator) }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Circle().fill(indicatorColor(indicator)).frame(width: 7, height: 7).opacity(on ? 1 : 0.4)
+                Text(indicator.rawValue)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(on ? Theme.textPrimary : Theme.textTertiary)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(on ? Theme.surfaceHi : Theme.surface, in: Capsule())
+            .overlay(Capsule().stroke(on ? indicatorColor(indicator).opacity(0.5) : Theme.hairline, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -113,30 +180,64 @@ struct AssetDetailView: View {
             ContentUnavailableView("Couldn't load chart", systemImage: "chart.line.downtrend.xyaxis")
                 .frame(minHeight: 260)
         case .loaded:
-            Chart(viewModel.points, id: \.date) { point in
-                let value = (point.close.amount as NSDecimalNumber).doubleValue
-                AreaMark(x: .value("Date", point.date), y: .value("Price", value))
-                    .interpolationMethod(.catmullRom)
-                    .foregroundStyle(
-                        .linearGradient(
-                            colors: [directionColor.opacity(0.26), directionColor.opacity(0.0)],
-                            startPoint: .top, endPoint: .bottom
-                        )
-                    )
-                LineMark(x: .value("Date", point.date), y: .value("Price", value))
-                    .interpolationMethod(.catmullRom)
-                    .foregroundStyle(directionColor)
-                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+            priceChart
+        }
+    }
 
-                if let hoverPoint, hoverPoint.date == point.date {
-                    RuleMark(x: .value("Date", hoverPoint.date))
-                        .foregroundStyle(Theme.hairline)
-                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                    PointMark(x: .value("Date", hoverPoint.date), y: .value("Price", value))
+    private var priceChart: some View {
+        Chart {
+            if chartStyle == .candles {
+                ForEach(viewModel.candles, id: \.date) { candle in
+                    let color = candle.isUp ? Theme.up : Theme.down
+                    RuleMark(x: .value("Date", candle.date),
+                             yStart: .value("Low", dbl(candle.low)),
+                             yEnd: .value("High", dbl(candle.high)))
+                        .foregroundStyle(color.opacity(0.7))
+                        .lineStyle(StrokeStyle(lineWidth: 1))
+                    RectangleMark(x: .value("Date", candle.date),
+                                  yStart: .value("Open", dbl(candle.open)),
+                                  yEnd: .value("Close", dbl(candle.close)),
+                                  width: .fixed(candleWidth))
+                        .foregroundStyle(color)
+                        .cornerRadius(1)
+                }
+            } else {
+                ForEach(viewModel.points, id: \.date) { point in
+                    AreaMark(x: .value("Date", point.date), y: .value("Price", dbl(point.close)))
+                        .interpolationMethod(.catmullRom)
+                        .foregroundStyle(.linearGradient(
+                            colors: [directionColor.opacity(0.26), directionColor.opacity(0.0)],
+                            startPoint: .top, endPoint: .bottom))
+                    LineMark(x: .value("Date", point.date), y: .value("Price", dbl(point.close)),
+                             series: .value("Series", "Price"))
+                        .interpolationMethod(.catmullRom)
                         .foregroundStyle(directionColor)
-                        .symbolSize(60)
+                        .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                 }
             }
+
+            ForEach(overlayLine(.sma)) { point in
+                LineMark(x: .value("Date", point.date), y: .value("SMA", point.value),
+                         series: .value("Series", "SMA"))
+                    .foregroundStyle(indicatorColor(.sma))
+                    .lineStyle(StrokeStyle(lineWidth: 1.5))
+            }
+            ForEach(overlayLine(.ema)) { point in
+                LineMark(x: .value("Date", point.date), y: .value("EMA", point.value),
+                         series: .value("Series", "EMA"))
+                    .foregroundStyle(indicatorColor(.ema))
+                    .lineStyle(StrokeStyle(lineWidth: 1.5))
+            }
+
+            if let hoverPoint {
+                RuleMark(x: .value("Date", hoverPoint.date))
+                    .foregroundStyle(Theme.hairline)
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                PointMark(x: .value("Date", hoverPoint.date), y: .value("Price", dbl(hoverPoint.close)))
+                    .foregroundStyle(directionColor)
+                    .symbolSize(60)
+            }
+        }
             .chartYScale(domain: yDomain)
             .chartYAxis {
                 AxisMarks(position: .trailing, values: .automatic(desiredCount: 4)) { value in
@@ -183,7 +284,6 @@ struct AssetDetailView: View {
                 }
             }
             .frame(minHeight: 260)
-        }
     }
 
     private func updateHover(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) {
@@ -196,10 +296,17 @@ struct AssetDetailView: View {
     }
 
     private func hoverTooltip(for point: PricePoint) -> some View {
-        VStack(spacing: 2) {
+        let candle = viewModel.candles.first { $0.date == point.date }
+        return VStack(spacing: 2) {
             Text(point.close.formatted)
                 .font(.system(size: 13, weight: .bold).monospacedDigit())
                 .foregroundStyle(Theme.textPrimary)
+            if chartStyle == .candles, let candle {
+                Text("H \(candle.high.formatted) · L \(candle.low.formatted)")
+                    .font(.system(size: 9, weight: .medium).monospacedDigit())
+                    .foregroundStyle(Theme.textTertiary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
             Text(point.date.formatted(.dateTime.month().day().hour().minute()))
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(Theme.textSecondary)
@@ -208,6 +315,80 @@ struct AssetDetailView: View {
         .padding(.vertical, 6)
         .background(Theme.surfaceHi, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
+    }
+
+    // MARK: Indicators
+
+    private struct IndicatorPoint: Identifiable {
+        var id: Date { date }
+        let date: Date
+        let value: Double
+    }
+
+    private func overlayLine(_ indicator: Indicator) -> [IndicatorPoint] {
+        guard indicators.contains(indicator) else { return [] }
+        let series: [Double?]
+        switch indicator {
+        case .sma: series = TechnicalIndicators.sma(viewModel.closes, period: Self.smaPeriod)
+        case .ema: series = TechnicalIndicators.ema(viewModel.closes, period: Self.emaPeriod)
+        case .rsi: return []
+        }
+        return zip(viewModel.points, series).compactMap { point, value in
+            value.map { IndicatorPoint(date: point.date, value: $0) }
+        }
+    }
+
+    private func indicatorColor(_ indicator: Indicator) -> Color {
+        switch indicator {
+        case .sma: return Theme.gold
+        case .ema: return Theme.silver
+        case .rsi: return Theme.gold
+        }
+    }
+
+    /// Candle body width scales down as the bar count grows, so dense timeframes stay legible.
+    private var candleWidth: CGFloat {
+        switch viewModel.candles.count {
+        case let n where n > 160: return 1.5
+        case let n where n > 90: return 2.5
+        case let n where n > 45: return 4
+        case let n where n > 20: return 6
+        default: return 8
+        }
+    }
+
+    /// A separate 0–100 pane for RSI, with 30/70 guide lines, shown when RSI is enabled.
+    private var rsiPane: some View {
+        let series = TechnicalIndicators.rsi(viewModel.closes, period: Self.rsiPeriod)
+        let points = zip(viewModel.points, series).compactMap { point, value in
+            value.map { IndicatorPoint(date: point.date, value: $0) }
+        }
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("RSI \(Self.rsiPeriod)")
+                .font(.system(size: 10, weight: .bold)).tracking(1.2)
+                .foregroundStyle(Theme.textTertiary)
+            Chart {
+                RuleMark(y: .value("Overbought", 70))
+                    .foregroundStyle(Theme.hairline).lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                RuleMark(y: .value("Oversold", 30))
+                    .foregroundStyle(Theme.hairline).lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                ForEach(points) { point in
+                    LineMark(x: .value("Date", point.date), y: .value("RSI", point.value),
+                             series: .value("Series", "RSI"))
+                        .foregroundStyle(indicatorColor(.rsi))
+                        .lineStyle(StrokeStyle(lineWidth: 1.5))
+                }
+            }
+            .chartYScale(domain: 0...100)
+            .chartYAxis {
+                AxisMarks(position: .trailing, values: [0, 30, 70, 100]) { _ in
+                    AxisGridLine().foregroundStyle(Theme.hairline)
+                    AxisValueLabel().foregroundStyle(Theme.textTertiary)
+                }
+            }
+            .chartXAxis(.hidden)
+            .frame(height: 90)
+        }
     }
 
     // MARK: Key stats

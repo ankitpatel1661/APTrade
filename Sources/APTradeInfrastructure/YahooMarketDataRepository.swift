@@ -47,6 +47,14 @@ public final class YahooMarketDataRepository: MarketDataRepository {
         return clamped.isEmpty ? points : clamped
     }
 
+    public func candles(for symbol: String, timeframe: Timeframe) async throws -> [Candle] {
+        let data = try await fetch(symbol: symbol, range: timeframe.yahooRange, interval: timeframe.yahooInterval)
+        let candles = try YahooMapper.candles(from: data)
+        let cutoff = Date().addingTimeInterval(-timeframe.windowDuration)
+        let clamped = candles.filter { $0.date >= cutoff }
+        return clamped.isEmpty ? candles : clamped
+    }
+
     public func profile(for symbol: String) async throws -> Asset {
         let data = try await fetch(symbol: symbol, range: "1d", interval: "1d")
         return try YahooMapper.asset(from: data)

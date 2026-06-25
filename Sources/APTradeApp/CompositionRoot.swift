@@ -116,7 +116,7 @@ enum CompositionRoot {
         let repo = makeRepository()
         return AssetDetailViewModel(
             asset: asset,
-            fetchHistory: FetchHistoryUseCase(repository: repo),
+            fetchCandles: FetchCandlesUseCase(repository: repo),
             fetchQuotes: FetchQuotesUseCase(repository: repo),
             fetchPortfolio: FetchPortfolioUseCase(store: portfolioStore)
         )

@@ -33,6 +33,15 @@ public struct FetchHistoryUseCase: Sendable {
     }
 }
 
+public struct FetchCandlesUseCase: Sendable {
+    private let repository: MarketDataRepository
+    public init(repository: MarketDataRepository) { self.repository = repository }
+
+    public func callAsFunction(symbol: String, timeframe: Timeframe) async throws -> [Candle] {
+        try await repository.candles(for: symbol, timeframe: timeframe)
+    }
+}
+
 public struct SearchSymbolUseCase: Sendable {
     private let repository: MarketDataRepository
     public init(repository: MarketDataRepository) { self.repository = repository }

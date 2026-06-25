@@ -3,6 +3,8 @@ import APTradeDomain
 public protocol MarketDataRepository: Sendable {
     func quote(for symbol: String) async throws -> Quote
     func history(for symbol: String, timeframe: Timeframe) async throws -> [PricePoint]
+    /// OHLC bars for candlestick charts.
+    func candles(for symbol: String, timeframe: Timeframe) async throws -> [Candle]
     /// Resolves an asset's display name and kind, validating that the symbol exists.
     func profile(for symbol: String) async throws -> Asset
     /// Returns ranked asset matches for a free-text query (autocomplete).
@@ -21,6 +23,14 @@ public extension MarketDataRepository {
 
     /// Default: no search capability. Concrete repositories override this.
     func search(query: String) async throws -> [Asset] { [] }
+
+    /// Default candles derive flat OHLC bars from the close-only history, so sources
+    /// without true OHLC still render (as a line/area). Concrete repositories override.
+    func candles(for symbol: String, timeframe: Timeframe) async throws -> [Candle] {
+        try await history(for: symbol, timeframe: timeframe).map {
+            Candle(date: $0.date, open: $0.close, high: $0.close, low: $0.close, close: $0.close)
+        }
+    }
 }
 
 public protocol WatchlistStore: Sendable {

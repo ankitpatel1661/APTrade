@@ -8,11 +8,13 @@ final class AssetDetailViewModel {
     enum LoadState: Equatable { case idle, loading, loaded, failed }
 
     let asset: Asset
-    private let fetchHistory: FetchHistoryUseCase
+    private let fetchCandles: FetchCandlesUseCase
     private let fetchQuotes: FetchQuotesUseCase
     private let fetchPortfolio: FetchPortfolioUseCase
 
     private(set) var quote: Quote?
+    private(set) var candles: [Candle] = []
+    /// Closing prices, derived from `candles`, driving line/area charts and indicators.
     private(set) var points: [PricePoint] = []
     var timeframe: Timeframe = .oneDay
     private(set) var loadState: LoadState = .idle
@@ -20,14 +22,22 @@ final class AssetDetailViewModel {
     private(set) var position: Position?
 
     init(asset: Asset,
-         fetchHistory: FetchHistoryUseCase,
+         fetchCandles: FetchCandlesUseCase,
          fetchQuotes: FetchQuotesUseCase,
          fetchPortfolio: FetchPortfolioUseCase) {
         self.asset = asset
-        self.fetchHistory = fetchHistory
+        self.fetchCandles = fetchCandles
         self.fetchQuotes = fetchQuotes
         self.fetchPortfolio = fetchPortfolio
     }
+
+    private func apply(_ bars: [Candle]) {
+        candles = bars
+        points = bars.map { $0.pricePoint }
+    }
+
+    /// Closing prices as plain Doubles, for indicator math.
+    var closes: [Double] { points.map { ($0.close.amount as NSDecimalNumber).doubleValue } }
 
     /// Re-reads whether this asset is currently held (after a trade or on appear).
     func reloadPosition() {
@@ -40,7 +50,7 @@ final class AssetDetailViewModel {
         let quotes = await fetchQuotes(symbols: [asset.symbol])
         if case .success(let q) = quotes[asset.symbol] { quote = q }
         do {
-            points = try await fetchHistory(symbol: asset.symbol, timeframe: timeframe)
+            apply(try await fetchCandles(symbol: asset.symbol, timeframe: timeframe))
             loadState = .loaded
         } catch {
             loadState = .failed
@@ -57,8 +67,8 @@ final class AssetDetailViewModel {
             if Task.isCancelled { break }
             let quotes = await fetchQuotes(symbols: [asset.symbol])
             if case .success(let q) = quotes[asset.symbol] { quote = q }
-            if timeframe == .oneDay, let fresh = try? await fetchHistory(symbol: asset.symbol, timeframe: .oneDay) {
-                points = fresh
+            if timeframe == .oneDay, let fresh = try? await fetchCandles(symbol: asset.symbol, timeframe: .oneDay) {
+                apply(fresh)
             }
         }
     }
@@ -81,7 +91,7 @@ final class AssetDetailViewModel {
         self.timeframe = timeframe
         loadState = .loading
         do {
-            points = try await fetchHistory(symbol: asset.symbol, timeframe: timeframe)
+            apply(try await fetchCandles(symbol: asset.symbol, timeframe: timeframe))
             loadState = .loaded
         } catch {
             loadState = .failed

@@ -29,7 +29,7 @@ final class AssetDetailViewModelTests: XCTestCase {
     func makeVM(_ repo: DetailFakeRepo) -> AssetDetailViewModel {
         let store = MemoryStore(Portfolio(cash: Money(amount: 10_000)))
         return AssetDetailViewModel(asset: asset,
-                             fetchHistory: FetchHistoryUseCase(repository: repo),
+                             fetchCandles: FetchCandlesUseCase(repository: repo),
                              fetchQuotes: FetchQuotesUseCase(repository: repo),
                              fetchPortfolio: FetchPortfolioUseCase(store: store))
     }
