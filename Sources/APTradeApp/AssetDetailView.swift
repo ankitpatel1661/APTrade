@@ -5,13 +5,16 @@ import APTradeDomain
 struct AssetDetailView: View {
     enum ChartStyle: String, CaseIterable { case area = "Area", candles = "Candles" }
     enum Indicator: String, CaseIterable, Identifiable {
-        case sma = "SMA 20", ema = "EMA 12", rsi = "RSI 14"
+        case sma = "SMA 20", ema = "EMA 12", bollinger = "BB 20", rsi = "RSI 14", macd = "MACD"
         var id: String { rawValue }
+        /// Overlays draw on the price chart; the rest get their own sub-pane.
+        var isOverlay: Bool { self == .sma || self == .ema || self == .bollinger }
     }
 
     private static let smaPeriod = 20
     private static let emaPeriod = 12
     private static let rsiPeriod = 14
+    private static let bollingerPeriod = 20
 
     @State private var viewModel: AssetDetailViewModel
     @State private var tradeSide: TradeSide?
@@ -41,6 +44,9 @@ struct AssetDetailView: View {
                     chart
                     if indicators.contains(.rsi) {
                         rsiPane
+                    }
+                    if indicators.contains(.macd) {
+                        macdPane
                     }
                     TimeframeBar(selection: viewModel.timeframe) { tf in
                         Task { await viewModel.select(tf) }
@@ -102,8 +108,14 @@ struct AssetDetailView: View {
     /// Pads the chart's Y range to the data's own min/max (using candle highs/lows so
     /// wicks stay in frame) instead of Charts' default AreaMark baseline of 0.
     private var yDomain: ClosedRange<Double> {
-        let lows = viewModel.candles.map { dbl($0.low) }
-        let highs = viewModel.candles.map { dbl($0.high) }
+        var lows = viewModel.candles.map { dbl($0.low) }
+        var highs = viewModel.candles.map { dbl($0.high) }
+        // Keep Bollinger bands in frame when they extend past the price extremes.
+        let bands = bollingerSeries
+        if !bands.isEmpty {
+            lows += bands.map(\.lower)
+            highs += bands.map(\.upper)
+        }
         guard let lo = lows.min(), let hi = highs.max(), hi > lo else { return 0...1 }
         let padding = (hi - lo) * 0.12
         return (lo - padding)...(hi + padding)
@@ -141,10 +153,13 @@ struct AssetDetailView: View {
             .background(Theme.surface, in: Capsule())
             .overlay(Capsule().stroke(Theme.hairline, lineWidth: 1))
 
-            Spacer()
-
-            ForEach(Indicator.allCases) { indicator in
-                indicatorChip(indicator)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Indicator.allCases) { indicator in
+                        indicatorChip(indicator)
+                    }
+                }
+                .padding(.trailing, 2)
             }
         }
     }
@@ -227,6 +242,28 @@ struct AssetDetailView: View {
                          series: .value("Series", "EMA"))
                     .foregroundStyle(indicatorColor(.ema))
                     .lineStyle(StrokeStyle(lineWidth: 1.5))
+            }
+
+            ForEach(bollingerSeries) { band in
+                AreaMark(x: .value("Date", band.date),
+                         yStart: .value("Lower", band.lower), yEnd: .value("Upper", band.upper))
+                    .foregroundStyle(indicatorColor(.bollinger).opacity(0.07))
+            }
+            ForEach(bollingerSeries) { band in
+                LineMark(x: .value("Date", band.date), y: .value("BBUpper", band.upper),
+                         series: .value("Series", "BBUpper"))
+                    .foregroundStyle(indicatorColor(.bollinger)).lineStyle(StrokeStyle(lineWidth: 1))
+            }
+            ForEach(bollingerSeries) { band in
+                LineMark(x: .value("Date", band.date), y: .value("BBLower", band.lower),
+                         series: .value("Series", "BBLower"))
+                    .foregroundStyle(indicatorColor(.bollinger)).lineStyle(StrokeStyle(lineWidth: 1))
+            }
+            ForEach(bollingerSeries) { band in
+                LineMark(x: .value("Date", band.date), y: .value("BBMid", band.middle),
+                         series: .value("Series", "BBMid"))
+                    .foregroundStyle(indicatorColor(.bollinger).opacity(0.6))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
             }
 
             if let hoverPoint {
@@ -331,20 +368,44 @@ struct AssetDetailView: View {
         switch indicator {
         case .sma: series = TechnicalIndicators.sma(viewModel.closes, period: Self.smaPeriod)
         case .ema: series = TechnicalIndicators.ema(viewModel.closes, period: Self.emaPeriod)
-        case .rsi: return []
+        case .bollinger, .rsi, .macd: return []
         }
         return zip(viewModel.points, series).compactMap { point, value in
             value.map { IndicatorPoint(date: point.date, value: $0) }
         }
     }
 
+    private struct BollingerPoint: Identifiable {
+        var id: Date { date }
+        let date: Date
+        let upper: Double
+        let middle: Double
+        let lower: Double
+    }
+
+    private var bollingerSeries: [BollingerPoint] {
+        guard indicators.contains(.bollinger) else { return [] }
+        let bands = TechnicalIndicators.bollingerBands(viewModel.closes, period: Self.bollingerPeriod)
+        var result: [BollingerPoint] = []
+        for (i, point) in viewModel.points.enumerated() {
+            guard let upper = bands.upper[i], let middle = bands.middle[i], let lower = bands.lower[i] else { continue }
+            result.append(BollingerPoint(date: point.date, upper: upper, middle: middle, lower: lower))
+        }
+        return result
+    }
+
+    /// Each indicator gets a distinct hue, all kept clear of the green/red price direction.
     private func indicatorColor(_ indicator: Indicator) -> Color {
         switch indicator {
-        case .sma: return Theme.gold
-        case .ema: return Theme.silver
-        case .rsi: return Theme.gold
+        case .sma: return Theme.gold                                    // champagne
+        case .ema: return Color(red: 0.30, green: 0.74, blue: 0.86)     // teal
+        case .bollinger: return Color(red: 0.38, green: 0.56, blue: 0.95) // blue
+        case .rsi: return Color(red: 0.65, green: 0.49, blue: 0.92)     // violet
+        case .macd: return Color(red: 0.90, green: 0.58, blue: 0.26)    // amber
         }
     }
+
+    private var macdSignalColor: Color { Color(red: 0.84, green: 0.45, blue: 0.67) } // pink
 
     /// Candle body width scales down as the bar count grows, so dense timeframes stay legible.
     private var candleWidth: CGFloat {
@@ -388,6 +449,59 @@ struct AssetDetailView: View {
             }
             .chartXAxis(.hidden)
             .frame(height: 90)
+        }
+    }
+
+    /// A separate pane for MACD: histogram bars (green/red) plus the MACD and signal lines.
+    private var macdPane: some View {
+        let result = TechnicalIndicators.macd(viewModel.closes)
+        func points(_ series: [Double?]) -> [IndicatorPoint] {
+            zip(viewModel.points, series).compactMap { point, value in
+                value.map { IndicatorPoint(date: point.date, value: $0) }
+            }
+        }
+        let macdLine = points(result.macd)
+        let signalLine = points(result.signal)
+        let histogram = points(result.histogram)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                Text("MACD 12·26·9").font(.system(size: 10, weight: .bold)).tracking(1.2)
+                    .foregroundStyle(Theme.textTertiary)
+                legendDot(indicatorColor(.macd), "MACD")
+                legendDot(macdSignalColor, "Signal")
+            }
+            Chart {
+                ForEach(histogram) { point in
+                    BarMark(x: .value("Date", point.date), y: .value("Hist", point.value),
+                            width: .fixed(candleWidth))
+                        .foregroundStyle((point.value >= 0 ? Theme.up : Theme.down).opacity(0.5))
+                }
+                ForEach(macdLine) { point in
+                    LineMark(x: .value("Date", point.date), y: .value("MACD", point.value),
+                             series: .value("Series", "MACD"))
+                        .foregroundStyle(indicatorColor(.macd)).lineStyle(StrokeStyle(lineWidth: 1.5))
+                }
+                ForEach(signalLine) { point in
+                    LineMark(x: .value("Date", point.date), y: .value("Signal", point.value),
+                             series: .value("Series", "Signal"))
+                        .foregroundStyle(macdSignalColor).lineStyle(StrokeStyle(lineWidth: 1.5))
+                }
+            }
+            .chartYAxis {
+                AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { _ in
+                    AxisGridLine().foregroundStyle(Theme.hairline)
+                    AxisValueLabel().foregroundStyle(Theme.textTertiary)
+                }
+            }
+            .chartXAxis(.hidden)
+            .frame(height: 100)
+        }
+    }
+
+    private func legendDot(_ color: Color, _ label: String) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(label).font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.textTertiary)
         }
     }
 

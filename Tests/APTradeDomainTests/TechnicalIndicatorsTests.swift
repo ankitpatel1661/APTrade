@@ -39,4 +39,33 @@ final class TechnicalIndicatorsTests: XCTestCase {
         XCTAssertEqual(TechnicalIndicators.sma([1, 2], period: 5).compactMap { $0 }.count, 0)
         XCTAssertEqual(TechnicalIndicators.rsi([1, 2], period: 14).compactMap { $0 }.count, 0)
     }
+
+    func test_bollinger_constantSeries_bandsCollapseToMean() {
+        let bands = TechnicalIndicators.bollingerBands([5, 5, 5, 5, 5], period: 3)
+        // Zero variance → upper == middle == lower.
+        XCTAssertEqual(bands.middle[2]!, 5, accuracy: 1e-9)
+        XCTAssertEqual(bands.upper[2]!, 5, accuracy: 1e-9)
+        XCTAssertEqual(bands.lower[2]!, 5, accuracy: 1e-9)
+    }
+
+    func test_bollinger_upperAboveLower() {
+        let bands = TechnicalIndicators.bollingerBands([1, 2, 3, 4, 5, 6], period: 3, multiplier: 2)
+        for i in bands.middle.indices where bands.middle[i] != nil {
+            XCTAssertGreaterThan(bands.upper[i]!, bands.middle[i]!)
+            XCTAssertLessThan(bands.lower[i]!, bands.middle[i]!)
+        }
+    }
+
+    func test_macd_histogramIsMacdMinusSignal() {
+        let closes = (1...40).map { Double($0) + sin(Double($0)) }
+        let result = TechnicalIndicators.macd(closes)
+        var checked = 0
+        for i in closes.indices {
+            if let m = result.macd[i], let s = result.signal[i], let h = result.histogram[i] {
+                XCTAssertEqual(h, m - s, accuracy: 1e-9)
+                checked += 1
+            }
+        }
+        XCTAssertGreaterThan(checked, 0)
+    }
 }

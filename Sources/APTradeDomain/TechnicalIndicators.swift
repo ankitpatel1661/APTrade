@@ -62,4 +62,50 @@ public enum TechnicalIndicators {
         let rs = avgGain / avgLoss
         return 100 - 100 / (1 + rs)
     }
+
+    /// Bollinger Bands: the SMA `middle` band with `upper`/`lower` bands set `multiplier`
+    /// population standard deviations away. Aligned 1:1 with the input.
+    public static func bollingerBands(_ values: [Double], period: Int = 20, multiplier: Double = 2)
+        -> (upper: [Double?], middle: [Double?], lower: [Double?]) {
+        let middle = sma(values, period: period)
+        var upper = [Double?](repeating: nil, count: values.count)
+        var lower = [Double?](repeating: nil, count: values.count)
+        guard values.count >= period, period > 0 else { return (upper, middle, lower) }
+        for i in (period - 1)..<values.count {
+            guard let mean = middle[i] else { continue }
+            let window = values[(i - period + 1)...i]
+            let variance = window.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(period)
+            let deviation = variance.squareRoot()
+            upper[i] = mean + multiplier * deviation
+            lower[i] = mean - multiplier * deviation
+        }
+        return (upper, middle, lower)
+    }
+
+    /// MACD: the `macd` line (fast EMA − slow EMA), its `signal` EMA, and the `histogram`
+    /// (macd − signal). Aligned 1:1 with the input.
+    public static func macd(_ values: [Double], fast: Int = 12, slow: Int = 26, signal: Int = 9)
+        -> (macd: [Double?], signal: [Double?], histogram: [Double?]) {
+        let fastEMA = ema(values, period: fast)
+        let slowEMA = ema(values, period: slow)
+        var macdLine = [Double?](repeating: nil, count: values.count)
+        for i in values.indices {
+            if let f = fastEMA[i], let s = slowEMA[i] { macdLine[i] = f - s }
+        }
+
+        var signalLine = [Double?](repeating: nil, count: values.count)
+        if let start = macdLine.firstIndex(where: { $0 != nil }) {
+            // macdLine is contiguous from `start` (slow EMA defines it), so a plain EMA aligns.
+            let contiguous = macdLine[start...].compactMap { $0 }
+            for (offset, value) in ema(contiguous, period: signal).enumerated() {
+                signalLine[start + offset] = value
+            }
+        }
+
+        var histogram = [Double?](repeating: nil, count: values.count)
+        for i in values.indices {
+            if let m = macdLine[i], let s = signalLine[i] { histogram[i] = m - s }
+        }
+        return (macdLine, signalLine, histogram)
+    }
 }
