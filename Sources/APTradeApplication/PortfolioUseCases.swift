@@ -60,3 +60,41 @@ public struct FetchPortfolioHistoryUseCase: Sendable {
     public init(store: PortfolioHistoryStore) { self.store = store }
     public func callAsFunction() -> [PricePoint] { store.load() }
 }
+
+public struct ClearPortfolioHistoryUseCase: Sendable {
+    private let store: PortfolioHistoryStore
+    public init(store: PortfolioHistoryStore) { self.store = store }
+    public func callAsFunction() { store.clear() }
+}
+
+/// Reconstructs the portfolio's value / unrealized-P&L curve over a timeframe from real
+/// historical prices, fetching each held symbol's history concurrently. This produces a
+/// dense, meaningful series — unlike the sparse in-session value snapshots.
+public struct FetchPortfolioPerformanceUseCase: Sendable {
+    private let repository: MarketDataRepository
+    private let store: PortfolioStore
+
+    public init(repository: MarketDataRepository, store: PortfolioStore) {
+        self.repository = repository
+        self.store = store
+    }
+
+    public func callAsFunction(timeframe: Timeframe) async -> [PortfolioPerformancePoint] {
+        let portfolio = store.load()
+        guard !portfolio.positions.isEmpty else { return [] }
+
+        var histories: [String: [PricePoint]] = [:]
+        await withTaskGroup(of: (String, [PricePoint]).self) { group in
+            for position in portfolio.positions {
+                let symbol = position.asset.symbol
+                let repository = repository
+                group.addTask {
+                    let points = (try? await repository.history(for: symbol, timeframe: timeframe)) ?? []
+                    return (symbol, points)
+                }
+            }
+            for await (symbol, points) in group { histories[symbol] = points }
+        }
+        return portfolio.performanceSeries(histories: histories)
+    }
+}

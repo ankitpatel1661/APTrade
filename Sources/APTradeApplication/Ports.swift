@@ -39,6 +39,8 @@ public protocol PortfolioStore: Sendable {
 public protocol PortfolioHistoryStore: Sendable {
     func record(_ point: PricePoint)
     func load() -> [PricePoint]
+    /// Discards all recorded snapshots (e.g. to clear a noisy chart or on reset).
+    func clear()
 }
 
 /// Persists user preferences (notifications, security, privacy) as a single value.

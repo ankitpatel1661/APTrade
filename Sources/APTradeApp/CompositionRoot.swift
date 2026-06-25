@@ -65,7 +65,9 @@ enum CompositionRoot {
             fetchQuotes: FetchQuotesUseCase(repository: repo),
             resetPortfolio: ResetPortfolioUseCase(store: portfolioStore),
             recordSnapshot: RecordPortfolioSnapshotUseCase(store: portfolioHistoryStore),
-            fetchHistory: FetchPortfolioHistoryUseCase(store: portfolioHistoryStore)
+            fetchHistory: FetchPortfolioHistoryUseCase(store: portfolioHistoryStore),
+            clearHistory: ClearPortfolioHistoryUseCase(store: portfolioHistoryStore),
+            fetchPerformance: FetchPortfolioPerformanceUseCase(repository: repo, store: portfolioStore)
         )
     }
 

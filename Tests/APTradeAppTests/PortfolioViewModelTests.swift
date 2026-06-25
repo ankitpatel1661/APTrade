@@ -21,6 +21,7 @@ private final class MemoryHistoryStore: PortfolioHistoryStore, @unchecked Sendab
     var points: [PricePoint] = []
     func record(_ point: PricePoint) { points.append(point) }
     func load() -> [PricePoint] { points }
+    func clear() { points.removeAll() }
 }
 
 @MainActor
@@ -36,7 +37,9 @@ final class PortfolioViewModelTests: XCTestCase {
             fetchQuotes: FetchQuotesUseCase(repository: repo),
             resetPortfolio: ResetPortfolioUseCase(store: store),
             recordSnapshot: RecordPortfolioSnapshotUseCase(store: historyStore),
-            fetchHistory: FetchPortfolioHistoryUseCase(store: historyStore)
+            fetchHistory: FetchPortfolioHistoryUseCase(store: historyStore),
+            clearHistory: ClearPortfolioHistoryUseCase(store: historyStore),
+            fetchPerformance: FetchPortfolioPerformanceUseCase(repository: repo, store: store)
         )
         await vm.onAppear()
         XCTAssertEqual(vm.holdings.count, 1)
@@ -53,7 +56,9 @@ final class PortfolioViewModelTests: XCTestCase {
             fetchQuotes: FetchQuotesUseCase(repository: FixedRepo()),
             resetPortfolio: ResetPortfolioUseCase(store: store),
             recordSnapshot: RecordPortfolioSnapshotUseCase(store: historyStore),
-            fetchHistory: FetchPortfolioHistoryUseCase(store: historyStore)
+            fetchHistory: FetchPortfolioHistoryUseCase(store: historyStore),
+            clearHistory: ClearPortfolioHistoryUseCase(store: historyStore),
+            fetchPerformance: FetchPortfolioPerformanceUseCase(repository: FixedRepo(), store: store)
         )
         await vm.onAppear()
         vm.reset()

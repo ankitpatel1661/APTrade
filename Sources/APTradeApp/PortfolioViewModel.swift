@@ -10,23 +10,33 @@ final class PortfolioViewModel {
     private let resetPortfolio: ResetPortfolioUseCase
     private let recordSnapshot: RecordPortfolioSnapshotUseCase
     private let fetchHistory: FetchPortfolioHistoryUseCase
+    private let clearHistoryUseCase: ClearPortfolioHistoryUseCase
+    private let fetchPerformance: FetchPortfolioPerformanceUseCase
 
     private(set) var portfolio: Portfolio
     private(set) var quotes: [String: Quote] = [:]
     private(set) var history: [PricePoint] = []
+    /// Reconstructed value / P&L curve over `timeframe`, drawn by the chart.
+    private(set) var performance: [PortfolioPerformancePoint] = []
+    var timeframe: Timeframe = .oneMonth
     private(set) var isLive = false
     var isRefreshing = false
+    private(set) var isLoadingPerformance = false
 
     init(fetchPortfolio: FetchPortfolioUseCase,
          fetchQuotes: FetchQuotesUseCase,
          resetPortfolio: ResetPortfolioUseCase,
          recordSnapshot: RecordPortfolioSnapshotUseCase,
-         fetchHistory: FetchPortfolioHistoryUseCase) {
+         fetchHistory: FetchPortfolioHistoryUseCase,
+         clearHistory: ClearPortfolioHistoryUseCase,
+         fetchPerformance: FetchPortfolioPerformanceUseCase) {
         self.fetchPortfolio = fetchPortfolio
         self.fetchQuotes = fetchQuotes
         self.resetPortfolio = resetPortfolio
         self.recordSnapshot = recordSnapshot
         self.fetchHistory = fetchHistory
+        self.clearHistoryUseCase = clearHistory
+        self.fetchPerformance = fetchPerformance
         self.portfolio = fetchPortfolio()
         self.history = fetchHistory()
     }
@@ -49,11 +59,21 @@ final class PortfolioViewModel {
 
     func onAppear() async {
         reload()
-        // Seed a baseline snapshot so the value chart has a starting point to draw from
-        // immediately, rather than waiting several live ticks to accumulate two points.
-        recordSnapshot(totalValue: valuation.totalValue)
-        history = fetchHistory()
         await refresh()
+        await loadPerformance()
+    }
+
+    /// Rebuilds the value/P&L curve for the current timeframe from historical prices.
+    func loadPerformance() async {
+        isLoadingPerformance = true
+        defer { isLoadingPerformance = false }
+        performance = await fetchPerformance(timeframe: timeframe)
+    }
+
+    func setTimeframe(_ newValue: Timeframe) async {
+        guard newValue != timeframe else { return }
+        timeframe = newValue
+        await loadPerformance()
     }
 
     func refresh(showIndicator: Bool = true) async {
@@ -86,5 +106,8 @@ final class PortfolioViewModel {
     func reset() {
         portfolio = resetPortfolio()
         quotes = [:]
+        clearHistoryUseCase()
+        history = []
+        performance = []
     }
 }

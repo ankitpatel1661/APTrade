@@ -30,4 +30,8 @@ public final class UserDefaultsPortfolioHistoryStore: PortfolioHistoryStore, @un
               let points = try? JSONDecoder().decode([PricePoint].self, from: data) else { return [] }
         return points
     }
+
+    public func clear() {
+        defaults.removeObject(forKey: key)
+    }
 }

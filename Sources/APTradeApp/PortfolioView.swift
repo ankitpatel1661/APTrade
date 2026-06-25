@@ -8,9 +8,12 @@ struct PortfolioView: View {
     @State private var showResetConfirm = false
     @State private var showChart = false
 
-    private var historyValues: [Double] {
-        viewModel.history.map { ($0.close.amount as NSDecimalNumber).doubleValue }
+    /// Unrealized P&L over time, reconstructed from real historical prices — a far more
+    /// meaningful curve than total account value, which is dominated by constant cash.
+    private var pnlValues: [Double] {
+        viewModel.performance.map { ($0.pnl.amount as NSDecimalNumber).doubleValue }
     }
+    private var pnlDates: [Date] { viewModel.performance.map { $0.date } }
 
     var body: some View {
         NavigationStack {
@@ -18,7 +21,7 @@ struct PortfolioView: View {
                 Theme.background.ignoresSafeArea()
                 VStack(spacing: 0) {
                     summary
-                    if showChart && historyValues.count > 1 {
+                    if showChart && pnlValues.count > 1 {
                         expandedChart
                             .padding(.horizontal, 24)
                             .padding(.bottom, 16)
@@ -50,23 +53,29 @@ struct PortfolioView: View {
     private var chartSpring: Animation { .spring(response: 0.34, dampingFraction: 0.84) }
 
     private var expandedChart: some View {
-        ExpandedValueCard(
-            title: "Portfolio · P&L over time",
-            values: historyValues,
-            dates: viewModel.history.map { $0.date },
-            color: pnlColor(viewModel.valuation.dayChange),
-            format: { Money(amount: Decimal($0), currencyCode: viewModel.valuation.totalValue.currencyCode).formatted },
-            changeStyle: .money,
-            stats: [
-                ChartStatItem(label: "Day P&L",
-                              value: signed(viewModel.valuation.dayChange, showsSign: true),
-                              color: pnlColor(viewModel.valuation.dayChange)),
-                ChartStatItem(label: "Unrealized P&L",
-                              value: signed(viewModel.valuation.unrealizedPnL, showsSign: true),
-                              color: pnlColor(viewModel.valuation.unrealizedPnL))
-            ],
-            onClose: { withAnimation(chartSpring) { showChart = false } }
-        )
+        VStack(spacing: 10) {
+            ExpandedValueCard(
+                title: "Portfolio · Unrealized P&L",
+                values: pnlValues,
+                dates: pnlDates,
+                color: trendColor,
+                format: { Money(amount: Decimal($0), currencyCode: viewModel.valuation.totalValue.currencyCode).formatted },
+                changeStyle: .money,
+                stats: [
+                    ChartStatItem(label: "Day P&L",
+                                  value: signed(viewModel.valuation.dayChange, showsSign: true),
+                                  color: pnlColor(viewModel.valuation.dayChange)),
+                    ChartStatItem(label: "Unrealized P&L",
+                                  value: signed(viewModel.valuation.unrealizedPnL, showsSign: true),
+                                  color: pnlColor(viewModel.valuation.unrealizedPnL))
+                ],
+                onClose: { withAnimation(chartSpring) { showChart = false } }
+            )
+            TimeframeBar(selection: viewModel.timeframe) { tf in
+                Task { await viewModel.setTimeframe(tf) }
+            }
+            .padding(.horizontal, 12)
+        }
     }
 
     private var summary: some View {
@@ -109,10 +118,10 @@ struct PortfolioView: View {
                 metric(label: "Unrealized P&L", money: viewModel.valuation.unrealizedPnL, colored: true)
                 metric(label: "Cash", money: viewModel.valuation.cash, colored: false)
                 Spacer()
-                if historyValues.count > 1 {
+                if pnlValues.count > 1 {
                     ExpandableSparkline(
-                        values: historyValues,
-                        color: pnlColor(viewModel.valuation.dayChange)
+                        values: pnlValues,
+                        color: trendColor
                     ) { withAnimation(chartSpring) { showChart.toggle() } }
                 }
             }
@@ -179,6 +188,16 @@ struct PortfolioView: View {
         if money.amount > 0 { return Theme.up }
         if money.amount < 0 { return Theme.down }
         return Theme.textPrimary
+    }
+
+    /// Green when the value series ends higher than it began, red when lower — so the chart
+    /// and sparkline are colored by the direction they actually show. Falls back to the
+    /// day's P&L sign when the series is flat or too short to have a direction.
+    private var trendColor: Color {
+        guard let first = pnlValues.first, let last = pnlValues.last, first != last else {
+            return pnlColor(viewModel.valuation.unrealizedPnL)
+        }
+        return last > first ? Theme.up : Theme.down
     }
 
     private func signed(_ money: Money, showsSign: Bool) -> String {
