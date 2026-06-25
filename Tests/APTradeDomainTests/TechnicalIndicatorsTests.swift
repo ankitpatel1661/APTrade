@@ -56,6 +56,24 @@ final class TechnicalIndicatorsTests: XCTestCase {
         }
     }
 
+    func test_vwap_weightsByVolume() {
+        // Equal volume → VWAP is a running mean of typical prices.
+        let vwap = TechnicalIndicators.vwap(typicalPrices: [10, 20, 30], volumes: [1, 1, 1])
+        XCTAssertEqual(vwap[0]!, 10, accuracy: 1e-9)
+        XCTAssertEqual(vwap[1]!, 15, accuracy: 1e-9)   // (10+20)/2
+        XCTAssertEqual(vwap[2]!, 20, accuracy: 1e-9)   // (10+20+30)/3
+
+        // Heavier volume pulls VWAP toward that bar's price.
+        let weighted = TechnicalIndicators.vwap(typicalPrices: [10, 20], volumes: [1, 9])
+        XCTAssertEqual(weighted[1]!, (10 * 1 + 20 * 9) / 10.0, accuracy: 1e-9)  // 19
+    }
+
+    func test_vwap_zeroVolume_isNil() {
+        let vwap = TechnicalIndicators.vwap(typicalPrices: [10, 20], volumes: [0, 0])
+        XCTAssertNil(vwap[0])
+        XCTAssertNil(vwap[1])
+    }
+
     func test_macd_histogramIsMacdMinusSignal() {
         let closes = (1...40).map { Double($0) + sin(Double($0)) }
         let result = TechnicalIndicators.macd(closes)

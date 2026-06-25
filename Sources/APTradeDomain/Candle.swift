@@ -8,13 +8,16 @@ public struct Candle: Equatable, Sendable {
     public let high: Money
     public let low: Money
     public let close: Money
+    /// Shares/units traded in the period. 0 when the source doesn't report volume.
+    public let volume: Double
 
-    public init(date: Date, open: Money, high: Money, low: Money, close: Money) {
+    public init(date: Date, open: Money, high: Money, low: Money, close: Money, volume: Double = 0) {
         self.date = date
         self.open = open
         self.high = high
         self.low = low
         self.close = close
+        self.volume = volume
     }
 
     /// True when the bar closed at or above its open (an "up" candle).

@@ -29,5 +29,6 @@ struct YahooChartResponse: Decodable {
         let high: [Double?]?
         let low: [Double?]?
         let close: [Double?]?
+        let volume: [Double?]?
     }
 }

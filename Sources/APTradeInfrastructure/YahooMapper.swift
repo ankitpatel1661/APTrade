@@ -74,9 +74,11 @@ enum YahooMapper {
             let open = block.open?[safe: i].flatMap { $0 } ?? close
             let high = block.high?[safe: i].flatMap { $0 } ?? max(open, close)
             let low = block.low?[safe: i].flatMap { $0 } ?? min(open, close)
+            let volume = block.volume?[safe: i].flatMap { $0 } ?? 0
             candles.append(Candle(
                 date: Date(timeIntervalSince1970: TimeInterval(stamp)),
-                open: money(open), high: money(high), low: money(low), close: money(close)
+                open: money(open), high: money(high), low: money(low), close: money(close),
+                volume: volume
             ))
         }
         return candles

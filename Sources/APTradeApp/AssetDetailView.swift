@@ -5,10 +5,10 @@ import APTradeDomain
 struct AssetDetailView: View {
     enum ChartStyle: String, CaseIterable { case area = "Area", candles = "Candles" }
     enum Indicator: String, CaseIterable, Identifiable {
-        case sma = "SMA 20", ema = "EMA 12", bollinger = "BB 20", rsi = "RSI 14", macd = "MACD"
+        case sma = "SMA 20", ema = "EMA 12", vwap = "VWAP", bollinger = "BB 20", rsi = "RSI 14", macd = "MACD"
         var id: String { rawValue }
         /// Overlays draw on the price chart; the rest get their own sub-pane.
-        var isOverlay: Bool { self == .sma || self == .ema || self == .bollinger }
+        var isOverlay: Bool { self == .sma || self == .ema || self == .vwap || self == .bollinger }
     }
 
     private static let smaPeriod = 20
@@ -244,6 +244,13 @@ struct AssetDetailView: View {
                     .lineStyle(StrokeStyle(lineWidth: 1.5))
             }
 
+            ForEach(overlayLine(.vwap)) { point in
+                LineMark(x: .value("Date", point.date), y: .value("VWAP", point.value),
+                         series: .value("Series", "VWAP"))
+                    .foregroundStyle(indicatorColor(.vwap))
+                    .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 3]))
+            }
+
             ForEach(bollingerSeries) { band in
                 AreaMark(x: .value("Date", band.date),
                          yStart: .value("Lower", band.lower), yEnd: .value("Upper", band.upper))
@@ -368,6 +375,10 @@ struct AssetDetailView: View {
         switch indicator {
         case .sma: series = TechnicalIndicators.sma(viewModel.closes, period: Self.smaPeriod)
         case .ema: series = TechnicalIndicators.ema(viewModel.closes, period: Self.emaPeriod)
+        case .vwap:
+            let typical = viewModel.candles.map { (dbl($0.high) + dbl($0.low) + dbl($0.close)) / 3 }
+            let volumes = viewModel.candles.map(\.volume)
+            series = TechnicalIndicators.vwap(typicalPrices: typical, volumes: volumes)
         case .bollinger, .rsi, .macd: return []
         }
         return zip(viewModel.points, series).compactMap { point, value in
@@ -399,6 +410,7 @@ struct AssetDetailView: View {
         switch indicator {
         case .sma: return Theme.gold                                    // champagne
         case .ema: return Color(red: 0.30, green: 0.74, blue: 0.86)     // teal
+        case .vwap: return Theme.silver                                 // neutral reference
         case .bollinger: return Color(red: 0.38, green: 0.56, blue: 0.95) // blue
         case .rsi: return Color(red: 0.65, green: 0.49, blue: 0.92)     // violet
         case .macd: return Color(red: 0.90, green: 0.58, blue: 0.26)    // amber

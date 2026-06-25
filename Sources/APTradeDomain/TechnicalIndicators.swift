@@ -63,6 +63,24 @@ public enum TechnicalIndicators {
         return 100 - 100 / (1 + rs)
     }
 
+    /// Anchored VWAP: the volume-weighted average of typical prices, accumulated from the
+    /// start of the series. Returns `nil` until cumulative volume is positive (e.g. for
+    /// sources that don't report volume). `typicalPrices` and `volumes` must be equal length.
+    public static func vwap(typicalPrices: [Double], volumes: [Double]) -> [Double?] {
+        guard typicalPrices.count == volumes.count else {
+            return Array(repeating: nil, count: typicalPrices.count)
+        }
+        var result = [Double?](repeating: nil, count: typicalPrices.count)
+        var cumulativePV = 0.0
+        var cumulativeVolume = 0.0
+        for i in typicalPrices.indices {
+            cumulativePV += typicalPrices[i] * volumes[i]
+            cumulativeVolume += volumes[i]
+            if cumulativeVolume > 0 { result[i] = cumulativePV / cumulativeVolume }
+        }
+        return result
+    }
+
     /// Bollinger Bands: the SMA `middle` band with `upper`/`lower` bands set `multiplier`
     /// population standard deviations away. Aligned 1:1 with the input.
     public static func bollingerBands(_ values: [Double], period: Int = 20, multiplier: Double = 2)
