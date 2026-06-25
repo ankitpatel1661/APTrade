@@ -1,21 +1,87 @@
 import SwiftUI
+import AppKit
 import APTradeDomain
 
 // MARK: - Brand
 
-/// The APTrade wordmark: "AP" in the logo's gold gradient, "Trade" in silver.
+/// The app's symbol mark, loaded directly from the resource bundle. SwiftPM's
+/// command-line build copies `.xcassets` as a raw folder rather than compiling it
+/// with `actool`, so `Image(_:bundle:)` asset-catalog lookups never resolve — load
+/// the PNG straight from disk instead.
+let appLogoImage: NSImage? = {
+    guard let url = Bundle.module.url(forResource: "AppLogo", withExtension: "png") else { return nil }
+    return NSImage(contentsOf: url)
+}()
+
+/// The full lockup — symbol plus "AP Trade" wordmark and tagline baked into one image.
+/// Drawn for dark backgrounds: the "P" stroke and "Trade" wordmark are near-white silver.
+let appWordmarkImageDark: NSImage? = {
+    guard let url = Bundle.module.url(forResource: "AppWordmark", withExtension: "png") else { return nil }
+    return NSImage(contentsOf: url)
+}()
+
+/// Light-mode variant of the lockup, generated once at launch: the gold pixels are left
+/// untouched (brand color is mode-independent), but the near-white/silver "P" and "Trade"
+/// pixels — invisible against a light background as shipped — are darkened to charcoal.
+let appWordmarkImageLight: NSImage? = appWordmarkImageDark.flatMap(recoloringNeutralPixels)
+
+/// Walks the raw RGBA buffer once, distinguishing brand gold (red channel well above blue)
+/// from neutral silver/white (red ≈ green ≈ blue) by channel spread, and re-tints only the
+/// neutral pixels toward `Theme.textPrimary`'s light-mode charcoal — gold pixels pass through.
+private func recoloringNeutralPixels(_ image: NSImage) -> NSImage? {
+    guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+    let width = cgImage.width, height = cgImage.height
+    let bytesPerPixel = 4
+    let bytesPerRow = width * bytesPerPixel
+    var pixels = [UInt8](repeating: 0, count: bytesPerRow * height)
+
+    guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+          let context = CGContext(
+            data: &pixels, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: bytesPerRow, space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+          ) else { return nil }
+    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+    let charcoal: (UInt8, UInt8, UInt8) = (30, 28, 24) // matches Theme's light-mode textPrimary
+    for i in stride(from: 0, to: pixels.count, by: bytesPerPixel) {
+        let r = pixels[i], b = pixels[i + 2], a = pixels[i + 3]
+        guard a > 0 else { continue }
+        let spread = Int(r) - Int(b)
+        if spread < 40 { // neutral (silver/white), not gold
+            let alphaFraction = Double(a) / 255.0
+            pixels[i] = UInt8(Double(charcoal.0) * alphaFraction)
+            pixels[i + 1] = UInt8(Double(charcoal.1) * alphaFraction)
+            pixels[i + 2] = UInt8(Double(charcoal.2) * alphaFraction)
+        }
+    }
+
+    guard let outputImage = context.makeImage() else { return nil }
+    return NSImage(cgImage: outputImage, size: image.size)
+}
+
+/// The APTrade mark: logo symbol plus wordmark — "AP" in the logo's gold gradient, "Trade" in silver.
 struct BrandMark: View {
     var size: CGFloat = 19
+    var showsMark: Bool = true
 
     var body: some View {
-        HStack(spacing: 0) {
-            Text("AP")
-                .foregroundStyle(Theme.goldGradient)
-            Text("Trade")
-                .foregroundStyle(Theme.silver)
+        HStack(spacing: size * 0.28) {
+            if showsMark, let appLogoImage {
+                Image(nsImage: appLogoImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: size * 1.5, height: size * 1.5)
+            }
+            HStack(spacing: 0) {
+                Text("AP")
+                    .foregroundStyle(Theme.goldGradient)
+                Text("Trade")
+                    .foregroundStyle(Theme.silver)
+            }
+            .font(.system(size: size, weight: .bold))
+            .tracking(0.5)
         }
-        .font(.system(size: size, weight: .bold))
-        .tracking(0.5)
         .accessibilityLabel("APTrade")
     }
 }

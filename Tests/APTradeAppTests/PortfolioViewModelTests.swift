@@ -17,6 +17,12 @@ private final class FixedRepo: MarketDataRepository, @unchecked Sendable {
     func history(for symbol: String, timeframe: Timeframe) async throws -> [PricePoint] { [] }
 }
 
+private final class MemoryHistoryStore: PortfolioHistoryStore, @unchecked Sendable {
+    var points: [PricePoint] = []
+    func record(_ point: PricePoint) { points.append(point) }
+    func load() -> [PricePoint] { points }
+}
+
 @MainActor
 final class PortfolioViewModelTests: XCTestCase {
     func test_onAppear_loadsHoldingsAndValues() async {
@@ -24,10 +30,13 @@ final class PortfolioViewModelTests: XCTestCase {
         let start = try! Portfolio.starting().buying(aapl, quantity: Quantity(Decimal(2)), at: Money(amount: 100))
         let store = MemoryStore(start)
         let repo = FixedRepo()
+        let historyStore = MemoryHistoryStore()
         let vm = PortfolioViewModel(
             fetchPortfolio: FetchPortfolioUseCase(store: store),
             fetchQuotes: FetchQuotesUseCase(repository: repo),
-            resetPortfolio: ResetPortfolioUseCase(store: store)
+            resetPortfolio: ResetPortfolioUseCase(store: store),
+            recordSnapshot: RecordPortfolioSnapshotUseCase(store: historyStore),
+            fetchHistory: FetchPortfolioHistoryUseCase(store: historyStore)
         )
         await vm.onAppear()
         XCTAssertEqual(vm.holdings.count, 1)
@@ -38,10 +47,13 @@ final class PortfolioViewModelTests: XCTestCase {
         let aapl = Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock)
         let start = try! Portfolio.starting().buying(aapl, quantity: Quantity(Decimal(1)), at: Money(amount: 100))
         let store = MemoryStore(start)
+        let historyStore = MemoryHistoryStore()
         let vm = PortfolioViewModel(
             fetchPortfolio: FetchPortfolioUseCase(store: store),
             fetchQuotes: FetchQuotesUseCase(repository: FixedRepo()),
-            resetPortfolio: ResetPortfolioUseCase(store: store)
+            resetPortfolio: ResetPortfolioUseCase(store: store),
+            recordSnapshot: RecordPortfolioSnapshotUseCase(store: historyStore),
+            fetchHistory: FetchPortfolioHistoryUseCase(store: historyStore)
         )
         await vm.onAppear()
         vm.reset()

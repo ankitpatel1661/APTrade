@@ -5,13 +5,17 @@ import APTradeDomain
 struct AssetDetailView: View {
     @State private var viewModel: AssetDetailViewModel
     @State private var tradeSide: TradeSide?
+    @State private var hoverPoint: PricePoint?
 
     init(asset: Asset) {
         _viewModel = State(initialValue: CompositionRoot.makeDetailViewModel(for: asset))
     }
 
+    /// Colors the badge/chart by the selected timeframe's own move (points-derived),
+    /// not always the quote's intraday day-change — a stock down today but up over 1W
+    /// should read green once 1W is selected.
     private var directionColor: Color {
-        Theme.changeColor(viewModel.quote?.changePercent)
+        Theme.changeColor(viewModel.periodChangePercent)
     }
 
     var body: some View {
@@ -62,13 +66,15 @@ struct AssetDetailView: View {
                 if viewModel.isLive { LiveBadge() }
             }
             if let quote = viewModel.quote {
-                HStack(alignment: .firstTextBaseline, spacing: 14) {
+                HStack(alignment: .bottom, spacing: 14) {
                     SuperscriptPrice(money: quote.price, size: 44, weight: .semibold)
                     VStack(alignment: .leading, spacing: 2) {
-                        ChangePill(percent: quote.changePercent)
-                        Text(signed(quote.change))
-                            .font(.system(size: 13, weight: .medium).monospacedDigit())
-                            .foregroundStyle(directionColor)
+                        ChangePill(percent: viewModel.periodChangePercent ?? quote.changePercent)
+                        if let periodChange = viewModel.periodChange {
+                            Text(signed(periodChange))
+                                .font(.system(size: 13, weight: .medium).monospacedDigit())
+                                .foregroundStyle(directionColor)
+                        }
                     }
                 }
             }
@@ -76,6 +82,26 @@ struct AssetDetailView: View {
     }
 
     // MARK: Chart
+
+    /// Pads the chart's Y range to the data's own min/max so the line reads with
+    /// visible movement, instead of Charts' default AreaMark baseline of 0.
+    private var yDomain: ClosedRange<Double> {
+        let values = viewModel.points.map { ($0.close.amount as NSDecimalNumber).doubleValue }
+        guard let lo = values.min(), let hi = values.max(), hi > lo else {
+            return 0...1
+        }
+        let padding = (hi - lo) * 0.12
+        return (lo - padding)...(hi + padding)
+    }
+
+    private var xAxisFormat: Date.FormatStyle {
+        switch viewModel.timeframe {
+        case .oneDay: return .dateTime.hour().minute()
+        case .oneWeek: return .dateTime.weekday(.abbreviated).day()
+        case .oneMonth: return .dateTime.month(.abbreviated).day()
+        case .oneYear: return .dateTime.month(.abbreviated).year(.twoDigits)
+        }
+    }
 
     @ViewBuilder
     private var chart: some View {
@@ -101,7 +127,17 @@ struct AssetDetailView: View {
                     .interpolationMethod(.catmullRom)
                     .foregroundStyle(directionColor)
                     .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+
+                if let hoverPoint, hoverPoint.date == point.date {
+                    RuleMark(x: .value("Date", hoverPoint.date))
+                        .foregroundStyle(Theme.hairline)
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    PointMark(x: .value("Date", hoverPoint.date), y: .value("Price", value))
+                        .foregroundStyle(directionColor)
+                        .symbolSize(60)
+                }
             }
+            .chartYScale(domain: yDomain)
             .chartYAxis {
                 AxisMarks(position: .trailing, values: .automatic(desiredCount: 4)) { value in
                     AxisGridLine().foregroundStyle(Theme.hairline)
@@ -110,11 +146,68 @@ struct AssetDetailView: View {
             }
             .chartXAxis {
                 AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-                    AxisValueLabel().foregroundStyle(Theme.textTertiary)
+                    AxisValueLabel(format: xAxisFormat).foregroundStyle(Theme.textTertiary)
+                }
+            }
+            .chartOverlay { proxy in
+                GeometryReader { geometry in
+                    ZStack(alignment: .topLeading) {
+                        Rectangle()
+                            .fill(Color.clear)
+                            .contentShape(Rectangle())
+                            .onContinuousHover { phase in
+                                switch phase {
+                                case .active(let location):
+                                    updateHover(at: location, proxy: proxy, geometry: geometry)
+                                case .ended:
+                                    hoverPoint = nil
+                                }
+                            }
+                        if let hoverPoint, let plotFrame = proxy.plotFrame {
+                            let frame = geometry[plotFrame]
+                            let value = (hoverPoint.close.amount as NSDecimalNumber).doubleValue
+                            if let x = proxy.position(forX: hoverPoint.date),
+                               let y = proxy.position(forY: value) {
+                                let tooltipWidth: CGFloat = 110
+                                let clampedX = min(
+                                    max(frame.origin.x + x, tooltipWidth / 2),
+                                    geometry.size.width - tooltipWidth / 2
+                                )
+                                let tooltipY = max(frame.origin.y + y - 44, 0)
+                                hoverTooltip(for: hoverPoint)
+                                    .frame(width: tooltipWidth)
+                                    .position(x: clampedX, y: tooltipY)
+                            }
+                        }
+                    }
                 }
             }
             .frame(minHeight: 260)
         }
+    }
+
+    private func updateHover(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) {
+        let origin = geometry[proxy.plotFrame!].origin
+        let relativeX = location.x - origin.x
+        guard let date: Date = proxy.value(atX: relativeX) else { return }
+        hoverPoint = viewModel.points.min { lhs, rhs in
+            abs(lhs.date.timeIntervalSince(date)) < abs(rhs.date.timeIntervalSince(date))
+        }
+    }
+
+    private func hoverTooltip(for point: PricePoint) -> some View {
+        VStack(spacing: 2) {
+            Text(point.close.formatted)
+                .font(.system(size: 13, weight: .bold).monospacedDigit())
+                .foregroundStyle(Theme.textPrimary)
+            Text(point.date.formatted(.dateTime.month().day().hour().minute()))
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Theme.textSecondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Theme.surfaceHi, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
     }
 
     // MARK: Key stats
@@ -134,10 +227,10 @@ struct AssetDetailView: View {
                     StatTile(label: "Previous close", value: quote.previousClose.formatted)
                     StatTile(label: "Day change",
                              value: signed(quote.change),
-                             valueColor: directionColor)
+                             valueColor: Theme.changeColor(quote.changePercent))
                     StatTile(label: "Day change %",
                              value: quote.changePercent.formatted,
-                             valueColor: directionColor)
+                             valueColor: Theme.changeColor(quote.changePercent))
                     StatTile(label: "Symbol", value: quote.symbol)
                     StatTile(label: "Type", value: typeLabel)
                 }
@@ -169,9 +262,9 @@ struct AssetDetailView: View {
                     in: Capsule()
                 )
                 .overlay(Capsule().stroke(Theme.gold.opacity(filled ? 0 : 0.5), lineWidth: 1))
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .disabled(side == .sell && (viewModel.position == nil))
     }
 
     // MARK: Position panel

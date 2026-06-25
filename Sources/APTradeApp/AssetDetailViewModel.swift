@@ -63,6 +63,20 @@ final class AssetDetailViewModel {
         }
     }
 
+    /// Change over the currently selected timeframe's window, derived from the chart's
+    /// own points rather than the quote's always-intraday `changePercent` — so the
+    /// badge and chart color reflect 1W/1M/1Y performance, not just today's move.
+    var periodChange: Money? {
+        guard let first = points.first?.close, let last = points.last?.close else { return nil }
+        return last - first
+    }
+
+    var periodChangePercent: Percentage? {
+        guard let first = points.first?.close, let last = points.last?.close, first.amount != 0 else { return nil }
+        let percent = (last.amount - first.amount) / first.amount * 100
+        return Percentage(value: percent)
+    }
+
     func select(_ timeframe: Timeframe) async {
         self.timeframe = timeframe
         loadState = .loading

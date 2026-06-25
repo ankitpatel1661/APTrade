@@ -1,3 +1,4 @@
+import Foundation
 import APTradeDomain
 
 public struct FetchPortfolioUseCase: Sendable {
@@ -44,4 +45,18 @@ public struct ResetPortfolioUseCase: Sendable {
         store.save(fresh)
         return fresh
     }
+}
+
+public struct RecordPortfolioSnapshotUseCase: Sendable {
+    private let store: PortfolioHistoryStore
+    public init(store: PortfolioHistoryStore) { self.store = store }
+    public func callAsFunction(totalValue: Money, date: Date = Date()) {
+        store.record(PricePoint(date: date, close: totalValue))
+    }
+}
+
+public struct FetchPortfolioHistoryUseCase: Sendable {
+    private let store: PortfolioHistoryStore
+    public init(store: PortfolioHistoryStore) { self.store = store }
+    public func callAsFunction() -> [PricePoint] { store.load() }
 }

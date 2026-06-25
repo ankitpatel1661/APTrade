@@ -8,19 +8,27 @@ final class PortfolioViewModel {
     private let fetchPortfolio: FetchPortfolioUseCase
     private let fetchQuotes: FetchQuotesUseCase
     private let resetPortfolio: ResetPortfolioUseCase
+    private let recordSnapshot: RecordPortfolioSnapshotUseCase
+    private let fetchHistory: FetchPortfolioHistoryUseCase
 
     private(set) var portfolio: Portfolio
     private(set) var quotes: [String: Quote] = [:]
+    private(set) var history: [PricePoint] = []
     private(set) var isLive = false
     var isRefreshing = false
 
     init(fetchPortfolio: FetchPortfolioUseCase,
          fetchQuotes: FetchQuotesUseCase,
-         resetPortfolio: ResetPortfolioUseCase) {
+         resetPortfolio: ResetPortfolioUseCase,
+         recordSnapshot: RecordPortfolioSnapshotUseCase,
+         fetchHistory: FetchPortfolioHistoryUseCase) {
         self.fetchPortfolio = fetchPortfolio
         self.fetchQuotes = fetchQuotes
         self.resetPortfolio = resetPortfolio
+        self.recordSnapshot = recordSnapshot
+        self.fetchHistory = fetchHistory
         self.portfolio = fetchPortfolio()
+        self.history = fetchHistory()
     }
 
     /// Holdings ordered by current market value, largest first.
@@ -41,6 +49,10 @@ final class PortfolioViewModel {
 
     func onAppear() async {
         reload()
+        // Seed a baseline snapshot so the value chart has a starting point to draw from
+        // immediately, rather than waiting several live ticks to accumulate two points.
+        recordSnapshot(totalValue: valuation.totalValue)
+        history = fetchHistory()
         await refresh()
     }
 
@@ -55,6 +67,8 @@ final class PortfolioViewModel {
             if case .success(let q) = result { fresh[symbol] = q }
         }
         quotes = fresh
+        recordSnapshot(totalValue: valuation.totalValue)
+        history = fetchHistory()
     }
 
     /// Polls held quotes on the standard 15s cadence until cancelled on disappear.

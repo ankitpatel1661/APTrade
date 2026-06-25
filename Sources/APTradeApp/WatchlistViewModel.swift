@@ -12,7 +12,12 @@ final class WatchlistViewModel {
     private let fetchHistory: FetchHistoryUseCase
     private let search: SearchSymbolUseCase
     private let searchAssets: SearchAssetsUseCase
+    private let loadAlerts: LoadAlertsUseCase
+    private let createAlert: CreatePriceAlertUseCase
+    private let removeAlert: RemovePriceAlertUseCase
+    private let evaluateAlerts: EvaluateAlertsUseCase
     private(set) var suggestions: [Asset] = []
+    private(set) var alerts: [PriceAlert] = []
     private var searchTask: Task<Void, Never>?
 
     private(set) var rows: [RowState] = []
@@ -65,13 +70,30 @@ final class WatchlistViewModel {
         return Percentage(value: sum / Decimal(values.count))
     }
 
+    /// Mean intraday trace across the visible category, expressed as % change from
+    /// each row's own opening tick, so names of any price level average evenly.
+    var averageSpark: [Double] {
+        let series = visibleRows.compactMap { row -> [Double]? in
+            guard let first = row.spark.first, first != 0 else { return nil }
+            return row.spark.map { ($0 - first) / first * 100 }
+        }
+        guard let count = series.map(\.count).min(), count > 1 else { return [] }
+        return (0..<count).map { index in
+            series.reduce(0.0) { $0 + $1[index] } / Double(series.count)
+        }
+    }
+
     init(load: LoadWatchlistUseCase,
          add: AddToWatchlistUseCase,
          remove: RemoveFromWatchlistUseCase,
          fetchQuotes: FetchQuotesUseCase,
          fetchHistory: FetchHistoryUseCase,
          search: SearchSymbolUseCase,
-         searchAssets: SearchAssetsUseCase) {
+         searchAssets: SearchAssetsUseCase,
+         loadAlerts: LoadAlertsUseCase,
+         createAlert: CreatePriceAlertUseCase,
+         removeAlert: RemovePriceAlertUseCase,
+         evaluateAlerts: EvaluateAlertsUseCase) {
         self.load = load
         self.add = add
         self.remove = remove
@@ -79,6 +101,24 @@ final class WatchlistViewModel {
         self.fetchHistory = fetchHistory
         self.search = search
         self.searchAssets = searchAssets
+        self.loadAlerts = loadAlerts
+        self.createAlert = createAlert
+        self.removeAlert = removeAlert
+        self.evaluateAlerts = evaluateAlerts
+        self.alerts = loadAlerts()
+    }
+
+    /// Active (untriggered) alerts set on `symbol`, for the row's alert badge.
+    func alerts(for symbol: String) -> [PriceAlert] {
+        alerts.filter { $0.symbol == symbol }
+    }
+
+    func addAlert(symbol: String, condition: AlertCondition) {
+        alerts = createAlert(symbol: symbol, condition: condition)
+    }
+
+    func deleteAlert(_ id: PriceAlert.ID) {
+        alerts = removeAlert(id: id)
     }
 
     private func reloadRows() {
@@ -138,6 +178,8 @@ final class WatchlistViewModel {
             }
             return copy
         }
+        let quotes = Dictionary(uniqueKeysWithValues: rows.compactMap { row in row.quote.map { (row.asset.symbol, $0) } })
+        alerts = await evaluateAlerts(quotes: quotes)
     }
 
     /// Loads each row's intraday sparkline concurrently. Best-effort: a symbol whose

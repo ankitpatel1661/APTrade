@@ -40,7 +40,11 @@ public final class YahooMarketDataRepository: MarketDataRepository {
 
     public func history(for symbol: String, timeframe: Timeframe) async throws -> [PricePoint] {
         let data = try await fetch(symbol: symbol, range: timeframe.yahooRange, interval: timeframe.yahooInterval)
-        return try YahooMapper.history(from: data)
+        let points = try YahooMapper.history(from: data)
+        let cutoff = Date().addingTimeInterval(-timeframe.windowDuration)
+        let clamped = points.filter { $0.date >= cutoff }
+        // Yahoo can omit the freshest bar near market close; never clamp to an empty chart.
+        return clamped.isEmpty ? points : clamped
     }
 
     public func profile(for symbol: String) async throws -> Asset {

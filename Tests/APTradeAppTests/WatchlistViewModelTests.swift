@@ -24,17 +24,38 @@ final class VMFakeRepo: MarketDataRepository, @unchecked Sendable {
     }
 }
 
+final class VMFakeAlertStore: AlertStore, @unchecked Sendable {
+    var alerts: [PriceAlert] = []
+    func load() -> [PriceAlert] { alerts }
+    func save(_ a: [PriceAlert]) { alerts = a }
+}
+
+final class VMFakeNotifier: AlertNotifier, @unchecked Sendable {
+    func notify(_ alert: PriceAlert, quote: Quote) async {}
+}
+
+final class VMFakeSettingsStore: SettingsStore, @unchecked Sendable {
+    var settings: AppSettings = .default
+    func load() -> AppSettings { settings }
+    func save(_ s: AppSettings) { settings = s }
+}
+
 @MainActor
 final class WatchlistViewModelTests: XCTestCase {
     func makeVM(store: VMFakeStore, repo: VMFakeRepo) -> WatchlistViewModel {
-        WatchlistViewModel(
+        let alertStore = VMFakeAlertStore()
+        return WatchlistViewModel(
             load: LoadWatchlistUseCase(store: store),
             add: AddToWatchlistUseCase(store: store),
             remove: RemoveFromWatchlistUseCase(store: store),
             fetchQuotes: FetchQuotesUseCase(repository: repo),
             fetchHistory: FetchHistoryUseCase(repository: repo),
             search: SearchSymbolUseCase(repository: repo),
-            searchAssets: SearchAssetsUseCase(repository: repo)
+            searchAssets: SearchAssetsUseCase(repository: repo),
+            loadAlerts: LoadAlertsUseCase(store: alertStore),
+            createAlert: CreatePriceAlertUseCase(store: alertStore),
+            removeAlert: RemovePriceAlertUseCase(store: alertStore),
+            evaluateAlerts: EvaluateAlertsUseCase(store: alertStore, notifier: VMFakeNotifier(), settings: VMFakeSettingsStore())
         )
     }
 

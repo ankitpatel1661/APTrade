@@ -1,6 +1,6 @@
 import Foundation
 
-public struct Percentage: Equatable, Hashable, Sendable {
+public struct Percentage: Equatable, Hashable, Codable, Sendable {
     public let value: Decimal
 
     public init(value: Decimal) { self.value = value }

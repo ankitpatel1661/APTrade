@@ -2,9 +2,15 @@ import SwiftUI
 import APTradeDomain
 
 struct PortfolioView: View {
+    var switcher: AnyView
     @State private var viewModel = CompositionRoot.makePortfolioViewModel()
     @State private var selectedAsset: Asset?
     @State private var showResetConfirm = false
+    @State private var showChart = false
+
+    private var historyValues: [Double] {
+        viewModel.history.map { ($0.close.amount as NSDecimalNumber).doubleValue }
+    }
 
     var body: some View {
         NavigationStack {
@@ -12,6 +18,12 @@ struct PortfolioView: View {
                 Theme.background.ignoresSafeArea()
                 VStack(spacing: 0) {
                     summary
+                    if showChart && historyValues.count > 1 {
+                        expandedChart
+                            .padding(.horizontal, 24)
+                            .padding(.bottom, 16)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
                     Divider().overlay(Theme.hairline)
                     content
                 }
@@ -19,7 +31,6 @@ struct PortfolioView: View {
             .navigationDestination(item: $selectedAsset) { asset in
                 AssetDetailView(asset: asset)
             }
-            .toolbar(.hidden, for: .windowToolbar)
             .task {
                 await viewModel.onAppear()
                 await viewModel.runLiveUpdates()
@@ -32,13 +43,35 @@ struct PortfolioView: View {
             }
         }
         .frame(minWidth: 560, minHeight: 640)
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
         .onAppear { viewModel.reload() }
+    }
+
+    private var chartSpring: Animation { .spring(response: 0.34, dampingFraction: 0.84) }
+
+    private var expandedChart: some View {
+        ExpandedValueCard(
+            title: "Portfolio · P&L over time",
+            values: historyValues,
+            dates: viewModel.history.map { $0.date },
+            color: pnlColor(viewModel.valuation.dayChange),
+            format: { Money(amount: Decimal($0), currencyCode: viewModel.valuation.totalValue.currencyCode).formatted },
+            changeStyle: .money,
+            stats: [
+                ChartStatItem(label: "Day P&L",
+                              value: signed(viewModel.valuation.dayChange, showsSign: true),
+                              color: pnlColor(viewModel.valuation.dayChange)),
+                ChartStatItem(label: "Unrealized P&L",
+                              value: signed(viewModel.valuation.unrealizedPnL, showsSign: true),
+                              color: pnlColor(viewModel.valuation.unrealizedPnL))
+            ],
+            onClose: { withAnimation(chartSpring) { showChart = false } }
+        )
     }
 
     private var summary: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
+            HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("TOTAL VALUE")
                         .font(.system(size: 11, weight: .bold)).tracking(1.8)
@@ -46,12 +79,16 @@ struct PortfolioView: View {
                     SuperscriptPrice(money: viewModel.valuation.totalValue, size: 40, weight: .semibold)
                 }
                 Spacer()
-                HStack(spacing: 10) {
-                    if viewModel.isRefreshing {
-                        ProgressView().controlSize(.small)
-                    } else if viewModel.isLive {
-                        LiveBadge()
+                HStack(alignment: .center, spacing: 10) {
+                    switcher
+                    HStack(spacing: 10) {
+                        if viewModel.isRefreshing {
+                            ProgressView().controlSize(.small)
+                        } else if viewModel.isLive {
+                            LiveBadge()
+                        }
                     }
+                    .frame(width: 60, alignment: .trailing)
                     Menu {
                         Button("Reset portfolio", systemImage: "arrow.counterclockwise", role: .destructive) {
                             showResetConfirm = true
@@ -62,13 +99,22 @@ struct PortfolioView: View {
                             .foregroundStyle(Theme.textSecondary)
                     }
                     .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
                     .fixedSize()
+                    .frame(width: 28, alignment: .trailing)
                 }
             }
-            HStack(spacing: 22) {
+            HStack(alignment: .center, spacing: 22) {
                 metric(label: "Day P&L", money: viewModel.valuation.dayChange, colored: true)
                 metric(label: "Unrealized P&L", money: viewModel.valuation.unrealizedPnL, colored: true)
                 metric(label: "Cash", money: viewModel.valuation.cash, colored: false)
+                Spacer()
+                if historyValues.count > 1 {
+                    ExpandableSparkline(
+                        values: historyValues,
+                        color: pnlColor(viewModel.valuation.dayChange)
+                    ) { withAnimation(chartSpring) { showChart.toggle() } }
+                }
             }
             Text("Simulated · paper trading")
                 .font(.system(size: 10, weight: .semibold)).tracking(0.6)
@@ -167,6 +213,7 @@ private struct HoldingRow: View {
                     SuperscriptPrice(money: position.marketValue(at: position.averageCost), size: 18, weight: .semibold)
                 }
             }
+            .frame(minWidth: 104, alignment: .trailing)
         }
         .padding(.vertical, 13)
         .padding(.horizontal, 10)

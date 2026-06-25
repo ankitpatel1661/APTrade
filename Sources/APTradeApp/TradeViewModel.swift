@@ -10,6 +10,7 @@ final class TradeViewModel {
     private let sell: SellAssetUseCase
     private let fetchPortfolio: FetchPortfolioUseCase
     private let fetchQuotes: FetchQuotesUseCase
+    private let notifyOrderFill: NotifyOrderFillUseCase
 
     var side: TradeSide = .buy
     var quantityText: String = ""
@@ -23,12 +24,14 @@ final class TradeViewModel {
          buy: BuyAssetUseCase,
          sell: SellAssetUseCase,
          fetchPortfolio: FetchPortfolioUseCase,
-         fetchQuotes: FetchQuotesUseCase) {
+         fetchQuotes: FetchQuotesUseCase,
+         notifyOrderFill: NotifyOrderFillUseCase) {
         self.asset = asset
         self.buy = buy
         self.sell = sell
         self.fetchPortfolio = fetchPortfolio
         self.fetchQuotes = fetchQuotes
+        self.notifyOrderFill = notifyOrderFill
         self.portfolio = fetchPortfolio()
     }
 
@@ -77,6 +80,8 @@ final class TradeViewModel {
         errorMessage = nil
         isSubmitting = true
         defer { isSubmitting = false }
+        let filledQuantity = quantity
+        let filledAmount = estimatedAmount
         do {
             switch side {
             case .buy:
@@ -85,6 +90,10 @@ final class TradeViewModel {
                 portfolio = try await sell(symbol: asset.symbol, quantity: quantity)
             }
             didComplete = true
+            if let filledAmount {
+                await notifyOrderFill(side: side, symbol: asset.symbol,
+                                      quantity: filledQuantity, amount: filledAmount)
+            }
         } catch let error as TradeError {
             errorMessage = message(for: error)
         } catch {

@@ -17,18 +17,35 @@ private final class FixedRepo: MarketDataRepository, @unchecked Sendable {
     func history(for symbol: String, timeframe: Timeframe) async throws -> [PricePoint] { [] }
 }
 
+final class TradeFakeFillNotifier: OrderFillNotifier, @unchecked Sendable {
+    var fills: [(side: TradeSide, symbol: String)] = []
+    func notifyFill(side: TradeSide, symbol: String, quantity: Quantity, amount: Money) async {
+        fills.append((side, symbol))
+    }
+}
+
+final class TradeFakeSettingsStore: SettingsStore, @unchecked Sendable {
+    var settings: AppSettings
+    init(_ settings: AppSettings = .default) { self.settings = settings }
+    func load() -> AppSettings { settings }
+    func save(_ s: AppSettings) { settings = s }
+}
+
 @MainActor
 final class TradeViewModelTests: XCTestCase {
     private let aapl = Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock)
 
-    private func make(_ store: MemoryStore) -> TradeViewModel {
+    private func make(_ store: MemoryStore,
+                      notifier: OrderFillNotifier = TradeFakeFillNotifier(),
+                      settings: SettingsStore = TradeFakeSettingsStore()) -> TradeViewModel {
         let repo = FixedRepo()
         return TradeViewModel(
             asset: aapl,
             buy: BuyAssetUseCase(repository: repo, store: store),
             sell: SellAssetUseCase(repository: repo, store: store),
             fetchPortfolio: FetchPortfolioUseCase(store: store),
-            fetchQuotes: FetchQuotesUseCase(repository: repo)
+            fetchQuotes: FetchQuotesUseCase(repository: repo),
+            notifyOrderFill: NotifyOrderFillUseCase(notifier: notifier, settings: settings)
         )
     }
 
@@ -63,5 +80,44 @@ final class TradeViewModelTests: XCTestCase {
         vm.side = .sell
         vm.setMax()
         XCTAssertEqual(vm.quantityText, "3")
+    }
+
+    func test_buy_notifiesFill_whenOrderFillsEnabled() async {
+        let store = MemoryStore(.starting())
+        let notifier = TradeFakeFillNotifier()
+        let vm = make(store, notifier: notifier, settings: TradeFakeSettingsStore(.default))
+        await vm.load()
+        vm.side = .buy
+        vm.quantityText = "2"
+        await vm.submit()
+        XCTAssertTrue(vm.didComplete)
+        XCTAssertEqual(notifier.fills.count, 1)
+        XCTAssertEqual(notifier.fills.first?.side, .buy)
+    }
+
+    func test_buy_suppressesFillNotification_whenOrderFillsDisabled() async {
+        let store = MemoryStore(.starting())
+        let notifier = TradeFakeFillNotifier()
+        var settings = AppSettings.default
+        settings.orderFills = false
+        let vm = make(store, notifier: notifier, settings: TradeFakeSettingsStore(settings))
+        await vm.load()
+        vm.side = .buy
+        vm.quantityText = "2"
+        await vm.submit()
+        XCTAssertTrue(vm.didComplete, "the trade still executes")
+        XCTAssertTrue(notifier.fills.isEmpty, "no fill notification when disabled")
+    }
+
+    func test_failedOrder_doesNotNotify() async {
+        let store = MemoryStore(.starting(cash: Money(amount: 10)))
+        let notifier = TradeFakeFillNotifier()
+        let vm = make(store, notifier: notifier)
+        await vm.load()
+        vm.side = .buy
+        vm.quantityText = "2"   // 400 > 10, fails
+        await vm.submit()
+        XCTAssertFalse(vm.didComplete)
+        XCTAssertTrue(notifier.fills.isEmpty)
     }
 }

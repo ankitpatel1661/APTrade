@@ -3,13 +3,19 @@ import APTradeDomain
 
 struct TradeSheet: View {
     @State private var viewModel: TradeViewModel
+    @State private var showConfirm = false
     @Environment(\.dismiss) private var dismiss
     let onComplete: () -> Void
+
+    /// Snapshot of the preference at presentation time — the sheet is short-lived, so a
+    /// live binding would be overkill.
+    private let confirmTrades: Bool
 
     init(asset: Asset, side: TradeSide, onComplete: @escaping () -> Void) {
         let vm = CompositionRoot.makeTradeViewModel(for: asset)
         vm.side = side
         _viewModel = State(initialValue: vm)
+        self.confirmTrades = CompositionRoot.loadSettings().confirmTrades
         self.onComplete = onComplete
     }
 
@@ -33,6 +39,36 @@ struct TradeSheet: View {
         }
         .frame(width: 420, height: 460)
         .task { await viewModel.load() }
+        .confirmationDialog(confirmTitle, isPresented: $showConfirm, titleVisibility: .visible) {
+            Button(viewModel.side == .buy ? "Confirm Buy" : "Confirm Sell") { performSubmit() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(confirmMessage)
+        }
+    }
+
+    private var confirmTitle: String {
+        "\(viewModel.side == .buy ? "Buy" : "Sell") \(viewModel.quantityText) \(viewModel.asset.symbol.uppercased())?"
+    }
+
+    private var confirmMessage: String {
+        let label = viewModel.side == .buy ? "Estimated cost" : "Estimated proceeds"
+        return "\(label): \(viewModel.estimatedAmount?.formatted ?? "—")"
+    }
+
+    private func attemptSubmit() {
+        if confirmTrades {
+            showConfirm = true
+        } else {
+            performSubmit()
+        }
+    }
+
+    private func performSubmit() {
+        Task {
+            await viewModel.submit()
+            if viewModel.didComplete { onComplete(); dismiss() }
+        }
     }
 
     private var header: some View {
@@ -62,12 +98,38 @@ struct TradeSheet: View {
     }
 
     private var sideToggle: some View {
-        Picker("", selection: $viewModel.side) {
-            Text("Buy").tag(TradeSide.buy)
-            Text("Sell").tag(TradeSide.sell)
+        HStack(spacing: 4) {
+            sideSegment(.buy, title: "Buy")
+            sideSegment(.sell, title: "Sell")
         }
-        .pickerStyle(.segmented)
-        .onChange(of: viewModel.side) { _, _ in viewModel.quantityText = "" }
+        .padding(4)
+        .background(Theme.surface, in: Capsule())
+        .overlay(Capsule().stroke(Theme.hairline, lineWidth: 1))
+    }
+
+    private func sideSegment(_ side: TradeSide, title: String) -> some View {
+        let selected = viewModel.side == side
+        return Button {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                viewModel.side = side
+            }
+            viewModel.quantityText = ""
+        } label: {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(selected ? Theme.textPrimary : Theme.textSecondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background {
+                    if selected {
+                        Capsule()
+                            .fill(Theme.surfaceHi)
+                            .overlay(Capsule().stroke(Theme.gold.opacity(0.40), lineWidth: 1))
+                    }
+                }
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private var quantityField: some View {
@@ -124,18 +186,15 @@ struct TradeSheet: View {
                 .padding(.vertical, 12)
                 .background(Theme.surface, in: Capsule())
                 .overlay(Capsule().stroke(Theme.hairline, lineWidth: 1))
+                .contentShape(Capsule())
 
-            Button(viewModel.side == .buy ? "Buy" : "Sell") {
-                Task {
-                    await viewModel.submit()
-                    if viewModel.didComplete { onComplete(); dismiss() }
-                }
-            }
+            Button(viewModel.side == .buy ? "Buy" : "Sell") { attemptSubmit() }
             .buttonStyle(.plain)
             .font(.system(size: 14, weight: .bold))
             .foregroundStyle(viewModel.canSubmit ? Theme.bgBottom : Theme.textTertiary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
+            .contentShape(Capsule())
             .background(
                 AnyShapeStyle(viewModel.canSubmit ? AnyShapeStyle(Theme.goldGradient) : AnyShapeStyle(Theme.surface)),
                 in: Capsule()
