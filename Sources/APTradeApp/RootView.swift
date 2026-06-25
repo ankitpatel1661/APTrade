@@ -1,4 +1,7 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
+import APTradeApplication
 import APTradeDomain
 
 struct RootView: View {
@@ -15,13 +18,18 @@ struct RootView: View {
     @State private var scheduler = CompositionRoot.makeMarketActivityCoordinator()
     @Namespace private var pill
 
+    @State private var exportPortfolio = CompositionRoot.makeExportPortfolioUseCase()
+    @State private var showExportDialog = false
+    @State private var isExporting = false
+    @State private var exportError: String?
+
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .trailing) {
                 Theme.background.ignoresSafeArea()
                 VStack(spacing: 0) {
                     ZStack {
-                        if let appWordmarkImage = ThemeManager.shared.isDark ? appWordmarkImageDark : appWordmarkImageLight {
+                        if let appWordmarkImage = BrandImage.wordmark(accent: ThemeManager.shared.accent, isDark: ThemeManager.shared.isDark) {
                             Image(nsImage: appWordmarkImage)
                                 .resizable()
                                 .scaledToFit()
@@ -66,6 +74,63 @@ struct RootView: View {
         .frame(minWidth: 560, minHeight: 680)
         .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
         .task { await scheduler.run() }
+        .confirmationDialog("Export Portfolio Data", isPresented: $showExportDialog,
+                            titleVisibility: .visible) {
+            ForEach(PortfolioExportFormat.allCases, id: \.self) { format in
+                Button(format.displayName) { beginExport(format) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Choose a format to save your holdings, cost basis, and P&L.")
+        }
+        .alert("Export Failed", isPresented: Binding(
+            get: { exportError != nil },
+            set: { if !$0 { exportError = nil } }
+        )) {
+            Button("OK", role: .cancel) { exportError = nil }
+        } message: {
+            Text(exportError ?? "")
+        }
+    }
+
+    /// Renders the current portfolio to `format` off the main run loop, then presents a
+    /// save panel so the user can write it anywhere on their Mac.
+    private func beginExport(_ format: PortfolioExportFormat) {
+        guard !isExporting else { return }
+        isExporting = true
+        Task {
+            defer { isExporting = false }
+            do {
+                let data = try await exportPortfolio(format: format)
+                presentSavePanel(for: data, format: format)
+            } catch {
+                exportError = error.localizedDescription
+            }
+        }
+    }
+
+    private func presentSavePanel(for data: Data, format: PortfolioExportFormat) {
+        let panel = NSSavePanel()
+        panel.title = "Export Portfolio Data"
+        panel.nameFieldStringValue = "\(Self.exportFileStem).\(format.fileExtension)"
+        if let contentType = UTType(filenameExtension: format.fileExtension) {
+            panel.allowedContentTypes = [contentType]
+        }
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            exportError = error.localizedDescription
+        }
+    }
+
+    /// Date-stamped base filename, e.g. `APTrade-Portfolio-2026-06-25`.
+    private static var exportFileStem: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return "APTrade-Portfolio-\(formatter.string(from: Date()))"
     }
 
     private func close() {
@@ -149,7 +214,10 @@ struct RootView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 accountRow(icon: "lock.shield", title: "Security & Privacy") { panelRoute = .security }
-                accountRow(icon: "square.and.arrow.up", title: "Export Portfolio Data") { close() }
+                accountRow(icon: "square.and.arrow.up", title: "Export Portfolio Data") {
+                    close()
+                    showExportDialog = true
+                }
                 accountRow(icon: "questionmark.circle", title: "Help & Support") { panelRoute = .help }
                 accountRow(icon: "info.circle", title: "About APTrade") { panelRoute = .about }
             }
@@ -354,8 +422,8 @@ struct RootView: View {
             Divider().overlay(Theme.hairline)
             VStack(alignment: .leading, spacing: 18) {
                 HStack(spacing: 14) {
-                    if let appLogoImage {
-                        Image(nsImage: appLogoImage).resizable().scaledToFit().frame(width: 44, height: 44)
+                    if let logo = BrandImage.logo(accent: ThemeManager.shared.accent, isDark: ThemeManager.shared.isDark) {
+                        Image(nsImage: logo).resizable().scaledToFit().frame(width: 44, height: 44)
                     }
                     VStack(alignment: .leading, spacing: 3) {
                         BrandMark(size: 18, showsMark: false)

@@ -65,8 +65,12 @@ struct ExpandedValueCard: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity)
-        .frame(height: 230)
+        // Size to content (with a 230pt floor) rather than a hard height: the portfolio card
+        // carries a taller two-row stats header, and a fixed height let that content — and the
+        // red area fill — overflow the background and spill onto the holdings list below.
+        .frame(minHeight: 230)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(Theme.hairline, lineWidth: 1)

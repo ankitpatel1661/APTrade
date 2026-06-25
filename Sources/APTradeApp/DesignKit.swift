@@ -14,21 +14,54 @@ let appLogoImage: NSImage? = {
 }()
 
 /// The full lockup — symbol plus "AP Trade" wordmark and tagline baked into one image.
-/// Drawn for dark backgrounds: the "P" stroke and "Trade" wordmark are near-white silver.
+/// Drawn for dark backgrounds: the brand letters are champagne gold and the "P" stroke /
+/// "Trade" wordmark are near-white silver. Re-tinted per accent/mode via `BrandImage`.
 let appWordmarkImageDark: NSImage? = {
     guard let url = Bundle.module.url(forResource: "AppWordmark", withExtension: "png") else { return nil }
     return NSImage(contentsOf: url)
 }()
 
-/// Light-mode variant of the lockup, generated once at launch: the gold pixels are left
-/// untouched (brand color is mode-independent), but the near-white/silver "P" and "Trade"
-/// pixels — invisible against a light background as shipped — are darkened to charcoal.
-let appWordmarkImageLight: NSImage? = appWordmarkImageDark.flatMap(recoloringNeutralPixels)
+/// Accent- and mode-aware variants of the baked-in brand artwork.
+///
+/// The shipped PNGs are champagne gold; nothing about a raster image follows the chosen
+/// accent on its own, so the wordmark and symbol would stay gold no matter which accent the
+/// user picks. `BrandImage` recolors them: gold pixels are remapped onto the selected
+/// accent's ramp, and the neutral silver/white pixels are kept in dark mode or darkened to
+/// charcoal in light mode. Results are cached per (accent, mode) — the pixel walk runs at
+/// most once for each of the few combinations, not on every render.
+@MainActor
+enum BrandImage {
+    private static var wordmarks: [String: NSImage] = [:]
+    private static var logos: [String: NSImage] = [:]
+
+    /// The full "AP Trade" lockup, recolored for the given accent and mode.
+    static func wordmark(accent: AccentTheme, isDark: Bool) -> NSImage? {
+        cached(&wordmarks, base: appWordmarkImageDark, accent: accent, isDark: isDark)
+    }
+
+    /// The standalone symbol mark, recolored for the given accent and mode.
+    static func logo(accent: AccentTheme, isDark: Bool) -> NSImage? {
+        cached(&logos, base: appLogoImage, accent: accent, isDark: isDark)
+    }
+
+    private static func cached(_ store: inout [String: NSImage], base: NSImage?,
+                               accent: AccentTheme, isDark: Bool) -> NSImage? {
+        guard let base else { return nil }
+        let key = "\(accent.rawValue)-\(isDark)"
+        if let cached = store[key] { return cached }
+        let recolored = recoloredBrandImage(base, accent: accent, isDark: isDark) ?? base
+        store[key] = recolored
+        return recolored
+    }
+}
 
 /// Walks the raw RGBA buffer once, distinguishing brand gold (red channel well above blue)
-/// from neutral silver/white (red ≈ green ≈ blue) by channel spread, and re-tints only the
-/// neutral pixels toward `Theme.textPrimary`'s light-mode charcoal — gold pixels pass through.
-private func recoloringNeutralPixels(_ image: NSImage) -> NSImage? {
+/// from neutral silver/white (red ≈ green ≈ blue) by channel spread. Gold pixels are remapped
+/// onto `accent`'s ramp by luminance — preserving the original gradient's light-to-dark shape
+/// in the new hue — except for the champagne-gold default, whose pixels pass through unchanged
+/// so the shipped artwork stays pixel-for-pixel identical. Neutral pixels are kept in dark mode
+/// and re-tinted toward `Theme.textPrimary`'s light-mode charcoal otherwise.
+private func recoloredBrandImage(_ image: NSImage, accent: AccentTheme, isDark: Bool) -> NSImage? {
     guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
     let width = cgImage.width, height = cgImage.height
     let bytesPerPixel = 4
@@ -43,21 +76,50 @@ private func recoloringNeutralPixels(_ image: NSImage) -> NSImage? {
           ) else { return nil }
     context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
 
-    let charcoal: (UInt8, UInt8, UInt8) = (30, 28, 24) // matches Theme's light-mode textPrimary
+    let ramp = accent.ramp
+    // Luminance span of the champagne source gold (deep #A9772A … light #F2DDA0), used to
+    // place each gold pixel at the matching position on the target ramp.
+    let loLum = 0.49, hiLum = 0.86
+    let charcoal = AccentRGB(30.0 / 255, 28.0 / 255, 24.0 / 255) // light-mode textPrimary
+
     for i in stride(from: 0, to: pixels.count, by: bytesPerPixel) {
-        let r = pixels[i], b = pixels[i + 2], a = pixels[i + 3]
+        let a = pixels[i + 3]
         guard a > 0 else { continue }
-        let spread = Int(r) - Int(b)
-        if spread < 40 { // neutral (silver/white), not gold
-            let alphaFraction = Double(a) / 255.0
-            pixels[i] = UInt8(Double(charcoal.0) * alphaFraction)
-            pixels[i + 1] = UInt8(Double(charcoal.1) * alphaFraction)
-            pixels[i + 2] = UInt8(Double(charcoal.2) * alphaFraction)
+        let af = Double(a) / 255.0
+        // Un-premultiply to straight alpha so classification and luminance ignore opacity.
+        let r = Double(pixels[i]) / 255.0 / af
+        let g = Double(pixels[i + 1]) / 255.0 / af
+        let b = Double(pixels[i + 2]) / 255.0 / af
+
+        let out: AccentRGB
+        if r - b < 40.0 / 255.0 {                 // neutral (silver/white) — not gold
+            if isDark { continue }                // keep the shipped silver in dark mode
+            out = charcoal
+        } else if accent == .champagneGold {      // default brand — leave gold untouched
+            continue
+        } else {                                  // brand gold — remap onto the accent ramp
+            let lum = 0.299 * r + 0.587 * g + 0.114 * b
+            let t = min(max((lum - loLum) / (hiLum - loLum), 0), 1)
+            out = sampleRamp(ramp, t)
         }
+        pixels[i]     = UInt8(min(max(out.red, 0), 1) * af * 255.0)
+        pixels[i + 1] = UInt8(min(max(out.green, 0), 1) * af * 255.0)
+        pixels[i + 2] = UInt8(min(max(out.blue, 0), 1) * af * 255.0)
     }
 
     guard let outputImage = context.makeImage() else { return nil }
     return NSImage(cgImage: outputImage, size: image.size)
+}
+
+/// Interpolates a ramp at `t` in 0...1: deep at 0, mid at 0.5, light at 1.
+private func sampleRamp(_ ramp: (deep: AccentRGB, mid: AccentRGB, light: AccentRGB), _ t: Double) -> AccentRGB {
+    t <= 0.5 ? lerp(ramp.deep, ramp.mid, t * 2) : lerp(ramp.mid, ramp.light, (t - 0.5) * 2)
+}
+
+private func lerp(_ a: AccentRGB, _ b: AccentRGB, _ t: Double) -> AccentRGB {
+    AccentRGB(a.red + (b.red - a.red) * t,
+              a.green + (b.green - a.green) * t,
+              a.blue + (b.blue - a.blue) * t)
 }
 
 /// The APTrade mark: logo symbol plus wordmark — "AP" in the logo's gold gradient, "Trade" in silver.
@@ -67,8 +129,9 @@ struct BrandMark: View {
 
     var body: some View {
         HStack(spacing: size * 0.28) {
-            if showsMark, let appLogoImage {
-                Image(nsImage: appLogoImage)
+            if showsMark,
+               let logo = BrandImage.logo(accent: ThemeManager.shared.accent, isDark: ThemeManager.shared.isDark) {
+                Image(nsImage: logo)
                     .resizable()
                     .scaledToFit()
                     .frame(width: size * 1.5, height: size * 1.5)

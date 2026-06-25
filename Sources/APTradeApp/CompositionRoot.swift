@@ -69,6 +69,17 @@ enum CompositionRoot {
         )
     }
 
+    /// Reads the persisted portfolio, values it against freshly fetched quotes, and renders
+    /// it to a chosen document format (PDF / Excel / Word) for the user to save.
+    static func makeExportPortfolioUseCase() -> ExportPortfolioUseCase {
+        ExportPortfolioUseCase(
+            store: portfolioStore,
+            fetchQuotes: FetchQuotesUseCase(repository: makeRepository()),
+            renderer: DefaultPortfolioExportRenderer(),
+            accountName: "APTrade Portfolio"
+        )
+    }
+
     static func makeTradeViewModel(for asset: Asset) -> TradeViewModel {
         let repo = makeRepository()
         return TradeViewModel(

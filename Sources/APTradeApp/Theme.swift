@@ -1,6 +1,13 @@
 import SwiftUI
 import APTradeDomain
 
+extension Color {
+    /// Builds a SwiftUI `Color` from the domain's framework-free `AccentRGB` triple.
+    init(_ rgb: AccentRGB) {
+        self.init(red: rgb.red, green: rgb.green, blue: rgb.blue)
+    }
+}
+
 /// Drives light/dark mode for `Theme`. Swift's Observation framework tracks property
 /// access automatically — any view whose body reads a `Theme` color (which reads
 /// `ThemeManager.shared.isDark`) re-renders when the mode flips, with no environment
@@ -80,32 +87,13 @@ enum Theme {
               : Color(red: 0.557, green: 0.529, blue: 0.475)    // #8E8779
     }
 
-    /// The selected accent's three-stop ramp (deep → mid → light). Champagne gold is the
-    /// brand default; the alternates are premium metallic/jewel tones. Identical across
-    /// light/dark — the accent is brand color, not a mode signal.
+    /// The selected accent's three-stop ramp (deep → mid → light), built from the domain's
+    /// `AccentTheme.ramp` palette. Champagne gold is the brand default; the alternates are
+    /// premium metallic/jewel tones. Identical across light/dark — the accent is brand
+    /// color, not a mode signal.
     static func accentRamp(_ accent: AccentTheme) -> (deep: Color, mid: Color, light: Color) {
-        switch accent {
-        case .champagneGold:
-            return (Color(red: 0.663, green: 0.467, blue: 0.165),   // #A9772A
-                    Color(red: 0.831, green: 0.663, blue: 0.306),   // #D4A94E
-                    Color(red: 0.949, green: 0.867, blue: 0.627))   // #F2DDA0
-        case .roseGold:
-            return (Color(red: 0.557, green: 0.290, blue: 0.235),   // #8E4A3C
-                    Color(red: 0.804, green: 0.518, blue: 0.435),   // #CD846F
-                    Color(red: 0.929, green: 0.769, blue: 0.706))   // #EDC4B4
-        case .sapphire:
-            return (Color(red: 0.110, green: 0.247, blue: 0.451),   // #1C3F73
-                    Color(red: 0.255, green: 0.498, blue: 0.831),   // #417FD4
-                    Color(red: 0.612, green: 0.761, blue: 0.945))   // #9CC2F1
-        case .amethyst:
-            return (Color(red: 0.318, green: 0.176, blue: 0.471),   // #512D78
-                    Color(red: 0.541, green: 0.357, blue: 0.788),   // #8A5BC9
-                    Color(red: 0.776, green: 0.659, blue: 0.929))   // #C6A8ED
-        case .platinum:
-            return (Color(red: 0.392, green: 0.420, blue: 0.471),   // #646B78
-                    Color(red: 0.639, green: 0.667, blue: 0.714),   // #A3AAB6
-                    Color(red: 0.855, green: 0.875, blue: 0.906))   // #DADFE7
-        }
+        let ramp = accent.ramp
+        return (Color(ramp.deep), Color(ramp.mid), Color(ramp.light))
     }
 
     private static var ramp: (deep: Color, mid: Color, light: Color) {
