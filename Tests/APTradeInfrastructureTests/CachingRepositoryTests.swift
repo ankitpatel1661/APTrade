@@ -11,11 +11,17 @@ final class MutableClock: @unchecked Sendable {
 
 final class CountingRepo: MarketDataRepository, @unchecked Sendable {
     private(set) var quoteCalls = 0
+    var searchResults: [Asset] = []
+    private(set) var searchCallCount = 0
     func quote(for symbol: String) async throws -> Quote {
         quoteCalls += 1
         return Quote(symbol: symbol, price: Money(amount: 1), previousClose: Money(amount: 1))
     }
     func history(for symbol: String, timeframe: Timeframe) async throws -> [PricePoint] { [] }
+    func search(query: String) async throws -> [Asset] {
+        searchCallCount += 1
+        return searchResults
+    }
 }
 
 /// Counts inner calls and holds each `quote` open briefly so concurrent callers
@@ -58,5 +64,16 @@ final class CachingRepositoryTests: XCTestCase {
         _ = try await (a, b, c)
         let calls = await inner.quoteCalls
         XCTAssertEqual(calls, 1)
+    }
+
+    func test_search_isCachedWithinTTL() async throws {
+        let inner = CountingRepo()
+        inner.searchResults = [Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock)]
+        let cache = CachingMarketDataRepository(wrapping: inner, ttl: 15, now: { Date(timeIntervalSince1970: 0) })
+
+        _ = try await cache.search(query: "aapl")
+        _ = try await cache.search(query: "aapl")   // same normalized query, within TTL
+
+        XCTAssertEqual(inner.searchCallCount, 1)
     }
 }

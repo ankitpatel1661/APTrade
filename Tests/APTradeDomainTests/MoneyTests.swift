@@ -8,6 +8,10 @@ final class MoneyTests: XCTestCase {
         XCTAssertEqual(a - b, Money(amount: 70))
     }
 
+    func test_addition() {
+        XCTAssertEqual(Money(amount: 3) + Money(amount: 4), Money(amount: 7))
+    }
+
     func test_money_formatted_usd() {
         XCTAssertEqual(Money(amount: Decimal(string: "294.3")!).formatted, "$294.30")
     }

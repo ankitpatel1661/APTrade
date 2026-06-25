@@ -44,3 +44,14 @@ public struct SearchSymbolUseCase: Sendable {
         return try await repository.profile(for: symbol)
     }
 }
+
+public struct SearchAssetsUseCase: Sendable {
+    private let repository: MarketDataRepository
+    public init(repository: MarketDataRepository) { self.repository = repository }
+
+    public func callAsFunction(query: String) async throws -> [Asset] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        return try await repository.search(query: trimmed)
+    }
+}

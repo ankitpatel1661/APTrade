@@ -1,0 +1,62 @@
+import Foundation
+import APTradeDomain
+
+public struct FetchPortfolioUseCase: Sendable {
+    private let store: PortfolioStore
+    public init(store: PortfolioStore) { self.store = store }
+    public func callAsFunction() -> Portfolio { store.load() }
+}
+
+public struct BuyAssetUseCase: Sendable {
+    private let repository: MarketDataRepository
+    private let store: PortfolioStore
+    public init(repository: MarketDataRepository, store: PortfolioStore) {
+        self.repository = repository
+        self.store = store
+    }
+    public func callAsFunction(asset: Asset, quantity: Quantity) async throws -> Portfolio {
+        let quote = try await repository.quote(for: asset.symbol)
+        let updated = try store.load().buying(asset, quantity: quantity, at: quote.price)
+        store.save(updated)
+        return updated
+    }
+}
+
+public struct SellAssetUseCase: Sendable {
+    private let repository: MarketDataRepository
+    private let store: PortfolioStore
+    public init(repository: MarketDataRepository, store: PortfolioStore) {
+        self.repository = repository
+        self.store = store
+    }
+    public func callAsFunction(symbol: String, quantity: Quantity) async throws -> Portfolio {
+        let quote = try await repository.quote(for: symbol)
+        let updated = try store.load().selling(symbol, quantity: quantity, at: quote.price)
+        store.save(updated)
+        return updated
+    }
+}
+
+public struct ResetPortfolioUseCase: Sendable {
+    private let store: PortfolioStore
+    public init(store: PortfolioStore) { self.store = store }
+    public func callAsFunction() -> Portfolio {
+        let fresh = Portfolio.starting()
+        store.save(fresh)
+        return fresh
+    }
+}
+
+public struct RecordPortfolioSnapshotUseCase: Sendable {
+    private let store: PortfolioHistoryStore
+    public init(store: PortfolioHistoryStore) { self.store = store }
+    public func callAsFunction(totalValue: Money, date: Date = Date()) {
+        store.record(PricePoint(date: date, close: totalValue))
+    }
+}
+
+public struct FetchPortfolioHistoryUseCase: Sendable {
+    private let store: PortfolioHistoryStore
+    public init(store: PortfolioHistoryStore) { self.store = store }
+    public func callAsFunction() -> [PricePoint] { store.load() }
+}

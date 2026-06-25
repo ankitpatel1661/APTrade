@@ -1,0 +1,11 @@
+{
+  "quotes": [
+    { "symbol": "AAPL", "shortname": "Apple Inc.", "longname": "Apple Inc.", "quoteType": "EQUITY" },
+    { "symbol": "AMD", "shortname": "Advanced Micro Devices, Inc.", "quoteType": "EQUITY" },
+    { "symbol": "ARKK", "shortname": "ARK Innovation ETF", "quoteType": "ETF" },
+    { "symbol": "AVAX-USD", "shortname": "Avalanche USD", "quoteType": "CRYPTOCURRENCY" },
+    { "symbol": "^GSPC", "shortname": "S&P 500", "quoteType": "INDEX" },
+    { "symbol": "ES=F", "shortname": "E-Mini S&P 500", "quoteType": "FUTURE" },
+    { "symbol": "BADTYPE", "quoteType": "EQUITY" }
+  ]
+}

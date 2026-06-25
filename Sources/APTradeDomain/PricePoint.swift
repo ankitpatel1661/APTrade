@@ -1,6 +1,6 @@
 import Foundation
 
-public struct PricePoint: Equatable, Sendable {
+public struct PricePoint: Equatable, Codable, Sendable {
     public let date: Date
     public let close: Money
 

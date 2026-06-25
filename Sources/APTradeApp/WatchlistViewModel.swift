@@ -11,6 +11,14 @@ final class WatchlistViewModel {
     private let fetchQuotes: FetchQuotesUseCase
     private let fetchHistory: FetchHistoryUseCase
     private let search: SearchSymbolUseCase
+    private let searchAssets: SearchAssetsUseCase
+    private let loadAlerts: LoadAlertsUseCase
+    private let createAlert: CreatePriceAlertUseCase
+    private let removeAlert: RemovePriceAlertUseCase
+    private let evaluateAlerts: EvaluateAlertsUseCase
+    private(set) var suggestions: [Asset] = []
+    private(set) var alerts: [PriceAlert] = []
+    private var searchTask: Task<Void, Never>?
 
     private(set) var rows: [RowState] = []
     var isRefreshing = false
@@ -62,18 +70,55 @@ final class WatchlistViewModel {
         return Percentage(value: sum / Decimal(values.count))
     }
 
+    /// Mean intraday trace across the visible category, expressed as % change from
+    /// each row's own opening tick, so names of any price level average evenly.
+    var averageSpark: [Double] {
+        let series = visibleRows.compactMap { row -> [Double]? in
+            guard let first = row.spark.first, first != 0 else { return nil }
+            return row.spark.map { ($0 - first) / first * 100 }
+        }
+        guard let count = series.map(\.count).min(), count > 1 else { return [] }
+        return (0..<count).map { index in
+            series.reduce(0.0) { $0 + $1[index] } / Double(series.count)
+        }
+    }
+
     init(load: LoadWatchlistUseCase,
          add: AddToWatchlistUseCase,
          remove: RemoveFromWatchlistUseCase,
          fetchQuotes: FetchQuotesUseCase,
          fetchHistory: FetchHistoryUseCase,
-         search: SearchSymbolUseCase) {
+         search: SearchSymbolUseCase,
+         searchAssets: SearchAssetsUseCase,
+         loadAlerts: LoadAlertsUseCase,
+         createAlert: CreatePriceAlertUseCase,
+         removeAlert: RemovePriceAlertUseCase,
+         evaluateAlerts: EvaluateAlertsUseCase) {
         self.load = load
         self.add = add
         self.remove = remove
         self.fetchQuotes = fetchQuotes
         self.fetchHistory = fetchHistory
         self.search = search
+        self.searchAssets = searchAssets
+        self.loadAlerts = loadAlerts
+        self.createAlert = createAlert
+        self.removeAlert = removeAlert
+        self.evaluateAlerts = evaluateAlerts
+        self.alerts = loadAlerts()
+    }
+
+    /// Active (untriggered) alerts set on `symbol`, for the row's alert badge.
+    func alerts(for symbol: String) -> [PriceAlert] {
+        alerts.filter { $0.symbol == symbol }
+    }
+
+    func addAlert(symbol: String, condition: AlertCondition) {
+        alerts = createAlert(symbol: symbol, condition: condition)
+    }
+
+    func deleteAlert(_ id: PriceAlert.ID) {
+        alerts = removeAlert(id: id)
     }
 
     private func reloadRows() {
@@ -133,6 +178,8 @@ final class WatchlistViewModel {
             }
             return copy
         }
+        let quotes = Dictionary(uniqueKeysWithValues: rows.compactMap { row in row.quote.map { (row.asset.symbol, $0) } })
+        alerts = await evaluateAlerts(quotes: quotes)
     }
 
     /// Loads each row's intraday sparkline concurrently. Best-effort: a symbol whose
@@ -175,5 +222,34 @@ final class WatchlistViewModel {
     func remove(symbol: String) {
         _ = remove(symbol: symbol)
         reloadRows()
+    }
+
+    /// Debounced autocomplete. Cancels any in-flight search and, after a 250ms pause,
+    /// fetches ranked matches for the current query. Best-effort: errors clear results.
+    func updateQuery(_ text: String) {
+        searchTask?.cancel()
+        let query = text.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { suggestions = []; return }
+        searchTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled, let self else { return }
+            let results = (try? await self.searchAssets(query: query)) ?? []
+            if !Task.isCancelled { self.suggestions = results }
+        }
+    }
+
+    /// Adds a chosen suggestion to the watchlist and clears the dropdown.
+    func addSuggestion(_ asset: Asset) async {
+        clearSuggestions()
+        _ = add(asset)
+        reloadRows()
+        selectedKind = asset.kind
+        await refresh()
+        await loadSparklines()
+    }
+
+    func clearSuggestions() {
+        searchTask?.cancel()
+        suggestions = []
     }
 }

@@ -2,10 +2,15 @@ import SwiftUI
 import APTradeDomain
 
 struct WatchlistView: View {
+    var switcher: AnyView
     @State private var viewModel = CompositionRoot.makeWatchlistViewModel()
     @State private var newSymbol = ""
     @State private var selectedAsset: Asset?
     @State private var hoveredSymbol: String?
+    @State private var alertTarget: Asset?
+    @State private var showChart = false
+
+    private var chartSpring: Animation { .spring(response: 0.34, dampingFraction: 0.84) }
 
     var body: some View {
         NavigationStack {
@@ -13,6 +18,19 @@ struct WatchlistView: View {
                 Theme.background.ignoresSafeArea()
                 VStack(spacing: 0) {
                     header
+                    if showChart && viewModel.averageSpark.count > 1 {
+                        ExpandedValueCard(
+                            title: "Avg. Day Change",
+                            values: viewModel.averageSpark,
+                            color: Theme.changeColor(viewModel.averageChange),
+                            format: { "\($0 >= 0 ? "+" : "")\($0.formatted(.number.precision(.fractionLength(2))))%" },
+                            changeStyle: .percentagePoints,
+                            onClose: { withAnimation(chartSpring) { showChart = false } }
+                        )
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 16)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    }
                     Divider().overlay(Theme.hairline)
                     content
                 }
@@ -20,35 +38,50 @@ struct WatchlistView: View {
             .navigationDestination(item: $selectedAsset) { asset in
                 AssetDetailView(asset: asset)
             }
-            .safeAreaInset(edge: .bottom) { addBar }
-            .toolbar(.hidden, for: .windowToolbar)
             .task {
                 await viewModel.onAppear()
                 await viewModel.runLiveUpdates()
             }
             .refreshable { await viewModel.refresh() }
+            .sheet(item: $alertTarget) { asset in
+                PriceAlertSheet(
+                    asset: asset,
+                    currentPrice: viewModel.visibleRows.first { $0.asset.symbol == asset.symbol }?.quote?.price,
+                    existing: viewModel.alerts(for: asset.symbol),
+                    onCreate: { condition in viewModel.addAlert(symbol: asset.symbol, condition: condition) },
+                    onDelete: { id in viewModel.deleteAlert(id) }
+                )
+            }
         }
         .frame(minWidth: 560, minHeight: 640)
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
     }
 
     // MARK: Header — toggle + day pulse
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 10) {
-                BrandMark()
+            HStack(alignment: .top, spacing: 10) {
+                KindToggle(selection: $viewModel.selectedKind, counts: viewModel.counts)
                 Spacer()
-                if viewModel.isRefreshing {
-                    ProgressView().controlSize(.small)
-                } else if viewModel.isLive {
-                    LiveBadge()
+                HStack(alignment: .center, spacing: 10) {
+                    switcher
+                    HStack(spacing: 10) {
+                        if viewModel.isRefreshing {
+                            ProgressView().controlSize(.small)
+                        } else if viewModel.isLive {
+                            LiveBadge()
+                        }
+                    }
+                    .frame(width: 60, alignment: .trailing)
+                    // Reserves the width Portfolio's Reset menu occupies, so the
+                    // switcher/Live cluster lands at the same x on both tabs.
+                    Color.clear.frame(width: 28, height: 1)
                 }
             }
 
-            KindToggle(selection: $viewModel.selectedKind, counts: viewModel.counts)
-
             pulse
+            addBar
         }
         .padding(.horizontal, 24)
         .padding(.top, 20)
@@ -66,6 +99,14 @@ struct WatchlistView: View {
                 Text("avg. day change")
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.textSecondary)
+                Spacer()
+                if viewModel.averageSpark.count > 1 {
+                    ExpandableSparkline(
+                        values: viewModel.averageSpark,
+                        color: Theme.changeColor(viewModel.averageChange),
+                        size: CGSize(width: 140, height: 36)
+                    ) { withAnimation(chartSpring) { showChart.toggle() } }
+                }
             }
             if !viewModel.visibleRows.isEmpty {
                 PulseBar(advancers: viewModel.advancers, decliners: viewModel.decliners)
@@ -104,8 +145,10 @@ struct WatchlistView: View {
                 WatchlistRow(
                     row: row,
                     isHovered: hoveredSymbol == row.id,
+                    alertCount: viewModel.alerts(for: row.asset.symbol).count,
                     onOpen: { selectedAsset = row.asset },
-                    onRemove: { viewModel.remove(symbol: row.asset.symbol) }
+                    onRemove: { viewModel.remove(symbol: row.asset.symbol) },
+                    onSetAlert: { alertTarget = row.asset }
                 )
                 .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                 .listRowSeparator(.hidden)
@@ -169,10 +212,11 @@ struct WatchlistView: View {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(Theme.textTertiary)
-                TextField("Add symbol — AAPL, VOO, SOL-USD", text: $newSymbol)
+                TextField("Search ticker symbol or name — Apple, VOO, SOL", text: $newSymbol)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 14).monospacedDigit())
+                    .font(.system(size: 14))
                     .foregroundStyle(Theme.textPrimary)
+                    .onChange(of: newSymbol) { _, text in viewModel.updateQuery(text) }
                     .onSubmit(submit)
                 if !newSymbol.trimmingCharacters(in: .whitespaces).isEmpty {
                     Button("Add", action: submit)
@@ -188,15 +232,64 @@ struct WatchlistView: View {
             .padding(.vertical, 11)
             .background(Theme.surface, in: Capsule())
             .overlay(Capsule().stroke(Theme.hairline, lineWidth: 1))
+            if !viewModel.suggestions.isEmpty {
+                suggestionList
+            }
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 16)
-        .background(Theme.bgBottom)
+    }
+
+    private var suggestionList: some View {
+        VStack(spacing: 0) {
+            ForEach(viewModel.suggestions, id: \.symbol) { asset in
+                Button {
+                    newSymbol = ""
+                    Task { await viewModel.addSuggestion(asset) }
+                } label: {
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(asset.name)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Theme.textPrimary)
+                                .lineLimit(1)
+                            Text(asset.symbol)
+                                .font(.system(size: 11, weight: .medium).monospacedDigit())
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        Spacer()
+                        Text(kindChipLabel(asset.kind))
+                            .font(.system(size: 10, weight: .bold))
+                            .tracking(0.6)
+                            .foregroundStyle(Theme.textSecondary)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Theme.surfaceHi, in: Capsule())
+                    }
+                    .contentShape(Rectangle())
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                }
+                .buttonStyle(.plain)
+                if asset.symbol != viewModel.suggestions.last?.symbol {
+                    Divider().overlay(Theme.hairline)
+                }
+            }
+        }
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
+    }
+
+    private func kindChipLabel(_ kind: AssetKind) -> String {
+        switch kind {
+        case .stock: return "STOCK"
+        case .etf: return "ETF"
+        case .crypto: return "CRYPTO"
+        }
     }
 
     private func submit() {
         let query = newSymbol
         newSymbol = ""
+        viewModel.clearSuggestions()
         Task { await viewModel.add(query: query) }
     }
 }
@@ -206,8 +299,10 @@ struct WatchlistView: View {
 private struct WatchlistRow: View {
     let row: RowState
     let isHovered: Bool
+    let alertCount: Int
     let onOpen: () -> Void
     let onRemove: () -> Void
+    let onSetAlert: () -> Void
 
     private var directionColor: Color {
         Theme.changeColor(row.quote?.changePercent)
@@ -231,6 +326,8 @@ private struct WatchlistRow: View {
                         Sparkline(values: row.spark, color: directionColor)
                             .frame(width: 72, height: 32)
                     }
+                    alertButton
+                        .opacity(isHovered || alertCount > 0 ? 1 : 0)
                     priceColumn
                 }
                 .contentShape(Rectangle())
@@ -255,8 +352,21 @@ private struct WatchlistRow: View {
                 .opacity(isHovered ? 0 : 1)
         }
         .contextMenu {
+            Button("Set Price Alert", systemImage: "bell", action: onSetAlert)
             Button("Remove from Watchlist", systemImage: "trash", role: .destructive, action: onRemove)
         }
+    }
+
+    private var alertButton: some View {
+        Button(action: onSetAlert) {
+            Image(systemName: alertCount > 0 ? "bell.fill" : "bell")
+                .font(.system(size: 13))
+                .foregroundStyle(alertCount > 0 ? Theme.gold : Theme.textTertiary)
+                .frame(width: 24, height: 24)
+                .background(Circle().fill(Theme.surfaceHi))
+        }
+        .buttonStyle(.plain)
+        .help(alertCount > 0 ? "\(alertCount) active alert(s)" : "Set a price alert")
     }
 
     private var removeButton: some View {

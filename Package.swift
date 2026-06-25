@@ -10,7 +10,8 @@ let package = Package(
         .target(name: "APTradeInfrastructure", dependencies: ["APTradeApplication", "APTradeDomain"]),
         .executableTarget(
             name: "APTradeApp",
-            dependencies: ["APTradeInfrastructure", "APTradeApplication", "APTradeDomain"]
+            dependencies: ["APTradeInfrastructure", "APTradeApplication", "APTradeDomain"],
+            resources: [.process("Resources")]
         ),
         .testTarget(name: "APTradeDomainTests", dependencies: ["APTradeDomain"]),
         .testTarget(name: "APTradeApplicationTests", dependencies: ["APTradeApplication", "APTradeDomain"]),

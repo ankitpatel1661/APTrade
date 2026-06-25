@@ -1,6 +1,6 @@
 import Foundation
 
-public struct Money: Equatable, Hashable, Sendable {
+public struct Money: Equatable, Hashable, Codable, Sendable {
     public let amount: Decimal
     public let currencyCode: String
 
@@ -12,6 +12,11 @@ public struct Money: Equatable, Hashable, Sendable {
     public static func - (lhs: Money, rhs: Money) -> Money {
         precondition(lhs.currencyCode == rhs.currencyCode, "currency mismatch")
         return Money(amount: lhs.amount - rhs.amount, currencyCode: lhs.currencyCode)
+    }
+
+    public static func + (lhs: Money, rhs: Money) -> Money {
+        precondition(lhs.currencyCode == rhs.currencyCode, "currency mismatch")
+        return Money(amount: lhs.amount + rhs.amount, currencyCode: lhs.currencyCode)
     }
 
     public var formatted: String {
