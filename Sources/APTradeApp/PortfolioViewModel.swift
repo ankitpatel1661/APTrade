@@ -2,6 +2,32 @@ import Foundation
 import APTradeApplication
 import APTradeDomain
 
+/// One slice of the allocation breakdown — a holding or an asset class — with its share
+/// of total holdings value.
+struct AllocationSlice: Identifiable, Equatable {
+    let id: String
+    let label: String
+    let value: Double
+    let fraction: Double
+
+    static func label(for kind: AssetKind) -> String {
+        switch kind {
+        case .stock: return "Stocks"
+        case .etf: return "ETFs"
+        case .crypto: return "Crypto"
+        }
+    }
+}
+
+/// A holding annotated with today's move, for the "top movers" strip.
+struct PortfolioMover: Identifiable {
+    var id: String { position.asset.symbol }
+    let position: Position
+    let quote: Quote
+    let dayChange: Money
+    let dayChangePercent: Double
+}
+
 @MainActor
 @Observable
 final class PortfolioViewModel {
@@ -53,6 +79,63 @@ final class PortfolioViewModel {
     var valuation: PortfolioValuation { portfolio.valuation(quotes: quotes) }
 
     func quote(for symbol: String) -> Quote? { quotes[symbol] }
+
+    // MARK: - Analytics
+
+    private func marketValue(_ position: Position) -> Decimal {
+        (quotes[position.asset.symbol]?.price.amount ?? position.averageCost.amount) * position.quantity.amount
+    }
+
+    private var holdingsValueDouble: Double {
+        (valuation.holdingsValue.amount as NSDecimalNumber).doubleValue
+    }
+
+    /// Each holding's share of total holdings value, largest first.
+    var allocationByHolding: [AllocationSlice] {
+        let total = holdingsValueDouble
+        return holdings.map { position in
+            let value = (marketValue(position) as NSDecimalNumber).doubleValue
+            return AllocationSlice(id: position.asset.symbol, label: position.asset.symbol,
+                                   value: value, fraction: total == 0 ? 0 : value / total)
+        }
+    }
+
+    /// Holdings value grouped by asset class (Stocks / ETFs / Crypto).
+    var allocationByKind: [AllocationSlice] {
+        let total = holdingsValueDouble
+        var sums: [AssetKind: Double] = [:]
+        for position in holdings {
+            sums[position.asset.kind, default: 0] += (marketValue(position) as NSDecimalNumber).doubleValue
+        }
+        return [AssetKind.stock, .etf, .crypto].compactMap { kind in
+            guard let value = sums[kind], value > 0 else { return nil }
+            return AllocationSlice(id: kind.rawValue, label: AllocationSlice.label(for: kind),
+                                   value: value, fraction: total == 0 ? 0 : value / total)
+        }
+    }
+
+    /// Holdings ranked by the magnitude of today's move (gainers and losers).
+    var topMovers: [PortfolioMover] {
+        holdings.compactMap { position in
+            guard let quote = quotes[position.asset.symbol] else { return nil }
+            let dayChange = Money(amount: quote.change.amount * position.quantity.amount,
+                                  currencyCode: quote.price.currencyCode)
+            let percent = (quote.changePercent.value as NSDecimalNumber).doubleValue
+            return PortfolioMover(position: position, quote: quote,
+                                  dayChange: dayChange, dayChangePercent: percent)
+        }
+        .sorted { abs($0.dayChangePercent) > abs($1.dayChangePercent) }
+    }
+
+    var realizedPnL: Money { portfolio.realizedPnL }
+
+    /// Transaction history, most recent first.
+    var transactions: [Transaction] { portfolio.transactions.sorted { $0.date > $1.date } }
+
+    /// Display name for a transaction's symbol, if it's (still) a known holding.
+    func assetName(for symbol: String) -> String {
+        portfolio.positions.first { $0.asset.symbol == symbol }?.asset.name ?? symbol
+    }
 
     /// Re-reads the persisted portfolio (e.g. after a trade made elsewhere).
     func reload() { portfolio = fetchPortfolio() }

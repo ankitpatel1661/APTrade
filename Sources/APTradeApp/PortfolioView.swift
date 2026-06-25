@@ -1,12 +1,17 @@
 import SwiftUI
+import Charts
 import APTradeDomain
 
 struct PortfolioView: View {
+    enum Section: String, CaseIterable { case holdings = "Holdings", allocation = "Allocation", activity = "Activity" }
+
     var switcher: AnyView
     @State private var viewModel = CompositionRoot.makePortfolioViewModel()
     @State private var selectedAsset: Asset?
     @State private var showResetConfirm = false
     @State private var showChart = false
+    @State private var section: Section = .holdings
+    @Namespace private var sectionPill
 
     /// Unrealized P&L over time, reconstructed from real historical prices — a far more
     /// meaningful curve than total account value, which is dominated by constant cash.
@@ -26,6 +31,11 @@ struct PortfolioView: View {
                             .padding(.horizontal, 24)
                             .padding(.bottom, 16)
                             .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                    if !viewModel.holdings.isEmpty {
+                        sectionPicker
+                            .padding(.horizontal, 24)
+                            .padding(.bottom, 8)
                     }
                     Divider().overlay(Theme.hairline)
                     content
@@ -145,11 +155,55 @@ struct PortfolioView: View {
         }
     }
 
+    // MARK: - Section switcher
+
+    private var sectionPicker: some View {
+        HStack(spacing: 6) {
+            ForEach(Section.allCases, id: \.self) { item in
+                let selected = section == item
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { section = item }
+                } label: {
+                    Text(item.rawValue)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(selected ? Theme.textPrimary : Theme.textSecondary)
+                        .padding(.horizontal, 14).padding(.vertical, 6)
+                        .background {
+                            if selected {
+                                Capsule().fill(Theme.surfaceHi)
+                                    .overlay(Capsule().stroke(Theme.gold.opacity(0.40), lineWidth: 1))
+                                    .matchedGeometryEffect(id: "section", in: sectionPill)
+                            }
+                        }
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+    }
+
     @ViewBuilder
     private var content: some View {
         if viewModel.holdings.isEmpty {
             emptyState
         } else {
+            switch section {
+            case .holdings: holdingsList
+            case .allocation: allocationView
+            case .activity: activityView
+            }
+        }
+    }
+
+    // MARK: - Holdings
+
+    private var holdingsList: some View {
+        VStack(spacing: 0) {
+            if viewModel.topMovers.count > 1 {
+                topMoversStrip
+                Divider().overlay(Theme.hairline)
+            }
             List {
                 ForEach(viewModel.holdings, id: \.asset.symbol) { position in
                     HoldingRow(position: position, quote: viewModel.quote(for: position.asset.symbol))
@@ -162,6 +216,161 @@ struct PortfolioView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+        }
+    }
+
+    private var topMoversStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(viewModel.topMovers.prefix(6)) { mover in
+                    Button { selectedAsset = mover.position.asset } label: {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(mover.position.asset.symbol)
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(Theme.textPrimary)
+                            Text("\(mover.dayChangePercent >= 0 ? "+" : "")\(mover.dayChangePercent, specifier: "%.2f")%")
+                                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                                .foregroundStyle(mover.dayChangePercent >= 0 ? Theme.up : Theme.down)
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 9)
+                        .frame(minWidth: 84, alignment: .leading)
+                        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 24).padding(.vertical, 12)
+        }
+    }
+
+    // MARK: - Allocation
+
+    private var allocationView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack(alignment: .center, spacing: 20) {
+                    allocationDonut
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(viewModel.allocationByKind) { slice in
+                            HStack(spacing: 8) {
+                                Circle().fill(kindColor(slice.id)).frame(width: 9, height: 9)
+                                Text(slice.label)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(Theme.textPrimary)
+                                Spacer()
+                                Text("\(slice.fraction * 100, specifier: "%.1f")%")
+                                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .padding(.horizontal, 24).padding(.top, 18)
+
+                Text("BY HOLDING")
+                    .font(.system(size: 10, weight: .bold)).tracking(1.4)
+                    .foregroundStyle(Theme.textTertiary)
+                    .padding(.horizontal, 24)
+
+                VStack(spacing: 14) {
+                    ForEach(viewModel.allocationByHolding) { slice in
+                        allocationBar(slice)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
+            }
+        }
+    }
+
+    private var allocationDonut: some View {
+        Chart(viewModel.allocationByKind) { slice in
+            SectorMark(angle: .value("Value", slice.value),
+                       innerRadius: .ratio(0.64), angularInset: 1.5)
+                .cornerRadius(3)
+                .foregroundStyle(kindColor(slice.id))
+        }
+        .chartLegend(.hidden)
+        .frame(width: 150, height: 150)
+        .overlay {
+            VStack(spacing: 2) {
+                Text("HOLDINGS").font(.system(size: 8, weight: .bold)).tracking(1.2)
+                    .foregroundStyle(Theme.textTertiary)
+                Text(viewModel.valuation.holdingsValue.formatted)
+                    .font(.system(size: 14, weight: .bold).monospacedDigit())
+                    .foregroundStyle(Theme.textPrimary)
+                    .minimumScaleFactor(0.6).lineLimit(1)
+            }
+            .padding(.horizontal, 18)
+        }
+    }
+
+    private func allocationBar(_ slice: AllocationSlice) -> some View {
+        VStack(spacing: 6) {
+            HStack {
+                Text(slice.label)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                Spacer()
+                Text("\(slice.fraction * 100, specifier: "%.1f")%")
+                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Theme.surfaceHi).frame(height: 7)
+                    Capsule().fill(Theme.goldGradient)
+                        .frame(width: max(4, geo.size.width * slice.fraction), height: 7)
+                }
+            }
+            .frame(height: 7)
+        }
+    }
+
+    private func kindColor(_ id: String) -> Color {
+        switch id {
+        case AssetKind.stock.rawValue: return Theme.gold
+        case AssetKind.etf.rawValue: return Theme.goldDeep
+        case AssetKind.crypto.rawValue: return Theme.silver
+        default: return Theme.textTertiary
+        }
+    }
+
+    // MARK: - Activity
+
+    private var activityView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 22) {
+                    metric(label: "Realized P&L", money: viewModel.realizedPnL, colored: true)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("TRADES")
+                            .font(.system(size: 10, weight: .semibold)).tracking(1.0)
+                            .foregroundStyle(Theme.textTertiary)
+                        Text("\(viewModel.transactions.count)")
+                            .font(.system(size: 16, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(Theme.textPrimary)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 24).padding(.vertical, 16)
+
+                Divider().overlay(Theme.hairline)
+
+                if viewModel.transactions.isEmpty {
+                    Text("No transactions yet.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.textSecondary)
+                        .padding(24)
+                } else {
+                    ForEach(viewModel.transactions) { txn in
+                        TransactionRow(tx: txn, name: viewModel.assetName(for: txn.symbol))
+                    }
+                }
+            }
         }
     }
 
@@ -212,20 +421,15 @@ private struct HoldingRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(position.asset.name)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1)
-                Text("\(position.quantity.formatted) @ \(position.averageCost.formatted)")
-                    .font(.system(size: 12, weight: .medium).monospacedDigit())
-                    .foregroundStyle(Theme.textSecondary)
-            }
+            Text(position.asset.name)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1)
             Spacer(minLength: 12)
             VStack(alignment: .trailing, spacing: 5) {
                 if let quote {
                     SuperscriptPrice(money: position.marketValue(at: quote.price), size: 18, weight: .semibold)
-                    Text(signed(position.unrealizedPnL(at: quote.price)))
+                    Text(unrealizedText(at: quote.price))
                         .font(.system(size: 12, weight: .semibold).monospacedDigit())
                         .foregroundStyle(pnlColor(position.unrealizedPnL(at: quote.price)))
                 } else {
@@ -247,8 +451,63 @@ private struct HoldingRow: View {
         return Theme.textPrimary
     }
 
+    /// Unrealized P&L with its return percentage beside it, e.g. "−$60.82 (−0.74%)".
+    private func unrealizedText(at price: Money) -> String {
+        let pnl = position.unrealizedPnL(at: price)
+        let cost = position.averageCost.amount * position.quantity.amount
+        let percent = cost == 0
+            ? 0
+            : (pnl.amount as NSDecimalNumber).doubleValue / (cost as NSDecimalNumber).doubleValue * 100
+        let percentString = String(format: "%@%.2f%%", percent >= 0 ? "+" : "", percent)
+        return "\(signed(pnl)) (\(percentString))"
+    }
+
     private func signed(_ money: Money) -> String {
         let sign = money.amount > 0 ? "+" : ""
         return sign + money.formatted
+    }
+}
+
+private struct TransactionRow: View {
+    let tx: APTradeDomain.Transaction
+    let name: String
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Text(tx.side == .buy ? "BUY" : "SELL")
+                .font(.system(size: 10, weight: .bold)).tracking(0.8)
+                .foregroundStyle(sideColor)
+                .frame(width: 44, height: 22)
+                .background(sideColor.opacity(0.12), in: Capsule())
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(tx.symbol)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                Text(tx.date.formatted(.dateTime.month().day().year().hour().minute()))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            Spacer(minLength: 12)
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(amount.formatted)
+                    .font(.system(size: 14, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(Theme.textPrimary)
+                Text("\(tx.quantity.formatted) @ \(tx.price.formatted)")
+                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                    .foregroundStyle(Theme.textSecondary)
+            }
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 24)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Theme.hairline).frame(height: 1).padding(.horizontal, 24)
+        }
+    }
+
+    private var sideColor: Color { tx.side == .buy ? Theme.up : Theme.down }
+
+    private var amount: Money {
+        Money(amount: tx.price.amount * tx.quantity.amount, currencyCode: tx.price.currencyCode)
     }
 }
