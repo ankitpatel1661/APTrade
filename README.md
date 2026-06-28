@@ -40,10 +40,11 @@ The whole app is written against pure domain logic with framework code pushed to
 
 ### Paper-trading portfolio
 - **Buy / Sell** simulated orders with average-cost positions, an optional trade-confirmation step, and a Max helper.
-- **Holdings / Allocation / Activity** — a portfolio sub-switcher:
+- **Holdings / Allocation / Activity / Performance** — a portfolio sub-switcher:
   - **Holdings** — positions sorted by market value, each with unrealized P&L and return %, plus a **top-movers** strip of today's biggest moves.
   - **Allocation** — a donut by asset class (Stocks / ETFs / Crypto) with holdings value centered, and a per-holding percentage breakdown.
   - **Activity** — **realized P&L** (average-cost, computed from the full transaction log so closed positions still count) and the complete transactions ledger.
+  - **Performance** — risk & return analytics computed on a trade-aware equity curve (replaying the transaction log, not just today's holdings backward): **Total Return**, **Annualized Return (CAGR)**, **Volatility**, **Max Drawdown**, **Sharpe**, **Beta**, and **Alpha**. A normalized overlay chart compares the portfolio against a selectable benchmark (**SPY · QQQ · VTI**), and a **diversification score** (effective holdings, Herfindahl-based) flags single-name and asset-class concentration.
 - **P&L-over-time chart** — unrealized P&L reconstructed from real historical prices over a selectable timeframe, colored green/red by direction; tap the sparkline to expand it inline with axes and a hover crosshair.
 - **Export** the portfolio as a **PDF**, **Excel (.xlsx)**, or **Word (.docx)** statement — genuine, standards-compliant documents saved anywhere via a native save panel.
 - **Reset** the portfolio back to its starting cash at any time.

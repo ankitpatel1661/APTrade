@@ -121,4 +121,10 @@ enum CompositionRoot {
             fetchPortfolio: FetchPortfolioUseCase(store: portfolioStore)
         )
     }
+
+    static func makePerformanceViewModel() -> PerformanceViewModel {
+        PerformanceViewModel(
+            compute: ComputePerformanceMetricsUseCase(repository: makeRepository(),
+                                                      store: portfolioStore))
+    }
 }

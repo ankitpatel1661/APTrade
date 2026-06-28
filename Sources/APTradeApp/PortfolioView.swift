@@ -3,10 +3,13 @@ import Charts
 import APTradeDomain
 
 struct PortfolioView: View {
-    enum Section: String, CaseIterable { case holdings = "Holdings", allocation = "Allocation", activity = "Activity" }
+    enum Section: String, CaseIterable {
+        case holdings = "Holdings", allocation = "Allocation", activity = "Activity", performance = "Performance"
+    }
 
     var switcher: AnyView
     @State private var viewModel = CompositionRoot.makePortfolioViewModel()
+    @State private var performanceVM = CompositionRoot.makePerformanceViewModel()
     @State private var selectedAsset: Asset?
     @State private var showResetConfirm = false
     @State private var showChart = false
@@ -215,6 +218,7 @@ struct PortfolioView: View {
             case .holdings: holdingsList
             case .allocation: allocationView
             case .activity: activityView
+            case .performance: PerformanceSection(viewModel: performanceVM)
             }
         }
     }
