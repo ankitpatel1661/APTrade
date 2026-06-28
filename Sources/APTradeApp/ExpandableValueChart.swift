@@ -188,15 +188,48 @@ struct ExpandedValueCard: View {
         .chartLegend(.hidden)
         .chartOverlay { proxy in
             GeometryReader { geo in
-                Rectangle().fill(.clear).contentShape(Rectangle())
-                    .onContinuousHover { phase in
-                        switch phase {
-                        case .active(let location): updateHover(at: location, proxy: proxy, geo: geo)
-                        case .ended: hoverIndex = nil
+                ZStack(alignment: .topLeading) {
+                    Rectangle().fill(.clear).contentShape(Rectangle())
+                        .onContinuousHover { phase in
+                            switch phase {
+                            case .active(let location): updateHover(at: location, proxy: proxy, geo: geo)
+                            case .ended: hoverIndex = nil
+                            }
                         }
+                    if let hoverIndex, values.indices.contains(hoverIndex), let plotFrame = proxy.plotFrame,
+                       let x = proxy.position(forX: hoverIndex),
+                       let y = proxy.position(forY: values[hoverIndex]) {
+                        let frame = geo[plotFrame]
+                        let tooltipWidth: CGFloat = 124
+                        let clampedX = min(max(frame.origin.x + x, tooltipWidth / 2),
+                                           geo.size.width - tooltipWidth / 2)
+                        let tooltipY = max(frame.origin.y + y - 42, 0)
+                        hoverTooltip
+                            .frame(width: tooltipWidth)
+                            .position(x: clampedX, y: tooltipY)
                     }
+                }
             }
         }
+    }
+
+    /// A floating readout pinned to the hovered point — value plus timestamp when available.
+    private var hoverTooltip: some View {
+        VStack(spacing: 2) {
+            Text(format(activeValue))
+                .font(.system(size: 12, weight: .bold).monospacedDigit())
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1).minimumScaleFactor(0.7)
+            if let label = timeLabel {
+                Text(label)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
+        }
+        .padding(.horizontal, 9).padding(.vertical, 5)
+        .background(Theme.surfaceHi, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
     }
 
     private func updateHover(at location: CGPoint, proxy: ChartProxy, geo: GeometryProxy) {
