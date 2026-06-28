@@ -3,9 +3,9 @@ import APTradeDomain
 
 extension Timeframe {
     /// Requests a slightly wider window than the timeframe needs (e.g. 5d of raw data
-    /// for a "last 24 hours" view) so `clampWindow` can trim to an exact rolling window
-    /// — Yahoo's own ranges count trading days, not calendar time, so "5d" alone isn't
-    /// a real week and "1d" alone isn't a rolling 24 hours.
+    /// for a "last 24 hours" view) so the repository can trim to an exact rolling window
+    /// anchored to the most recent bar — Yahoo's own ranges count trading days, not
+    /// calendar time, so "5d" alone isn't a real week and "1d" alone isn't a rolling 24h.
     public var yahooRange: String {
         switch self {
         case .oneDay: return "5d"

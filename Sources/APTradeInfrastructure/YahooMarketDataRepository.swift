@@ -41,18 +41,24 @@ public final class YahooMarketDataRepository: MarketDataRepository {
     public func history(for symbol: String, timeframe: Timeframe) async throws -> [PricePoint] {
         let data = try await fetch(symbol: symbol, range: timeframe.yahooRange, interval: timeframe.yahooInterval)
         let points = try YahooMapper.history(from: data)
-        let cutoff = Date().addingTimeInterval(-timeframe.windowDuration)
-        let clamped = points.filter { $0.date >= cutoff }
-        // Yahoo can omit the freshest bar near market close; never clamp to an empty chart.
-        return clamped.isEmpty ? points : clamped
+        return Self.clampToWindow(points, timeframe: timeframe) { $0.date }
     }
 
     public func candles(for symbol: String, timeframe: Timeframe) async throws -> [Candle] {
         let data = try await fetch(symbol: symbol, range: timeframe.yahooRange, interval: timeframe.yahooInterval)
         let candles = try YahooMapper.candles(from: data)
-        let cutoff = Date().addingTimeInterval(-timeframe.windowDuration)
-        let clamped = candles.filter { $0.date >= cutoff }
-        return clamped.isEmpty ? candles : clamped
+        return Self.clampToWindow(candles, timeframe: timeframe) { $0.date }
+    }
+
+    /// Trims the wider raw fetch to the timeframe's exact rolling window, anchored to the
+    /// **most recent bar** rather than wall-clock now. Anchoring to now breaks on weekends,
+    /// holidays, and after-hours: when "now" is far from the last session, a 24h-from-now
+    /// window catches no trading bars and the whole multi-day fetch leaks through. Anchoring
+    /// to the newest bar always yields the latest window (e.g. 1D = the most recent session).
+    static func clampToWindow<T>(_ items: [T], timeframe: Timeframe, date: (T) -> Date) -> [T] {
+        guard let newest = items.map(date).max() else { return items }
+        let cutoff = newest.addingTimeInterval(-timeframe.windowDuration)
+        return items.filter { date($0) >= cutoff }
     }
 
     public func profile(for symbol: String) async throws -> Asset {
