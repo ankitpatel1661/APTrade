@@ -32,6 +32,7 @@ enum CompositionRoot {
     static let marketEventNotifier: MarketEventNotifier = notificationDeliverer
     static let settingsStore: SettingsStore = UserDefaultsSettingsStore()
     static let schedulerStateStore: SchedulerStateStore = UserDefaultsSchedulerStateStore()
+    static let bookmarkStore: BookmarkStore = UserDefaultsBookmarkStore()
 
     static func makeSettingsViewModel() -> SettingsViewModel {
         SettingsViewModel(
@@ -130,5 +131,23 @@ enum CompositionRoot {
 
     static func makeCommandPaletteViewModel() -> CommandPaletteViewModel {
         CommandPaletteViewModel(searchAssets: SearchAssetsUseCase(repository: makeRepository()))
+    }
+
+    /// Live Finnhub news when a key is configured, otherwise the empty fallback (drives the
+    /// "connect a news source" empty state). The key is read only here, never above infrastructure.
+    static func makeNewsRepository() -> NewsRepository {
+        if let key = AppConfig.finnhubAPIKey() {
+            return FinnhubNewsRepository(apiKey: key)
+        }
+        return EmptyNewsRepository()
+    }
+
+    static func makeNewsViewModel() -> NewsViewModel {
+        let repo = makeNewsRepository()
+        return NewsViewModel(
+            fetchMarketNews: FetchMarketNewsUseCase(repository: repo),
+            loadBookmarks: LoadBookmarksUseCase(store: bookmarkStore),
+            toggleBookmark: ToggleBookmarkUseCase(store: bookmarkStore),
+            keyMissing: AppConfig.finnhubAPIKey() == nil)
     }
 }
