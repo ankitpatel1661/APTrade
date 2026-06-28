@@ -35,6 +35,7 @@ struct RootView: View {
                     .keyboardShortcut("k", modifiers: .command)
                     .frame(width: 0, height: 0)
                     .opacity(0)
+                    .accessibilityHidden(true)
                 VStack(spacing: 0) {
                     ZStack {
                         if let appWordmarkImage = BrandImage.wordmark(accent: ThemeManager.shared.accent, isDark: ThemeManager.shared.isDark) {
