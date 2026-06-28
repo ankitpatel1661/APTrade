@@ -648,7 +648,7 @@ final class PerformanceUseCasesTests: XCTestCase {
         let aapl = Asset(symbol: "AAPL", name: "Apple", kind: .stock)
         return try! Portfolio.starting()
             .buying(aapl, quantity: Quantity(Decimal(10)), at: Money(amount: 100),
-                    date: Date(timeIntervalSince1970: 0))
+                    on: Date(timeIntervalSince1970: 0))
     }
 
     func test_emptyPortfolio_returnsEmptyReport() async {
@@ -892,7 +892,7 @@ final class PerformanceViewModelTests: XCTestCase {
         let aapl = Asset(symbol: "AAPL", name: "Apple", kind: .stock)
         let portfolio = try! Portfolio.starting()
             .buying(aapl, quantity: Quantity(Decimal(10)), at: Money(amount: 100),
-                    date: Date(timeIntervalSince1970: 0))
+                    on: Date(timeIntervalSince1970: 0))
         let model = vm(portfolio)
         await model.load()
         guard case .loaded(let report) = model.state else { return XCTFail("expected .loaded") }
