@@ -1216,7 +1216,7 @@ Launch the app (see `aptrade` skill for the run command). In the Portfolio tab w
 - A **Performance** pill appears in the picker beside Holdings / Allocation / Activity.
 - Selecting it shows the metric grid (Total Return, Annualized, Volatility, Max Drawdown, Sharpe, Beta, Alpha), the SPY/QQQ/VTI benchmark picker, the normalized overlay chart (portfolio gold vs. benchmark grey, both starting at 100), and a diversification line with any concentration warnings.
 - Switching the benchmark re-renders the overlay.
-- With an all-cash portfolio (after Reset), the section shows the "Not enough history yet" empty state.
+- `PerformanceSection`'s own empty state ("Not enough history yet") is reachable when a position exists but its equity curve resolves to fewer than 2 points (e.g. a symbol whose history fetch returns insufficient data) — NOT via Reset, since an all-cash portfolio has no positions and is intercepted earlier by `PortfolioView.content`'s `viewModel.holdings.isEmpty` gate, which hides the section picker entirely rather than reaching `PerformanceSection`.
 
 - [ ] **Step 6: Commit**
 
