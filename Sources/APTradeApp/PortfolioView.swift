@@ -81,11 +81,34 @@ struct PortfolioView: View {
                 ],
                 onClose: { withAnimation(chartSpring) { showChart = false } }
             )
-            TimeframeBar(selection: viewModel.timeframe) { tf in
-                Task { await viewModel.setTimeframe(tf) }
-            }
-            .padding(.horizontal, 12)
+            spanBar
+                .padding(.horizontal, 12)
         }
+    }
+
+    /// 1D · 1W · 1M · 1Y · MAX selector for the P&L chart (MAX = since first purchase).
+    private var spanBar: some View {
+        HStack(spacing: 0) {
+            ForEach(PortfolioSpan.allCases) { item in
+                let selected = viewModel.span == item
+                Button {
+                    Task { await viewModel.setSpan(item) }
+                } label: {
+                    VStack(spacing: 6) {
+                        Text(item.rawValue)
+                            .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(selected ? Theme.gold : Theme.textSecondary)
+                        Capsule()
+                            .fill(selected ? Theme.gold : .clear)
+                            .frame(height: 2)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: viewModel.span)
     }
 
     private var summary: some View {
@@ -199,50 +222,18 @@ struct PortfolioView: View {
     // MARK: - Holdings
 
     private var holdingsList: some View {
-        VStack(spacing: 0) {
-            if viewModel.topMovers.count > 1 {
-                topMoversStrip
-                Divider().overlay(Theme.hairline)
+        List {
+            ForEach(viewModel.holdings, id: \.asset.symbol) { position in
+                HoldingRow(position: position, quote: viewModel.quote(for: position.asset.symbol))
+                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .contentShape(Rectangle())
+                    .onTapGesture { selectedAsset = position.asset }
             }
-            List {
-                ForEach(viewModel.holdings, id: \.asset.symbol) { position in
-                    HoldingRow(position: position, quote: viewModel.quote(for: position.asset.symbol))
-                        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                        .contentShape(Rectangle())
-                        .onTapGesture { selectedAsset = position.asset }
-                }
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
         }
-    }
-
-    private var topMoversStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(viewModel.topMovers.prefix(6)) { mover in
-                    Button { selectedAsset = mover.position.asset } label: {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(mover.position.asset.symbol)
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(Theme.textPrimary)
-                            Text("\(mover.dayChangePercent >= 0 ? "+" : "")\(mover.dayChangePercent, specifier: "%.2f")%")
-                                .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                                .foregroundStyle(mover.dayChangePercent >= 0 ? Theme.up : Theme.down)
-                        }
-                        .padding(.horizontal, 12).padding(.vertical, 9)
-                        .frame(minWidth: 84, alignment: .leading)
-                        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 24).padding(.vertical, 12)
-        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
     }
 
     // MARK: - Allocation

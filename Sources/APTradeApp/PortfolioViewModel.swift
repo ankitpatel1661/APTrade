@@ -19,13 +19,23 @@ struct AllocationSlice: Identifiable, Equatable {
     }
 }
 
-/// A holding annotated with today's move, for the "top movers" strip.
-struct PortfolioMover: Identifiable {
-    var id: String { position.asset.symbol }
-    let position: Position
-    let quote: Quote
-    let dayChange: Money
-    let dayChangePercent: Double
+/// The portfolio P&L chart's time span. Mirrors the asset-detail timeframes but adds a
+/// **Max** option that runs since the portfolio's first purchase.
+enum PortfolioSpan: String, CaseIterable, Identifiable {
+    case day = "1D", week = "1W", month = "1M", year = "1Y", max = "MAX"
+    var id: String { rawValue }
+
+    var timeframe: Timeframe {
+        switch self {
+        case .day: return .oneDay
+        case .week: return .oneWeek
+        case .month: return .oneMonth
+        case .year, .max: return .oneYear
+        }
+    }
+
+    /// Max trims the curve to begin at the first transaction (the portfolio's inception).
+    var sinceInception: Bool { self == .max }
 }
 
 @MainActor
@@ -44,7 +54,7 @@ final class PortfolioViewModel {
     private(set) var history: [PricePoint] = []
     /// Reconstructed value / P&L curve over `timeframe`, drawn by the chart.
     private(set) var performance: [PortfolioPerformancePoint] = []
-    var timeframe: Timeframe = .oneMonth
+    var span: PortfolioSpan = .month
     private(set) var isLive = false
     var isRefreshing = false
     private(set) var isLoadingPerformance = false
@@ -114,19 +124,6 @@ final class PortfolioViewModel {
         }
     }
 
-    /// Holdings ranked by the magnitude of today's move (gainers and losers).
-    var topMovers: [PortfolioMover] {
-        holdings.compactMap { position in
-            guard let quote = quotes[position.asset.symbol] else { return nil }
-            let dayChange = Money(amount: quote.change.amount * position.quantity.amount,
-                                  currencyCode: quote.price.currencyCode)
-            let percent = (quote.changePercent.value as NSDecimalNumber).doubleValue
-            return PortfolioMover(position: position, quote: quote,
-                                  dayChange: dayChange, dayChangePercent: percent)
-        }
-        .sorted { abs($0.dayChangePercent) > abs($1.dayChangePercent) }
-    }
-
     var realizedPnL: Money { portfolio.realizedPnL }
 
     /// Transaction history, most recent first.
@@ -146,16 +143,16 @@ final class PortfolioViewModel {
         await loadPerformance()
     }
 
-    /// Rebuilds the value/P&L curve for the current timeframe from historical prices.
+    /// Rebuilds the value/P&L curve for the current span from historical prices.
     func loadPerformance() async {
         isLoadingPerformance = true
         defer { isLoadingPerformance = false }
-        performance = await fetchPerformance(timeframe: timeframe)
+        performance = await fetchPerformance(timeframe: span.timeframe, sinceInception: span.sinceInception)
     }
 
-    func setTimeframe(_ newValue: Timeframe) async {
-        guard newValue != timeframe else { return }
-        timeframe = newValue
+    func setSpan(_ newValue: PortfolioSpan) async {
+        guard newValue != span else { return }
+        span = newValue
         await loadPerformance()
     }
 

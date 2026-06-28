@@ -79,7 +79,11 @@ public struct FetchPortfolioPerformanceUseCase: Sendable {
         self.store = store
     }
 
-    public func callAsFunction(timeframe: Timeframe) async -> [PortfolioPerformancePoint] {
+    /// Builds the performance curve over `timeframe`. When `sinceInception` is set, the
+    /// curve is trimmed to start at the first transaction's day, so a "Max / Since purchase"
+    /// view begins when the portfolio actually started rather than at the fetch-range edge.
+    public func callAsFunction(timeframe: Timeframe,
+                               sinceInception: Bool = false) async -> [PortfolioPerformancePoint] {
         let portfolio = store.load()
         guard !portfolio.positions.isEmpty else { return [] }
 
@@ -95,6 +99,13 @@ public struct FetchPortfolioPerformanceUseCase: Sendable {
             }
             for await (symbol, points) in group { histories[symbol] = points }
         }
-        return portfolio.performanceSeries(histories: histories)
+
+        var series = portfolio.performanceSeries(histories: histories)
+        if sinceInception, let firstDate = portfolio.transactions.map(\.date).min() {
+            let inceptionDay = Calendar.current.startOfDay(for: firstDate)
+            let trimmed = series.filter { $0.date >= inceptionDay }
+            if !trimmed.isEmpty { series = trimmed }
+        }
+        return series
     }
 }
