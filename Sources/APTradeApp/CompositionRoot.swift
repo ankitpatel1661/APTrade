@@ -150,4 +150,14 @@ enum CompositionRoot {
             toggleBookmark: ToggleBookmarkUseCase(store: bookmarkStore),
             keyMissing: AppConfig.finnhubAPIKey() == nil)
     }
+
+    static func makeAssetNewsViewModel(for asset: Asset) -> AssetNewsViewModel {
+        let repo = makeNewsRepository()
+        return AssetNewsViewModel(
+            symbol: asset.symbol,
+            fetchCompanyNews: FetchCompanyNewsUseCase(repository: repo),
+            loadBookmarks: LoadBookmarksUseCase(store: bookmarkStore),
+            toggleBookmark: ToggleBookmarkUseCase(store: bookmarkStore),
+            keyMissing: AppConfig.finnhubAPIKey() == nil)
+    }
 }

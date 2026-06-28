@@ -17,6 +17,7 @@ struct AssetDetailView: View {
     private static let bollingerPeriod = 20
 
     @State private var viewModel: AssetDetailViewModel
+    @State private var newsVM: AssetNewsViewModel
     @State private var tradeSide: TradeSide?
     @State private var hoverPoint: PricePoint?
     @State private var chartStyle: ChartStyle = .area
@@ -24,6 +25,7 @@ struct AssetDetailView: View {
 
     init(asset: Asset) {
         _viewModel = State(initialValue: CompositionRoot.makeDetailViewModel(for: asset))
+        _newsVM = State(initialValue: CompositionRoot.makeAssetNewsViewModel(for: asset))
     }
 
     /// Colors the badge/chart by the selected timeframe's own move (points-derived),
@@ -53,6 +55,7 @@ struct AssetDetailView: View {
                     }
                     keyStats
                     positionPanel
+                    AssetNewsSection(viewModel: newsVM)
                 }
                 .padding(24)
             }
