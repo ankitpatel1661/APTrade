@@ -87,3 +87,16 @@ public protocol SchedulerStateStore: Sendable {
     func load() -> SchedulerState
     func save(_ state: SchedulerState)
 }
+
+/// Supplies news articles from an external source. Methods throw `AppError` on failure;
+/// callers (use cases) decide whether to surface or swallow.
+public protocol NewsRepository: Sendable {
+    func marketNews(category: NewsCategory) async throws -> [NewsArticle]
+    func companyNews(symbol: String) async throws -> [NewsArticle]
+}
+
+/// Persists the user's bookmarked articles.
+public protocol BookmarkStore: Sendable {
+    func load() -> [NewsArticle]
+    func save(_ articles: [NewsArticle])
+}
