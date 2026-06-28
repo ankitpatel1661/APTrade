@@ -17,6 +17,11 @@ public extension Portfolio {
     /// account actually had at that date, and values holdings against each symbol's
     /// forward-filled close. Anchored on the current `cash` (no external deposits exist) —
     /// cash at a past date adds back the net cash of trades that happened *after* it. Pure.
+    ///
+    /// Note: if a held symbol has no price on or before a given date, it contributes $0 to
+    /// that date's value (the point is still included as long as at least one held symbol is
+    /// priced) — so a portfolio mixing symbols with staggered first-bar dates will show
+    /// understated equity for the dates before the later symbol has any price.
     func equitySeries(histories: [String: [PricePoint]]) -> [EquityPoint] {
         let code = cash.currencyCode
         let allDates = Set(histories.values.flatMap { $0.map(\.date) }).sorted()

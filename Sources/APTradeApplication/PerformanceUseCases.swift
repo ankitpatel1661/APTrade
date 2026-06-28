@@ -81,6 +81,10 @@ public struct ComputePerformanceMetricsUseCase: Sendable {
             let bValues = benchmarkCurve.map { ($0.close.amount as NSDecimalNumber).doubleValue }
             let bReturns = RiskMetrics.dailyReturns(bValues)
             let n = min(returns.count, bReturns.count)
+            // Pairs the last n returns by index (recency), not by date — accurate when the portfolio
+            // and benchmark share the same trading calendar (e.g. both equities/ETFs). A portfolio
+            // mixing assets with different trading calendars (e.g. crypto, which trades 7 days a week)
+            // against an equity benchmark may see mildly misaligned day-pairing in this overlap.
             if n > 1, let b = RiskMetrics.beta(portfolioReturns: Array(returns.suffix(n)),
                                                benchmarkReturns: Array(bReturns.suffix(n))) {
                 beta = b
