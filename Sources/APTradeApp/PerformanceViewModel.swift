@@ -19,6 +19,7 @@ final class PerformanceViewModel {
     let benchmarks = ["SPY", "QQQ", "VTI"]
 
     private let compute: ComputePerformanceMetricsUseCase
+    private var loadTask: Task<Void, Never>?
 
     init(compute: ComputePerformanceMetricsUseCase) { self.compute = compute }
 
@@ -30,9 +31,16 @@ final class PerformanceViewModel {
     /// Recomputes the report for the current timeframe/benchmark selection.
     func load() async {
         state = .loading
-        let report = await compute(timeframe: timeframe, benchmark: benchmark)
+        let requestedTimeframe = timeframe
+        let requestedBenchmark = benchmark
+        let report = await compute(timeframe: requestedTimeframe, benchmark: requestedBenchmark)
+        // Ignore a result a newer selection has already superseded.
+        guard requestedTimeframe == timeframe, requestedBenchmark == benchmark else { return }
         state = report.isEmpty ? .empty : .loaded(report)
     }
 
-    private func reload() { Task { await load() } }
+    private func reload() {
+        loadTask?.cancel()
+        loadTask = Task { await load() }
+    }
 }
