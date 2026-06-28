@@ -127,4 +127,8 @@ enum CompositionRoot {
             compute: ComputePerformanceMetricsUseCase(repository: makeRepository(),
                                                       store: portfolioStore))
     }
+
+    static func makeCommandPaletteViewModel() -> CommandPaletteViewModel {
+        CommandPaletteViewModel(searchAssets: SearchAssetsUseCase(repository: makeRepository()))
+    }
 }

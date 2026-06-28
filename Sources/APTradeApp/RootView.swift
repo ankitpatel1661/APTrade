@@ -23,10 +23,18 @@ struct RootView: View {
     @State private var isExporting = false
     @State private var exportError: String?
 
+    @State private var showPalette = false
+    @State private var paletteVM = CompositionRoot.makeCommandPaletteViewModel()
+    @State private var paletteAsset: Asset?
+
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .trailing) {
                 Theme.background.ignoresSafeArea()
+                Button("") { showPalette = true }
+                    .keyboardShortcut("k", modifiers: .command)
+                    .frame(width: 0, height: 0)
+                    .opacity(0)
                 VStack(spacing: 0) {
                     ZStack {
                         if let appWordmarkImage = BrandImage.wordmark(accent: ThemeManager.shared.accent, isDark: ThemeManager.shared.isDark) {
@@ -37,6 +45,7 @@ struct RootView: View {
                                 .frame(maxWidth: .infinity, alignment: .center)
                         }
                         HStack(spacing: 10) {
+                            paletteButton
                             themeToggleButton
                             accountMenuButton
                         }
@@ -68,6 +77,14 @@ struct RootView: View {
                         .ignoresSafeArea()
                         .transition(.move(edge: .trailing))
                 }
+
+                if showPalette {
+                    CommandPaletteView(
+                        viewModel: paletteVM,
+                        onSelect: { handlePaletteSelection($0) },
+                        onClose: { closePalette() }
+                    )
+                }
             }
             .animation(.spring(response: 0.34, dampingFraction: 0.88), value: showAccountPanel)
         }
@@ -90,6 +107,16 @@ struct RootView: View {
             Button("OK", role: .cancel) { exportError = nil }
         } message: {
             Text(exportError ?? "")
+        }
+        .sheet(item: $paletteAsset) { asset in
+            NavigationStack {
+                AssetDetailView(asset: asset)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { paletteAsset = nil }
+                        }
+                    }
+            }
         }
     }
 
@@ -136,6 +163,38 @@ struct RootView: View {
     private func close() {
         showAccountPanel = false
         panelRoute = .menu
+    }
+
+    private func handlePaletteSelection(_ result: PaletteResult) {
+        switch result {
+        case .navigate(_, _, let destination):
+            switch destination {
+            case .watchlist: tab = .watchlist
+            case .portfolio: tab = .portfolio
+            }
+        case .asset(let asset):
+            paletteAsset = asset
+        }
+        closePalette()
+    }
+
+    private func closePalette() {
+        showPalette = false
+        paletteVM.reset()
+    }
+
+    private var paletteButton: some View {
+        Button {
+            showPalette = true
+        } label: {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.gold)
+                .frame(width: 28, height: 28)
+                .background(Theme.surface, in: Circle())
+                .overlay(Circle().stroke(Theme.gold.opacity(0.4), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 
     private var themeToggleButton: some View {
