@@ -93,20 +93,20 @@ struct RootView: View {
         .frame(minWidth: 560, minHeight: 680)
         .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
         .task { await scheduler.run() }
-        .confirmationDialog("Export Portfolio Data", isPresented: $showExportDialog,
+        .confirmationDialog(tr(.exportPortfolioData), isPresented: $showExportDialog,
                             titleVisibility: .visible) {
             ForEach(PortfolioExportFormat.allCases, id: \.self) { format in
                 Button(format.displayName) { beginExport(format) }
             }
-            Button("Cancel", role: .cancel) {}
+            Button(tr(.cancel), role: .cancel) {}
         } message: {
-            Text("Choose a format to save your holdings, cost basis, and P&L.")
+            Text(tr(.exportFormatPrompt))
         }
-        .alert("Export Failed", isPresented: Binding(
+        .alert(tr(.exportFailed), isPresented: Binding(
             get: { exportError != nil },
             set: { if !$0 { exportError = nil } }
         )) {
-            Button("OK", role: .cancel) { exportError = nil }
+            Button(tr(.ok), role: .cancel) { exportError = nil }
         } message: {
             Text(exportError ?? "")
         }
@@ -115,7 +115,7 @@ struct RootView: View {
                 AssetDetailView(asset: asset)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { paletteAsset = nil }
+                            Button(tr(.done)) { paletteAsset = nil }
                         }
                     }
             }
@@ -140,7 +140,7 @@ struct RootView: View {
 
     private func presentSavePanel(for data: Data, format: PortfolioExportFormat) {
         let panel = NSSavePanel()
-        panel.title = "Export Portfolio Data"
+        panel.title = tr(.exportPortfolioData)
         panel.nameFieldStringValue = "\(Self.exportFileStem).\(format.fileExtension)"
         if let contentType = UTType(filenameExtension: format.fileExtension) {
             panel.allowedContentTypes = [contentType]
@@ -245,7 +245,7 @@ struct RootView: View {
     private var accountMenuPage: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Account")
+                Text(tr(.account))
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Theme.textPrimary)
                 Spacer()
@@ -265,10 +265,10 @@ struct RootView: View {
             Divider().overlay(Theme.hairline)
 
             VStack(alignment: .leading, spacing: 2) {
-                accountRow(icon: "person.crop.circle", title: "Profile") { panelRoute = .profile }
-                accountRow(icon: "gearshape", title: "Account Settings") { panelRoute = .accountSettings }
-                accountRow(icon: "bell", title: "Notifications") { panelRoute = .notifications }
-                accountRow(icon: "paintpalette", title: "Appearance") { panelRoute = .appearance }
+                accountRow(icon: "person.crop.circle", title: tr(.profile)) { panelRoute = .profile }
+                accountRow(icon: "gearshape", title: tr(.accountSettings)) { panelRoute = .accountSettings }
+                accountRow(icon: "bell", title: tr(.notifications)) { panelRoute = .notifications }
+                accountRow(icon: "paintpalette", title: tr(.appearance)) { panelRoute = .appearance }
                 accountRow(icon: "globe", title: tr(.language)) { panelRoute = .language }
             }
             .padding(.top, 10)
@@ -276,26 +276,26 @@ struct RootView: View {
             Divider().overlay(Theme.hairline).padding(.vertical, 10)
 
             VStack(alignment: .leading, spacing: 2) {
-                accountRow(icon: "lock.shield", title: "Security & Privacy") { panelRoute = .security }
-                accountRow(icon: "square.and.arrow.up", title: "Export Portfolio Data") {
+                accountRow(icon: "lock.shield", title: tr(.securityAndPrivacy)) { panelRoute = .security }
+                accountRow(icon: "square.and.arrow.up", title: tr(.exportPortfolioData)) {
                     close()
                     showExportDialog = true
                 }
-                accountRow(icon: "questionmark.circle", title: "Help & Support") { panelRoute = .help }
-                accountRow(icon: "info.circle", title: "About APTrade") { panelRoute = .about }
+                accountRow(icon: "questionmark.circle", title: tr(.helpAndSupport)) { panelRoute = .help }
+                accountRow(icon: "info.circle", title: tr(.aboutAPTrade)) { panelRoute = .about }
             }
 
             Spacer()
 
             Divider().overlay(Theme.hairline)
             if isLoggedIn {
-                accountRow(icon: "rectangle.portrait.and.arrow.right", title: "Sign Out", destructive: true) {
+                accountRow(icon: "rectangle.portrait.and.arrow.right", title: tr(.signOut), destructive: true) {
                     isLoggedIn = false
                     close()
                 }
                 .padding(.bottom, 12)
             } else {
-                accountRow(icon: "person.crop.circle.badge.checkmark", title: "Login") {
+                accountRow(icon: "person.crop.circle.badge.checkmark", title: tr(.login)) {
                     isLoggedIn = true
                     close()
                 }
@@ -307,14 +307,14 @@ struct RootView: View {
 
     private var profilePage: some View {
         VStack(alignment: .leading, spacing: 0) {
-            subpageHeader(title: "Profile")
+            subpageHeader(title: tr(.profile))
 
             Divider().overlay(Theme.hairline)
 
             VStack(alignment: .leading, spacing: 18) {
-                detailField(label: "Name", value: "Ankit Patel")
-                detailField(label: "Date of Birth", value: "January 1, 1995")
-                detailField(label: "Email", value: "ankitpatel.svnit@gmail.com")
+                detailField(label: tr(.name), value: "Ankit Patel")
+                detailField(label: tr(.dateOfBirth), value: "January 1, 1995")
+                detailField(label: tr(.email), value: "ankitpatel.svnit@gmail.com")
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
@@ -326,16 +326,16 @@ struct RootView: View {
 
     private var accountSettingsPage: some View {
         VStack(alignment: .leading, spacing: 0) {
-            subpageHeader(title: "Account Settings")
+            subpageHeader(title: tr(.accountSettings))
 
             Divider().overlay(Theme.hairline)
 
             VStack(alignment: .leading, spacing: 18) {
-                detailField(label: "Trading Mode", value: "Simulated · Paper Trading")
-                detailField(label: "Starting Balance", value: "$100,000.00")
-                detailField(label: "Display Currency", value: "USD ($)")
-                detailField(label: "Default Tab", value: "Watchlist")
-                detailField(label: "Biometric Login", value: "Enabled — Touch ID")
+                detailField(label: tr(.tradingMode), value: tr(.simulatedPaperTrading))
+                detailField(label: tr(.startingBalance), value: "$100,000.00")
+                detailField(label: tr(.displayCurrency), value: "USD ($)")
+                detailField(label: tr(.defaultTab), value: tr(.watchlist))
+                detailField(label: tr(.biometricLogin), value: tr(.enabledTouchID))
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
@@ -347,23 +347,23 @@ struct RootView: View {
 
     private var notificationsPage: some View {
         VStack(alignment: .leading, spacing: 0) {
-            subpageHeader(title: "Notifications")
+            subpageHeader(title: tr(.notifications))
             Divider().overlay(Theme.hairline)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    sectionLabel("Push Notifications")
-                    toggleRow(icon: "bell.badge", title: "Price Alerts",
-                              subtitle: "When a watchlist alert is triggered", isOn: $settingsVM.settings.priceAlerts)
-                    toggleRow(icon: "checkmark.seal", title: "Order Fills",
-                              subtitle: "Buy and sell confirmations", isOn: $settingsVM.settings.orderFills)
-                    toggleRow(icon: "clock", title: "Market Open & Close",
-                              subtitle: "Daily session reminders", isOn: $settingsVM.settings.marketOpenClose)
-                    toggleRow(icon: "newspaper", title: "Daily News Digest",
-                              subtitle: "Top stories for your holdings", isOn: $settingsVM.settings.newsDigest)
+                    sectionLabel(tr(.pushNotifications))
+                    toggleRow(icon: "bell.badge", title: tr(.priceAlerts),
+                              subtitle: tr(.priceAlertsSubtitle), isOn: $settingsVM.settings.priceAlerts)
+                    toggleRow(icon: "checkmark.seal", title: tr(.orderFills),
+                              subtitle: tr(.orderFillsSubtitle), isOn: $settingsVM.settings.orderFills)
+                    toggleRow(icon: "clock", title: tr(.marketOpenAndClose),
+                              subtitle: tr(.marketOpenAndCloseSubtitle), isOn: $settingsVM.settings.marketOpenClose)
+                    toggleRow(icon: "newspaper", title: tr(.dailyNewsDigest),
+                              subtitle: tr(.dailyNewsDigestSubtitle), isOn: $settingsVM.settings.newsDigest)
 
-                    sectionLabel("Email")
-                    toggleRow(icon: "envelope", title: "Email Notifications",
-                              subtitle: "Send a copy to ankitpatel.svnit@gmail.com", isOn: $settingsVM.settings.emailNotifications)
+                    sectionLabel(tr(.email))
+                    toggleRow(icon: "envelope", title: tr(.emailNotifications),
+                              subtitle: tr(.emailNotificationsSubtitle), isOn: $settingsVM.settings.emailNotifications)
                 }
                 .padding(.top, 6)
             }
@@ -374,18 +374,18 @@ struct RootView: View {
 
     private var appearancePage: some View {
         VStack(alignment: .leading, spacing: 0) {
-            subpageHeader(title: "Appearance")
+            subpageHeader(title: tr(.appearance))
             Divider().overlay(Theme.hairline)
             VStack(alignment: .leading, spacing: 0) {
-                sectionLabel("Theme")
-                themeOptionRow(title: "Dark", subtitle: "Default — gold on black", isSelected: ThemeManager.shared.isDark) {
+                sectionLabel(tr(.theme))
+                themeOptionRow(icon: "moon.fill", title: tr(.dark), subtitle: tr(.darkSubtitle), isSelected: ThemeManager.shared.isDark) {
                     if !ThemeManager.shared.isDark { withAnimation(.easeInOut(duration: 0.25)) { ThemeManager.shared.toggle() } }
                 }
-                themeOptionRow(title: "Light", subtitle: "Charcoal on warm white", isSelected: !ThemeManager.shared.isDark) {
+                themeOptionRow(icon: "sun.max.fill", title: tr(.light), subtitle: tr(.lightSubtitle), isSelected: !ThemeManager.shared.isDark) {
                     if ThemeManager.shared.isDark { withAnimation(.easeInOut(duration: 0.25)) { ThemeManager.shared.toggle() } }
                 }
 
-                sectionLabel("Accent")
+                sectionLabel(tr(.accent))
                 ForEach(AccentTheme.allCases, id: \.self) { accent in
                     accentRow(accent)
                 }
@@ -469,26 +469,26 @@ struct RootView: View {
 
     private var securityPage: some View {
         VStack(alignment: .leading, spacing: 0) {
-            subpageHeader(title: "Security & Privacy")
+            subpageHeader(title: tr(.securityAndPrivacy))
             Divider().overlay(Theme.hairline)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    sectionLabel("Authentication")
-                    toggleRow(icon: "faceid", title: "Biometric Login",
-                              subtitle: "Unlock with Touch ID / Face ID", isOn: $settingsVM.settings.biometricLogin)
-                    toggleRow(icon: "lock.rotation", title: "Require Auth on Launch",
-                              subtitle: "Ask every time the app opens", isOn: $settingsVM.settings.requireAuthOnLaunch)
-                    toggleRow(icon: "hand.raised", title: "Confirm Trades",
-                              subtitle: "Re-authenticate before buy / sell", isOn: $settingsVM.settings.confirmTrades)
+                    sectionLabel(tr(.authentication))
+                    toggleRow(icon: "faceid", title: tr(.biometricLogin),
+                              subtitle: tr(.biometricLoginSubtitle), isOn: $settingsVM.settings.biometricLogin)
+                    toggleRow(icon: "lock.rotation", title: tr(.requireAuthOnLaunch),
+                              subtitle: tr(.requireAuthOnLaunchSubtitle), isOn: $settingsVM.settings.requireAuthOnLaunch)
+                    toggleRow(icon: "hand.raised", title: tr(.confirmTrades),
+                              subtitle: tr(.confirmTradesSubtitle), isOn: $settingsVM.settings.confirmTrades)
 
-                    sectionLabel("Privacy")
-                    toggleRow(icon: "chart.bar.doc.horizontal", title: "Share Usage Analytics",
-                              subtitle: "Anonymous diagnostics to improve APTrade", isOn: $settingsVM.settings.analyticsSharing)
+                    sectionLabel(tr(.privacy))
+                    toggleRow(icon: "chart.bar.doc.horizontal", title: tr(.shareUsageAnalytics),
+                              subtitle: tr(.shareUsageAnalyticsSubtitle), isOn: $settingsVM.settings.analyticsSharing)
 
-                    sectionLabel("Data")
-                    linkRow(icon: "key", title: "Change Password")
-                    linkRow(icon: "iphone.and.arrow.forward", title: "Manage Devices", value: "2 active")
-                    linkRow(icon: "trash", title: "Clear Local Cache")
+                    sectionLabel(tr(.dataSection))
+                    linkRow(icon: "key", title: tr(.changePassword))
+                    linkRow(icon: "iphone.and.arrow.forward", title: tr(.manageDevices), value: "2 active")
+                    linkRow(icon: "trash", title: tr(.clearLocalCache))
                 }
                 .padding(.top, 6)
             }
@@ -499,17 +499,17 @@ struct RootView: View {
 
     private var helpPage: some View {
         VStack(alignment: .leading, spacing: 0) {
-            subpageHeader(title: "Help & Support")
+            subpageHeader(title: tr(.helpAndSupport))
             Divider().overlay(Theme.hairline)
             VStack(alignment: .leading, spacing: 0) {
-                sectionLabel("Resources")
-                linkRow(icon: "questionmark.circle", title: "Frequently Asked Questions")
-                linkRow(icon: "book", title: "User Guide")
-                linkRow(icon: "keyboard", title: "Keyboard Shortcuts")
+                sectionLabel(tr(.resources))
+                linkRow(icon: "questionmark.circle", title: tr(.faq))
+                linkRow(icon: "book", title: tr(.userGuide))
+                linkRow(icon: "keyboard", title: tr(.keyboardShortcuts))
 
-                sectionLabel("Contact")
-                linkRow(icon: "envelope", title: "Email Support", value: "support@aptrade.app")
-                linkRow(icon: "exclamationmark.bubble", title: "Report a Problem")
+                sectionLabel(tr(.contact))
+                linkRow(icon: "envelope", title: tr(.emailSupport), value: "support@aptrade.app")
+                linkRow(icon: "exclamationmark.bubble", title: tr(.reportAProblem))
             }
             .padding(.top, 6)
             Spacer()
@@ -519,7 +519,7 @@ struct RootView: View {
 
     private var aboutPage: some View {
         VStack(alignment: .leading, spacing: 0) {
-            subpageHeader(title: "About APTrade")
+            subpageHeader(title: tr(.aboutAPTrade))
             Divider().overlay(Theme.hairline)
             VStack(alignment: .leading, spacing: 18) {
                 HStack(spacing: 14) {
@@ -528,26 +528,26 @@ struct RootView: View {
                     }
                     VStack(alignment: .leading, spacing: 3) {
                         BrandMark(size: 18, showsMark: false)
-                        Text("Premium investing for macOS")
+                        Text(tr(.taglineShort))
                             .font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
                     }
                 }
                 .padding(.bottom, 2)
-                detailField(label: "Version", value: "1.0.0 (100)")
-                detailField(label: "Data Providers", value: "Yahoo Finance · CoinGecko")
-                detailField(label: "Mode", value: "Simulated · Paper Trading")
+                detailField(label: tr(.version), value: "1.0.0 (100)")
+                detailField(label: tr(.dataProviders), value: "Yahoo Finance · CoinGecko")
+                detailField(label: tr(.mode), value: tr(.simulatedPaperTrading))
             }
             .padding(.horizontal, 20).padding(.top, 20)
 
             VStack(alignment: .leading, spacing: 0) {
-                linkRow(icon: "doc.text", title: "Terms of Service")
-                linkRow(icon: "hand.raised", title: "Privacy Policy")
-                linkRow(icon: "checkmark.shield", title: "Licenses")
+                linkRow(icon: "doc.text", title: tr(.termsOfService))
+                linkRow(icon: "hand.raised", title: tr(.privacyPolicy))
+                linkRow(icon: "checkmark.shield", title: tr(.licenses))
             }
             .padding(.top, 14)
 
             Spacer()
-            Text("© 2026 APTrade. Market data for informational purposes only.")
+            Text(tr(.copyrightDisclaimer))
                 .font(.system(size: 10)).foregroundStyle(Theme.textTertiary)
                 .padding(.horizontal, 20).padding(.bottom, 14)
         }
@@ -583,10 +583,10 @@ struct RootView: View {
         .padding(.horizontal, 20).padding(.vertical, 10)
     }
 
-    private func themeOptionRow(title: String, subtitle: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+    private func themeOptionRow(icon: String, title: String, subtitle: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                Image(systemName: title == "Dark" ? "moon.fill" : "sun.max.fill")
+                Image(systemName: icon)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.gold).frame(width: 20)
                 VStack(alignment: .leading, spacing: 2) {
