@@ -158,6 +158,17 @@ enum L10n {
 
         // MARK: Chart
         case expandChart = "Expand chart"
+
+        // MARK: News
+        case newsGeneral = "General"
+        case newsMerger = "Merger"
+        case saved = "Saved"
+        case filterHeadlinesPlaceholder = "Filter headlines"
+        case noHeadlinesRightNow = "No headlines right now"
+        case noSavedArticles = "No saved articles"
+        case refresh = "Refresh"
+        case connectNewsSource = "Connect a news source"
+        case finnhubKeyInstructions = "Add a Finnhub API key to ~/.config/aptrade/config.json (field \"finnhubAPIKey\") and relaunch."
     }
 
     static let table: [Key: [AppLanguage: String]] = [
@@ -473,6 +484,28 @@ enum L10n {
         // MARK: Chart
         .expandChart: [.english: "Expand chart", .german: "Diagramm erweitern",
                        .italian: "Espandi grafico", .spanish: "Expandir gráfico"],
+
+        // MARK: News
+        .newsGeneral: [.english: "General", .german: "Allgemein",
+                       .italian: "Generali", .spanish: "Generales"],
+        .newsMerger: [.english: "Merger", .german: "Fusionen",
+                      .italian: "Fusioni", .spanish: "Fusiones"],
+        .saved: [.english: "Saved", .german: "Gespeichert",
+                 .italian: "Salvati", .spanish: "Guardados"],
+        .filterHeadlinesPlaceholder: [.english: "Filter headlines", .german: "Schlagzeilen filtern",
+                                      .italian: "Filtra titoli", .spanish: "Filtrar titulares"],
+        .noHeadlinesRightNow: [.english: "No headlines right now", .german: "Derzeit keine Schlagzeilen",
+                               .italian: "Nessun titolo al momento", .spanish: "No hay titulares por ahora"],
+        .noSavedArticles: [.english: "No saved articles", .german: "Keine gespeicherten Artikel",
+                           .italian: "Nessun articolo salvato", .spanish: "No hay artículos guardados"],
+        .refresh: [.english: "Refresh", .german: "Aktualisieren",
+                   .italian: "Aggiorna", .spanish: "Actualizar"],
+        .connectNewsSource: [.english: "Connect a news source", .german: "Nachrichtenquelle verbinden",
+                             .italian: "Collega una fonte di notizie", .spanish: "Conecta una fuente de noticias"],
+        .finnhubKeyInstructions: [.english: "Add a Finnhub API key to ~/.config/aptrade/config.json (field \"finnhubAPIKey\") and relaunch.",
+                                  .german: "Fügen Sie einen Finnhub-API-Schlüssel in ~/.config/aptrade/config.json (Feld \"finnhubAPIKey\") hinzu und starten Sie die App neu.",
+                                  .italian: "Aggiungi una chiave API Finnhub in ~/.config/aptrade/config.json (campo \"finnhubAPIKey\") e riavvia.",
+                                  .spanish: "Agrega una clave de API de Finnhub en ~/.config/aptrade/config.json (campo \"finnhubAPIKey\") y vuelve a iniciar la app."],
     ]
 }
 

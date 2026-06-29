@@ -39,7 +39,7 @@ struct NewsView: View {
                         viewModel.showingSaved = false
                         Task { await viewModel.setCategory(item) }
                     } label: {
-                        Text(item.displayName)
+                        Text(categoryTitle(item))
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(selected ? Theme.textPrimary : Theme.textSecondary)
                             .padding(.horizontal, 14).padding(.vertical, 7)
@@ -51,7 +51,7 @@ struct NewsView: View {
                 Button {
                     viewModel.showingSaved.toggle()
                 } label: {
-                    Label("Saved", systemImage: viewModel.showingSaved ? "bookmark.fill" : "bookmark")
+                    Label(tr(.saved), systemImage: viewModel.showingSaved ? "bookmark.fill" : "bookmark")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(viewModel.showingSaved ? Theme.gold : Theme.textSecondary)
                         .padding(.horizontal, 14).padding(.vertical, 7)
@@ -61,7 +61,7 @@ struct NewsView: View {
             }
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").foregroundStyle(Theme.textSecondary)
-                TextField("Filter headlines", text: $viewModel.filter)
+                TextField(tr(.filterHeadlinesPlaceholder), text: $viewModel.filter)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .foregroundStyle(Theme.textPrimary)
@@ -98,10 +98,10 @@ struct NewsView: View {
     private var emptyState: some View {
         VStack(spacing: 8) {
             Image(systemName: "newspaper").font(.system(size: 34)).foregroundStyle(Theme.textSecondary)
-            Text(viewModel.showingSaved ? "No saved articles" : "No headlines right now")
+            Text(viewModel.showingSaved ? tr(.noSavedArticles) : tr(.noHeadlinesRightNow))
                 .font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.textPrimary)
             if !viewModel.showingSaved {
-                Button("Refresh") { Task { await viewModel.load() } }
+                Button(tr(.refresh)) { Task { await viewModel.load() } }
                     .buttonStyle(.plain)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.gold)
@@ -112,11 +112,19 @@ struct NewsView: View {
     private var noKeyState: some View {
         VStack(spacing: 8) {
             Image(systemName: "newspaper").font(.system(size: 34)).foregroundStyle(Theme.textSecondary)
-            Text("Connect a news source")
+            Text(tr(.connectNewsSource))
                 .font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.textPrimary)
-            Text("Add a Finnhub API key to ~/.config/aptrade/config.json (field \"finnhubAPIKey\") and relaunch.")
+            Text(tr(.finnhubKeyInstructions))
                 .font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center).frame(maxWidth: 360)
+        }
+    }
+
+    private func categoryTitle(_ category: NewsCategory) -> String {
+        switch category {
+        case .general: return tr(.newsGeneral)
+        case .crypto:  return tr(.cryptoLabel)
+        case .merger:  return tr(.newsMerger)
         }
     }
 }

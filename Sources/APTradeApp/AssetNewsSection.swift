@@ -15,7 +15,7 @@ struct AssetNewsSection: View {
                 EmptyView()
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("News")
+                    Text(tr(.news))
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.textSecondary)
                     if viewModel.isLoading && viewModel.articles.isEmpty {
