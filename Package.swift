@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "APTradeLite",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v14), .iOS(.v17)],
     targets: [
         .target(name: "APTradeDomain"),
         .target(name: "APTradeApplication", dependencies: ["APTradeDomain"]),

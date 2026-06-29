@@ -1,8 +1,38 @@
 import Foundation
+#if canImport(AppKit)
 import AppKit
+typealias PlatformFont = NSFont
+typealias PlatformColor = NSColor
+#elseif canImport(UIKit)
+import UIKit
+typealias PlatformFont = UIFont
+typealias PlatformColor = UIColor
+#endif
 import CoreText
 import APTradeApplication
 import APTradeDomain
+
+/// Semantic label colors. AppKit exposes these as `NSColor.labelColor` /
+/// `.secondaryLabelColor`; UIKit's equivalents are `.label` / `.secondaryLabel`.
+/// These accessors keep the renderer's macOS color values identical to before
+/// this file was made cross-platform.
+private extension PlatformColor {
+    static var primaryText: PlatformColor {
+        #if canImport(AppKit)
+        return .labelColor
+        #elseif canImport(UIKit)
+        return .label
+        #endif
+    }
+
+    static var secondaryText: PlatformColor {
+        #if canImport(AppKit)
+        return .secondaryLabelColor
+        #elseif canImport(UIKit)
+        return .secondaryLabel
+        #endif
+    }
+}
 
 /// Renders a `PortfolioExport` to PDF, Excel (.xlsx), or Word (.docx). PDF is drawn with
 /// Core Text into a Core Graphics PDF context; the two OOXML formats are assembled as ZIP
@@ -100,7 +130,7 @@ private struct PDFExportRenderer {
 
         doc.append(line(export.accountName, font: .systemFont(ofSize: 22, weight: .bold)))
         doc.append(line("Portfolio Statement · \(ExportFormatting.timestamp(export.generatedAt))",
-                        font: .systemFont(ofSize: 11), color: .secondaryLabelColor, spacingAfter: 14))
+                        font: .systemFont(ofSize: 11), color: .secondaryText, spacingAfter: 14))
 
         // Summary
         let summary: [(String, String)] = [
@@ -113,9 +143,9 @@ private struct PDFExportRenderer {
         for (label, value) in summary {
             let row = NSMutableAttributedString()
             row.append(NSAttributedString(string: label + ":  ",
-                attributes: [.font: NSFont.systemFont(ofSize: 11, weight: .semibold)]))
+                attributes: [.font: PlatformFont.systemFont(ofSize: 11, weight: .semibold)]))
             row.append(NSAttributedString(string: value,
-                attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)]))
+                attributes: [.font: PlatformFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)]))
             row.append(NSAttributedString(string: "\n"))
             doc.append(row)
         }
@@ -124,12 +154,12 @@ private struct PDFExportRenderer {
         // Holdings table
         if export.holdings.isEmpty {
             doc.append(line("No holdings — the account is all cash.",
-                            font: .systemFont(ofSize: 11), color: .secondaryLabelColor))
+                            font: .systemFont(ofSize: 11), color: .secondaryText))
         } else {
             doc.append(tableRow(
                 symbol: "SYMBOL", name: "NAME", qty: "QTY", avg: "AVG COST",
                 last: "LAST", value: "MKT VALUE", pnl: "UNREAL P&L", alloc: "ALLOC",
-                font: .systemFont(ofSize: 9, weight: .bold), pnlColor: .labelColor))
+                font: .systemFont(ofSize: 9, weight: .bold), pnlColor: .primaryText))
             for holding in export.holdings {
                 doc.append(tableRow(
                     symbol: holding.symbol,
@@ -147,15 +177,15 @@ private struct PDFExportRenderer {
         return doc
     }
 
-    private func pnlColor(_ amount: Decimal) -> NSColor {
-        if amount > 0 { return NSColor(calibratedRed: 0.16, green: 0.55, blue: 0.34, alpha: 1) }
-        if amount < 0 { return NSColor(calibratedRed: 0.70, green: 0.20, blue: 0.16, alpha: 1) }
-        return .labelColor
+    private func pnlColor(_ amount: Decimal) -> PlatformColor {
+        if amount > 0 { return PlatformColor(red: 0.16, green: 0.55, blue: 0.34, alpha: 1) }
+        if amount < 0 { return PlatformColor(red: 0.70, green: 0.20, blue: 0.16, alpha: 1) }
+        return .primaryText
     }
 
     private func tableRow(symbol: String, name: String, qty: String, avg: String,
                           last: String, value: String, pnl: String, alloc: String,
-                          font: NSFont, pnlColor: NSColor) -> NSAttributedString {
+                          font: PlatformFont, pnlColor: PlatformColor) -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
         paragraph.tabStops = [
             NSTextTab(textAlignment: .left, location: 70),    // Name
@@ -180,7 +210,7 @@ private struct PDFExportRenderer {
         return result
     }
 
-    private func line(_ text: String, font: NSFont, color: NSColor = .labelColor,
+    private func line(_ text: String, font: PlatformFont, color: PlatformColor = .primaryText,
                       spacingAfter: CGFloat = 2) -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
         paragraph.paragraphSpacing = spacingAfter
