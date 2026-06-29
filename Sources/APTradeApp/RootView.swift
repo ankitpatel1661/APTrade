@@ -5,7 +5,7 @@ import APTradeApplication
 import APTradeDomain
 
 struct RootView: View {
-    enum Tab: String, CaseIterable { case watchlist = "Watchlist", portfolio = "Portfolio" }
+    enum Tab: String, CaseIterable { case watchlist = "Watchlist", portfolio = "Portfolio", news = "News" }
     private enum PanelRoute {
         case menu, profile, accountSettings, notifications, appearance, security, help, about
     }
@@ -59,6 +59,7 @@ struct RootView: View {
                         switch tab {
                         case .watchlist: WatchlistView(switcher: AnyView(switcher))
                         case .portfolio: PortfolioView(switcher: AnyView(switcher))
+                        case .news: NewsView(switcher: AnyView(switcher))
                         }
                     }
                 }
