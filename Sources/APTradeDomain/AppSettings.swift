@@ -19,6 +19,9 @@ public struct AppSettings: Equatable, Codable, Sendable {
     public var isDarkMode: Bool
     public var accent: AccentTheme
 
+    // Language
+    public var language: AppLanguage
+
     public init(
         priceAlerts: Bool = true,
         orderFills: Bool = true,
@@ -30,7 +33,8 @@ public struct AppSettings: Equatable, Codable, Sendable {
         confirmTrades: Bool = true,
         analyticsSharing: Bool = false,
         isDarkMode: Bool = true,
-        accent: AccentTheme = .champagneGold
+        accent: AccentTheme = .champagneGold,
+        language: AppLanguage = .english
     ) {
         self.priceAlerts = priceAlerts
         self.orderFills = orderFills
@@ -43,6 +47,7 @@ public struct AppSettings: Equatable, Codable, Sendable {
         self.analyticsSharing = analyticsSharing
         self.isDarkMode = isDarkMode
         self.accent = accent
+        self.language = language
     }
 
     /// Lenient decode: any key absent from an older persisted payload falls back to its
@@ -61,6 +66,7 @@ public struct AppSettings: Equatable, Codable, Sendable {
         analyticsSharing = try c.decodeIfPresent(Bool.self, forKey: .analyticsSharing) ?? d.analyticsSharing
         isDarkMode = try c.decodeIfPresent(Bool.self, forKey: .isDarkMode) ?? d.isDarkMode
         accent = try c.decodeIfPresent(AccentTheme.self, forKey: .accent) ?? d.accent
+        language = try c.decodeIfPresent(AppLanguage.self, forKey: .language) ?? d.language
     }
 
     public static let `default` = AppSettings()
