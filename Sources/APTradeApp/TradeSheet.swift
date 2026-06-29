@@ -40,20 +40,21 @@ struct TradeSheet: View {
         .frame(width: 420, height: 460)
         .task { await viewModel.load() }
         .confirmationDialog(confirmTitle, isPresented: $showConfirm, titleVisibility: .visible) {
-            Button(viewModel.side == .buy ? "Confirm Buy" : "Confirm Sell") { performSubmit() }
-            Button("Cancel", role: .cancel) {}
+            Button(viewModel.side == .buy ? tr(.confirmBuy) : tr(.confirmSell)) { performSubmit() }
+            Button(tr(.cancel), role: .cancel) {}
         } message: {
             Text(confirmMessage)
         }
     }
 
     private var confirmTitle: String {
-        "\(viewModel.side == .buy ? "Buy" : "Sell") \(viewModel.quantityText) \(viewModel.asset.symbol.uppercased())?"
+        let format = viewModel.side == .buy ? tr(.confirmBuyTitleFormat) : tr(.confirmSellTitleFormat)
+        return String(format: format, viewModel.quantityText, viewModel.asset.symbol.uppercased())
     }
 
     private var confirmMessage: String {
-        let label = viewModel.side == .buy ? "Estimated cost" : "Estimated proceeds"
-        return "\(label): \(viewModel.estimatedAmount?.formatted ?? "—")"
+        let label = viewModel.side == .buy ? tr(.estimatedCost) : tr(.estimatedProceeds)
+        return String(format: tr(.confirmEstimateFormat), label, viewModel.estimatedAmount?.formatted ?? "—")
     }
 
     private func attemptSubmit() {
@@ -82,7 +83,7 @@ struct TradeSheet: View {
                 .foregroundStyle(Theme.textPrimary)
             if let quote = viewModel.quote {
                 HStack(spacing: 6) {
-                    Text("Market price")
+                    Text(tr(.marketPrice))
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.textSecondary)
                     Text(quote.price.formatted)
@@ -90,7 +91,7 @@ struct TradeSheet: View {
                         .foregroundStyle(Theme.textPrimary)
                 }
             }
-            Text("Simulated · paper trading")
+            Text(tr(.simulatedPaperTradingFooter))
                 .font(.system(size: 10, weight: .semibold))
                 .tracking(0.6)
                 .foregroundStyle(Theme.textTertiary)
@@ -99,8 +100,8 @@ struct TradeSheet: View {
 
     private var sideToggle: some View {
         HStack(spacing: 4) {
-            sideSegment(.buy, title: "Buy")
-            sideSegment(.sell, title: "Sell")
+            sideSegment(.buy, title: tr(.buy))
+            sideSegment(.sell, title: tr(.sell))
         }
         .padding(4)
         .background(Theme.surface, in: Capsule())
@@ -135,11 +136,11 @@ struct TradeSheet: View {
     private var quantityField: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("QUANTITY")
+                Text(tr(.quantityLabel))
                     .font(.system(size: 10, weight: .bold)).tracking(1.0)
                     .foregroundStyle(Theme.textTertiary)
                 Spacer()
-                Button("Max") { viewModel.setMax() }
+                Button(tr(.maxButton)) { viewModel.setMax() }
                     .buttonStyle(.plain)
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Theme.gold)
@@ -159,14 +160,14 @@ struct TradeSheet: View {
 
     private var secondaryLabel: String {
         switch viewModel.side {
-        case .buy: return "Available cash \(viewModel.availableCash.formatted)"
-        case .sell: return "Shares owned \(viewModel.sharesOwned.formatted)"
+        case .buy: return String(format: tr(.availableCashFormat), viewModel.availableCash.formatted)
+        case .sell: return String(format: tr(.sharesOwnedFormat), viewModel.sharesOwned.formatted)
         }
     }
 
     private var estimateRow: some View {
         HStack {
-            Text(viewModel.side == .buy ? "Estimated cost" : "Estimated proceeds")
+            Text(viewModel.side == .buy ? tr(.estimatedCost) : tr(.estimatedProceeds))
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.textSecondary)
             Spacer()
@@ -178,7 +179,7 @@ struct TradeSheet: View {
 
     private var actions: some View {
         HStack(spacing: 12) {
-            Button("Cancel") { dismiss() }
+            Button(tr(.cancel)) { dismiss() }
                 .buttonStyle(.plain)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Theme.textSecondary)
@@ -188,7 +189,7 @@ struct TradeSheet: View {
                 .overlay(Capsule().stroke(Theme.hairline, lineWidth: 1))
                 .contentShape(Capsule())
 
-            Button(viewModel.side == .buy ? "Buy" : "Sell") { attemptSubmit() }
+            Button(viewModel.side == .buy ? tr(.buy) : tr(.sell)) { attemptSubmit() }
             .buttonStyle(.plain)
             .font(.system(size: 14, weight: .bold))
             .foregroundStyle(viewModel.canSubmit ? Theme.bgBottom : Theme.textTertiary)

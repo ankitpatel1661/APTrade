@@ -169,6 +169,61 @@ enum L10n {
         case refresh = "Refresh"
         case connectNewsSource = "Connect a news source"
         case finnhubKeyInstructions = "Add a Finnhub API key to ~/.config/aptrade/config.json (field \"finnhubAPIKey\") and relaunch."
+
+        // MARK: Asset detail
+        case couldntLoadChart = "Couldn't load chart"
+        case chartStyleArea = "Area"
+        case chartStyleCandles = "Candles"
+        case indicatorSMA = "SMA 20"
+        case indicatorEMA = "EMA 12"
+        case indicatorVWAP = "VWAP"
+        case indicatorBollinger = "BB 20"
+        case indicatorRSI = "RSI 14"
+        case indicatorMACD = "MACD"
+        case highLowFormat = "H %@ · L %@"
+        case rsiPeriodFormat = "RSI %d"
+        case macdParamsLabel = "MACD 12·26·9"
+        case signalLegend = "Signal"
+        case keyStats = "KEY STATS"
+        case yourPosition = "YOUR POSITION"
+        case statLast = "Last"
+        case statPreviousClose = "Previous close"
+        case statDayChange = "Day change"
+        case statDayChangePercent = "Day change %"
+        case statSymbol = "Symbol"
+        case statType = "Type"
+        case statShares = "Shares"
+        case statAverageCost = "Average cost"
+        case statMarketValue = "Market value"
+        case assetKindStock = "Stock"
+        case buy = "Buy"
+        case sell = "Sell"
+
+        // MARK: Trade
+        case confirmBuy = "Confirm Buy"
+        case confirmSell = "Confirm Sell"
+        case confirmBuyTitleFormat = "Buy %@ %@?"
+        case confirmSellTitleFormat = "Sell %@ %@?"
+        case estimatedCost = "Estimated cost"
+        case estimatedProceeds = "Estimated proceeds"
+        case confirmEstimateFormat = "%@: %@"
+        case marketPrice = "Market price"
+        case quantityLabel = "QUANTITY"
+        case maxButton = "Max"
+        case availableCashFormat = "Available cash %@"
+        case sharesOwnedFormat = "Shares owned %@"
+
+        // MARK: Alerts
+        case priceAboveKind = "Price above"
+        case priceBelowKind = "Price below"
+        case percentMoveKind = "% move"
+        case currentPriceFormat = "Current price: %@"
+        case targetPriceLabel = "Target price ($)"
+        case dailyMoveLabel = "Daily move (%)"
+        case addAlert = "Add Alert"
+        case priceAboveSummaryFormat = "Price above %@"
+        case priceBelowSummaryFormat = "Price below %@"
+        case percentMoveSummaryFormat = "Moves %@%% in a day"
     }
 
     static let table: [Key: [AppLanguage: String]] = [
@@ -506,6 +561,110 @@ enum L10n {
                                   .german: "Fügen Sie einen Finnhub-API-Schlüssel in ~/.config/aptrade/config.json (Feld \"finnhubAPIKey\") hinzu und starten Sie die App neu.",
                                   .italian: "Aggiungi una chiave API Finnhub in ~/.config/aptrade/config.json (campo \"finnhubAPIKey\") e riavvia.",
                                   .spanish: "Agrega una clave de API de Finnhub en ~/.config/aptrade/config.json (campo \"finnhubAPIKey\") y vuelve a iniciar la app."],
+
+        // MARK: Asset detail
+        .couldntLoadChart: [.english: "Couldn't load chart", .german: "Diagramm konnte nicht geladen werden",
+                            .italian: "Impossibile caricare il grafico", .spanish: "No se pudo cargar el gráfico"],
+        .chartStyleArea: [.english: "Area", .german: "Fläche",
+                          .italian: "Area", .spanish: "Área"],
+        .chartStyleCandles: [.english: "Candles", .german: "Kerzen",
+                             .italian: "Candele", .spanish: "Velas"],
+        .indicatorSMA: [.english: "SMA 20", .german: "SMA 20",
+                        .italian: "SMA 20", .spanish: "SMA 20"],
+        .indicatorEMA: [.english: "EMA 12", .german: "EMA 12",
+                        .italian: "EMA 12", .spanish: "EMA 12"],
+        .indicatorVWAP: [.english: "VWAP", .german: "VWAP",
+                         .italian: "VWAP", .spanish: "VWAP"],
+        .indicatorBollinger: [.english: "BB 20", .german: "BB 20",
+                              .italian: "BB 20", .spanish: "BB 20"],
+        .indicatorRSI: [.english: "RSI 14", .german: "RSI 14",
+                        .italian: "RSI 14", .spanish: "RSI 14"],
+        .indicatorMACD: [.english: "MACD", .german: "MACD",
+                         .italian: "MACD", .spanish: "MACD"],
+        .highLowFormat: [.english: "H %@ · L %@", .german: "H %@ · T %@",
+                         .italian: "M %@ · m %@", .spanish: "M %@ · m %@"],
+        .rsiPeriodFormat: [.english: "RSI %d", .german: "RSI %d",
+                           .italian: "RSI %d", .spanish: "RSI %d"],
+        .macdParamsLabel: [.english: "MACD 12·26·9", .german: "MACD 12·26·9",
+                           .italian: "MACD 12·26·9", .spanish: "MACD 12·26·9"],
+        .signalLegend: [.english: "Signal", .german: "Signal",
+                        .italian: "Segnale", .spanish: "Señal"],
+        .keyStats: [.english: "KEY STATS", .german: "KENNZAHLEN",
+                    .italian: "DATI CHIAVE", .spanish: "DATOS CLAVE"],
+        .yourPosition: [.english: "YOUR POSITION", .german: "IHRE POSITION",
+                        .italian: "LA TUA POSIZIONE", .spanish: "TU POSICIÓN"],
+        .statLast: [.english: "Last", .german: "Letzter",
+                    .italian: "Ultimo", .spanish: "Último"],
+        .statPreviousClose: [.english: "Previous close", .german: "Vorheriger Schluss",
+                             .italian: "Chiusura precedente", .spanish: "Cierre anterior"],
+        .statDayChange: [.english: "Day change", .german: "Tagesveränderung",
+                         .italian: "Variazione giornaliera", .spanish: "Cambio diario"],
+        .statDayChangePercent: [.english: "Day change %", .german: "Tagesveränderung %",
+                                .italian: "Variazione giornaliera %", .spanish: "Cambio diario %"],
+        .statSymbol: [.english: "Symbol", .german: "Symbol",
+                      .italian: "Simbolo", .spanish: "Símbolo"],
+        .statType: [.english: "Type", .german: "Typ",
+                    .italian: "Tipo", .spanish: "Tipo"],
+        .statShares: [.english: "Shares", .german: "Anteile",
+                      .italian: "Quote", .spanish: "Acciones"],
+        .statAverageCost: [.english: "Average cost", .german: "Durchschnittlicher Einstand",
+                           .italian: "Costo medio", .spanish: "Costo promedio"],
+        .statMarketValue: [.english: "Market value", .german: "Marktwert",
+                           .italian: "Valore di mercato", .spanish: "Valor de mercado"],
+        .assetKindStock: [.english: "Stock", .german: "Aktie",
+                          .italian: "Azione", .spanish: "Acción"],
+        .buy: [.english: "Buy", .german: "Kaufen",
+               .italian: "Compra", .spanish: "Comprar"],
+        .sell: [.english: "Sell", .german: "Verkaufen",
+                .italian: "Vendi", .spanish: "Vender"],
+
+        // MARK: Trade
+        .confirmBuy: [.english: "Confirm Buy", .german: "Kauf bestätigen",
+                      .italian: "Confirma acquisto", .spanish: "Confirmar compra"],
+        .confirmSell: [.english: "Confirm Sell", .german: "Verkauf bestätigen",
+                       .italian: "Confirma vendita", .spanish: "Confirmar venta"],
+        .confirmBuyTitleFormat: [.english: "Buy %@ %@?", .german: "%@ %@ kaufen?",
+                                 .italian: "Acquistare %@ %@?", .spanish: "¿Comprar %@ %@?"],
+        .confirmSellTitleFormat: [.english: "Sell %@ %@?", .german: "%@ %@ verkaufen?",
+                                  .italian: "Vendere %@ %@?", .spanish: "¿Vender %@ %@?"],
+        .estimatedCost: [.english: "Estimated cost", .german: "Geschätzte Kosten",
+                         .italian: "Costo stimato", .spanish: "Costo estimado"],
+        .estimatedProceeds: [.english: "Estimated proceeds", .german: "Geschätzter Erlös",
+                             .italian: "Ricavo stimato", .spanish: "Ingreso estimado"],
+        .confirmEstimateFormat: [.english: "%@: %@", .german: "%@: %@",
+                                 .italian: "%@: %@", .spanish: "%@: %@"],
+        .marketPrice: [.english: "Market price", .german: "Marktpreis",
+                       .italian: "Prezzo di mercato", .spanish: "Precio de mercado"],
+        .quantityLabel: [.english: "QUANTITY", .german: "ANZAHL",
+                         .italian: "QUANTITÀ", .spanish: "CANTIDAD"],
+        .maxButton: [.english: "Max", .german: "Max.",
+                     .italian: "Max", .spanish: "Máx."],
+        .availableCashFormat: [.english: "Available cash %@", .german: "Verfügbares Guthaben %@",
+                               .italian: "Liquidità disponibile %@", .spanish: "Efectivo disponible %@"],
+        .sharesOwnedFormat: [.english: "Shares owned %@", .german: "Gehaltene Anteile %@",
+                             .italian: "Quote possedute %@", .spanish: "Acciones en posesión %@"],
+
+        // MARK: Alerts
+        .priceAboveKind: [.english: "Price above", .german: "Preis über",
+                          .italian: "Prezzo sopra", .spanish: "Precio por encima"],
+        .priceBelowKind: [.english: "Price below", .german: "Preis unter",
+                          .italian: "Prezzo sotto", .spanish: "Precio por debajo"],
+        .percentMoveKind: [.english: "% move", .german: "% Veränderung",
+                           .italian: "% variazione", .spanish: "% variación"],
+        .currentPriceFormat: [.english: "Current price: %@", .german: "Aktueller Preis: %@",
+                              .italian: "Prezzo attuale: %@", .spanish: "Precio actual: %@"],
+        .targetPriceLabel: [.english: "Target price ($)", .german: "Zielpreis ($)",
+                            .italian: "Prezzo obiettivo ($)", .spanish: "Precio objetivo ($)"],
+        .dailyMoveLabel: [.english: "Daily move (%)", .german: "Tägliche Veränderung (%)",
+                          .italian: "Variazione giornaliera (%)", .spanish: "Variación diaria (%)"],
+        .addAlert: [.english: "Add Alert", .german: "Alarm hinzufügen",
+                    .italian: "Aggiungi avviso", .spanish: "Añadir alerta"],
+        .priceAboveSummaryFormat: [.english: "Price above %@", .german: "Preis über %@",
+                                   .italian: "Prezzo sopra %@", .spanish: "Precio por encima de %@"],
+        .priceBelowSummaryFormat: [.english: "Price below %@", .german: "Preis unter %@",
+                                   .italian: "Prezzo sotto %@", .spanish: "Precio por debajo de %@"],
+        .percentMoveSummaryFormat: [.english: "Moves %@%% in a day", .german: "Bewegt sich %@%% an einem Tag",
+                                    .italian: "Si muove del %@%% in un giorno", .spanish: "Se mueve %@%% en un día"],
     ]
 }
 

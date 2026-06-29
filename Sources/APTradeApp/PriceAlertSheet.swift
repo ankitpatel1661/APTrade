@@ -12,6 +12,16 @@ struct PriceAlertSheet: View {
 
     private enum Kind: String, CaseIterable { case above = "Price above", below = "Price below", percent = "% move" }
 
+    /// Display label for the alert-kind segmented control — `Kind` is view-local (not a
+    /// domain enum), so this maps it straight to a localized string.
+    private func kindLabel(_ kind: Kind) -> String {
+        switch kind {
+        case .above: return tr(.priceAboveKind)
+        case .below: return tr(.priceBelowKind)
+        case .percent: return tr(.percentMoveKind)
+        }
+    }
+
     @Environment(\.dismiss) private var dismiss
     @State private var kind: Kind = .below
     @State private var priceText = ""
@@ -30,13 +40,13 @@ struct PriceAlertSheet: View {
 
             VStack(alignment: .leading, spacing: 16) {
                 if let currentPrice {
-                    Text("Current price: \(currentPrice.formatted)")
+                    Text(String(format: tr(.currentPriceFormat), currentPrice.formatted))
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.textSecondary)
                 }
 
                 Picker("", selection: $kind) {
-                    ForEach(Kind.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    ForEach(Kind.allCases, id: \.self) { Text(kindLabel($0)).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -44,14 +54,14 @@ struct PriceAlertSheet: View {
                 Group {
                     switch kind {
                     case .above, .below:
-                        labeledField(label: "Target price ($)", text: $priceText)
+                        labeledField(label: tr(.targetPriceLabel), text: $priceText)
                     case .percent:
-                        labeledField(label: "Daily move (%)", text: $percentText)
+                        labeledField(label: tr(.dailyMoveLabel), text: $percentText)
                     }
                 }
 
                 Button(action: create) {
-                    Text("Add Alert")
+                    Text(tr(.addAlert))
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(Theme.bgBottom)
                         .frame(maxWidth: .infinity)
@@ -99,7 +109,7 @@ struct PriceAlertSheet: View {
                     Image(systemName: alert.isTriggered ? "bell.slash" : "bell.fill")
                         .font(.system(size: 12))
                         .foregroundStyle(alert.isTriggered ? Theme.textTertiary : Theme.gold)
-                    Text(alert.condition.summary)
+                    Text(conditionSummary(alert.condition))
                         .font(.system(size: 13))
                         .foregroundStyle(alert.isTriggered ? Theme.textTertiary : Theme.textPrimary)
                         .strikethrough(alert.isTriggered)
@@ -114,6 +124,20 @@ struct PriceAlertSheet: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 8)
             }
+        }
+    }
+
+    /// Display summary for an existing alert's condition — `AlertCondition` is a domain
+    /// enum whose own `summary` returns English prose, so this view-side mapping
+    /// localizes the label while leaving the embedded money/percent formatting untouched.
+    private func conditionSummary(_ condition: AlertCondition) -> String {
+        switch condition {
+        case .priceAbove(let money):
+            return String(format: tr(.priceAboveSummaryFormat), money.formatted)
+        case .priceBelow(let money):
+            return String(format: tr(.priceBelowSummaryFormat), money.formatted)
+        case .percentChange(let pct):
+            return String(format: tr(.percentMoveSummaryFormat), "\(abs(pct.value))")
         }
     }
 

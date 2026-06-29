@@ -135,6 +135,29 @@ struct AssetDetailView: View {
         }
     }
 
+    /// Display label for the chart-style toggle — `ChartStyle` is view-local (not a
+    /// domain enum), so this maps it straight to a localized string.
+    private func chartStyleLabel(_ style: ChartStyle) -> String {
+        switch style {
+        case .area: return tr(.chartStyleArea)
+        case .candles: return tr(.chartStyleCandles)
+        }
+    }
+
+    /// Display label for an indicator chip — `Indicator` is view-local (not a domain
+    /// enum); the codes themselves (SMA/EMA/VWAP/etc.) are standard finance notation
+    /// kept identical across languages, but routed through `tr` for catalog completeness.
+    private func indicatorLabel(_ indicator: Indicator) -> String {
+        switch indicator {
+        case .sma: return tr(.indicatorSMA)
+        case .ema: return tr(.indicatorEMA)
+        case .vwap: return tr(.indicatorVWAP)
+        case .bollinger: return tr(.indicatorBollinger)
+        case .rsi: return tr(.indicatorRSI)
+        case .macd: return tr(.indicatorMACD)
+        }
+    }
+
     /// Chart-style toggle (Area / Candles) plus the indicator chips.
     private var chartControls: some View {
         HStack(spacing: 10) {
@@ -142,7 +165,7 @@ struct AssetDetailView: View {
                 ForEach(ChartStyle.allCases, id: \.self) { style in
                     let selected = chartStyle == style
                     Button { withAnimation(.easeInOut(duration: 0.2)) { chartStyle = style } } label: {
-                        Text(style.rawValue)
+                        Text(chartStyleLabel(style))
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(selected ? Theme.bgBottom : Theme.textSecondary)
                             .padding(.horizontal, 12).padding(.vertical, 6)
@@ -176,7 +199,7 @@ struct AssetDetailView: View {
         } label: {
             HStack(spacing: 5) {
                 Circle().fill(indicatorColor(indicator)).frame(width: 7, height: 7).opacity(on ? 1 : 0.4)
-                Text(indicator.rawValue)
+                Text(indicatorLabel(indicator))
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(on ? Theme.textPrimary : Theme.textTertiary)
             }
@@ -195,7 +218,7 @@ struct AssetDetailView: View {
             ProgressView()
                 .frame(maxWidth: .infinity, minHeight: 260)
         case .failed:
-            ContentUnavailableView("Couldn't load chart", systemImage: "chart.line.downtrend.xyaxis")
+            ContentUnavailableView(tr(.couldntLoadChart), systemImage: "chart.line.downtrend.xyaxis")
                 .frame(minHeight: 260)
         case .loaded:
             priceChart
@@ -349,7 +372,7 @@ struct AssetDetailView: View {
                 .font(.system(size: 13, weight: .bold).monospacedDigit())
                 .foregroundStyle(Theme.textPrimary)
             if chartStyle == .candles, let candle {
-                Text("H \(candle.high.formatted) · L \(candle.low.formatted)")
+                Text(String(format: tr(.highLowFormat), candle.high.formatted, candle.low.formatted))
                     .font(.system(size: 9, weight: .medium).monospacedDigit())
                     .foregroundStyle(Theme.textTertiary)
                     .lineLimit(1).minimumScaleFactor(0.7)
@@ -440,7 +463,7 @@ struct AssetDetailView: View {
             value.map { IndicatorPoint(date: point.date, value: $0) }
         }
         return VStack(alignment: .leading, spacing: 6) {
-            Text("RSI \(Self.rsiPeriod)")
+            Text(String(format: tr(.rsiPeriodFormat), Self.rsiPeriod))
                 .font(.system(size: 10, weight: .bold)).tracking(1.2)
                 .foregroundStyle(Theme.textTertiary)
             Chart {
@@ -480,10 +503,10 @@ struct AssetDetailView: View {
         let histogram = points(result.histogram)
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 12) {
-                Text("MACD 12·26·9").font(.system(size: 10, weight: .bold)).tracking(1.2)
+                Text(tr(.macdParamsLabel)).font(.system(size: 10, weight: .bold)).tracking(1.2)
                     .foregroundStyle(Theme.textTertiary)
-                legendDot(indicatorColor(.macd), "MACD")
-                legendDot(macdSignalColor, "Signal")
+                legendDot(indicatorColor(.macd), tr(.indicatorMACD))
+                legendDot(macdSignalColor, tr(.signalLegend))
             }
             Chart {
                 ForEach(histogram) { point in
@@ -526,23 +549,23 @@ struct AssetDetailView: View {
     private var keyStats: some View {
         if let quote = viewModel.quote {
             VStack(alignment: .leading, spacing: 16) {
-                Text("KEY STATS")
+                Text(tr(.keyStats))
                     .font(.system(size: 11, weight: .bold))
                     .tracking(1.8)
                     .foregroundStyle(Theme.textSecondary)
 
                 let columns = [GridItem(.flexible(), spacing: 24), GridItem(.flexible(), spacing: 24)]
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
-                    StatTile(label: "Last", value: quote.price.formatted)
-                    StatTile(label: "Previous close", value: quote.previousClose.formatted)
-                    StatTile(label: "Day change",
+                    StatTile(label: tr(.statLast), value: quote.price.formatted)
+                    StatTile(label: tr(.statPreviousClose), value: quote.previousClose.formatted)
+                    StatTile(label: tr(.statDayChange),
                              value: signed(quote.change),
                              valueColor: Theme.changeColor(quote.changePercent))
-                    StatTile(label: "Day change %",
+                    StatTile(label: tr(.statDayChangePercent),
                              value: quote.changePercent.formatted,
                              valueColor: Theme.changeColor(quote.changePercent))
-                    StatTile(label: "Symbol", value: quote.symbol)
-                    StatTile(label: "Type", value: typeLabel)
+                    StatTile(label: tr(.statSymbol), value: quote.symbol)
+                    StatTile(label: tr(.statType), value: typeLabel)
                 }
             }
             .padding(20)
@@ -555,8 +578,8 @@ struct AssetDetailView: View {
 
     private var tradeButtons: some View {
         HStack(spacing: 12) {
-            tradeButton(title: "Buy", side: .buy, filled: true)
-            tradeButton(title: "Sell", side: .sell, filled: false)
+            tradeButton(title: tr(.buy), side: .buy, filled: true)
+            tradeButton(title: tr(.sell), side: .sell, filled: false)
         }
     }
 
@@ -583,15 +606,15 @@ struct AssetDetailView: View {
     private var positionPanel: some View {
         if let position = viewModel.position, let quote = viewModel.quote {
             VStack(alignment: .leading, spacing: 16) {
-                Text("YOUR POSITION")
+                Text(tr(.yourPosition))
                     .font(.system(size: 11, weight: .bold)).tracking(1.8)
                     .foregroundStyle(Theme.textSecondary)
                 let columns = [GridItem(.flexible(), spacing: 24), GridItem(.flexible(), spacing: 24)]
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
-                    StatTile(label: "Shares", value: position.quantity.formatted)
-                    StatTile(label: "Average cost", value: position.averageCost.formatted)
-                    StatTile(label: "Market value", value: position.marketValue(at: quote.price).formatted)
-                    StatTile(label: "Unrealized P&L",
+                    StatTile(label: tr(.statShares), value: position.quantity.formatted)
+                    StatTile(label: tr(.statAverageCost), value: position.averageCost.formatted)
+                    StatTile(label: tr(.statMarketValue), value: position.marketValue(at: quote.price).formatted)
+                    StatTile(label: tr(.unrealizedPnL),
                              value: signed(position.unrealizedPnL(at: quote.price)),
                              valueColor: pnlColor(position.unrealizedPnL(at: quote.price)))
                 }
@@ -611,9 +634,9 @@ struct AssetDetailView: View {
 
     private var typeLabel: String {
         switch viewModel.asset.kind {
-        case .stock: return "Stock"
-        case .etf: return "ETF"
-        case .crypto: return "Crypto"
+        case .stock: return tr(.assetKindStock)
+        case .etf: return tr(.etfChip)
+        case .crypto: return tr(.cryptoLabel)
         }
     }
 
