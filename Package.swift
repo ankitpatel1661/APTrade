@@ -4,6 +4,9 @@ import PackageDescription
 let package = Package(
     name: "APTradeLite",
     platforms: [.macOS(.v14), .iOS(.v17)],
+    products: [
+        .library(name: "APTradeApp", targets: ["APTradeApp"])
+    ],
     targets: [
         .target(name: "APTradeDomain"),
         .target(name: "APTradeApplication", dependencies: ["APTradeDomain"]),

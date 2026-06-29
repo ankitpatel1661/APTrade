@@ -1,0 +1,39 @@
+name: APTrade
+options:
+  bundleIdPrefix: com.aptrade
+packages:
+  APTradeLite:
+    path: .
+targets:
+  APTradeiOS:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - Sources/APTradeiOS
+    dependencies:
+      - package: APTradeLite
+        product: APTradeApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aptrade.ios
+        TARGETED_DEVICE_FAMILY: 1
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: APTrade
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+schemes:
+  APTradeiOS:
+    build:
+      targets:
+        APTradeiOS: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
