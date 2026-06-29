@@ -1,8 +1,19 @@
 # iOS Port-Readiness Audit — APTrade → Universal (macOS + iPhone)
 
 **Date:** 2026-06-29
-**Status:** Audit complete. Phase 0 (compile + test on iOS) next.
+**Status:** Audit complete. **Phase 0 DONE** — the package compiles for iOS and all 190 tests pass on the iPhone 17 Pro simulator (iOS 26.5); macOS unchanged at 190/190. See "Phase 0 result" below.
 **Bottom line:** Low-risk, mostly-additive UI port. The Domain/Application/Infrastructure layers and all tests are reused verbatim; AppKit coupling is confined to 5 files.
+
+## Phase 0 result (2026-06-29)
+
+Proven: **compiles for iOS + 190/190 tests pass on the iOS simulator**, macOS untouched (190/190). 7 touchpoints gated across 8 files (`#if os(macOS)` / `canImport(AppKit)` with `PlatformFont`/`PlatformColor`/`PlatformImage` typealiases; `NSWorkspace`→`openURL`).
+
+- **The audit's "6 AppKit touchpoints" was off by one:** `AppConfig.swift` uses `FileManager.homeDirectoryForCurrentUser`, which is `API_UNAVAILABLE(ios)` — a *Foundation* incompatibility the AppKit-only grep missed. Gated (macOS home dir / iOS Documents dir).
+- **No restructure needed:** the `APTradeApp` executable target compiled *and* tested for iOS as-is — the planned library-split fallback was unnecessary.
+- **Two iOS Phase-0 stubs** (compile-only, macOS unaffected): portfolio export save panel (Phase 1 = `.fileExporter`), AppConfig default path.
+- **One silent regression caught in review** (not by tests): the PDF P&L colors were ported from `NSColor(calibratedRed:)` (calibrated RGB) to `red:` (sRGB) — different rendered colors on macOS. Re-gated to preserve macOS output exactly.
+
+Implication: the engine + tests genuinely port to iPhone. Remaining work is the responsive-layout UI (Phases 2+), as scoped below.
 
 ## Goal & shape
 
