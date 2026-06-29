@@ -161,12 +161,11 @@ logo/                       Brand assets
 
 APTrade Lite is the foundation. Planned toward the full platform:
 
-- Company, market, and crypto **news** (replacing the watchlist-movers digest with real headlines)
 - **VWAP** indicator (requires adding volume to the OHLC pipeline)
 - Market-holiday calendar for the scheduler
 - Real authentication (Apple Sign In), biometric gating, and cloud sync (Supabase)
 
-Recently shipped: candlestick charts, SMA/EMA/RSI/MACD/Bollinger indicators, realized P&L and a transactions ledger, allocation breakdown, historical P&L reconstruction, and PDF/Excel/Word portfolio export.
+Recently shipped: a Finnhub-backed **News** tab (company/market/crypto headlines, filter, bookmarks) plus per-symbol company news on the asset view; a ⌘K **command palette**; **risk & performance** analytics (TWR/CAGR, volatility, drawdown, Sharpe/Beta/Alpha, benchmark overlay, concentration warnings); an in-app **language switcher** (English/Deutsch/Italiano/Español); candlestick charts, SMA/EMA/RSI/MACD/Bollinger indicators, realized P&L and a transactions ledger, allocation breakdown, historical P&L reconstruction, and PDF/Excel/Word portfolio export.
 
 ## Disclaimer
 
