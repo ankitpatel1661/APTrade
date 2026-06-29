@@ -67,7 +67,8 @@ The whole app is written against pure domain logic with framework code pushed to
 ### Settings & appearance
 - A unified, persisted **settings** layer — every preference (notification toggles, security/privacy, trade confirmation, theme, accent) flows through one store with a forward-compatible decoder.
 - **Selectable accents** — Champagne Gold, Rose Gold, Sapphire, Amethyst, and Platinum re-tint the whole brand ramp **including the logo/wordmark artwork** (gold pixels are remapped onto the chosen accent); **dark / light** mode toggle.
-- **Account drawer** with Profile, Account Settings, Notifications, Appearance, Security & Privacy, Help, and About subpages.
+- **Account drawer** with Profile, Account Settings, Notifications, Appearance, Language, Security & Privacy, Help, and About subpages.
+- **In-app language switcher** — **English, Deutsch, Italiano, Español**, chosen from a dedicated Language row in the account drawer. The entire interface re-renders **live, with no restart** (the same Observation-driven mechanism as the theme/accent toggles), and the choice persists across launches. Live market data — news headlines, company and ticker names — and number/currency formatting stay in their source form; only the app's own chrome is translated.
 
 ### Throughout
 - **Distinctive numerics** — superscript-cents prices (`$131`⁶³) and bordered percentage-change pills.
