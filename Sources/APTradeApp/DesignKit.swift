@@ -1,6 +1,29 @@
 import SwiftUI
+#if canImport(AppKit)
 import AppKit
+#elseif canImport(UIKit)
+import UIKit
+#endif
 import APTradeDomain
+
+// MARK: - Platform image
+
+#if canImport(AppKit)
+typealias PlatformImage = NSImage
+#elseif canImport(UIKit)
+typealias PlatformImage = UIImage
+#endif
+
+extension Image {
+    /// Wraps a `PlatformImage` (`NSImage` on macOS, `UIImage` on iOS) for SwiftUI rendering.
+    init(platformImage: PlatformImage) {
+        #if canImport(AppKit)
+        self.init(nsImage: platformImage)
+        #elseif canImport(UIKit)
+        self.init(uiImage: platformImage)
+        #endif
+    }
+}
 
 // MARK: - Brand
 
@@ -8,17 +31,25 @@ import APTradeDomain
 /// command-line build copies `.xcassets` as a raw folder rather than compiling it
 /// with `actool`, so `Image(_:bundle:)` asset-catalog lookups never resolve — load
 /// the PNG straight from disk instead.
-let appLogoImage: NSImage? = {
+let appLogoImage: PlatformImage? = {
     guard let url = Bundle.module.url(forResource: "AppLogo", withExtension: "png") else { return nil }
+    #if canImport(AppKit)
     return NSImage(contentsOf: url)
+    #elseif canImport(UIKit)
+    return UIImage(contentsOfFile: url.path)
+    #endif
 }()
 
 /// The full lockup — symbol plus "AP Trade" wordmark and tagline baked into one image.
 /// Drawn for dark backgrounds: the brand letters are champagne gold and the "P" stroke /
 /// "Trade" wordmark are near-white silver. Re-tinted per accent/mode via `BrandImage`.
-let appWordmarkImageDark: NSImage? = {
+let appWordmarkImageDark: PlatformImage? = {
     guard let url = Bundle.module.url(forResource: "AppWordmark", withExtension: "png") else { return nil }
+    #if canImport(AppKit)
     return NSImage(contentsOf: url)
+    #elseif canImport(UIKit)
+    return UIImage(contentsOfFile: url.path)
+    #endif
 }()
 
 /// Accent- and mode-aware variants of the baked-in brand artwork.
@@ -31,21 +62,21 @@ let appWordmarkImageDark: NSImage? = {
 /// most once for each of the few combinations, not on every render.
 @MainActor
 enum BrandImage {
-    private static var wordmarks: [String: NSImage] = [:]
-    private static var logos: [String: NSImage] = [:]
+    private static var wordmarks: [String: PlatformImage] = [:]
+    private static var logos: [String: PlatformImage] = [:]
 
     /// The full "AP Trade" lockup, recolored for the given accent and mode.
-    static func wordmark(accent: AccentTheme, isDark: Bool) -> NSImage? {
+    static func wordmark(accent: AccentTheme, isDark: Bool) -> PlatformImage? {
         cached(&wordmarks, base: appWordmarkImageDark, accent: accent, isDark: isDark)
     }
 
     /// The standalone symbol mark, recolored for the given accent and mode.
-    static func logo(accent: AccentTheme, isDark: Bool) -> NSImage? {
+    static func logo(accent: AccentTheme, isDark: Bool) -> PlatformImage? {
         cached(&logos, base: appLogoImage, accent: accent, isDark: isDark)
     }
 
-    private static func cached(_ store: inout [String: NSImage], base: NSImage?,
-                               accent: AccentTheme, isDark: Bool) -> NSImage? {
+    private static func cached(_ store: inout [String: PlatformImage], base: PlatformImage?,
+                               accent: AccentTheme, isDark: Bool) -> PlatformImage? {
         guard let base else { return nil }
         let key = "\(accent.rawValue)-\(isDark)"
         if let cached = store[key] { return cached }
@@ -61,8 +92,12 @@ enum BrandImage {
 /// in the new hue — except for the champagne-gold default, whose pixels pass through unchanged
 /// so the shipped artwork stays pixel-for-pixel identical. Neutral pixels are kept in dark mode
 /// and re-tinted toward `Theme.textPrimary`'s light-mode charcoal otherwise.
-private func recoloredBrandImage(_ image: NSImage, accent: AccentTheme, isDark: Bool) -> NSImage? {
+private func recoloredBrandImage(_ image: PlatformImage, accent: AccentTheme, isDark: Bool) -> PlatformImage? {
+    #if canImport(AppKit)
     guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+    #elseif canImport(UIKit)
+    guard let cgImage = image.cgImage else { return nil }
+    #endif
     let width = cgImage.width, height = cgImage.height
     let bytesPerPixel = 4
     let bytesPerRow = width * bytesPerPixel
@@ -108,7 +143,11 @@ private func recoloredBrandImage(_ image: NSImage, accent: AccentTheme, isDark: 
     }
 
     guard let outputImage = context.makeImage() else { return nil }
+    #if canImport(AppKit)
     return NSImage(cgImage: outputImage, size: image.size)
+    #elseif canImport(UIKit)
+    return UIImage(cgImage: outputImage)
+    #endif
 }
 
 /// Interpolates a ramp at `t` in 0...1: deep at 0, mid at 0.5, light at 1.
@@ -131,7 +170,7 @@ struct BrandMark: View {
         HStack(spacing: size * 0.28) {
             if showsMark,
                let logo = BrandImage.logo(accent: ThemeManager.shared.accent, isDark: ThemeManager.shared.isDark) {
-                Image(nsImage: logo)
+                Image(platformImage: logo)
                     .resizable()
                     .scaledToFit()
                     .frame(width: size * 1.5, height: size * 1.5)

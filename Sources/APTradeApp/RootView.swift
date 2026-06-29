@@ -1,5 +1,7 @@
 import SwiftUI
+#if os(macOS)
 import AppKit
+#endif
 import UniformTypeIdentifiers
 import APTradeApplication
 import APTradeDomain
@@ -39,7 +41,7 @@ struct RootView: View {
                 VStack(spacing: 0) {
                     ZStack {
                         if let appWordmarkImage = BrandImage.wordmark(accent: ThemeManager.shared.accent, isDark: ThemeManager.shared.isDark) {
-                            Image(nsImage: appWordmarkImage)
+                            Image(platformImage: appWordmarkImage)
                                 .resizable()
                                 .scaledToFit()
                                 .frame(height: 108)
@@ -139,6 +141,7 @@ struct RootView: View {
     }
 
     private func presentSavePanel(for data: Data, format: PortfolioExportFormat) {
+        #if os(macOS)
         let panel = NSSavePanel()
         panel.title = tr(.exportPortfolioData)
         panel.nameFieldStringValue = "\(Self.exportFileStem).\(format.fileExtension)"
@@ -152,6 +155,9 @@ struct RootView: View {
         } catch {
             exportError = error.localizedDescription
         }
+        #else
+        // iOS Phase 0 stub — full export via .fileExporter is Phase 1.
+        #endif
     }
 
     /// Date-stamped base filename, e.g. `APTrade-Portfolio-2026-06-25`.
@@ -524,7 +530,7 @@ struct RootView: View {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(spacing: 14) {
                     if let logo = BrandImage.logo(accent: ThemeManager.shared.accent, isDark: ThemeManager.shared.isDark) {
-                        Image(nsImage: logo).resizable().scaledToFit().frame(width: 44, height: 44)
+                        Image(platformImage: logo).resizable().scaledToFit().frame(width: 44, height: 44)
                     }
                     VStack(alignment: .leading, spacing: 3) {
                         BrandMark(size: 18, showsMark: false)
