@@ -461,7 +461,7 @@ struct RootView: View {
                         .font(.system(size: 16)).foregroundStyle(Theme.gold)
                 }
             }
-            .padding(.horizontal, 4).padding(.vertical, 10)
+            .padding(.horizontal, 20).padding(.vertical, 10)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
