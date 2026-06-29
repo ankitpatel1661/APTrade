@@ -178,8 +178,13 @@ private struct PDFExportRenderer {
     }
 
     private func pnlColor(_ amount: Decimal) -> PlatformColor {
-        if amount > 0 { return PlatformColor(red: 0.16, green: 0.55, blue: 0.34, alpha: 1) }
-        if amount < 0 { return PlatformColor(red: 0.70, green: 0.20, blue: 0.16, alpha: 1) }
+        #if canImport(AppKit)
+        if amount > 0 { return NSColor(calibratedRed: 0.16, green: 0.55, blue: 0.34, alpha: 1) }
+        if amount < 0 { return NSColor(calibratedRed: 0.70, green: 0.20, blue: 0.16, alpha: 1) }
+        #else
+        if amount > 0 { return UIColor(red: 0.16, green: 0.55, blue: 0.34, alpha: 1) }
+        if amount < 0 { return UIColor(red: 0.70, green: 0.20, blue: 0.16, alpha: 1) }
+        #endif
         return .primaryText
     }
 
