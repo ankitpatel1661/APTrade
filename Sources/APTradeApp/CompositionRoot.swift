@@ -133,31 +133,26 @@ enum CompositionRoot {
         CommandPaletteViewModel(searchAssets: SearchAssetsUseCase(repository: makeRepository()))
     }
 
-    /// Live Finnhub news when a key is configured, otherwise the empty fallback (drives the
-    /// "connect a news source" empty state). The key is read only here, never above infrastructure.
-    static func makeNewsRepository() -> NewsRepository {
-        if let key = AppConfig.finnhubAPIKey() {
-            return FinnhubNewsRepository(apiKey: key)
-        }
-        return EmptyNewsRepository()
-    }
-
     static func makeNewsViewModel() -> NewsViewModel {
-        let repo = makeNewsRepository()
+        // The key is read only here, never above infrastructure.
+        let key = AppConfig.finnhubAPIKey()
+        let repo: NewsRepository = key.map { FinnhubNewsRepository(apiKey: $0) } ?? EmptyNewsRepository()
         return NewsViewModel(
             fetchMarketNews: FetchMarketNewsUseCase(repository: repo),
             loadBookmarks: LoadBookmarksUseCase(store: bookmarkStore),
             toggleBookmark: ToggleBookmarkUseCase(store: bookmarkStore),
-            keyMissing: AppConfig.finnhubAPIKey() == nil)
+            keyMissing: key == nil)
     }
 
     static func makeAssetNewsViewModel(for asset: Asset) -> AssetNewsViewModel {
-        let repo = makeNewsRepository()
+        // The key is read only here, never above infrastructure.
+        let key = AppConfig.finnhubAPIKey()
+        let repo: NewsRepository = key.map { FinnhubNewsRepository(apiKey: $0) } ?? EmptyNewsRepository()
         return AssetNewsViewModel(
             symbol: asset.symbol,
             fetchCompanyNews: FetchCompanyNewsUseCase(repository: repo),
             loadBookmarks: LoadBookmarksUseCase(store: bookmarkStore),
             toggleBookmark: ToggleBookmarkUseCase(store: bookmarkStore),
-            keyMissing: AppConfig.finnhubAPIKey() == nil)
+            keyMissing: key == nil)
     }
 }

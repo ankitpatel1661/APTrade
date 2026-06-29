@@ -2,9 +2,10 @@ import SwiftUI
 import AppKit
 import APTradeDomain
 
-/// Company-news section shown on the asset-detail view. Renders nothing for the no-key case
-/// (the standalone News tab carries the "connect a source" guidance) and only shows a header
-/// once there are articles.
+/// Company-news section shown on the asset-detail view. Renders nothing (EmptyView) for the
+/// no-key case (the standalone News tab carries the "connect a source" guidance) and when the
+/// fetch has finished with no articles. Otherwise shows the "News" header with a loading
+/// spinner while the fetch is in flight, then the article rows once they arrive.
 struct AssetNewsSection: View {
     @Bindable var viewModel: AssetNewsViewModel
 
