@@ -620,9 +620,9 @@ enum L10n {
 
         // MARK: Trade
         .confirmBuy: [.english: "Confirm Buy", .german: "Kauf bestätigen",
-                      .italian: "Confirma acquisto", .spanish: "Confirmar compra"],
+                      .italian: "Conferma acquisto", .spanish: "Confirmar compra"],
         .confirmSell: [.english: "Confirm Sell", .german: "Verkauf bestätigen",
-                       .italian: "Confirma vendita", .spanish: "Confirmar venta"],
+                       .italian: "Conferma vendita", .spanish: "Confirmar venta"],
         .confirmBuyTitleFormat: [.english: "Buy %@ %@?", .german: "%@ %@ kaufen?",
                                  .italian: "Acquistare %@ %@?", .spanish: "¿Comprar %@ %@?"],
         .confirmSellTitleFormat: [.english: "Sell %@ %@?", .german: "%@ %@ verkaufen?",
