@@ -1,5 +1,4 @@
 import SwiftUI
-import AppKit
 import APTradeDomain
 
 /// Company-news section shown on the asset-detail view. Renders nothing (EmptyView) for the
@@ -8,6 +7,7 @@ import APTradeDomain
 /// spinner while the fetch is in flight, then the article rows once they arrive.
 struct AssetNewsSection: View {
     @Bindable var viewModel: AssetNewsViewModel
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         Group {
@@ -25,7 +25,7 @@ struct AssetNewsSection: View {
                             ArticleRow(
                                 article: article,
                                 isBookmarked: viewModel.isBookmarked(article),
-                                onOpen: { NSWorkspace.shared.open(article.url) },
+                                onOpen: { openURL(article.url) },
                                 onToggleBookmark: { viewModel.toggleBookmark(article) })
                             Divider().overlay(Theme.hairline)
                         }

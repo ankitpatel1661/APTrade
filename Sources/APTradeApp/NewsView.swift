@@ -1,11 +1,11 @@
 import SwiftUI
-import AppKit
 import APTradeApplication
 import APTradeDomain
 
 struct NewsView: View {
     var switcher: AnyView
     @State private var viewModel = CompositionRoot.makeNewsViewModel()
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         NavigationStack {
@@ -84,7 +84,7 @@ struct NewsView: View {
                 ArticleRow(
                     article: article,
                     isBookmarked: viewModel.isBookmarked(article),
-                    onOpen: { NSWorkspace.shared.open(article.url) },
+                    onOpen: { openURL(article.url) },
                     onToggleBookmark: { viewModel.toggleBookmark(article) })
                     .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                     .listRowSeparator(.hidden)
