@@ -7,7 +7,7 @@ import APTradeDomain
 struct RootView: View {
     enum Tab: String, CaseIterable { case watchlist = "Watchlist", portfolio = "Portfolio", news = "News" }
     private enum PanelRoute {
-        case menu, profile, accountSettings, notifications, appearance, security, help, about
+        case menu, profile, accountSettings, notifications, appearance, security, help, about, language
     }
 
     @State private var tab: Tab = .watchlist
@@ -238,6 +238,7 @@ struct RootView: View {
         case .security: securityPage
         case .help: helpPage
         case .about: aboutPage
+        case .language: languagePage
         }
     }
 
@@ -268,6 +269,7 @@ struct RootView: View {
                 accountRow(icon: "gearshape", title: "Account Settings") { panelRoute = .accountSettings }
                 accountRow(icon: "bell", title: "Notifications") { panelRoute = .notifications }
                 accountRow(icon: "paintpalette", title: "Appearance") { panelRoute = .appearance }
+                accountRow(icon: "globe", title: tr(.language)) { panelRoute = .language }
             }
             .padding(.top, 10)
 
@@ -422,6 +424,44 @@ struct RootView: View {
                 }
             }
             .padding(.horizontal, 20).padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var languagePage: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            subpageHeader(title: tr(.language))
+            Divider().overlay(Theme.hairline)
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(AppLanguage.allCases, id: \.self) { language in
+                    languageRow(language)
+                }
+            }
+            .padding(.top, 6)
+            Spacer()
+        }
+        .padding(.top, 4)
+    }
+
+    private func languageRow(_ language: AppLanguage) -> some View {
+        let selected = LocalizationManager.shared.language == language
+        return Button {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                LocalizationManager.shared.language = language
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Text(language.displayName)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Theme.textPrimary)
+                Spacer()
+                if selected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 16)).foregroundStyle(Theme.gold)
+                }
+            }
+            .padding(.horizontal, 4).padding(.vertical, 10)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -647,6 +687,14 @@ struct RootView: View {
         .background(Color.clear)
     }
 
+    private func tabTitle(_ tab: Tab) -> String {
+        switch tab {
+        case .watchlist: return tr(.watchlist)
+        case .portfolio: return tr(.portfolio)
+        case .news:      return tr(.news)
+        }
+    }
+
     private var switcher: some View {
         HStack(spacing: 4) {
             ForEach(Tab.allCases, id: \.self) { item in
@@ -654,7 +702,7 @@ struct RootView: View {
                 Button {
                     withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { tab = item }
                 } label: {
-                    Text(item.rawValue)
+                    Text(tabTitle(item))
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(selected ? Theme.textPrimary : Theme.textSecondary)
                         .padding(.horizontal, 18)
