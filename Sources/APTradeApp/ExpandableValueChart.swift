@@ -262,6 +262,6 @@ struct ExpandableSparkline: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Expand chart")
+        .help(tr(.expandChart))
     }
 }

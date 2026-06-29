@@ -115,6 +115,49 @@ enum L10n {
         case stockChip = "STOCK"
         case etfChip = "ETF"
         case cryptoChip = "CRYPTO"
+
+        // MARK: Portfolio
+        case holdingsSection = "Holdings"
+        case allocationSection = "Allocation"
+        case activitySection = "Activity"
+        case performanceSection = "Performance"
+        case totalValue = "TOTAL VALUE"
+        case dayPnL = "Day P&L"
+        case unrealizedPnL = "Unrealized P&L"
+        case cashLabel = "Cash"
+        case realizedPnL = "Realized P&L"
+        case tradesLabel = "TRADES"
+        case simulatedPaperTradingFooter = "Simulated · paper trading"
+        case resetPortfolio = "Reset portfolio"
+        case reset = "Reset"
+        case resetPortfolioConfirm = "Reset portfolio to $100,000 cash and clear all holdings?"
+        case portfolioUnrealizedPnLChartTitle = "Portfolio · Unrealized P&L"
+        case byHolding = "BY HOLDING"
+        case holdingsLabel = "HOLDINGS"
+        case noTransactionsYet = "No transactions yet."
+        case noHoldingsYet = "No holdings yet"
+        case noHoldingsHint = "Open an asset and tap Buy to start a simulated position."
+        case buyChip = "BUY"
+        case sellChip = "SELL"
+
+        // MARK: Performance metrics
+        case totalReturn = "Total Return"
+        case annualizedReturn = "Annualized"
+        case volatility = "Volatility"
+        case maxDrawdown = "Max Drawdown"
+        case sharpe = "Sharpe"
+        case beta = "Beta"
+        case alpha = "Alpha"
+        case benchmark = "Benchmark"
+        case benchmarkUnavailable = "Benchmark unavailable"
+        case diversification = "Diversification"
+        case effectiveHoldingsFormat = "%.1f effective holdings"
+        case notEnoughHistoryYet = "Not enough history yet"
+        case addHoldingsForAnalytics = "Add holdings to see performance analytics."
+        case concentrationWarningFormat = "%@ is %@ of holdings"
+
+        // MARK: Chart
+        case expandChart = "Expand chart"
     }
 
     static let table: [Key: [AppLanguage: String]] = [
@@ -336,6 +379,100 @@ enum L10n {
                    .italian: "ETF", .spanish: "ETF"],
         .cryptoChip: [.english: "CRYPTO", .german: "KRYPTO",
                       .italian: "CRIPTO", .spanish: "CRIPTO"],
+
+        // MARK: Portfolio
+        .holdingsSection: [.english: "Holdings", .german: "Bestände",
+                           .italian: "Posizioni", .spanish: "Posiciones"],
+        .allocationSection: [.english: "Allocation", .german: "Aufteilung",
+                             .italian: "Allocazione", .spanish: "Asignación"],
+        .activitySection: [.english: "Activity", .german: "Aktivität",
+                           .italian: "Attività", .spanish: "Actividad"],
+        .performanceSection: [.english: "Performance", .german: "Wertentwicklung",
+                              .italian: "Rendimento", .spanish: "Rendimiento"],
+        .totalValue: [.english: "TOTAL VALUE", .german: "GESAMTWERT",
+                      .italian: "VALORE TOTALE", .spanish: "VALOR TOTAL"],
+        .dayPnL: [.english: "Day P&L", .german: "Tages-G/V",
+                  .italian: "P&L giornaliero", .spanish: "P&L del día"],
+        .unrealizedPnL: [.english: "Unrealized P&L", .german: "Unrealisierter G/V",
+                         .italian: "P&L non realizzato", .spanish: "P&L no realizado"],
+        .cashLabel: [.english: "Cash", .german: "Bargeld",
+                     .italian: "Liquidità", .spanish: "Efectivo"],
+        .realizedPnL: [.english: "Realized P&L", .german: "Realisierter G/V",
+                       .italian: "P&L realizzato", .spanish: "P&L realizado"],
+        .tradesLabel: [.english: "TRADES", .german: "TRADES",
+                       .italian: "OPERAZIONI", .spanish: "OPERACIONES"],
+        .simulatedPaperTradingFooter: [.english: "Simulated · paper trading",
+                                       .german: "Simuliert · Paper Trading",
+                                       .italian: "Simulato · Paper Trading",
+                                       .spanish: "Simulado · Paper Trading"],
+        .resetPortfolio: [.english: "Reset portfolio", .german: "Portfolio zurücksetzen",
+                          .italian: "Reimposta portafoglio", .spanish: "Restablecer cartera"],
+        .reset: [.english: "Reset", .german: "Zurücksetzen",
+                 .italian: "Reimposta", .spanish: "Restablecer"],
+        .resetPortfolioConfirm: [.english: "Reset portfolio to $100,000 cash and clear all holdings?",
+                                 .german: "Portfolio auf 100.000 $ Bargeld zurücksetzen und alle Bestände löschen?",
+                                 .italian: "Reimpostare il portafoglio a $100.000 in liquidità e azzerare tutte le posizioni?",
+                                 .spanish: "¿Restablecer la cartera a $100,000 en efectivo y eliminar todas las posiciones?"],
+        .portfolioUnrealizedPnLChartTitle: [.english: "Portfolio · Unrealized P&L",
+                                            .german: "Portfolio · Unrealisierter G/V",
+                                            .italian: "Portafoglio · P&L non realizzato",
+                                            .spanish: "Cartera · P&L no realizado"],
+        .byHolding: [.english: "BY HOLDING", .german: "NACH BESTAND",
+                     .italian: "PER POSIZIONE", .spanish: "POR POSICIÓN"],
+        .holdingsLabel: [.english: "HOLDINGS", .german: "BESTÄNDE",
+                         .italian: "POSIZIONI", .spanish: "POSICIONES"],
+        .noTransactionsYet: [.english: "No transactions yet.", .german: "Noch keine Transaktionen.",
+                             .italian: "Ancora nessuna transazione.", .spanish: "Aún no hay transacciones."],
+        .noHoldingsYet: [.english: "No holdings yet", .german: "Noch keine Bestände",
+                         .italian: "Ancora nessuna posizione", .spanish: "Aún no hay posiciones"],
+        .noHoldingsHint: [.english: "Open an asset and tap Buy to start a simulated position.",
+                          .german: "Öffnen Sie einen Vermögenswert und tippen Sie auf Kaufen, um eine simulierte Position zu starten.",
+                          .italian: "Apri un asset e tocca Acquista per avviare una posizione simulata.",
+                          .spanish: "Abre un activo y toca Comprar para iniciar una posición simulada."],
+        .buyChip: [.english: "BUY", .german: "KAUF",
+                   .italian: "ACQUISTO", .spanish: "COMPRA"],
+        .sellChip: [.english: "SELL", .german: "VERKAUF",
+                    .italian: "VENDITA", .spanish: "VENTA"],
+
+        // MARK: Performance metrics
+        .totalReturn: [.english: "Total Return", .german: "Gesamtrendite",
+                       .italian: "Rendimento totale", .spanish: "Rentabilidad total"],
+        .annualizedReturn: [.english: "Annualized", .german: "Annualisiert",
+                            .italian: "Annualizzato", .spanish: "Anualizado"],
+        .volatility: [.english: "Volatility", .german: "Volatilität",
+                      .italian: "Volatilità", .spanish: "Volatilidad"],
+        .maxDrawdown: [.english: "Max Drawdown", .german: "Max. Drawdown",
+                       .italian: "Drawdown massimo", .spanish: "Drawdown máximo"],
+        .sharpe: [.english: "Sharpe", .german: "Sharpe",
+                  .italian: "Sharpe", .spanish: "Sharpe"],
+        .beta: [.english: "Beta", .german: "Beta",
+                .italian: "Beta", .spanish: "Beta"],
+        .alpha: [.english: "Alpha", .german: "Alpha",
+                 .italian: "Alpha", .spanish: "Alfa"],
+        .benchmark: [.english: "Benchmark", .german: "Benchmark",
+                     .italian: "Benchmark", .spanish: "Referencia"],
+        .benchmarkUnavailable: [.english: "Benchmark unavailable", .german: "Benchmark nicht verfügbar",
+                                .italian: "Benchmark non disponibile", .spanish: "Referencia no disponible"],
+        .diversification: [.english: "Diversification", .german: "Diversifikation",
+                           .italian: "Diversificazione", .spanish: "Diversificación"],
+        .effectiveHoldingsFormat: [.english: "%.1f effective holdings",
+                                   .german: "%.1f effektive Bestände",
+                                   .italian: "%.1f posizioni effettive",
+                                   .spanish: "%.1f posiciones efectivas"],
+        .notEnoughHistoryYet: [.english: "Not enough history yet", .german: "Noch nicht genug Verlauf",
+                               .italian: "Cronologia ancora insufficiente", .spanish: "Aún no hay suficiente historial"],
+        .addHoldingsForAnalytics: [.english: "Add holdings to see performance analytics.",
+                                   .german: "Fügen Sie Bestände hinzu, um Performance-Analysen zu sehen.",
+                                   .italian: "Aggiungi posizioni per visualizzare le analisi di rendimento.",
+                                   .spanish: "Agrega posiciones para ver los análisis de rendimiento."],
+        .concentrationWarningFormat: [.english: "%@ is %@ of holdings",
+                                      .german: "%@ macht %@ der Bestände aus",
+                                      .italian: "%@ rappresenta il %@ delle posizioni",
+                                      .spanish: "%@ representa el %@ de las posiciones"],
+
+        // MARK: Chart
+        .expandChart: [.english: "Expand chart", .german: "Diagramm erweitern",
+                       .italian: "Espandi grafico", .spanish: "Expandir gráfico"],
     ]
 }
 

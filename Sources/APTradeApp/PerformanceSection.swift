@@ -26,9 +26,9 @@ struct PerformanceSection: View {
         VStack(spacing: 8) {
             Image(systemName: "chart.line.uptrend.xyaxis")
                 .font(.system(size: 34)).foregroundStyle(Theme.textSecondary)
-            Text("Not enough history yet")
+            Text(tr(.notEnoughHistoryYet))
                 .font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.textPrimary)
-            Text("Add holdings to see performance analytics.")
+            Text(tr(.addHoldingsForAnalytics))
                 .font(.system(size: 13)).foregroundStyle(Theme.textSecondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -42,7 +42,7 @@ struct PerformanceSection: View {
                 if !report.benchmarkCurve.isEmpty {
                     overlayChart(report)
                 } else {
-                    Text("Benchmark unavailable")
+                    Text(tr(.benchmarkUnavailable))
                         .font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
                 }
                 diversification(report)
@@ -57,20 +57,20 @@ struct PerformanceSection: View {
     private func metricGrid(_ m: PerformanceMetrics) -> some View {
         let columns = [GridItem(.adaptive(minimum: 150), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
-            MetricCard(title: "Total Return", value: percent(m.totalReturn), positive: m.totalReturn >= 0)
-            MetricCard(title: "Annualized", value: percent(m.annualizedReturn), positive: m.annualizedReturn >= 0)
-            MetricCard(title: "Volatility", value: percent(m.volatility), positive: nil)
-            MetricCard(title: "Max Drawdown", value: percent(m.maxDrawdown), positive: false)
-            MetricCard(title: "Sharpe", value: ratio(m.sharpe), positive: (m.sharpe ?? 0) >= 0)
-            MetricCard(title: "Beta", value: ratio(m.beta), positive: nil)
-            MetricCard(title: "Alpha", value: m.alpha.map { percent($0) } ?? "—", positive: (m.alpha ?? 0) >= 0)
+            MetricCard(title: tr(.totalReturn), value: percent(m.totalReturn), positive: m.totalReturn >= 0)
+            MetricCard(title: tr(.annualizedReturn), value: percent(m.annualizedReturn), positive: m.annualizedReturn >= 0)
+            MetricCard(title: tr(.volatility), value: percent(m.volatility), positive: nil)
+            MetricCard(title: tr(.maxDrawdown), value: percent(m.maxDrawdown), positive: false)
+            MetricCard(title: tr(.sharpe), value: ratio(m.sharpe), positive: (m.sharpe ?? 0) >= 0)
+            MetricCard(title: tr(.beta), value: ratio(m.beta), positive: nil)
+            MetricCard(title: tr(.alpha), value: m.alpha.map { percent($0) } ?? "—", positive: (m.alpha ?? 0) >= 0)
         }
     }
 
     // MARK: Benchmark
 
     private var benchmarkPicker: some View {
-        Picker("Benchmark", selection: $viewModel.benchmark) {
+        Picker(tr(.benchmark), selection: $viewModel.benchmark) {
             ForEach(viewModel.benchmarks, id: \.self) { Text($0).tag($0) }
         }
         .pickerStyle(.segmented)
@@ -79,10 +79,11 @@ struct PerformanceSection: View {
     private func overlayChart(_ report: PerformanceReport) -> some View {
         let port = rebased(report.equityCurve.map { ($0.date, ($0.value.amount as NSDecimalNumber).doubleValue) })
         let bench = rebased(report.benchmarkCurve.map { ($0.date, ($0.close.amount as NSDecimalNumber).doubleValue) })
+        let portfolioLabel = tr(.portfolio)
         return Chart {
             ForEach(port, id: \.0) { point in
-                LineMark(x: .value("Date", point.0), y: .value("Portfolio", point.1),
-                         series: .value("Series", "Portfolio"))
+                LineMark(x: .value("Date", point.0), y: .value(portfolioLabel, point.1),
+                         series: .value("Series", portfolioLabel))
                     .foregroundStyle(Theme.gold)
             }
             ForEach(bench, id: \.0) { point in
@@ -92,16 +93,16 @@ struct PerformanceSection: View {
             }
         }
         .frame(height: 200)
-        .chartForegroundStyleScale(["Portfolio": Theme.gold, report.benchmarkSymbol: Theme.textSecondary])
+        .chartForegroundStyleScale([portfolioLabel: Theme.gold, report.benchmarkSymbol: Theme.textSecondary])
     }
 
     // MARK: Concentration
 
     private func diversification(_ report: PerformanceReport) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Diversification")
+            Text(tr(.diversification))
                 .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.textSecondary)
-            Text(String(format: "%.1f effective holdings", report.effectiveHoldings))
+            Text(String(format: tr(.effectiveHoldingsFormat), report.effectiveHoldings))
                 .font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.textPrimary)
             ForEach(Array(report.warnings.enumerated()), id: \.offset) { _, warning in
                 Label(warningText(warning), systemImage: "exclamationmark.triangle.fill")
@@ -115,9 +116,21 @@ struct PerformanceSection: View {
     private func warningText(_ w: ConcentrationWarning) -> String {
         switch w {
         case .singleName(let label, let weight):
-            return "\(label) is \(percent(weight)) of holdings"
+            return String(format: tr(.concentrationWarningFormat), label, percent(weight))
         case .assetClass(let kind, let weight):
-            return "\(kind.capitalized) is \(percent(weight)) of holdings"
+            return String(format: tr(.concentrationWarningFormat), assetClassLabel(kind), percent(weight))
+        }
+    }
+
+    /// `ConcentrationWarning.assetClass`'s `kind` is `AssetKind.rawValue` ("stock"/"etf"/"crypto")
+    /// degraded to a plain `String` at the domain boundary — map back to the localized
+    /// asset-class label rather than `kind.capitalized`, which only ever produces English text.
+    private func assetClassLabel(_ kind: String) -> String {
+        switch kind {
+        case AssetKind.stock.rawValue: return tr(.stocksLabel)
+        case AssetKind.etf.rawValue: return tr(.etfsLabel)
+        case AssetKind.crypto.rawValue: return tr(.cryptoLabel)
+        default: return kind.capitalized
         }
     }
 

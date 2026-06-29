@@ -5,6 +5,16 @@ import APTradeDomain
 struct PortfolioView: View {
     enum Section: String, CaseIterable {
         case holdings = "Holdings", allocation = "Allocation", activity = "Activity", performance = "Performance"
+
+        @MainActor
+        var title: String {
+            switch self {
+            case .holdings: return tr(.holdingsSection)
+            case .allocation: return tr(.allocationSection)
+            case .activity: return tr(.activitySection)
+            case .performance: return tr(.performanceSection)
+            }
+        }
     }
 
     var switcher: AnyView
@@ -52,10 +62,10 @@ struct PortfolioView: View {
                 await viewModel.runLiveUpdates()
             }
             .refreshable { await viewModel.refresh() }
-            .confirmationDialog("Reset portfolio to $100,000 cash and clear all holdings?",
+            .confirmationDialog(tr(.resetPortfolioConfirm),
                                 isPresented: $showResetConfirm, titleVisibility: .visible) {
-                Button("Reset", role: .destructive) { viewModel.reset() }
-                Button("Cancel", role: .cancel) {}
+                Button(tr(.reset), role: .destructive) { viewModel.reset() }
+                Button(tr(.cancel), role: .cancel) {}
             }
         }
         .frame(minWidth: 560, minHeight: 640)
@@ -68,17 +78,17 @@ struct PortfolioView: View {
     private var expandedChart: some View {
         VStack(spacing: 10) {
             ExpandedValueCard(
-                title: "Portfolio · Unrealized P&L",
+                title: tr(.portfolioUnrealizedPnLChartTitle),
                 values: pnlValues,
                 dates: pnlDates,
                 color: trendColor,
                 format: { Money(amount: Decimal($0), currencyCode: viewModel.valuation.totalValue.currencyCode).formatted },
                 changeStyle: .money,
                 stats: [
-                    ChartStatItem(label: "Day P&L",
+                    ChartStatItem(label: tr(.dayPnL),
                                   value: signed(viewModel.valuation.dayChange, showsSign: true),
                                   color: pnlColor(viewModel.valuation.dayChange)),
-                    ChartStatItem(label: "Unrealized P&L",
+                    ChartStatItem(label: tr(.unrealizedPnL),
                                   value: signed(viewModel.valuation.unrealizedPnL, showsSign: true),
                                   color: pnlColor(viewModel.valuation.unrealizedPnL))
                 ],
@@ -118,7 +128,7 @@ struct PortfolioView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("TOTAL VALUE")
+                    Text(tr(.totalValue))
                         .font(.system(size: 11, weight: .bold)).tracking(1.8)
                         .foregroundStyle(Theme.textSecondary)
                     SuperscriptPrice(money: viewModel.valuation.totalValue, size: 40, weight: .semibold)
@@ -135,7 +145,7 @@ struct PortfolioView: View {
                     }
                     .frame(width: 60, alignment: .trailing)
                     Menu {
-                        Button("Reset portfolio", systemImage: "arrow.counterclockwise", role: .destructive) {
+                        Button(tr(.resetPortfolio), systemImage: "arrow.counterclockwise", role: .destructive) {
                             showResetConfirm = true
                         }
                     } label: {
@@ -150,9 +160,9 @@ struct PortfolioView: View {
                 }
             }
             HStack(alignment: .center, spacing: 22) {
-                metric(label: "Day P&L", money: viewModel.valuation.dayChange, colored: true)
-                metric(label: "Unrealized P&L", money: viewModel.valuation.unrealizedPnL, colored: true)
-                metric(label: "Cash", money: viewModel.valuation.cash, colored: false)
+                metric(label: tr(.dayPnL), money: viewModel.valuation.dayChange, colored: true)
+                metric(label: tr(.unrealizedPnL), money: viewModel.valuation.unrealizedPnL, colored: true)
+                metric(label: tr(.cashLabel), money: viewModel.valuation.cash, colored: false)
                 Spacer()
                 if pnlValues.count > 1 {
                     ExpandableSparkline(
@@ -161,7 +171,7 @@ struct PortfolioView: View {
                     ) { withAnimation(chartSpring) { showChart.toggle() } }
                 }
             }
-            Text("Simulated · paper trading")
+            Text(tr(.simulatedPaperTradingFooter))
                 .font(.system(size: 10, weight: .semibold)).tracking(0.6)
                 .foregroundStyle(Theme.textTertiary)
         }
@@ -190,7 +200,7 @@ struct PortfolioView: View {
                 Button {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { section = item }
                 } label: {
-                    Text(item.rawValue)
+                    Text(item.title)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(selected ? Theme.textPrimary : Theme.textSecondary)
                         .padding(.horizontal, 14).padding(.vertical, 6)
@@ -251,7 +261,7 @@ struct PortfolioView: View {
                         ForEach(viewModel.allocationByKind) { slice in
                             HStack(spacing: 8) {
                                 Circle().fill(kindColor(slice.id)).frame(width: 9, height: 9)
-                                Text(slice.label)
+                                Text(assetClassLabel(slice))
                                     .font(.system(size: 13, weight: .medium))
                                     .foregroundStyle(Theme.textPrimary)
                                 Spacer()
@@ -265,7 +275,7 @@ struct PortfolioView: View {
                 }
                 .padding(.horizontal, 24).padding(.top, 18)
 
-                Text("BY HOLDING")
+                Text(tr(.byHolding))
                     .font(.system(size: 10, weight: .bold)).tracking(1.4)
                     .foregroundStyle(Theme.textTertiary)
                     .padding(.horizontal, 24)
@@ -292,7 +302,7 @@ struct PortfolioView: View {
         .frame(width: 150, height: 150)
         .overlay {
             VStack(spacing: 2) {
-                Text("HOLDINGS").font(.system(size: 8, weight: .bold)).tracking(1.2)
+                Text(tr(.holdingsLabel)).font(.system(size: 8, weight: .bold)).tracking(1.2)
                     .foregroundStyle(Theme.textTertiary)
                 Text(viewModel.valuation.holdingsValue.formatted)
                     .font(.system(size: 14, weight: .bold).monospacedDigit())
@@ -334,15 +344,27 @@ struct PortfolioView: View {
         }
     }
 
+    /// `allocationByKind` slices are identified by `AssetKind.rawValue` ("stock"/"etf"/"crypto");
+    /// map to the localized asset-class label rather than the view model's English-only
+    /// `AllocationSlice.label`. Falls back to the raw label for any unrecognized id.
+    private func assetClassLabel(_ slice: AllocationSlice) -> String {
+        switch slice.id {
+        case AssetKind.stock.rawValue: return tr(.stocksLabel)
+        case AssetKind.etf.rawValue: return tr(.etfsLabel)
+        case AssetKind.crypto.rawValue: return tr(.cryptoLabel)
+        default: return slice.label
+        }
+    }
+
     // MARK: - Activity
 
     private var activityView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 22) {
-                    metric(label: "Realized P&L", money: viewModel.realizedPnL, colored: true)
+                    metric(label: tr(.realizedPnL), money: viewModel.realizedPnL, colored: true)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("TRADES")
+                        Text(tr(.tradesLabel))
                             .font(.system(size: 10, weight: .semibold)).tracking(1.0)
                             .foregroundStyle(Theme.textTertiary)
                         Text("\(viewModel.transactions.count)")
@@ -356,7 +378,7 @@ struct PortfolioView: View {
                 Divider().overlay(Theme.hairline)
 
                 if viewModel.transactions.isEmpty {
-                    Text("No transactions yet.")
+                    Text(tr(.noTransactionsYet))
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.textSecondary)
                         .padding(24)
@@ -375,10 +397,10 @@ struct PortfolioView: View {
             Image(systemName: "chart.pie")
                 .font(.system(size: 32, weight: .light))
                 .foregroundStyle(Theme.textTertiary)
-            Text("No holdings yet")
+            Text(tr(.noHoldingsYet))
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
-            Text("Open an asset and tap Buy to start a simulated position.")
+            Text(tr(.noHoldingsHint))
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
@@ -469,7 +491,7 @@ private struct TransactionRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Text(tx.side == .buy ? "BUY" : "SELL")
+            Text(tx.side == .buy ? tr(.buyChip) : tr(.sellChip))
                 .font(.system(size: 10, weight: .bold)).tracking(0.8)
                 .foregroundStyle(sideColor)
                 .frame(width: 44, height: 22)
