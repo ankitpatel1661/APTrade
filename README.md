@@ -11,7 +11,7 @@ An ultra-premium **native macOS** investing platform — built in SwiftUI on a s
 ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-0C0B09?logo=apple)
 ![Swift](https://img.shields.io/badge/Swift-6.0-D4A94E?logo=swift)
 ![Architecture](https://img.shields.io/badge/architecture-Clean-D4A94E)
-![Tests](https://img.shields.io/badge/tests-113%20passing-46C98A)
+![Tests](https://img.shields.io/badge/tests-190%20passing-46C98A)
 
 </div>
 
@@ -21,7 +21,7 @@ An ultra-premium **native macOS** investing platform — built in SwiftUI on a s
 
 APTrade is a desktop investing experience focused on **professional portfolio management and market intelligence** — not high-frequency trading. This repository is **APTrade Lite**: a fully native, live-updating watchlist, asset-detail, and **simulated paper-trading portfolio** covering **stocks, ETFs, and crypto**, built to a production-quality bar.
 
-The whole app is written against pure domain logic with framework code pushed to the edges, so the market data source (currently Yahoo Finance), persistence, and notifications are each a single swappable adapter behind a port.
+The whole app is written against pure domain logic with framework code pushed to the edges, so the market data source (currently Yahoo Finance), the news source (Finnhub), persistence, and notifications are each a single swappable adapter behind a port.
 
 ## Features
 
@@ -97,10 +97,10 @@ Strict **Clean Architecture**. Dependencies point inward only; the domain knows 
 └─────────────────────────────────────────────┘
 ```
 
-- **Domain** — `Asset`, `Quote`, `Money`, `Percentage`, `Quantity`, `Portfolio`, `Position`, `Candle`, `PricePoint`, `PriceAlert`, `AppSettings`, `AccentTheme`, `MarketCalendar`, `Timeframe`, plus pure calculations: `TechnicalIndicators` (SMA/EMA/RSI/Bollinger/MACD), portfolio performance reconstruction, realized-P&L, and the `PortfolioExport` model. No framework imports.
-- **Application** — use cases (quotes, history, **candles**, search, watchlist, buy/sell, portfolio snapshots, **performance reconstruction**, **export**, alerts, settings, market-activity planning) orchestrating over ports: `MarketDataRepository`, `WatchlistStore`, `PortfolioStore`, `PortfolioHistoryStore`, `AlertStore`, `AlertNotifier`, `OrderFillNotifier`, `MarketEventNotifier`, `SettingsStore`, `SchedulerStateStore`, `PortfolioExportRenderer`.
-- **Infrastructure** — `YahooMarketDataRepository` (quotes, history, OHLC candles), `CachingMarketDataRepository`, `UserNotificationAlertNotifier`, `UserDefaults`-backed stores, and a dependency-free **export renderer** (Core Graphics PDF + a hand-rolled ZIP writer producing OOXML `.xlsx` / `.docx`).
-- **Presentation** — declarative SwiftUI views with thin `@Observable` view models; a `MarketActivityCoordinator` runs the notification scheduler; all dependencies wired in `CompositionRoot`.
+- **Domain** — `Asset`, `Quote`, `Money`, `Percentage`, `Quantity`, `Portfolio`, `Position`, `Candle`, `PricePoint`, `PriceAlert`, `NewsArticle`, `NewsCategory`, `AppSettings`, `AccentTheme`, `AppLanguage`, `MarketCalendar`, `Timeframe`, plus pure calculations: `TechnicalIndicators` (SMA/EMA/RSI/Bollinger/MACD), portfolio performance reconstruction, realized-P&L, and the `PortfolioExport` model. No framework imports.
+- **Application** — use cases (quotes, history, **candles**, search, watchlist, buy/sell, portfolio snapshots, **performance reconstruction**, **export**, **news**, **bookmarks**, alerts, settings, market-activity planning) orchestrating over ports: `MarketDataRepository`, `WatchlistStore`, `PortfolioStore`, `PortfolioHistoryStore`, `AlertStore`, `AlertNotifier`, `OrderFillNotifier`, `MarketEventNotifier`, `SettingsStore`, `SchedulerStateStore`, `PortfolioExportRenderer`, `NewsRepository`, `BookmarkStore`.
+- **Infrastructure** — `YahooMarketDataRepository` (quotes, history, OHLC candles), `CachingMarketDataRepository`, `FinnhubNewsRepository` (with an `EmptyNewsRepository` no-key fallback), `AppConfig` (reads the Finnhub key from `~/.config/aptrade/config.json`), `UserNotificationAlertNotifier`, `UserDefaults`-backed stores (incl. bookmarks), and a dependency-free **export renderer** (Core Graphics PDF + a hand-rolled ZIP writer producing OOXML `.xlsx` / `.docx`).
+- **Presentation** — declarative SwiftUI views with thin `@Observable` view models; a `MarketActivityCoordinator` runs the notification scheduler; `ThemeManager` and `LocalizationManager` drive live theme/accent and language switching; a typed `L10n` catalog backs `tr(_:)` localization; all dependencies wired in `CompositionRoot`.
 
 Built throughout on Swift 6 concurrency — `async/await`, `actor` isolation, and `Sendable` types. Business policy (e.g. the market-hours scheduler) is kept as **pure, fully tested functions**, with clocks and I/O injected at the edges.
 
@@ -112,6 +112,7 @@ Built throughout on Swift 6 concurrency — `async/await`, `actor` isolation, an
 | State | `@Observable` view models (MVVM) |
 | Concurrency | Swift 6 `async/await`, actors |
 | Market data | Yahoo Finance chart + search APIs |
+| News | Finnhub company / market news API |
 | Notifications | `UserNotifications` (native macOS) |
 | Persistence | `UserDefaults` adapters behind ports |
 | Export | Core Graphics (PDF) + OOXML `.xlsx`/`.docx` via a custom ZIP writer |
@@ -143,7 +144,7 @@ The app ships as a bare SwiftPM executable. Launching the built binary directly 
 DEVELOPER_DIR=/Applications/Xcode.app swift test
 ```
 
-> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **113 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction), the market calendar, use cases, the market-activity planner, alert/order-fill gating, the Yahoo mapper, the caching repository, the portfolio export renderers, settings round-trips, and the view models.
+> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **190 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction), the market calendar, use cases, the market-activity planner, alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, and the view models.
 
 ## Project Structure
 
