@@ -29,7 +29,7 @@ struct CommandPaletteView: View {
                 Divider().overlay(Theme.hairline)
                 resultList
             } else {
-                Text("No matches")
+                Text(tr(.noMatches))
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.textSecondary)
                     .padding(.vertical, 16)
@@ -45,7 +45,7 @@ struct CommandPaletteView: View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(Theme.textSecondary)
-            TextField("Search assets or jump to a tab…", text: $viewModel.query)
+            TextField(tr(.searchAssetsPlaceholder), text: $viewModel.query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 16))
                 .foregroundStyle(Theme.textPrimary)
@@ -113,9 +113,9 @@ struct CommandPaletteView: View {
 
     private func kindLabel(_ kind: AssetKind) -> String {
         switch kind {
-        case .stock: return "STOCK"
-        case .etf: return "ETF"
-        case .crypto: return "CRYPTO"
+        case .stock: return tr(.stockChip)
+        case .etf: return tr(.etfChip)
+        case .crypto: return tr(.cryptoChip)
         }
     }
 }

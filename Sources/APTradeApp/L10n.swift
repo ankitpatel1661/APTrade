@@ -224,6 +224,30 @@ enum L10n {
         case priceAboveSummaryFormat = "Price above %@"
         case priceBelowSummaryFormat = "Price below %@"
         case percentMoveSummaryFormat = "Moves %@%% in a day"
+
+        // MARK: Command palette
+        case noMatches = "No matches"
+        case searchAssetsPlaceholder = "Search assets or jump to a tab…"
+        case goToWatchlist = "Go to Watchlist"
+        case goToPortfolio = "Go to Portfolio"
+
+        // MARK: Brand chrome
+        case liveBadge = "LIVE"
+        case livePricesAccessibility = "Live prices"
+
+        // MARK: Trade errors
+        case couldntPlaceOrder = "Couldn't place the order. Try again."
+        case notEnoughCash = "Not enough cash for this order."
+        case notEnoughShares = "You don't own that many shares."
+        case invalidQuantityError = "Enter a quantity greater than zero."
+
+        // MARK: Watchlist errors
+        case couldntFindSymbolFormat = "Couldn't find \"%@\""
+
+        // MARK: Market activity notifications
+        case digestNoSymbols = "Add symbols to your watchlist to get a daily digest."
+        case digestUpdating = "Your watchlist is being updated. Check back shortly."
+        case digestMoversFormat = "Today's movers — %@"
     }
 
     static let table: [Key: [AppLanguage: String]] = [
@@ -665,6 +689,60 @@ enum L10n {
                                    .italian: "Prezzo sotto %@", .spanish: "Precio por debajo de %@"],
         .percentMoveSummaryFormat: [.english: "Moves %@%% in a day", .german: "Bewegt sich %@%% an einem Tag",
                                     .italian: "Si muove del %@%% in un giorno", .spanish: "Se mueve %@%% en un día"],
+
+        // MARK: Command palette
+        .noMatches: [.english: "No matches", .german: "Keine Treffer",
+                     .italian: "Nessun risultato", .spanish: "Sin coincidencias"],
+        .searchAssetsPlaceholder: [.english: "Search assets or jump to a tab…",
+                                   .german: "Werte suchen oder zu einem Tab wechseln …",
+                                   .italian: "Cerca asset o vai a una scheda…",
+                                   .spanish: "Buscar activos o ir a una pestaña…"],
+        .goToWatchlist: [.english: "Go to Watchlist", .german: "Zur Beobachtungsliste",
+                         .italian: "Vai alla lista di controllo", .spanish: "Ir a la lista de seguimiento"],
+        .goToPortfolio: [.english: "Go to Portfolio", .german: "Zum Portfolio",
+                         .italian: "Vai al portafoglio", .spanish: "Ir a la cartera"],
+
+        // MARK: Brand chrome
+        .liveBadge: [.english: "LIVE", .german: "LIVE",
+                     .italian: "LIVE", .spanish: "EN VIVO"],
+        .livePricesAccessibility: [.english: "Live prices", .german: "Live-Kurse",
+                                   .italian: "Prezzi in tempo reale", .spanish: "Precios en vivo"],
+
+        // MARK: Trade errors
+        .couldntPlaceOrder: [.english: "Couldn't place the order. Try again.",
+                             .german: "Die Order konnte nicht aufgegeben werden. Bitte erneut versuchen.",
+                             .italian: "Impossibile eseguire l'ordine. Riprova.",
+                             .spanish: "No se pudo realizar la orden. Inténtalo de nuevo."],
+        .notEnoughCash: [.english: "Not enough cash for this order.",
+                         .german: "Nicht genügend Guthaben für diese Order.",
+                         .italian: "Liquidità insufficiente per questo ordine.",
+                         .spanish: "No hay suficiente efectivo para esta orden."],
+        .notEnoughShares: [.english: "You don't own that many shares.",
+                           .german: "Sie besitzen nicht so viele Anteile.",
+                           .italian: "Non possiedi così tante quote.",
+                           .spanish: "No posees esa cantidad de acciones."],
+        .invalidQuantityError: [.english: "Enter a quantity greater than zero.",
+                                .german: "Geben Sie eine Anzahl größer als null ein.",
+                                .italian: "Inserisci una quantità maggiore di zero.",
+                                .spanish: "Ingresa una cantidad mayor que cero."],
+
+        // MARK: Watchlist errors
+        .couldntFindSymbolFormat: [.english: "Couldn't find \"%@\"",
+                                   .german: "„%@“ wurde nicht gefunden",
+                                   .italian: "Impossibile trovare \"%@\"",
+                                   .spanish: "No se pudo encontrar \"%@\""],
+
+        // MARK: Market activity notifications
+        .digestNoSymbols: [.english: "Add symbols to your watchlist to get a daily digest.",
+                           .german: "Fügen Sie Symbole zu Ihrer Beobachtungsliste hinzu, um eine tägliche Übersicht zu erhalten.",
+                           .italian: "Aggiungi simboli alla tua lista di controllo per ricevere un riepilogo giornaliero.",
+                           .spanish: "Agrega símbolos a tu lista de seguimiento para recibir un resumen diario."],
+        .digestUpdating: [.english: "Your watchlist is being updated. Check back shortly.",
+                          .german: "Ihre Beobachtungsliste wird aktualisiert. Schauen Sie in Kürze wieder nach.",
+                          .italian: "La tua lista di controllo è in fase di aggiornamento. Controlla di nuovo a breve.",
+                          .spanish: "Tu lista de seguimiento se está actualizando. Vuelve a consultarla pronto."],
+        .digestMoversFormat: [.english: "Today's movers — %@", .german: "Heutige Bewegungen — %@",
+                              .italian: "I movimenti di oggi — %@", .spanish: "Los movimientos de hoy — %@"],
     ]
 }
 

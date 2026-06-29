@@ -97,15 +97,15 @@ final class TradeViewModel {
         } catch let error as TradeError {
             errorMessage = message(for: error)
         } catch {
-            errorMessage = "Couldn't place the order. Try again."
+            errorMessage = tr(.couldntPlaceOrder)
         }
     }
 
     private func message(for error: TradeError) -> String {
         switch error {
-        case .insufficientFunds: return "Not enough cash for this order."
-        case .insufficientShares: return "You don't own that many shares."
-        case .invalidQuantity: return "Enter a quantity greater than zero."
+        case .insufficientFunds: return tr(.notEnoughCash)
+        case .insufficientShares: return tr(.notEnoughShares)
+        case .invalidQuantity: return tr(.invalidQuantityError)
         }
     }
 }

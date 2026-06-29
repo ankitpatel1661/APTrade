@@ -56,19 +56,19 @@ final class MarketActivityCoordinator {
     /// Builds the digest body from the watchlist's biggest movers today.
     private func digestSummary() async -> String {
         let symbols = loadWatchlist().map { $0.symbol }
-        guard !symbols.isEmpty else { return "Add symbols to your watchlist to get a daily digest." }
+        guard !symbols.isEmpty else { return tr(.digestNoSymbols) }
         let results = await fetchQuotes(symbols: symbols)
         let quotes = results.values.compactMap { result -> Quote? in
             if case .success(let q) = result { return q }
             return nil
         }
-        guard !quotes.isEmpty else { return "Your watchlist is being updated. Check back shortly." }
+        guard !quotes.isEmpty else { return tr(.digestUpdating) }
 
         let movers = quotes
             .sorted { abs($0.changePercent.value) > abs($1.changePercent.value) }
             .prefix(3)
             .map { "\($0.symbol) \($0.changePercent.formatted)" }
             .joined(separator: ", ")
-        return "Today's movers — \(movers)"
+        return String(format: tr(.digestMoversFormat), movers)
     }
 }

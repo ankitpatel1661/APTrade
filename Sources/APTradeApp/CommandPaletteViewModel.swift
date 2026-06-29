@@ -30,17 +30,22 @@ final class CommandPaletteViewModel {
     private let searchAssets: SearchAssetsUseCase
     private var searchTask: Task<Void, Never>?
 
-    private static let staticResults: [PaletteResult] = [
-        .navigate(label: "Go to Watchlist", icon: "list.bullet", destination: .watchlist),
-        .navigate(label: "Go to Portfolio", icon: "chart.pie", destination: .portfolio)
-    ]
+    /// Computed (not cached) so the labels re-translate live when the user switches
+    /// language while the palette is open.
+    private static var staticResults: [PaletteResult] {
+        [
+            .navigate(label: tr(.goToWatchlist), icon: "list.bullet", destination: .watchlist),
+            .navigate(label: tr(.goToPortfolio), icon: "chart.pie", destination: .portfolio)
+        ]
+    }
 
     var query: String = ""
-    private(set) var results: [PaletteResult] = CommandPaletteViewModel.staticResults
+    private(set) var results: [PaletteResult] = []
     private(set) var selectedIndex: Int = 0
 
     init(searchAssets: SearchAssetsUseCase) {
         self.searchAssets = searchAssets
+        self.results = Self.staticResults
     }
 
     /// Empty query shows the static shortcuts immediately. A non-empty query debounces

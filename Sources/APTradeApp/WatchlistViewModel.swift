@@ -215,7 +215,7 @@ final class WatchlistViewModel {
             await refresh()
             await loadSparklines()
         } catch {
-            addError = "Couldn't find \"\(query.trimmingCharacters(in: .whitespaces))\""
+            addError = String(format: tr(.couldntFindSymbolFormat), query.trimmingCharacters(in: .whitespaces))
         }
     }
 

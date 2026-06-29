@@ -159,7 +159,7 @@ struct LiveBadge: View {
                 .fill(Theme.gold)
                 .frame(width: 6, height: 6)
                 .opacity(pulsing ? 0.35 : 1)
-            Text("LIVE")
+            Text(tr(.liveBadge))
                 .font(.system(size: 10, weight: .bold))
                 .tracking(1.6)
         }
@@ -173,7 +173,7 @@ struct LiveBadge: View {
                 pulsing = true
             }
         }
-        .accessibilityLabel("Live prices")
+        .accessibilityLabel(tr(.livePricesAccessibility))
     }
 }
 
@@ -310,9 +310,9 @@ struct KindToggle: View {
 
     private func title(_ kind: AssetKind) -> String {
         switch kind {
-        case .stock: return "Stocks"
-        case .etf: return "ETFs"
-        case .crypto: return "Crypto"
+        case .stock: return tr(.stocksLabel)
+        case .etf: return tr(.etfsLabel)
+        case .crypto: return tr(.cryptoLabel)
         }
     }
 }
