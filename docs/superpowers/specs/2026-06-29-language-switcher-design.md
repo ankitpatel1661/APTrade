@@ -123,20 +123,35 @@ Because `tr` reads `LocalizationManager.shared.language`, **any view whose `body
 
 **Completeness guarantee:** a unit test iterates `L10n.Key.allCases` and asserts each has a non-empty entry for **all four** `AppLanguage` cases. Missing or empty translations fail the build's test step — the safety net for the bulk translation content.
 
-### 4. Presentation — the Settings picker
+### 4. Presentation — the Settings picker (dedicated account-drawer row + subpage)
 
-In `Sources/APTradeApp/RootView.swift`, inside `appearancePage` (the existing **Appearance** subpage of the account drawer, which already hosts the Theme and Accent sections), add a **Language** section beneath Accent:
+The language picker is its **own top-level row** in the account drawer, opening its **own subpage** — mirroring exactly how the "Appearance" row opens `appearancePage`. In `Sources/APTradeApp/RootView.swift`:
 
-```swift
-sectionLabel(tr(.language))            // "Language" / "Sprache" / "Lingua" / "Idioma"
-ForEach(AppLanguage.allCases, id: \.self) { language in
-    languageRow(language)
-}
-```
+- Add a `.language` case to the private `PanelRoute` enum.
+- Add a drawer row alongside the others (a natural spot is right after Appearance):
+  ```swift
+  accountRow(icon: "globe", title: tr(.language)) { panelRoute = .language }
+  ```
+- Add the route to the `switch panelRoute` dispatch: `case .language: languagePage`.
+- Add the subpage:
+  ```swift
+  private var languagePage: some View {
+      VStack(alignment: .leading, spacing: 0) {
+          subpageHeader(title: tr(.language))      // "Language"/"Sprache"/"Lingua"/"Idioma"
+          Divider().overlay(Theme.hairline)
+          VStack(alignment: .leading, spacing: 0) {
+              ForEach(AppLanguage.allCases, id: \.self) { language in
+                  languageRow(language)
+              }
+          }
+          .padding(.top, 6)
+          Spacer()
+      }
+      .padding(.top, 4)
+  }
+  ```
 
-`languageRow(_:)` mirrors the existing `accentRow(_:)`: shows `language.displayName` (always the endonym), a trailing checkmark when `LocalizationManager.shared.language == language`, and on tap sets `LocalizationManager.shared.language = language` inside `withAnimation(.easeInOut(duration: 0.25))` so the UI cross-fades into the new language. The section label itself is localized (`tr(.language)`) so the picker's own header flips with the language.
-
-Rationale for placement: Dark Mode and Accent already live in the Appearance subpage; Language is the same class of "appearance/interface" preference and belongs alongside them. (Alternative considered: a dedicated top-level row in the account drawer — deferred; the section-within-Appearance is consistent and lighter.)
+`languageRow(_:)` mirrors the existing `accentRow(_:)`: shows `language.displayName` (always the endonym, regardless of active language), a trailing checkmark when `LocalizationManager.shared.language == language`, and on tap sets `LocalizationManager.shared.language = language` inside `withAnimation(.easeInOut(duration: 0.25))` so the whole UI cross-fades into the new language. Both the drawer **row title** and the **subpage header** are localized via `tr(.language)`, so they flip with the active language.
 
 ### 5. String migration (the bulk of the work)
 
