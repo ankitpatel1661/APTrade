@@ -92,6 +92,29 @@ enum L10n {
         case darkSubtitle = "Default — gold on black"
         case light = "Light"
         case lightSubtitle = "Charcoal on warm white"
+
+        // MARK: Watchlist
+        case avgDayChangeTitle = "Avg. Day Change"
+        case avgDayChange = "avg. day change"
+        case advancingFormat = "%d advancing"
+        case decliningFormat = "%d declining"
+        case noStocksYet = "No stocks yet"
+        case noETFsYet = "No ETFs yet"
+        case noCryptoYet = "No crypto yet"
+        case addSymbolHint = "Add a symbol below to start tracking it here."
+        case searchTickerPlaceholder = "Search ticker symbol or name — Apple, VOO, SOL"
+        case add = "Add"
+        case setPriceAlert = "Set Price Alert"
+        case removeFromWatchlist = "Remove from Watchlist"
+        case activeAlertsFormat = "%d active alert(s)"
+        case setAPriceAlert = "Set a price alert"
+        case removeFromWatchlistHelp = "Remove from watchlist"
+        case stocksLabel = "Stocks"
+        case etfsLabel = "ETFs"
+        case cryptoLabel = "Crypto"
+        case stockChip = "STOCK"
+        case etfChip = "ETF"
+        case cryptoChip = "CRYPTO"
     }
 
     static let table: [Key: [AppLanguage: String]] = [
@@ -265,6 +288,54 @@ enum L10n {
                  .italian: "Chiaro", .spanish: "Claro"],
         .lightSubtitle: [.english: "Charcoal on warm white", .german: "Anthrazit auf Warmweiß",
                          .italian: "Antracite su bianco caldo", .spanish: "Carbón sobre blanco cálido"],
+
+        // MARK: Watchlist
+        .avgDayChangeTitle: [.english: "Avg. Day Change", .german: "Ø Tagesveränderung",
+                             .italian: "Variazione media giornaliera", .spanish: "Cambio diario promedio"],
+        .avgDayChange: [.english: "avg. day change", .german: "Ø Tagesveränderung",
+                        .italian: "variazione media giornaliera", .spanish: "cambio diario promedio"],
+        .advancingFormat: [.english: "%d advancing", .german: "%d im Plus",
+                           .italian: "%d in rialzo", .spanish: "%d en alza"],
+        .decliningFormat: [.english: "%d declining", .german: "%d im Minus",
+                           .italian: "%d in calo", .spanish: "%d en baja"],
+        .noStocksYet: [.english: "No stocks yet", .german: "Noch keine Aktien",
+                       .italian: "Ancora nessuna azione", .spanish: "Aún no hay acciones"],
+        .noETFsYet: [.english: "No ETFs yet", .german: "Noch keine ETFs",
+                     .italian: "Ancora nessun ETF", .spanish: "Aún no hay ETFs"],
+        .noCryptoYet: [.english: "No crypto yet", .german: "Noch keine Kryptowährungen",
+                       .italian: "Ancora nessuna criptovaluta", .spanish: "Aún no hay criptomonedas"],
+        .addSymbolHint: [.english: "Add a symbol below to start tracking it here.",
+                         .german: "Fügen Sie unten ein Symbol hinzu, um es hier zu verfolgen.",
+                         .italian: "Aggiungi un simbolo qui sotto per iniziare a monitorarlo.",
+                         .spanish: "Agrega un símbolo abajo para empezar a seguirlo aquí."],
+        .searchTickerPlaceholder: [.english: "Search ticker symbol or name — Apple, VOO, SOL",
+                                   .german: "Tickersymbol oder Name suchen — Apple, VOO, SOL",
+                                   .italian: "Cerca simbolo o nome — Apple, VOO, SOL",
+                                   .spanish: "Buscar símbolo o nombre — Apple, VOO, SOL"],
+        .add: [.english: "Add", .german: "Hinzufügen",
+               .italian: "Aggiungi", .spanish: "Añadir"],
+        .setPriceAlert: [.english: "Set Price Alert", .german: "Preisalarm festlegen",
+                         .italian: "Imposta avviso sui prezzi", .spanish: "Establecer alerta de precio"],
+        .removeFromWatchlist: [.english: "Remove from Watchlist", .german: "Aus Beobachtungsliste entfernen",
+                               .italian: "Rimuovi dalla lista di controllo", .spanish: "Quitar de la lista de seguimiento"],
+        .activeAlertsFormat: [.english: "%d active alert(s)", .german: "%d aktive(r) Alarm(e)",
+                              .italian: "%d avviso/i attivo/i", .spanish: "%d alerta(s) activa(s)"],
+        .setAPriceAlert: [.english: "Set a price alert", .german: "Preisalarm festlegen",
+                          .italian: "Imposta un avviso sui prezzi", .spanish: "Establecer una alerta de precio"],
+        .removeFromWatchlistHelp: [.english: "Remove from watchlist", .german: "Aus der Beobachtungsliste entfernen",
+                                   .italian: "Rimuovi dalla lista di controllo", .spanish: "Quitar de la lista de seguimiento"],
+        .stocksLabel: [.english: "Stocks", .german: "Aktien",
+                       .italian: "Azioni", .spanish: "Acciones"],
+        .etfsLabel: [.english: "ETFs", .german: "ETFs",
+                     .italian: "ETF", .spanish: "ETFs"],
+        .cryptoLabel: [.english: "Crypto", .german: "Krypto",
+                       .italian: "Cripto", .spanish: "Cripto"],
+        .stockChip: [.english: "STOCK", .german: "AKTIE",
+                     .italian: "AZIONE", .spanish: "ACCIÓN"],
+        .etfChip: [.english: "ETF", .german: "ETF",
+                   .italian: "ETF", .spanish: "ETF"],
+        .cryptoChip: [.english: "CRYPTO", .german: "KRYPTO",
+                      .italian: "CRIPTO", .spanish: "CRIPTO"],
     ]
 }
 

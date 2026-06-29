@@ -20,7 +20,7 @@ struct WatchlistView: View {
                     header
                     if showChart && viewModel.averageSpark.count > 1 {
                         ExpandedValueCard(
-                            title: "Avg. Day Change",
+                            title: tr(.avgDayChangeTitle),
                             values: viewModel.averageSpark,
                             color: Theme.changeColor(viewModel.averageChange),
                             format: { "\($0 >= 0 ? "+" : "")\($0.formatted(.number.precision(.fractionLength(2))))%" },
@@ -96,7 +96,7 @@ struct WatchlistView: View {
                     .foregroundStyle(Theme.changeColor(viewModel.averageChange))
                     .contentTransition(.numericText())
                     .animation(.easeOut(duration: 0.3), value: viewModel.averageChange)
-                Text("avg. day change")
+                Text(tr(.avgDayChange))
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.textSecondary)
                 Spacer()
@@ -112,17 +112,17 @@ struct WatchlistView: View {
                 PulseBar(advancers: viewModel.advancers, decliners: viewModel.decliners)
                     .frame(width: 180)
                 HStack(spacing: 14) {
-                    legend(count: viewModel.advancers, label: "advancing", color: Theme.up)
-                    legend(count: viewModel.decliners, label: "declining", color: Theme.down)
+                    legend(format: tr(.advancingFormat), count: viewModel.advancers, color: Theme.up)
+                    legend(format: tr(.decliningFormat), count: viewModel.decliners, color: Theme.down)
                 }
             }
         }
     }
 
-    private func legend(count: Int, label: String, color: Color) -> some View {
+    private func legend(format: String, count: Int, color: Color) -> some View {
         HStack(spacing: 6) {
             Circle().fill(color).frame(width: 6, height: 6)
-            Text("\(count) \(label)")
+            Text(String(format: format, count))
                 .font(.system(size: 12).monospacedDigit())
                 .foregroundStyle(Theme.textSecondary)
         }
@@ -170,10 +170,10 @@ struct WatchlistView: View {
             Image(systemName: iconForKind)
                 .font(.system(size: 32, weight: .light))
                 .foregroundStyle(Theme.textTertiary)
-            Text("No \(kindLabel) yet")
+            Text(tr(noneYetKey))
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
-            Text("Add a symbol below to start tracking it here.")
+            Text(tr(.addSymbolHint))
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
@@ -191,11 +191,11 @@ struct WatchlistView: View {
         }
     }
 
-    private var kindLabel: String {
+    private var noneYetKey: L10n.Key {
         switch viewModel.selectedKind {
-        case .stock: return "stocks"
-        case .etf: return "ETFs"
-        case .crypto: return "crypto"
+        case .stock: return .noStocksYet
+        case .etf: return .noETFsYet
+        case .crypto: return .noCryptoYet
         }
     }
 
@@ -212,14 +212,14 @@ struct WatchlistView: View {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(Theme.textTertiary)
-                TextField("Search ticker symbol or name — Apple, VOO, SOL", text: $newSymbol)
+                TextField(tr(.searchTickerPlaceholder), text: $newSymbol)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .foregroundStyle(Theme.textPrimary)
                     .onChange(of: newSymbol) { _, text in viewModel.updateQuery(text) }
                     .onSubmit(submit)
                 if !newSymbol.trimmingCharacters(in: .whitespaces).isEmpty {
-                    Button("Add", action: submit)
+                    Button(tr(.add), action: submit)
                         .buttonStyle(.plain)
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(Theme.bgBottom)
@@ -280,9 +280,9 @@ struct WatchlistView: View {
 
     private func kindChipLabel(_ kind: AssetKind) -> String {
         switch kind {
-        case .stock: return "STOCK"
-        case .etf: return "ETF"
-        case .crypto: return "CRYPTO"
+        case .stock: return tr(.stockChip)
+        case .etf: return tr(.etfChip)
+        case .crypto: return tr(.cryptoChip)
         }
     }
 
@@ -352,8 +352,8 @@ private struct WatchlistRow: View {
                 .opacity(isHovered ? 0 : 1)
         }
         .contextMenu {
-            Button("Set Price Alert", systemImage: "bell", action: onSetAlert)
-            Button("Remove from Watchlist", systemImage: "trash", role: .destructive, action: onRemove)
+            Button(tr(.setPriceAlert), systemImage: "bell", action: onSetAlert)
+            Button(tr(.removeFromWatchlist), systemImage: "trash", role: .destructive, action: onRemove)
         }
     }
 
@@ -366,7 +366,7 @@ private struct WatchlistRow: View {
                 .background(Circle().fill(Theme.surfaceHi))
         }
         .buttonStyle(.plain)
-        .help(alertCount > 0 ? "\(alertCount) active alert(s)" : "Set a price alert")
+        .help(alertCount > 0 ? String(format: tr(.activeAlertsFormat), alertCount) : tr(.setAPriceAlert))
     }
 
     private var removeButton: some View {
@@ -377,7 +377,7 @@ private struct WatchlistRow: View {
                 .background(Circle().fill(Theme.surfaceHi).padding(2))
         }
         .buttonStyle(.plain)
-        .help("Remove from watchlist")
+        .help(tr(.removeFromWatchlistHelp))
     }
 
     @ViewBuilder

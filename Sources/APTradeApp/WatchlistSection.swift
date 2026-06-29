@@ -9,11 +9,12 @@ struct WatchlistSection: Identifiable, Equatable {
 
     var id: AssetKind { kind }
 
+    @MainActor
     var title: String {
         switch kind {
-        case .stock: return "Stocks"
-        case .etf: return "ETFs"
-        case .crypto: return "Crypto"
+        case .stock: return tr(.stocksLabel)
+        case .etf: return tr(.etfsLabel)
+        case .crypto: return tr(.cryptoLabel)
         }
     }
 }
