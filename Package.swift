@@ -8,10 +8,14 @@ let package = Package(
         .target(name: "APTradeDomain"),
         .target(name: "APTradeApplication", dependencies: ["APTradeDomain"]),
         .target(name: "APTradeInfrastructure", dependencies: ["APTradeApplication", "APTradeDomain"]),
-        .executableTarget(
+        .target(
             name: "APTradeApp",
             dependencies: ["APTradeInfrastructure", "APTradeApplication", "APTradeDomain"],
             resources: [.process("Resources")]
+        ),
+        .executableTarget(
+            name: "APTradeMac",
+            dependencies: ["APTradeApp"]
         ),
         .testTarget(name: "APTradeDomainTests", dependencies: ["APTradeDomain"]),
         .testTarget(name: "APTradeApplicationTests", dependencies: ["APTradeApplication", "APTradeDomain"]),

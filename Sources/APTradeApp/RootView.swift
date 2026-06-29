@@ -6,7 +6,9 @@ import UniformTypeIdentifiers
 import APTradeApplication
 import APTradeDomain
 
-struct RootView: View {
+public struct RootView: View {
+    public init() {}
+
     enum Tab: String, CaseIterable { case watchlist = "Watchlist", portfolio = "Portfolio", news = "News" }
     private enum PanelRoute {
         case menu, profile, accountSettings, notifications, appearance, security, help, about, language
@@ -29,7 +31,7 @@ struct RootView: View {
     @State private var paletteVM = CompositionRoot.makeCommandPaletteViewModel()
     @State private var paletteAsset: Asset?
 
-    var body: some View {
+    public var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .trailing) {
                 Theme.background.ignoresSafeArea()
