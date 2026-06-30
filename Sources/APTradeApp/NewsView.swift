@@ -3,7 +3,9 @@ import APTradeApplication
 import APTradeDomain
 
 struct NewsView: View {
-    var switcher: AnyView
+    var switcher: AnyView? = nil
+    var onOpenSearch: (() -> Void)? = nil
+    var onOpenAccount: (() -> Void)? = nil
     @State private var viewModel = CompositionRoot.makeNewsViewModel()
     @Environment(\.openURL) private var openURL
 
@@ -12,9 +14,7 @@ struct NewsView: View {
             ZStack {
                 Theme.background.ignoresSafeArea()
                 VStack(spacing: 12) {
-                    switcher
-                        .padding(.horizontal, 24)
-                        .padding(.top, 8)
+                    if let switcher { switcher.padding(.horizontal, 24).padding(.top, 8) }
                     if viewModel.keyMissing {
                         Spacer(); noKeyState; Spacer()
                     } else {

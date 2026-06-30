@@ -17,7 +17,9 @@ struct PortfolioView: View {
         }
     }
 
-    var switcher: AnyView
+    var switcher: AnyView? = nil
+    var onOpenSearch: (() -> Void)? = nil
+    var onOpenAccount: (() -> Void)? = nil
     @State private var viewModel = CompositionRoot.makePortfolioViewModel()
     @State private var performanceVM = CompositionRoot.makePerformanceViewModel()
     @State private var selectedAsset: Asset?
@@ -135,7 +137,7 @@ struct PortfolioView: View {
                 }
                 Spacer()
                 HStack(alignment: .center, spacing: 10) {
-                    switcher
+                    if let switcher { switcher }
                     HStack(spacing: 10) {
                         if viewModel.isRefreshing {
                             ProgressView().controlSize(.small)

@@ -2,7 +2,9 @@ import SwiftUI
 import APTradeDomain
 
 struct WatchlistView: View {
-    var switcher: AnyView
+    var switcher: AnyView? = nil
+    var onOpenSearch: (() -> Void)? = nil
+    var onOpenAccount: (() -> Void)? = nil
     @State private var viewModel = CompositionRoot.makeWatchlistViewModel()
     @State private var newSymbol = ""
     @State private var selectedAsset: Asset?
@@ -65,7 +67,7 @@ struct WatchlistView: View {
                 KindToggle(selection: $viewModel.selectedKind, counts: viewModel.counts)
                 Spacer()
                 HStack(alignment: .center, spacing: 10) {
-                    switcher
+                    if let switcher { switcher }
                     HStack(spacing: 10) {
                         if viewModel.isRefreshing {
                             ProgressView().controlSize(.small)

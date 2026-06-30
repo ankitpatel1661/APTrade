@@ -32,6 +32,62 @@ public struct RootView: View {
     @State private var paletteAsset: Asset?
 
     public var body: some View {
+        #if os(iOS)
+        iosBody
+        #else
+        macBody
+        #endif
+    }
+
+    #if os(iOS)
+    private var iosBody: some View {
+        TabView(selection: $tab) {
+            WatchlistView(onOpenSearch: { showPalette = true },
+                          onOpenAccount: { showAccountPanel = true })
+                .tabItem { Label(tr(.watchlist), systemImage: "eye") }
+                .tag(Tab.watchlist)
+            PortfolioView(onOpenSearch: { showPalette = true },
+                          onOpenAccount: { showAccountPanel = true })
+                .tabItem { Label(tr(.portfolio), systemImage: "chart.pie") }
+                .tag(Tab.portfolio)
+            NewsView(onOpenSearch: { showPalette = true },
+                     onOpenAccount: { showAccountPanel = true })
+                .tabItem { Label(tr(.news), systemImage: "newspaper") }
+                .tag(Tab.news)
+        }
+        .tint(Theme.gold)
+        .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
+        .task { await scheduler.run() }
+        .sheet(isPresented: $showAccountPanel, onDismiss: { panelRoute = .menu }) {
+            NavigationStack { accountPanel.background(Theme.surface.ignoresSafeArea()) }
+                .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
+        }
+        .sheet(isPresented: $showPalette, onDismiss: { paletteVM.reset() }) {
+            CommandPaletteView(viewModel: paletteVM,
+                               onSelect: { handlePaletteSelection($0) },
+                               onClose: { closePalette() })
+        }
+        .confirmationDialog(tr(.exportPortfolioData), isPresented: $showExportDialog, titleVisibility: .visible) {
+            ForEach(PortfolioExportFormat.allCases, id: \.self) { format in
+                Button(format.displayName) { beginExport(format) }
+            }
+            Button(tr(.cancel), role: .cancel) {}
+        } message: { Text(tr(.exportFormatPrompt)) }
+        .alert(tr(.exportFailed), isPresented: Binding(
+            get: { exportError != nil }, set: { if !$0 { exportError = nil } })) {
+            Button(tr(.ok), role: .cancel) { exportError = nil }
+        } message: { Text(exportError ?? "") }
+        .sheet(item: $paletteAsset) { asset in
+            NavigationStack {
+                AssetDetailView(asset: asset)
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button(tr(.done)) { paletteAsset = nil } } }
+            }
+        }
+    }
+    #endif
+
+    #if os(macOS)
+    private var macBody: some View {
         GeometryReader { geo in
             ZStack(alignment: .trailing) {
                 Theme.background.ignoresSafeArea()
@@ -125,6 +181,7 @@ public struct RootView: View {
             }
         }
     }
+    #endif
 
     /// Renders the current portfolio to `format` off the main run loop, then presents a
     /// save panel so the user can write it anywhere on their Mac.
