@@ -112,6 +112,8 @@ struct WatchlistView: View {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(viewModel.averageChange?.formatted ?? "—")
                     .font(.system(size: 34, weight: .semibold).monospacedDigit())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
                     .foregroundStyle(Theme.changeColor(viewModel.averageChange))
                     .contentTransition(.numericText())
                     .animation(.easeOut(duration: 0.3), value: viewModel.averageChange)

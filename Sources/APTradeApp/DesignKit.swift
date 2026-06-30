@@ -243,6 +243,9 @@ struct SuperscriptPrice: View {
                 .padding(.leading, 1)
         }
         .foregroundStyle(color)
+        // A price is one token — never let the whole/fraction wrap onto separate lines
+        // when a narrow container (e.g. iPhone) compresses it.
+        .fixedSize(horizontal: true, vertical: false)
         .accessibilityElement()
         .accessibilityLabel(money.formatted)
     }

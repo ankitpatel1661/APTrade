@@ -249,7 +249,8 @@ struct AssetDetailView: View {
                     AreaMark(x: .value("Date", point.date), y: .value("Price", dbl(point.close)))
                         .interpolationMethod(.catmullRom)
                         .foregroundStyle(.linearGradient(
-                            colors: [directionColor.opacity(0.26), directionColor.opacity(0.0)],
+                            colors: [directionColor.opacity(ThemeManager.shared.isDark ? 0.26 : 0.12),
+                                     directionColor.opacity(0.0)],
                             startPoint: .top, endPoint: .bottom))
                     LineMark(x: .value("Date", point.date), y: .value("Price", dbl(point.close)),
                              series: .value("Series", "Price"))
@@ -355,7 +356,13 @@ struct AssetDetailView: View {
                     }
                 }
             }
+            // iOS: a fixed height — inside the ScrollView a `minHeight`-only Chart
+            // balloons to fill the viewport, so its area fill floods the screen.
+            #if os(iOS)
+            .frame(height: 260)
+            #else
             .frame(minHeight: 260)
+            #endif
     }
 
     private func updateHover(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) {

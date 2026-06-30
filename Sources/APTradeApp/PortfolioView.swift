@@ -139,7 +139,11 @@ struct PortfolioView: View {
                     Text(tr(.totalValue))
                         .font(.system(size: 11, weight: .bold)).tracking(1.8)
                         .foregroundStyle(Theme.textSecondary)
+                    #if os(iOS)
+                    SuperscriptPrice(money: viewModel.valuation.totalValue, size: 34, weight: .semibold)
+                    #else
                     SuperscriptPrice(money: viewModel.valuation.totalValue, size: 40, weight: .semibold)
+                    #endif
                 }
                 Spacer()
                 #if os(iOS)
@@ -163,6 +167,26 @@ struct PortfolioView: View {
                 }
                 #endif
             }
+            #if os(iOS)
+            // iPhone: give the three metrics the full width (one line each), and move the
+            // P&L sparkline to its own full-width row below instead of crowding them.
+            HStack(alignment: .top, spacing: 12) {
+                metric(label: tr(.dayPnL), money: viewModel.valuation.dayChange, colored: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                metric(label: tr(.unrealizedPnL), money: viewModel.valuation.unrealizedPnL, colored: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                metric(label: tr(.cashLabel), money: viewModel.valuation.cash, colored: false)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if pnlValues.count > 1 {
+                Button { withAnimation(chartSpring) { showChart.toggle() } } label: {
+                    Sparkline(values: pnlValues, color: trendColor)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            #else
             HStack(alignment: .center, spacing: 22) {
                 metric(label: tr(.dayPnL), money: viewModel.valuation.dayChange, colored: true)
                 metric(label: tr(.unrealizedPnL), money: viewModel.valuation.unrealizedPnL, colored: true)
@@ -175,6 +199,7 @@ struct PortfolioView: View {
                     ) { withAnimation(chartSpring) { showChart.toggle() } }
                 }
             }
+            #endif
             Text(tr(.simulatedPaperTradingFooter))
                 .font(.system(size: 10, weight: .semibold)).tracking(0.6)
                 .foregroundStyle(Theme.textTertiary)
@@ -209,6 +234,8 @@ struct PortfolioView: View {
                 .foregroundStyle(Theme.textTertiary)
             Text(signed(money, showsSign: colored))
                 .font(.system(size: 16, weight: .semibold).monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 .foregroundStyle(colored ? pnlColor(money) : Theme.textPrimary)
         }
     }
@@ -216,28 +243,43 @@ struct PortfolioView: View {
     // MARK: - Section switcher
 
     private var sectionPicker: some View {
+        #if os(iOS)
+        // iPhone: the four labels don't fit one line as a static row (they wrap), so
+        // make the row horizontally scrollable with each label pinned to a single line.
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) { sectionButtons }
+        }
+        #else
         HStack(spacing: 6) {
-            ForEach(Section.allCases, id: \.self) { item in
-                let selected = section == item
-                Button {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { section = item }
-                } label: {
-                    Text(item.title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(selected ? Theme.textPrimary : Theme.textSecondary)
-                        .padding(.horizontal, 14).padding(.vertical, 6)
-                        .background {
-                            if selected {
-                                Capsule().fill(Theme.surfaceHi)
-                                    .overlay(Capsule().stroke(Theme.gold.opacity(0.40), lineWidth: 1))
-                                    .matchedGeometryEffect(id: "section", in: sectionPill)
-                            }
-                        }
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-            }
+            sectionButtons
             Spacer()
+        }
+        #endif
+    }
+
+    @ViewBuilder
+    private var sectionButtons: some View {
+        ForEach(Section.allCases, id: \.self) { item in
+            let selected = section == item
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { section = item }
+            } label: {
+                Text(item.title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .foregroundStyle(selected ? Theme.textPrimary : Theme.textSecondary)
+                    .padding(.horizontal, 14).padding(.vertical, 6)
+                    .background {
+                        if selected {
+                            Capsule().fill(Theme.surfaceHi)
+                                .overlay(Capsule().stroke(Theme.gold.opacity(0.40), lineWidth: 1))
+                                .matchedGeometryEffect(id: "section", in: sectionPill)
+                        }
+                    }
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
         }
     }
 

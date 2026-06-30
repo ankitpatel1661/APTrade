@@ -8,7 +8,11 @@ struct Sparkline: View {
     let color: Color
 
     var body: some View {
-        Canvas { context, size in
+        // The soft area fill is tuned for the dark canvas. On a light background the
+        // same opacity reads as a heavy wash spreading down the cell, so fade it back
+        // in light mode while leaving dark mode pixel-for-pixel unchanged.
+        let fillTopOpacity = ThemeManager.shared.isDark ? 0.22 : 0.10
+        return Canvas { context, size in
             guard values.count > 1,
                   let minValue = values.min(),
                   let maxValue = values.max() else { return }
@@ -34,7 +38,7 @@ struct Sparkline: View {
             fill.closeSubpath()
 
             context.fill(fill, with: .linearGradient(
-                Gradient(colors: [color.opacity(0.22), color.opacity(0.0)]),
+                Gradient(colors: [color.opacity(fillTopOpacity), color.opacity(0.0)]),
                 startPoint: CGPoint(x: 0, y: 0),
                 endPoint: CGPoint(x: 0, y: size.height)
             ))
