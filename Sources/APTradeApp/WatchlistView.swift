@@ -40,6 +40,10 @@ struct WatchlistView: View {
             .navigationDestination(item: $selectedAsset) { asset in
                 AssetDetailView(asset: asset)
             }
+            #if os(iOS)
+            .iosTopChrome(onSearch: { onOpenSearch?() }, onAccount: { onOpenAccount?() })
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
             .task {
                 await viewModel.onAppear()
                 await viewModel.runLiveUpdates()
@@ -55,7 +59,9 @@ struct WatchlistView: View {
                 )
             }
         }
+        #if os(macOS)
         .frame(minWidth: 560, minHeight: 640)
+        #endif
         .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
     }
 
@@ -63,6 +69,16 @@ struct WatchlistView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 18) {
+            #if os(iOS)
+            VStack(alignment: .leading, spacing: 12) {
+                KindToggle(selection: $viewModel.selectedKind, counts: viewModel.counts)
+                HStack {
+                    if viewModel.isRefreshing { ProgressView().controlSize(.small) }
+                    else if viewModel.isLive { LiveBadge() }
+                    Spacer()
+                }
+            }
+            #else
             HStack(alignment: .top, spacing: 10) {
                 KindToggle(selection: $viewModel.selectedKind, counts: viewModel.counts)
                 Spacer()
@@ -81,6 +97,7 @@ struct WatchlistView: View {
                     Color.clear.frame(width: 28, height: 1)
                 }
             }
+            #endif
 
             pulse
             addBar
@@ -159,6 +176,18 @@ struct WatchlistView: View {
                     if hovering { hoveredSymbol = row.id }
                     else if hoveredSymbol == row.id { hoveredSymbol = nil }
                 }
+                #if os(iOS)
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) { viewModel.remove(symbol: row.asset.symbol) } label: {
+                        Label(tr(.removeFromWatchlist), systemImage: "trash")
+                    }
+                }
+                .swipeActions(edge: .leading) {
+                    Button { alertTarget = row.asset } label: {
+                        Label(tr(.setPriceAlert), systemImage: "bell")
+                    }.tint(Theme.gold)
+                }
+                #endif
             }
         }
         .listStyle(.plain)
