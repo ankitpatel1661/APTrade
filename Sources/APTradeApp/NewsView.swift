@@ -24,7 +24,13 @@ struct NewsView: View {
                     }
                 }
             }
+            #if os(iOS)
+            .iosTopChrome(onSearch: { onOpenSearch?() }, onAccount: { onOpenAccount?() })
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            #if os(macOS)
             .frame(minWidth: 560, minHeight: 640)
+            #endif
             .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
             .task { await viewModel.onAppear() }
         }
@@ -32,33 +38,14 @@ struct NewsView: View {
 
     private var controls: some View {
         VStack(spacing: 10) {
-            HStack(spacing: 4) {
-                ForEach(NewsCategory.allCases, id: \.self) { item in
-                    let selected = viewModel.category == item && !viewModel.showingSaved
-                    Button {
-                        viewModel.showingSaved = false
-                        Task { await viewModel.setCategory(item) }
-                    } label: {
-                        Text(categoryTitle(item))
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(selected ? Theme.textPrimary : Theme.textSecondary)
-                            .padding(.horizontal, 14).padding(.vertical, 7)
-                            .background { if selected { Capsule().fill(Theme.surfaceHi) } }
-                            .contentShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
-                Button {
-                    viewModel.showingSaved.toggle()
-                } label: {
-                    Label(tr(.saved), systemImage: viewModel.showingSaved ? "bookmark.fill" : "bookmark")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(viewModel.showingSaved ? Theme.gold : Theme.textSecondary)
-                        .padding(.horizontal, 14).padding(.vertical, 7)
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
+            #if os(iOS)
+            ScrollView(.horizontal, showsIndicators: false) {
+                categoryRow
+                    .padding(.horizontal, 2)
             }
+            #else
+            categoryRow
+            #endif
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").foregroundStyle(Theme.textSecondary)
                 TextField(tr(.filterHeadlinesPlaceholder), text: $viewModel.filter)
@@ -71,6 +58,38 @@ struct NewsView: View {
             .overlay(Capsule().stroke(Theme.hairline, lineWidth: 1))
         }
         .padding(.horizontal, 24)
+    }
+
+    /// Category pills + Saved toggle — shared verbatim between the macOS plain row and
+    /// the iOS horizontally-scrolling row.
+    private var categoryRow: some View {
+        HStack(spacing: 4) {
+            ForEach(NewsCategory.allCases, id: \.self) { item in
+                let selected = viewModel.category == item && !viewModel.showingSaved
+                Button {
+                    viewModel.showingSaved = false
+                    Task { await viewModel.setCategory(item) }
+                } label: {
+                    Text(categoryTitle(item))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(selected ? Theme.textPrimary : Theme.textSecondary)
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .background { if selected { Capsule().fill(Theme.surfaceHi) } }
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            Button {
+                viewModel.showingSaved.toggle()
+            } label: {
+                Label(tr(.saved), systemImage: viewModel.showingSaved ? "bookmark.fill" : "bookmark")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(viewModel.showingSaved ? Theme.gold : Theme.textSecondary)
+                    .padding(.horizontal, 14).padding(.vertical, 7)
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     @ViewBuilder

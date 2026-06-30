@@ -59,6 +59,10 @@ struct PortfolioView: View {
             .navigationDestination(item: $selectedAsset) { asset in
                 AssetDetailView(asset: asset)
             }
+            #if os(iOS)
+            .iosTopChrome(onSearch: { onOpenSearch?() }, onAccount: { onOpenAccount?() })
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
             .task {
                 await viewModel.onAppear()
                 await viewModel.runLiveUpdates()
@@ -70,7 +74,9 @@ struct PortfolioView: View {
                 Button(tr(.cancel), role: .cancel) {}
             }
         }
+        #if os(macOS)
         .frame(minWidth: 560, minHeight: 640)
+        #endif
         .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
         .onAppear { viewModel.reload() }
     }
@@ -136,6 +142,13 @@ struct PortfolioView: View {
                     SuperscriptPrice(money: viewModel.valuation.totalValue, size: 40, weight: .semibold)
                 }
                 Spacer()
+                #if os(iOS)
+                // iOS: no top switcher (bottom tab bar); keep the reset control only.
+                HStack {
+                    Spacer()
+                    resetMenu
+                }
+                #else
                 HStack(alignment: .center, spacing: 10) {
                     if let switcher { switcher }
                     HStack(spacing: 10) {
@@ -146,20 +159,9 @@ struct PortfolioView: View {
                         }
                     }
                     .frame(width: 60, alignment: .trailing)
-                    Menu {
-                        Button(tr(.resetPortfolio), systemImage: "arrow.counterclockwise", role: .destructive) {
-                            showResetConfirm = true
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .font(.system(size: 16))
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    .frame(width: 28, alignment: .trailing)
+                    resetMenu
                 }
+                #endif
             }
             HStack(alignment: .center, spacing: 22) {
                 metric(label: tr(.dayPnL), money: viewModel.valuation.dayChange, colored: true)
@@ -180,6 +182,24 @@ struct PortfolioView: View {
         .padding(.horizontal, 24)
         .padding(.top, 20)
         .padding(.bottom, 18)
+    }
+
+    /// Overflow menu offering portfolio reset — shared verbatim between the macOS and
+    /// iOS header clusters.
+    private var resetMenu: some View {
+        Menu {
+            Button(tr(.resetPortfolio), systemImage: "arrow.counterclockwise", role: .destructive) {
+                showResetConfirm = true
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.system(size: 16))
+                .foregroundStyle(Theme.textSecondary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .frame(width: 28, alignment: .trailing)
     }
 
     private func metric(label: String, money: Money, colored: Bool) -> some View {
