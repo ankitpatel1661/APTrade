@@ -70,7 +70,9 @@ struct AssetDetailView: View {
                 viewModel.reloadPosition()
             }
         }
+        #if os(macOS)
         .frame(minWidth: 560, minHeight: 560)
+        #endif
     }
 
     // MARK: Header
