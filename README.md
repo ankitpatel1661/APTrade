@@ -133,7 +133,7 @@ swift build
 The app ships as a bare SwiftPM executable. Launching the built binary directly is the most reliable way to get a foreground window:
 
 ```bash
-"$(swift build --show-bin-path)/APTradeApp"
+"$(swift build --show-bin-path)/APTradeMac"
 ```
 
 > An `AppDelegate` promotes the process to a regular foreground app (`.regular` activation policy), so the window appears even without an `.app` bundle. Native notifications only surface from a signed `.app` bundle; the bare dev binary skips delivery rather than crashing.

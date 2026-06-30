@@ -89,10 +89,10 @@ swift build                                   # Swift 6, macOS 14+
 (an `AppDelegate` sets `.regular` activation policy so a window appears):
 
 ```bash
-"$(swift build --show-bin-path)/APTradeApp"
+"$(swift build --show-bin-path)/APTradeMac"
 ```
 
-> `swift run APTradeApp` is flaky for the GUI — prefer the binary path above.
+> `swift run APTradeMac` is flaky for the GUI — prefer the binary path above.
 
 **Test** — `DEVELOPER_DIR` must point at a full Xcode so XCTest is present:
 

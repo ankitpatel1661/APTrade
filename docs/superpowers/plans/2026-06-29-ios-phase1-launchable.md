@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - **macOS stays green:** after every task, `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test` = **190/190**, and `swift build` produces a runnable `APTradeMac` binary.
-- **iOS package stays green:** `DEVELOPER_DIR=… xcodebuild build -scheme APTradeLite -destination 'generic/platform=iOS Simulator' -skipPackagePluginValidation` = BUILD SUCCEEDED throughout (the gated `APTradeMac` entry keeps the iOS package build clean).
+- **iOS package stays green:** `DEVELOPER_DIR=… xcodebuild build -scheme APTradeLite-Package -destination 'generic/platform=iOS Simulator' -skipPackagePluginValidation` = BUILD SUCCEEDED throughout (the gated `APTradeMac` entry keeps the iOS package build clean).
 - **Toolchain:** all `swift`/`xcodebuild`/`xcrun` commands use `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`. Xcode 26.5; iOS 26.5 simulator runtime installed; sim device **iPhone 17 Pro**.
 - **Only `RootView` becomes public.** No other view/type's access level or behavior changes. The `@main` relocates; nothing else in the views changes.
 - **iOS app facts (verbatim):** bundle id `com.aptrade.ios`; deployment target `17.0`; iPhone-only (`TARGETED_DEVICE_FAMILY = 1`); display name `APTrade`; portrait.
@@ -120,7 +120,7 @@ Expected: **190/190** (the test target imports the `APTradeApp` library unchange
 
 - [ ] **Step 5: Verify the package still compiles for iOS**
 
-Run: `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild build -scheme APTradeLite -destination 'generic/platform=iOS Simulator' -skipPackagePluginValidation 2>&1 | tail -15`
+Run: `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild build -scheme APTradeLite-Package -destination 'generic/platform=iOS Simulator' -skipPackagePluginValidation 2>&1 | tail -15`
 Expected: `** BUILD SUCCEEDED **` (the gated `APTradeMac` entry + the `APTradeApp` library both compile for iOS).
 
 - [ ] **Step 6: Commit**
@@ -252,7 +252,7 @@ Then read `/tmp/aptrade-ios.png` and confirm APTrade UI is on screen (the watchl
 - [ ] **Step 4: Full cross-platform regression**
 
 Run: `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test` → **190/190** (macOS).
-Run: `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -scheme APTradeLite -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -skipPackagePluginValidation 2>&1 | tail -6` → `** TEST SUCCEEDED **` (iOS package, 190/190).
+Run: `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -scheme APTradeLite-Package -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -skipPackagePluginValidation 2>&1 | tail -6` → `** TEST SUCCEEDED **` (iOS package, 190/190).
 
 - [ ] **Step 5: Report**
 

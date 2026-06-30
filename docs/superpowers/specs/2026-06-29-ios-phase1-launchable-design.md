@@ -89,7 +89,7 @@ The macOS app stays a SwiftPM executable (`APTradeMac`) so the existing `swift b
 
 - `DEVELOPER_DIR=… swift test` stays **190/190** on macOS after every change.
 - macOS app still builds and launches (now via `APTradeMac`).
-- The package still compiles + tests on the iOS simulator via the existing scheme (`xcodebuild test -scheme APTradeLite -destination 'iOS Simulator,…'` = 190/190) — the gated `APTradeMac` entry keeps the iOS package build clean.
+- The package still compiles + tests on the iOS simulator via the existing scheme (`xcodebuild test -scheme APTradeLite-Package -destination 'iOS Simulator,…'` = 190/190) — the gated `APTradeMac` entry keeps the iOS package build clean.
 - No behavior change to any existing view (only `RootView`'s access level changes, and the `@main` relocates).
 
 ## Out of scope (later phases)
