@@ -3,3 +3,9 @@
 *.xcodeproj
 .swiftpm/
 .superpowers/
+
+# Kotlin Multiplatform / Gradle
+.gradle/
+**/build/
+.kotlin/
+local.properties
