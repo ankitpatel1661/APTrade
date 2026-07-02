@@ -3,7 +3,6 @@ package com.aptrade.shared.application
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.Candle
-import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.PricePoint
 import com.aptrade.shared.domain.Quote
 import com.aptrade.shared.domain.Timeframe
@@ -11,19 +10,22 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-class FetchMarketQuotesTest {
+class FetchProfileTest {
     @Test
-    fun returnsQuotesFromRepository() = runTest {
-        val expected = listOf(Quote("AAPL", Money.usd("100.00"), Money.usd("99.00"), 1.2))
-        val useCase = FetchMarketQuotes(
+    fun returnsProfileFromRepository() = runTest {
+        val expected = Asset(symbol = "AAPL", name = "Apple Inc.", kind = AssetKind.Stock)
+        val useCase = FetchProfile(
             object : MarketDataRepository {
-                override suspend fun quotes(symbols: List<String>): List<Quote> = expected
+                override suspend fun quotes(symbols: List<String>): List<Quote> = emptyList()
                 override suspend fun history(symbol: String, timeframe: Timeframe): List<PricePoint> = emptyList()
                 override suspend fun candles(symbol: String, timeframe: Timeframe): List<Candle> = emptyList()
-                override suspend fun profile(symbol: String): Asset = Asset(symbol, symbol, AssetKind.Stock)
+                override suspend fun profile(symbol: String): Asset {
+                    assertEquals("AAPL", symbol)
+                    return expected
+                }
             },
         )
 
-        assertEquals(expected, useCase.execute(listOf("AAPL")))
+        assertEquals(expected, useCase.execute("AAPL"))
     }
 }

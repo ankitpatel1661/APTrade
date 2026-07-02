@@ -11,19 +11,23 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-class FetchMarketQuotesTest {
+class FetchHistoryTest {
     @Test
-    fun returnsQuotesFromRepository() = runTest {
-        val expected = listOf(Quote("AAPL", Money.usd("100.00"), Money.usd("99.00"), 1.2))
-        val useCase = FetchMarketQuotes(
+    fun returnsHistoryFromRepository() = runTest {
+        val expected = listOf(PricePoint(epochSeconds = 1000L, close = Money.usd("100.00")))
+        val useCase = FetchHistory(
             object : MarketDataRepository {
-                override suspend fun quotes(symbols: List<String>): List<Quote> = expected
-                override suspend fun history(symbol: String, timeframe: Timeframe): List<PricePoint> = emptyList()
+                override suspend fun quotes(symbols: List<String>): List<Quote> = emptyList()
+                override suspend fun history(symbol: String, timeframe: Timeframe): List<PricePoint> {
+                    assertEquals("AAPL", symbol)
+                    assertEquals(Timeframe.OneWeek, timeframe)
+                    return expected
+                }
                 override suspend fun candles(symbol: String, timeframe: Timeframe): List<Candle> = emptyList()
                 override suspend fun profile(symbol: String): Asset = Asset(symbol, symbol, AssetKind.Stock)
             },
         )
 
-        assertEquals(expected, useCase.execute(listOf("AAPL")))
+        assertEquals(expected, useCase.execute("AAPL", Timeframe.OneWeek))
     }
 }
