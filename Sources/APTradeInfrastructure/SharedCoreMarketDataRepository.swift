@@ -1,6 +1,8 @@
 import Foundation
 import APTradeApplication
 import APTradeDomain
+// @preconcurrency: silences non-Sendable diagnostics on KMP-bridged types (Shared.Quote,
+// Shared.Money, and the Kotlin exception types surfaced through error handling below).
 @preconcurrency import Shared
 
 /// Serves `quote(for:)` from the shared Kotlin core (KMP FetchMarketQuotes → Ktor);

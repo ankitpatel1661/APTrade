@@ -40,6 +40,14 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
         XCTAssertEqual(SharedCoreMarketDataRepository.mapError(AppError.notFound), .notFound)
     }
 
+    func testMapsPlainNSErrorWithNoKotlinExceptionKeyToNetwork() {
+        // No "KotlinException" userInfo key at all (as opposed to the URLError case above,
+        // which also lacks the key but is itself a distinct system error type) — locks in
+        // that the default branch of mapError's switch is reached, not just hit by accident.
+        let error = NSError(domain: "SomeOtherDomain", code: 1, userInfo: ["unrelated": "value"])
+        XCTAssertEqual(SharedCoreMarketDataRepository.mapError(error), .network)
+    }
+
     func testDelegatesNonQuoteCallsToFallback() async throws {
         let fallback = RecordingRepository()
         let repo = SharedCoreMarketDataRepository(fallback: fallback)

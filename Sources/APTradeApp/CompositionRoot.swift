@@ -12,11 +12,17 @@ enum CompositionRoot {
         Asset(symbol: "ETH-USD", name: "Ethereum", kind: .crypto),
     ]
 
+    /// One shared KMP-backed repository instance for the process lifetime. Its `init`
+    /// builds a Ktor `HttpClient(Darwin)` under the hood, which owns its own connection
+    /// pool; constructing a fresh instance per `makeRepository()` call would allocate a
+    /// new pool (and a new never-closed client) for every ViewModel factory.
+    private static let sharedCoreRepository: MarketDataRepository =
+        SharedCoreMarketDataRepository(fallback: YahooMarketDataRepository())
+
     static func makeRepository() -> MarketDataRepository {
         // Quotes come from the shared Kotlin core; the remaining calls stay on the
         // Swift-native Yahoo path until later increments port them.
-        CachingMarketDataRepository(
-            wrapping: SharedCoreMarketDataRepository(fallback: YahooMarketDataRepository()))
+        CachingMarketDataRepository(wrapping: sharedCoreRepository)
     }
 
     static func makeStore() -> WatchlistStore {
