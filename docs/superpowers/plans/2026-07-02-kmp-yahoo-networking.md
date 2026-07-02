@@ -565,12 +565,162 @@ Expected: both empty.
 
 ---
 
+### Task 7: Per-platform HTTP engine (expect/actual) + `@Throws` error bridging
+
+*Added by the 2026-07-02 spec amendment: Task 5's live run proved Ktor CIO cannot do TLS on
+Kotlin/Native ("TLS sessions are not supported on Native platform"), and an uncaught `QuoteError`
+terminated the process instead of bridging to Swift.*
+
+**Files:**
+- Modify: `shared/build.gradle.kts`
+- Modify: `shared/src/commonMain/kotlin/com/aptrade/shared/infrastructure/YahooHttpClient.kt`
+- Create: `shared/src/jvmMain/kotlin/com/aptrade/shared/infrastructure/YahooHttpClient.jvm.kt`
+- Create: `shared/src/appleMain/kotlin/com/aptrade/shared/infrastructure/YahooHttpClient.apple.kt`
+- Modify: `shared/src/commonMain/kotlin/com/aptrade/shared/application/FetchMarketQuotes.kt`
+
+**Interfaces:**
+- Consumes: existing `installYahoo()` config, `QuoteError`.
+- Produces: `defaultYahooHttpClient()` as `expect fun` with per-platform `actual`s (Darwin engine on Apple, CIO on JVM); `FetchMarketQuotes.execute` exported to Swift as a throwing async function.
+
+- [ ] **Step 1: Move engine dependencies to platform source sets in `shared/build.gradle.kts`**
+
+In `sourceSets`: remove `implementation("io.ktor:ktor-client-cio:3.0.3")` from `commonMain.dependencies`, then add:
+
+```kotlin
+jvmMain.dependencies {
+    implementation("io.ktor:ktor-client-cio:3.0.3")
+}
+appleMain.dependencies {
+    implementation("io.ktor:ktor-client-darwin:3.0.3")
+}
+```
+
+(`appleMain` exists via the Kotlin 2.x default hierarchy template since iOS/macOS targets are declared.) `commonMain` keeps `ktor-client-core`, `ktor-client-content-negotiation`, `ktor-serialization-kotlinx-json`.
+
+- [ ] **Step 2: Make `defaultYahooHttpClient()` an `expect` function**
+
+Replace `shared/src/commonMain/kotlin/com/aptrade/shared/infrastructure/YahooHttpClient.kt` with:
+
+```kotlin
+package com.aptrade.shared.infrastructure
+
+import io.ktor.client.HttpClient
+import io.ktor.client.HttpClientConfig
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.serialization.kotlinx.json.json
+
+/** Shared client config: JSON content negotiation + non-throwing status handling. */
+fun HttpClientConfig<*>.installYahoo() {
+    install(ContentNegotiation) { json(yahooJson) }
+    expectSuccess = false
+}
+
+/**
+ * Platform HTTP client: Darwin (NSURLSession) on Apple — CIO cannot do TLS on
+ * Kotlin/Native — and CIO on the JVM.
+ */
+expect fun defaultYahooHttpClient(): HttpClient
+```
+
+Create `shared/src/jvmMain/kotlin/com/aptrade/shared/infrastructure/YahooHttpClient.jvm.kt`:
+
+```kotlin
+package com.aptrade.shared.infrastructure
+
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
+
+actual fun defaultYahooHttpClient(): HttpClient = HttpClient(CIO) { installYahoo() }
+```
+
+Create `shared/src/appleMain/kotlin/com/aptrade/shared/infrastructure/YahooHttpClient.apple.kt`:
+
+```kotlin
+package com.aptrade.shared.infrastructure
+
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.darwin.Darwin
+
+actual fun defaultYahooHttpClient(): HttpClient = HttpClient(Darwin) { installYahoo() }
+```
+
+`YahooMarketDataRepository` is untouched — its no-arg constructor already calls `defaultYahooHttpClient()`.
+
+- [ ] **Step 3: Add `@Throws` to `FetchMarketQuotes.execute`**
+
+Replace `shared/src/commonMain/kotlin/com/aptrade/shared/application/FetchMarketQuotes.kt` with:
+
+```kotlin
+package com.aptrade.shared.application
+
+import com.aptrade.shared.domain.Quote
+import kotlin.coroutines.cancellation.CancellationException
+
+class FetchMarketQuotes(private val repository: QuoteRepository) {
+    @Throws(QuoteError::class, CancellationException::class)
+    suspend fun execute(symbols: List<String>): List<Quote> =
+        repository.quotes(symbols)
+}
+```
+
+(`CancellationException` must be listed alongside `QuoteError` — Kotlin requires it in any explicit `@Throws` on a suspend function. This only affects the Objective-C/Swift export; JVM behavior is unchanged.)
+
+- [ ] **Step 4: Verify — JVM tests and Apple-target compilation**
+
+```bash
+export JAVA_HOME="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
+./gradlew :shared:jvmTest --console=plain
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./gradlew :shared:compileKotlinMacosArm64 --console=plain
+```
+Expected: jvmTest — 12 tests, 0 failures (MockEngine tests inject their own client, so they are engine-agnostic); macosArm64 compile — BUILD SUCCESSFUL (first run downloads the Darwin engine klib).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add shared/build.gradle.kts shared/src/commonMain shared/src/jvmMain shared/src/appleMain
+git commit -m "fix(kmp): per-platform Ktor engine (Darwin on Apple, CIO on JVM) + @Throws bridging"
+```
+
+---
+
+### Task 8: Reassemble XCFramework and re-run the live harness
+
+*Completes the live proof deferred from Task 5.*
+
+**Files:** None (rebuild + run only; artifact is git-ignored).
+
+**Interfaces:**
+- Consumes: Task 7's Darwin-engine `commonMain`/`appleMain` code.
+- Produces: live-run evidence that the shared Kotlin core fetches real Yahoo quotes on macOS.
+
+- [ ] **Step 1: Reassemble the release XCFramework**
+
+```bash
+export JAVA_HOME="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./gradlew :shared:assembleSharedReleaseXCFramework --console=plain
+```
+Expected: BUILD SUCCESSFUL; `shared/build/XCFrameworks/release/Shared.xcframework` contains `ios-arm64`, `ios-arm64-simulator`, `macos-arm64` slices.
+
+- [ ] **Step 2: Run the harness live (network required)**
+
+```bash
+cd skeletonHarness
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift run
+cd ..
+```
+Expected: header line plus three rows (AAPL, MSFT, BTC-USD) with real prices and ▲/▼ arrows — no TLS error, no crash. If the network blocks the call, the program must print a caught `error:` line and exit normally (that exit path itself proves the `@Throws` bridge); report DONE_WITH_CONCERNS with the exact stdout in that case. Capture the exact stdout either way.
+
+- [ ] **Step 3: No commit** (nothing tracked changed; harness source is already committed).
+
+---
+
 ## Definition of Done (whole plan)
 
 1. `./gradlew :shared:jvmTest` — 12 tests, 0 failures (7 prior + 5 new).
 2. `./gradlew :shared:assembleSharedReleaseXCFramework` — produces `Shared.xcframework`.
 3. `cd skeletonHarness && swift run` — prints live AAPL/MSFT/BTC-USD quotes (network required; MockEngine tests cover the logic offline).
 4. Root `swift build` green; `Package.swift`/`Sources`/`Tests` unmodified; `QuoteRepository` port and `StubQuoteRepository` unchanged.
+5. (Amendment) Engine is per-platform — no `ktor-client-cio` in `commonMain`; Apple slices use Darwin — and `FetchMarketQuotes.execute` carries `@Throws(QuoteError::class, CancellationException::class)`; the live macOS harness run succeeds without the TLS crash.
 
 ## Notes for the implementer
 

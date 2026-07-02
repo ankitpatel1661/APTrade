@@ -1,8 +1,22 @@
 # KMP Increment 2 — Ktor Yahoo Networking — Design Spec
 
 **Date:** 2026-07-02
-**Status:** Approved (design), pending implementation plan
+**Status:** Approved (design); amended during execution
 **Author:** APTrade team
+
+## Amendment (2026-07-02, during execution)
+
+The original scope decision "HTTP engine: Ktor **CIO** in `commonMain` for all
+targets" proved **wrong at runtime**: Ktor's CIO engine compiles for
+Kotlin/Native but cannot perform TLS on Apple native, so the live macOS harness
+crashed with *"TLS sessions are not supported on Native platform."* Yahoo is
+HTTPS-only. Per user decision, the engine is changed to **per-platform via
+`expect`/`actual`**: `ktor-client-darwin` on Apple, `ktor-client-cio` on JVM;
+`commonMain` keeps only `ktor-client-core` and the engine-agnostic config. A
+second finding is also fixed: `FetchMarketQuotes.execute` gains
+`@Throws(QuoteError::class)` so a thrown `QuoteError` bridges to Swift as a
+catchable error instead of terminating the process. Unit tests (MockEngine) are
+unaffected. See plan Tasks 7–8.
 
 ## Context
 
