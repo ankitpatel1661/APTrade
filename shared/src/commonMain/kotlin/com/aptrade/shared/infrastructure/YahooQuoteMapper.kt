@@ -1,7 +1,11 @@
 package com.aptrade.shared.infrastructure
 
 import com.aptrade.shared.application.QuoteError
+import com.aptrade.shared.domain.Asset
+import com.aptrade.shared.domain.AssetKind
+import com.aptrade.shared.domain.Candle
 import com.aptrade.shared.domain.Money
+import com.aptrade.shared.domain.PricePoint
 import com.aptrade.shared.domain.Quote
 
 object YahooQuoteMapper {
@@ -24,5 +28,59 @@ object YahooQuoteMapper {
             previousClose = previousClose,
             changePercent = changePercent,
         )
+    }
+
+    fun history(response: YahooChartResponse): List<PricePoint> {
+        val item = response.chart.result?.firstOrNull() ?: throw QuoteError.NotFound
+        val stamps = item.timestamp ?: return emptyList()
+        val closes = item.indicators?.quote?.firstOrNull()?.close ?: return emptyList()
+        val currency = item.meta.currency ?: "USD"
+        val points = mutableListOf<PricePoint>()
+        for (i in stamps.indices) {
+            if (i >= closes.size) break
+            val close = closes[i] ?: continue
+            points.add(PricePoint(epochSeconds = stamps[i], close = Money(close, currency)))
+        }
+        return points
+    }
+
+    fun candles(response: YahooChartResponse): List<Candle> {
+        val item = response.chart.result?.firstOrNull() ?: throw QuoteError.NotFound
+        val stamps = item.timestamp ?: return emptyList()
+        val block = item.indicators?.quote?.firstOrNull() ?: return emptyList()
+        val closes = block.close ?: return emptyList()
+        val currency = item.meta.currency ?: "USD"
+        val candles = mutableListOf<Candle>()
+        for (i in stamps.indices) {
+            if (i >= closes.size) break
+            val close = closes[i] ?: continue
+            // Fall back to close for any missing OHLC field so the bar still renders.
+            val open = block.open?.getOrNull(i) ?: close
+            val high = block.high?.getOrNull(i) ?: if (open.compareTo(close) >= 0) open else close
+            val low = block.low?.getOrNull(i) ?: if (open.compareTo(close) <= 0) open else close
+            val volume = block.volume?.getOrNull(i) ?: 0.0
+            candles.add(
+                Candle(
+                    epochSeconds = stamps[i],
+                    open = Money(open, currency), high = Money(high, currency),
+                    low = Money(low, currency), close = Money(close, currency),
+                    volume = volume,
+                ),
+            )
+        }
+        return candles
+    }
+
+    fun asset(response: YahooChartResponse): Asset {
+        val meta = response.chart.result?.firstOrNull()?.meta ?: throw QuoteError.NotFound
+        val name = meta.longName ?: meta.shortName ?: meta.symbol
+        return Asset(symbol = meta.symbol, name = name, kind = kind(meta))
+    }
+
+    private fun kind(meta: YahooChartResponse.Meta): AssetKind = when (meta.instrumentType?.uppercase()) {
+        "ETF" -> AssetKind.Etf
+        "CRYPTOCURRENCY" -> AssetKind.Crypto
+        "EQUITY" -> AssetKind.Stock
+        else -> if (meta.symbol.uppercase().endsWith("-USD")) AssetKind.Crypto else AssetKind.Stock
     }
 }
