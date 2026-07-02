@@ -74,8 +74,10 @@ public final class SharedCoreMarketDataRepository: MarketDataRepository, @unchec
   the current KMP memory model. Also holds the injected Swift `fallback: MarketDataRepository`.
 - `quote(for:)`: calls the shared use case with `[symbol]`, takes the first result;
   empty result maps to `AppError.notFound`.
-- **Type mapping (exact, no Double):** KMP `Money` → Swift `Money` via
-  `Decimal(string: amount.toStringExpanded())`; failure to parse → `AppError.decoding`.
+- **Type mapping (exact, no Double):** KMP `Money` gains a `amountText: String` accessor
+  (`amount.toStringExpanded()`) because the third-party `BigDecimal` type itself is not
+  exported to Swift; the adapter maps via `Decimal(string: money.amountText)`; failure to
+  parse → `AppError.decoding`.
   Swift `Quote(symbol:price:previousClose:)` — the app derives change/changePercent itself.
 - **Error mapping:** the KMP `@Throws` bridge surfaces Kotlin exceptions as `NSError`.
   Map `QuoteError.RateLimited` → `AppError.rateLimited`, `QuoteError.NotFound` →
