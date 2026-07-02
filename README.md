@@ -159,6 +159,21 @@ Homebrew OpenJDK 17 and `/Applications/Xcode.app` by default; override via `JAVA
 / `DEVELOPER_DIR`). The framework ships Apple-Silicon (arm64) slices only — iOS Simulator
 builds must target arm64 (the default on Apple-Silicon Macs).
 
+### Android app (walking skeleton)
+
+A three-screen Jetpack Compose app (`androidApp/`) runs on the same shared Kotlin core as the
+macOS/iOS app: live quotes for the default watchlist, debounced asset search, and an asset
+detail view with line/candlestick charts across 1D/1W/1M/1Y timeframes.
+
+Requirements: Android SDK (API 35) with `sdk.dir` in `local.properties`, JDK 17.
+
+```bash
+export JAVA_HOME="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
+./gradlew :androidApp:assembleDebug          # build the debug APK
+./gradlew :androidApp:testDebugUnitTest      # ViewModel unit tests
+adb install -r androidApp/build/outputs/apk/debug/androidApp-debug.apk
+```
+
 ## Project Structure
 
 ```
@@ -168,6 +183,7 @@ Sources/
 ├── APTradeInfrastructure/  Yahoo repo, caching, persistence, notifications
 └── APTradeApp/             SwiftUI views, view models, DesignKit, Theme
 Tests/                      One test target per layer
+androidApp/                 Android app (Jetpack Compose walking skeleton)
 logo/                       Brand assets
 ```
 
