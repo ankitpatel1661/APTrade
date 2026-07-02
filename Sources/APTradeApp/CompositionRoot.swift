@@ -13,7 +13,10 @@ enum CompositionRoot {
     ]
 
     static func makeRepository() -> MarketDataRepository {
-        CachingMarketDataRepository(wrapping: YahooMarketDataRepository())
+        // Quotes come from the shared Kotlin core; the remaining calls stay on the
+        // Swift-native Yahoo path until later increments port them.
+        CachingMarketDataRepository(
+            wrapping: SharedCoreMarketDataRepository(fallback: YahooMarketDataRepository()))
     }
 
     static func makeStore() -> WatchlistStore {
