@@ -15,9 +15,8 @@ public final class SharedCoreMarketDataRepository: APTradeApplication.MarketData
     private let fetchCandles: @Sendable (String, Shared.Timeframe) async throws -> [Shared.Candle]
     private let fetchProfile: @Sendable (String) async throws -> Shared.Asset
     private let fetchSearch: @Sendable (String) async throws -> [Shared.Asset]
-    private let fallback: APTradeApplication.MarketDataRepository
 
-    public convenience init(fallback: APTradeApplication.MarketDataRepository) {
+    public convenience init() {
         let repository = Shared.YahooMarketDataRepository()
         let quotesUseCase = Shared.FetchMarketQuotes(repository: repository)
         let historyUseCase = Shared.FetchHistory(repository: repository)
@@ -25,7 +24,6 @@ public final class SharedCoreMarketDataRepository: APTradeApplication.MarketData
         let profileUseCase = Shared.FetchProfile(repository: repository)
         let searchUseCase = Shared.FetchSearch(repository: repository)
         self.init(
-            fallback: fallback,
             fetch: { try await quotesUseCase.execute(symbols: $0) },
             fetchHistory: { try await historyUseCase.execute(symbol: $0, timeframe: $1) },
             fetchCandles: { try await candlesUseCase.execute(symbol: $0, timeframe: $1) },
@@ -34,7 +32,6 @@ public final class SharedCoreMarketDataRepository: APTradeApplication.MarketData
     }
 
     init(
-        fallback: APTradeApplication.MarketDataRepository,
         fetch: @escaping @Sendable ([String]) async throws -> [Shared.Quote],
         fetchHistory: @escaping @Sendable (String, Shared.Timeframe) async throws -> [Shared.PricePoint],
         fetchCandles: @escaping @Sendable (String, Shared.Timeframe) async throws -> [Shared.Candle],
@@ -46,7 +43,6 @@ public final class SharedCoreMarketDataRepository: APTradeApplication.MarketData
         self.fetchCandles = fetchCandles
         self.fetchProfile = fetchProfile
         self.fetchSearch = fetchSearch
-        self.fallback = fallback
     }
 
     public func quote(for symbol: String) async throws -> APTradeDomain.Quote {

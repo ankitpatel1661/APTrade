@@ -87,7 +87,6 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
             previousClose: kmpMoney("227.45"),
             changePercent: 0.84)
         let repo = SharedCoreMarketDataRepository(
-            fallback: RecordingRepository(),
             fetch: { symbols in
                 XCTAssertEqual(symbols, ["AAPL"])
                 return [kmp]
@@ -104,7 +103,6 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
 
     func testQuoteForEmptyResultThrowsNotFound() async {
         let repo = SharedCoreMarketDataRepository(
-            fallback: RecordingRepository(),
             fetch: { _ in [] },
             fetchHistory: { _, _ in [] },
             fetchCandles: { _, _ in [] },
@@ -120,7 +118,6 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
 
     func testQuoteForKotlinErrorMapsToAppError() async {
         let repo = SharedCoreMarketDataRepository(
-            fallback: RecordingRepository(),
             fetch: { _ in
                 throw NSError(
                     domain: "KotlinException", code: 0,
@@ -141,7 +138,6 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
     func testHistoryForSuccessReturnsMappedPoints() async throws {
         let kmp = [Shared.PricePoint(epochSeconds: 1_700_000_000, close: kmpMoney("229.35"))]
         let repo = SharedCoreMarketDataRepository(
-            fallback: RecordingRepository(),
             fetch: { _ in [] },
             fetchHistory: { symbol, timeframe in
                 XCTAssertEqual(symbol, "AAPL")
@@ -159,7 +155,6 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
 
     func testCandlesForKotlinErrorMapsToAppError() async {
         let repo = SharedCoreMarketDataRepository(
-            fallback: RecordingRepository(),
             fetch: { _ in [] },
             fetchHistory: { _, _ in [] },
             fetchCandles: { _, _ in
@@ -180,7 +175,6 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
 
     func testProfileForSuccessReturnsMappedAsset() async throws {
         let repo = SharedCoreMarketDataRepository(
-            fallback: RecordingRepository(),
             fetch: { _ in [] },
             fetchHistory: { _, _ in [] },
             fetchCandles: { _, _ in [] },
@@ -196,7 +190,6 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
     func testSearchForSuccessReturnsMappedAssets() async throws {
         let kmp = [Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock)]
         let repo = SharedCoreMarketDataRepository(
-            fallback: RecordingRepository(),
             fetch: { _ in [] },
             fetchHistory: { _, _ in [] },
             fetchCandles: { _, _ in [] },
@@ -215,7 +208,6 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
 
     func testSearchForKotlinErrorMapsToAppError() async {
         let repo = SharedCoreMarketDataRepository(
-            fallback: RecordingRepository(),
             fetch: { _ in [] },
             fetchHistory: { _, _ in [] },
             fetchCandles: { _, _ in [] },
@@ -232,32 +224,5 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? AppError, .rateLimited)
         }
-    }
-}
-
-private actor CallLog {
-    var calls: [String] = []
-    func record(_ name: String) { calls.append(name) }
-}
-
-private final class RecordingRepository: APTradeApplication.MarketDataRepository, @unchecked Sendable {
-    private let log = CallLog()
-    var calls: [String] { get async { await log.calls } }
-
-    func quote(for symbol: String) async throws -> APTradeDomain.Quote {
-        await log.record("quote")
-        throw AppError.notFound
-    }
-    func history(for symbol: String, timeframe: APTradeDomain.Timeframe) async throws -> [APTradeDomain.PricePoint] {
-        await log.record("history"); return []
-    }
-    func candles(for symbol: String, timeframe: APTradeDomain.Timeframe) async throws -> [APTradeDomain.Candle] {
-        await log.record("candles"); return []
-    }
-    func profile(for symbol: String) async throws -> APTradeDomain.Asset {
-        await log.record("profile"); return APTradeDomain.Asset(symbol: symbol, name: symbol, kind: .stock)
-    }
-    func search(query: String) async throws -> [APTradeDomain.Asset] {
-        await log.record("search"); return []
     }
 }

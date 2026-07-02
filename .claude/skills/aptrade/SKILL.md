@@ -58,8 +58,9 @@ Clean Architecture; dependencies point inward only. One SwiftPM target per layer
   persistence.** Pure Swift.
 - **`APTradeApplication`** — use cases over protocol *ports*
   (`MarketDataRepository`, `WatchlistStore`). Business orchestration only.
-- **`APTradeInfrastructure`** — adapters: `YahooMarketDataRepository`,
-  `CachingMarketDataRepository`, `UserDefaultsWatchlistStore`.
+- **`APTradeInfrastructure`** — adapters: `SharedCoreMarketDataRepository` (market
+  data via the shared Kotlin core), `CachingMarketDataRepository`,
+  `UserDefaultsWatchlistStore`.
 - **`APTradeApp`** — declarative SwiftUI views + thin `@Observable` view models (MVVM).
   Keep logic out of views and views out of the view models' networking.
 

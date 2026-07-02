@@ -71,13 +71,17 @@ class DetailViewModel(
     fun retryChart() = loadChart()
 
     private fun loadChart() {
+        // Snapshot before launching so the coroutine renders the selection this call
+        // was triggered for, even if state mutates before or while it runs.
+        val timeframe = _state.value.timeframe
+        val mode = _state.value.mode
         chartJob?.cancel()
         chartJob = viewModelScope.launch {
             _state.update { it.copy(isLoadingChart = true, chartError = null) }
             try {
-                when (_state.value.mode) {
+                when (mode) {
                     ChartMode.Line -> {
-                        val points = fetchHistory.execute(symbol, _state.value.timeframe)
+                        val points = fetchHistory.execute(symbol, timeframe)
                         _state.update { state ->
                             state.copy(
                                 isLoadingChart = false,
@@ -88,7 +92,7 @@ class DetailViewModel(
                         }
                     }
                     ChartMode.Candles -> {
-                        val candles = fetchCandles.execute(symbol, _state.value.timeframe)
+                        val candles = fetchCandles.execute(symbol, timeframe)
                         _state.update { state ->
                             state.copy(
                                 isLoadingChart = false,

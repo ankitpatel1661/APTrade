@@ -1,5 +1,5 @@
 /// A market-news category. Conceptual — the news-source query mapping lives in
-/// infrastructure (the way `Timeframe.yahooRange` does).
+/// infrastructure.
 public enum NewsCategory: String, CaseIterable, Sendable {
     case general, crypto, merger
 

@@ -2,7 +2,7 @@ import Foundation
 import APTradeApplication
 import APTradeDomain
 
-/// Live news source backed by Finnhub. Mirrors `YahooMarketDataRepository`'s error handling:
+/// Live news source backed by Finnhub. Error handling:
 /// 429 → `.rateLimited`, non-2xx → `.network`, decode/other → mapped to `AppError`.
 public final class FinnhubNewsRepository: NewsRepository, @unchecked Sendable {
     private let apiKey: String

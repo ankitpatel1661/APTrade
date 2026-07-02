@@ -17,11 +17,10 @@ enum CompositionRoot {
     /// pool; constructing a fresh instance per `makeRepository()` call would allocate a
     /// new pool (and a new never-closed client) for every ViewModel factory.
     private static let sharedCoreRepository: MarketDataRepository =
-        SharedCoreMarketDataRepository(fallback: YahooMarketDataRepository())
+        SharedCoreMarketDataRepository()
 
     static func makeRepository() -> MarketDataRepository {
-        // Quotes come from the shared Kotlin core; the remaining calls stay on the
-        // Swift-native Yahoo path until later increments port them.
+        // All market-data calls are served by the shared Kotlin core.
         CachingMarketDataRepository(wrapping: sharedCoreRepository)
     }
 
