@@ -8,9 +8,13 @@ let package = Package(
         .library(name: "APTradeApp", targets: ["APTradeApp"])
     ],
     targets: [
+        .binaryTarget(
+            name: "Shared",
+            path: "shared/build/XCFrameworks/release/Shared.xcframework"
+        ),
         .target(name: "APTradeDomain"),
         .target(name: "APTradeApplication", dependencies: ["APTradeDomain"]),
-        .target(name: "APTradeInfrastructure", dependencies: ["APTradeApplication", "APTradeDomain"]),
+        .target(name: "APTradeInfrastructure", dependencies: ["APTradeApplication", "APTradeDomain", "Shared"]),
         .target(
             name: "APTradeApp",
             dependencies: ["APTradeInfrastructure", "APTradeApplication", "APTradeDomain"],
@@ -24,7 +28,7 @@ let package = Package(
         .testTarget(name: "APTradeApplicationTests", dependencies: ["APTradeApplication", "APTradeDomain"]),
         .testTarget(
             name: "APTradeInfrastructureTests",
-            dependencies: ["APTradeInfrastructure", "APTradeApplication", "APTradeDomain"],
+            dependencies: ["APTradeInfrastructure", "APTradeApplication", "APTradeDomain", "Shared"],
             resources: [.process("Fixtures")]
         ),
         .testTarget(name: "APTradeAppTests", dependencies: ["APTradeApp", "APTradeApplication", "APTradeDomain"]),
