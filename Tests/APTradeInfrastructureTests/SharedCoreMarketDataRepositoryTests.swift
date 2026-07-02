@@ -13,15 +13,6 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
         Shared.Money.companion.usd(value: text)
     }
 
-    private func noOpRepo(fallback: APTradeApplication.MarketDataRepository) -> SharedCoreMarketDataRepository {
-        SharedCoreMarketDataRepository(
-            fallback: fallback,
-            fetch: { _ in [] },
-            fetchHistory: { _, _ in [] },
-            fetchCandles: { _, _ in [] },
-            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) })
-    }
-
     func testMapsMoneyExactly() throws {
         let mapped = try SharedCoreMarketDataRepository.mapMoney(kmpMoney("229.35"))
         XCTAssertEqual(mapped, APTradeDomain.Money(amount: Decimal(string: "229.35")!, currencyCode: "USD"))
@@ -89,14 +80,6 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
         XCTAssertEqual(SharedCoreMarketDataRepository.mapError(error), .network)
     }
 
-    func testDelegatesSearchToFallback() async throws {
-        let fallback = RecordingRepository()
-        let repo = noOpRepo(fallback: fallback)
-        _ = try await repo.search(query: "app")
-        let calls = await fallback.calls
-        XCTAssertEqual(calls, ["search"])
-    }
-
     func testQuoteForSuccessReturnsMappedQuote() async throws {
         let kmp = Shared.Quote(
             symbol: "AAPL",
@@ -111,7 +94,8 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
             },
             fetchHistory: { _, _ in [] },
             fetchCandles: { _, _ in [] },
-            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) })
+            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) },
+            fetchSearch: { _ in [] })
         let quote = try await repo.quote(for: "AAPL")
         XCTAssertEqual(quote.symbol, "AAPL")
         XCTAssertEqual(quote.price.amount, Decimal(string: "229.35")!)
@@ -124,7 +108,8 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
             fetch: { _ in [] },
             fetchHistory: { _, _ in [] },
             fetchCandles: { _, _ in [] },
-            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) })
+            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) },
+            fetchSearch: { _ in [] })
         do {
             _ = try await repo.quote(for: "AAPL")
             XCTFail("Expected AppError.notFound")
@@ -143,7 +128,8 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
             },
             fetchHistory: { _, _ in [] },
             fetchCandles: { _, _ in [] },
-            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) })
+            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) },
+            fetchSearch: { _ in [] })
         do {
             _ = try await repo.quote(for: "AAPL")
             XCTFail("Expected AppError.rateLimited")
@@ -163,7 +149,8 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
                 return kmp
             },
             fetchCandles: { _, _ in [] },
-            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) })
+            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) },
+            fetchSearch: { _ in [] })
 
         let points = try await repo.history(for: "AAPL", timeframe: .oneWeek)
         XCTAssertEqual(points.count, 1)
@@ -180,7 +167,8 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
                     domain: "KotlinException", code: 0,
                     userInfo: ["KotlinException": Shared.QuoteError.RateLimited.shared])
             },
-            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) })
+            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) },
+            fetchSearch: { _ in [] })
 
         do {
             _ = try await repo.candles(for: "AAPL", timeframe: .oneDay)
@@ -196,12 +184,54 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
             fetch: { _ in [] },
             fetchHistory: { _, _ in [] },
             fetchCandles: { _, _ in [] },
-            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) })
+            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) },
+            fetchSearch: { _ in [] })
 
         let asset = try await repo.profile(for: "AAPL")
         XCTAssertEqual(asset.symbol, "AAPL")
         XCTAssertEqual(asset.name, "Apple Inc.")
         XCTAssertEqual(asset.kind, .stock)
+    }
+
+    func testSearchForSuccessReturnsMappedAssets() async throws {
+        let kmp = [Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock)]
+        let repo = SharedCoreMarketDataRepository(
+            fallback: RecordingRepository(),
+            fetch: { _ in [] },
+            fetchHistory: { _, _ in [] },
+            fetchCandles: { _, _ in [] },
+            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) },
+            fetchSearch: { query in
+                XCTAssertEqual(query, "apple")
+                return kmp
+            })
+
+        let assets = try await repo.search(query: "apple")
+        XCTAssertEqual(assets.count, 1)
+        XCTAssertEqual(assets[0].symbol, "AAPL")
+        XCTAssertEqual(assets[0].name, "Apple Inc.")
+        XCTAssertEqual(assets[0].kind, .stock)
+    }
+
+    func testSearchForKotlinErrorMapsToAppError() async {
+        let repo = SharedCoreMarketDataRepository(
+            fallback: RecordingRepository(),
+            fetch: { _ in [] },
+            fetchHistory: { _, _ in [] },
+            fetchCandles: { _, _ in [] },
+            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) },
+            fetchSearch: { _ in
+                throw NSError(
+                    domain: "KotlinException", code: 0,
+                    userInfo: ["KotlinException": Shared.QuoteError.RateLimited.shared])
+            })
+
+        do {
+            _ = try await repo.search(query: "apple")
+            XCTFail("Expected AppError.rateLimited")
+        } catch {
+            XCTAssertEqual(error as? AppError, .rateLimited)
+        }
     }
 }
 

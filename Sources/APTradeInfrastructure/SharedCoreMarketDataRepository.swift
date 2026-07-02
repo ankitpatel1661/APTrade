@@ -6,8 +6,7 @@ import APTradeDomain
 // types surfaced through error handling below).
 @preconcurrency import Shared
 
-/// Serves `quote`/`history`/`candles`/`profile` from the shared Kotlin core; `search`
-/// still delegates to the Swift-native fallback repository (not yet ported).
+/// Serves `quote`/`history`/`candles`/`profile`/`search` from the shared Kotlin core.
 /// @unchecked Sendable: all stored properties are immutable, and Kotlin/Native
 /// objects are safely shareable across threads under the current KMP memory model.
 public final class SharedCoreMarketDataRepository: APTradeApplication.MarketDataRepository, @unchecked Sendable {
@@ -15,6 +14,7 @@ public final class SharedCoreMarketDataRepository: APTradeApplication.MarketData
     private let fetchHistory: @Sendable (String, Shared.Timeframe) async throws -> [Shared.PricePoint]
     private let fetchCandles: @Sendable (String, Shared.Timeframe) async throws -> [Shared.Candle]
     private let fetchProfile: @Sendable (String) async throws -> Shared.Asset
+    private let fetchSearch: @Sendable (String) async throws -> [Shared.Asset]
     private let fallback: APTradeApplication.MarketDataRepository
 
     public convenience init(fallback: APTradeApplication.MarketDataRepository) {
@@ -23,12 +23,14 @@ public final class SharedCoreMarketDataRepository: APTradeApplication.MarketData
         let historyUseCase = Shared.FetchHistory(repository: repository)
         let candlesUseCase = Shared.FetchCandles(repository: repository)
         let profileUseCase = Shared.FetchProfile(repository: repository)
+        let searchUseCase = Shared.FetchSearch(repository: repository)
         self.init(
             fallback: fallback,
             fetch: { try await quotesUseCase.execute(symbols: $0) },
             fetchHistory: { try await historyUseCase.execute(symbol: $0, timeframe: $1) },
             fetchCandles: { try await candlesUseCase.execute(symbol: $0, timeframe: $1) },
-            fetchProfile: { try await profileUseCase.execute(symbol: $0) })
+            fetchProfile: { try await profileUseCase.execute(symbol: $0) },
+            fetchSearch: { try await searchUseCase.execute(query: $0) })
     }
 
     init(
@@ -36,12 +38,14 @@ public final class SharedCoreMarketDataRepository: APTradeApplication.MarketData
         fetch: @escaping @Sendable ([String]) async throws -> [Shared.Quote],
         fetchHistory: @escaping @Sendable (String, Shared.Timeframe) async throws -> [Shared.PricePoint],
         fetchCandles: @escaping @Sendable (String, Shared.Timeframe) async throws -> [Shared.Candle],
-        fetchProfile: @escaping @Sendable (String) async throws -> Shared.Asset
+        fetchProfile: @escaping @Sendable (String) async throws -> Shared.Asset,
+        fetchSearch: @escaping @Sendable (String) async throws -> [Shared.Asset]
     ) {
         self.fetch = fetch
         self.fetchHistory = fetchHistory
         self.fetchCandles = fetchCandles
         self.fetchProfile = fetchProfile
+        self.fetchSearch = fetchSearch
         self.fallback = fallback
     }
 
@@ -83,7 +87,11 @@ public final class SharedCoreMarketDataRepository: APTradeApplication.MarketData
     }
 
     public func search(query: String) async throws -> [APTradeDomain.Asset] {
-        try await fallback.search(query: query)
+        do {
+            return try await fetchSearch(query).map(Self.mapAsset)
+        } catch {
+            throw Self.mapError(error)
+        }
     }
 
     // MARK: - Mapping (internal statics so tests hit them directly)
