@@ -31,6 +31,7 @@ class FetchCandlesTest {
                     return expected
                 }
                 override suspend fun profile(symbol: String): Asset = Asset(symbol, symbol, AssetKind.Stock)
+                override suspend fun search(query: String): List<Asset> = emptyList()
             },
         )
 

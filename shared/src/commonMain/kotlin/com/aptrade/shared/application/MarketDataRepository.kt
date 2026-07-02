@@ -11,4 +11,5 @@ interface MarketDataRepository {
     suspend fun history(symbol: String, timeframe: Timeframe): List<PricePoint>
     suspend fun candles(symbol: String, timeframe: Timeframe): List<Candle>
     suspend fun profile(symbol: String): Asset
+    suspend fun search(query: String): List<Asset>
 }

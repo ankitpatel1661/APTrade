@@ -46,6 +46,37 @@ class YahooMarketDataRepository internal constructor(
     override suspend fun profile(symbol: String): Asset =
         YahooQuoteMapper.asset(fetchChart(symbol, "1d", "1d"))
 
+    override suspend fun search(query: String): List<Asset> =
+        YahooSearchMapper.assets(fetchSearchResponse(query))
+
+    private suspend fun fetchSearchResponse(query: String): YahooSearchResponse {
+        val response = try {
+            client.get("https://query1.finance.yahoo.com/v1/finance/search") {
+                header("User-Agent", "Mozilla/5.0")
+                url {
+                    parameters.append("q", query)
+                    parameters.append("quotesCount", "8")
+                    parameters.append("newsCount", "0")
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            throw QuoteError.Network(e.message ?: "request failed")
+        }
+
+        if (response.status == HttpStatusCode.TooManyRequests) throw QuoteError.RateLimited
+        if (!response.status.isSuccess()) throw QuoteError.Network("HTTP ${response.status.value}")
+
+        return try {
+            response.body<YahooSearchResponse>()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            throw QuoteError.Network("malformed response")
+        }
+    }
+
     private suspend fun fetchChart(symbol: String, range: String, interval: String): YahooChartResponse {
         val response = try {
             client.get("https://query1.finance.yahoo.com/v8/finance/chart/$symbol") {

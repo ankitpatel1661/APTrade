@@ -32,4 +32,10 @@ class StubMarketDataRepositoryTest {
         val asset = repo.profile("AAPL")
         assertEquals("AAPL", asset.symbol)
     }
+
+    @Test
+    fun returnsEmptySearchResults() = runTest {
+        val assets = repo.search("AAPL")
+        assertEquals(0, assets.size)
+    }
 }

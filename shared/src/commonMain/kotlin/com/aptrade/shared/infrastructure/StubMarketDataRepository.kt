@@ -31,4 +31,6 @@ class StubMarketDataRepository : MarketDataRepository {
 
     override suspend fun profile(symbol: String): Asset =
         Asset(symbol = symbol, name = symbol, kind = AssetKind.Stock)
+
+    override suspend fun search(query: String): List<Asset> = emptyList()
 }

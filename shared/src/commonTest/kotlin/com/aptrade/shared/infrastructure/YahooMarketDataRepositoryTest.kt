@@ -95,4 +95,31 @@ class YahooMarketDataRepositoryTest {
         assertEquals("Apple Inc.", asset.name)
         assertEquals(AssetKind.Stock, asset.kind)
     }
+
+    @Test
+    fun returnsMappedSearchResults() = runTest {
+        val body = """
+            {"quotes":[{"symbol":"AAPL","shortname":"Apple Inc.","quoteType":"EQUITY"},
+            {"symbol":"^GSPC","shortname":"S&P 500","quoteType":"INDEX"}]}
+        """.trimIndent()
+        val repo = YahooMarketDataRepository(clientReturning(HttpStatusCode.OK, body))
+
+        val assets = repo.search("apple")
+
+        assertEquals(listOf("AAPL"), assets.map { it.symbol })
+    }
+
+    @Test
+    fun mapsSearchHttp429ToRateLimited() = runTest {
+        val repo = YahooMarketDataRepository(clientReturning(HttpStatusCode.TooManyRequests, ""))
+        val ex = assertFailsWith<QuoteError> { repo.search("apple") }
+        assertTrue(ex is QuoteError.RateLimited)
+    }
+
+    @Test
+    fun mapsSearchMalformedBodyToNetwork() = runTest {
+        val repo = YahooMarketDataRepository(clientReturning(HttpStatusCode.OK, "not json"))
+        val ex = assertFailsWith<QuoteError> { repo.search("apple") }
+        assertTrue(ex is QuoteError.Network)
+    }
 }

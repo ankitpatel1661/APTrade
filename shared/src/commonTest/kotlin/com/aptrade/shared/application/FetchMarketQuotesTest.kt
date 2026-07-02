@@ -21,6 +21,7 @@ class FetchMarketQuotesTest {
                 override suspend fun history(symbol: String, timeframe: Timeframe): List<PricePoint> = emptyList()
                 override suspend fun candles(symbol: String, timeframe: Timeframe): List<Candle> = emptyList()
                 override suspend fun profile(symbol: String): Asset = Asset(symbol, symbol, AssetKind.Stock)
+                override suspend fun search(query: String): List<Asset> = emptyList()
             },
         )
 

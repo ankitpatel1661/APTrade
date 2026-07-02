@@ -23,6 +23,7 @@ class FetchProfileTest {
                     assertEquals("AAPL", symbol)
                     return expected
                 }
+                override suspend fun search(query: String): List<Asset> = emptyList()
             },
         )
 
