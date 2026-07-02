@@ -31,6 +31,13 @@ data class Money(
             }
         }
 
+    /**
+     * Plain decimal string of the exact amount (e.g. "229.35") — the lossless
+     * cross-language bridge format (Swift reads it via Decimal(string:)).
+     */
+    val amountText: String
+        get() = amount.toStringExpanded()
+
     companion object {
         fun usd(value: String): Money = Money(BigDecimal.parseString(value), "USD")
     }

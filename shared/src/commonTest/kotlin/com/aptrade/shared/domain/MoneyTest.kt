@@ -28,4 +28,9 @@ class MoneyTest {
     fun formatsUsdWithTwoDecimals() {
         assertEquals("$1234.5", Money.usd("1234.50").formatted)
     }
+
+    @Test
+    fun amountTextIsPlainDecimalString() {
+        assertEquals("229.35", Money.usd("229.35").amountText)
+    }
 }

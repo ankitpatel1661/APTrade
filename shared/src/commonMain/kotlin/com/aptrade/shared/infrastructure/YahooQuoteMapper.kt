@@ -17,6 +17,12 @@ object YahooQuoteMapper {
         } else {
             0.0
         }
-        return Quote(symbol = meta.symbol, price = Money(price, currency), changePercent = changePercent)
+        val previousClose = prev?.let { Money(it, currency) } ?: Money(price, currency)
+        return Quote(
+            symbol = meta.symbol,
+            price = Money(price, currency),
+            previousClose = previousClose,
+            changePercent = changePercent,
+        )
     }
 }

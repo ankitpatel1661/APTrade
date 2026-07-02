@@ -33,4 +33,31 @@ class YahooQuoteMapperTest {
         val ex = assertFailsWith<QuoteError> { YahooQuoteMapper.quote(parsed) }
         assertTrue(ex is QuoteError.NotFound)
     }
+
+    @Test
+    fun mapsPreviousCloseExactly() {
+        val body = """
+            {"chart":{"result":[{"meta":{"symbol":"AAPL","currency":"USD",
+            "regularMarketPrice":229.35,"chartPreviousClose":227.45}}]}}
+        """.trimIndent()
+        val parsed = yahooJson.decodeFromString(YahooChartResponse.serializer(), body)
+
+        val quote = YahooQuoteMapper.quote(parsed)
+
+        assertEquals(Money(BigDecimal.parseString("227.45"), "USD"), quote.previousClose)
+    }
+
+    @Test
+    fun missingPreviousCloseDefaultsToPrice() {
+        val body = """
+            {"chart":{"result":[{"meta":{"symbol":"AAPL","currency":"USD",
+            "regularMarketPrice":229.35}}]}}
+        """.trimIndent()
+        val parsed = yahooJson.decodeFromString(YahooChartResponse.serializer(), body)
+
+        val quote = YahooQuoteMapper.quote(parsed)
+
+        assertEquals(quote.price, quote.previousClose)
+        assertEquals(0.0, quote.changePercent)
+    }
 }
