@@ -5,11 +5,21 @@ import APTradeDomain
 @preconcurrency import Shared
 @testable import APTradeInfrastructure
 
-// NOTE: KMP `Quote`/`Money` collide with APTradeDomain's — Shared.X vs APTradeDomain.X.
-// Kotlin companion functions surface as `.companion`; Kotlin `object`s as `.shared`.
+// NOTE: KMP `Quote`/`Money`/`PricePoint`/`Candle`/`Asset`/`Timeframe` collide with
+// APTradeDomain's — Shared.X vs APTradeDomain.X. Kotlin companion functions surface as
+// `.companion`; Kotlin `object`s (sealed-class singletons) as `.shared`.
 final class SharedCoreMarketDataRepositoryTests: XCTestCase {
     private func kmpMoney(_ text: String) -> Shared.Money {
         Shared.Money.companion.usd(value: text)
+    }
+
+    private func noOpRepo(fallback: APTradeApplication.MarketDataRepository) -> SharedCoreMarketDataRepository {
+        SharedCoreMarketDataRepository(
+            fallback: fallback,
+            fetch: { _ in [] },
+            fetchHistory: { _, _ in [] },
+            fetchCandles: { _, _ in [] },
+            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) })
     }
 
     func testMapsMoneyExactly() throws {
@@ -29,6 +39,40 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
         XCTAssertEqual(mapped.previousClose.amount, Decimal(string: "227.45")!)
     }
 
+    func testMapsPricePointExactly() throws {
+        let kmp = Shared.PricePoint(epochSeconds: 1_700_000_000, close: kmpMoney("229.35"))
+        let mapped = try SharedCoreMarketDataRepository.mapPricePoint(kmp)
+        XCTAssertEqual(mapped.date, Date(timeIntervalSince1970: 1_700_000_000))
+        XCTAssertEqual(mapped.close.amount, Decimal(string: "229.35")!)
+    }
+
+    func testMapsCandleExactly() throws {
+        let kmp = Shared.Candle(
+            epochSeconds: 1_700_000_000,
+            open: kmpMoney("100.00"), high: kmpMoney("101.00"),
+            low: kmpMoney("99.00"), close: kmpMoney("100.50"), volume: 500.0)
+        let mapped = try SharedCoreMarketDataRepository.mapCandle(kmp)
+        XCTAssertEqual(mapped.date, Date(timeIntervalSince1970: 1_700_000_000))
+        XCTAssertEqual(mapped.open.amount, Decimal(string: "100.00")!)
+        XCTAssertEqual(mapped.high.amount, Decimal(string: "101.00")!)
+        XCTAssertEqual(mapped.low.amount, Decimal(string: "99.00")!)
+        XCTAssertEqual(mapped.close.amount, Decimal(string: "100.50")!)
+        XCTAssertEqual(mapped.volume, 500.0)
+    }
+
+    func testMapsAssetKinds() {
+        XCTAssertEqual(SharedCoreMarketDataRepository.mapAssetKind(.stock), .stock)
+        XCTAssertEqual(SharedCoreMarketDataRepository.mapAssetKind(.etf), .etf)
+        XCTAssertEqual(SharedCoreMarketDataRepository.mapAssetKind(.crypto), .crypto)
+    }
+
+    func testMapsTimeframes() {
+        XCTAssertEqual(SharedCoreMarketDataRepository.mapTimeframe(.oneDay), .oneday)
+        XCTAssertEqual(SharedCoreMarketDataRepository.mapTimeframe(.oneWeek), .oneweek)
+        XCTAssertEqual(SharedCoreMarketDataRepository.mapTimeframe(.oneMonth), .onemonth)
+        XCTAssertEqual(SharedCoreMarketDataRepository.mapTimeframe(.oneYear), .oneyear)
+    }
+
     func testMapsKotlinErrorsToAppError() {
         func nsError(_ kotlin: Any) -> Error {
             NSError(domain: "KotlinException", code: 0, userInfo: ["KotlinException": kotlin])
@@ -41,22 +85,16 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
     }
 
     func testMapsPlainNSErrorWithNoKotlinExceptionKeyToNetwork() {
-        // No "KotlinException" userInfo key at all (as opposed to the URLError case above,
-        // which also lacks the key but is itself a distinct system error type) — locks in
-        // that the default branch of mapError's switch is reached, not just hit by accident.
         let error = NSError(domain: "SomeOtherDomain", code: 1, userInfo: ["unrelated": "value"])
         XCTAssertEqual(SharedCoreMarketDataRepository.mapError(error), .network)
     }
 
-    func testDelegatesNonQuoteCallsToFallback() async throws {
+    func testDelegatesSearchToFallback() async throws {
         let fallback = RecordingRepository()
-        let repo = SharedCoreMarketDataRepository(fallback: fallback)
-        _ = try await repo.history(for: "AAPL", timeframe: .oneDay)
-        _ = try await repo.candles(for: "AAPL", timeframe: .oneDay)
-        _ = try await repo.profile(for: "AAPL")
+        let repo = noOpRepo(fallback: fallback)
         _ = try await repo.search(query: "app")
         let calls = await fallback.calls
-        XCTAssertEqual(calls, ["history", "candles", "profile", "search"])
+        XCTAssertEqual(calls, ["search"])
     }
 
     func testQuoteForSuccessReturnsMappedQuote() async throws {
@@ -65,10 +103,15 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
             price: kmpMoney("229.35"),
             previousClose: kmpMoney("227.45"),
             changePercent: 0.84)
-        let repo = SharedCoreMarketDataRepository(fallback: RecordingRepository()) { symbols in
-            XCTAssertEqual(symbols, ["AAPL"])
-            return [kmp]
-        }
+        let repo = SharedCoreMarketDataRepository(
+            fallback: RecordingRepository(),
+            fetch: { symbols in
+                XCTAssertEqual(symbols, ["AAPL"])
+                return [kmp]
+            },
+            fetchHistory: { _, _ in [] },
+            fetchCandles: { _, _ in [] },
+            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) })
         let quote = try await repo.quote(for: "AAPL")
         XCTAssertEqual(quote.symbol, "AAPL")
         XCTAssertEqual(quote.price.amount, Decimal(string: "229.35")!)
@@ -76,7 +119,12 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
     }
 
     func testQuoteForEmptyResultThrowsNotFound() async {
-        let repo = SharedCoreMarketDataRepository(fallback: RecordingRepository()) { _ in [] }
+        let repo = SharedCoreMarketDataRepository(
+            fallback: RecordingRepository(),
+            fetch: { _ in [] },
+            fetchHistory: { _, _ in [] },
+            fetchCandles: { _, _ in [] },
+            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) })
         do {
             _ = try await repo.quote(for: "AAPL")
             XCTFail("Expected AppError.notFound")
@@ -86,18 +134,74 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
     }
 
     func testQuoteForKotlinErrorMapsToAppError() async {
-        let repo = SharedCoreMarketDataRepository(fallback: RecordingRepository()) { _ in
-            throw NSError(
-                domain: "KotlinException",
-                code: 0,
-                userInfo: ["KotlinException": Shared.QuoteError.RateLimited.shared])
-        }
+        let repo = SharedCoreMarketDataRepository(
+            fallback: RecordingRepository(),
+            fetch: { _ in
+                throw NSError(
+                    domain: "KotlinException", code: 0,
+                    userInfo: ["KotlinException": Shared.QuoteError.RateLimited.shared])
+            },
+            fetchHistory: { _, _ in [] },
+            fetchCandles: { _, _ in [] },
+            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) })
         do {
             _ = try await repo.quote(for: "AAPL")
             XCTFail("Expected AppError.rateLimited")
         } catch {
             XCTAssertEqual(error as? AppError, .rateLimited)
         }
+    }
+
+    func testHistoryForSuccessReturnsMappedPoints() async throws {
+        let kmp = [Shared.PricePoint(epochSeconds: 1_700_000_000, close: kmpMoney("229.35"))]
+        let repo = SharedCoreMarketDataRepository(
+            fallback: RecordingRepository(),
+            fetch: { _ in [] },
+            fetchHistory: { symbol, timeframe in
+                XCTAssertEqual(symbol, "AAPL")
+                XCTAssertEqual(timeframe, .oneweek)
+                return kmp
+            },
+            fetchCandles: { _, _ in [] },
+            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) })
+
+        let points = try await repo.history(for: "AAPL", timeframe: .oneWeek)
+        XCTAssertEqual(points.count, 1)
+        XCTAssertEqual(points[0].close.amount, Decimal(string: "229.35")!)
+    }
+
+    func testCandlesForKotlinErrorMapsToAppError() async {
+        let repo = SharedCoreMarketDataRepository(
+            fallback: RecordingRepository(),
+            fetch: { _ in [] },
+            fetchHistory: { _, _ in [] },
+            fetchCandles: { _, _ in
+                throw NSError(
+                    domain: "KotlinException", code: 0,
+                    userInfo: ["KotlinException": Shared.QuoteError.RateLimited.shared])
+            },
+            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) })
+
+        do {
+            _ = try await repo.candles(for: "AAPL", timeframe: .oneDay)
+            XCTFail("Expected AppError.rateLimited")
+        } catch {
+            XCTAssertEqual(error as? AppError, .rateLimited)
+        }
+    }
+
+    func testProfileForSuccessReturnsMappedAsset() async throws {
+        let repo = SharedCoreMarketDataRepository(
+            fallback: RecordingRepository(),
+            fetch: { _ in [] },
+            fetchHistory: { _, _ in [] },
+            fetchCandles: { _, _ in [] },
+            fetchProfile: { _ in Shared.Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock) })
+
+        let asset = try await repo.profile(for: "AAPL")
+        XCTAssertEqual(asset.symbol, "AAPL")
+        XCTAssertEqual(asset.name, "Apple Inc.")
+        XCTAssertEqual(asset.kind, .stock)
     }
 }
 
@@ -106,7 +210,7 @@ private actor CallLog {
     func record(_ name: String) { calls.append(name) }
 }
 
-private final class RecordingRepository: MarketDataRepository, @unchecked Sendable {
+private final class RecordingRepository: APTradeApplication.MarketDataRepository, @unchecked Sendable {
     private let log = CallLog()
     var calls: [String] { get async { await log.calls } }
 
@@ -114,16 +218,16 @@ private final class RecordingRepository: MarketDataRepository, @unchecked Sendab
         await log.record("quote")
         throw AppError.notFound
     }
-    func history(for symbol: String, timeframe: Timeframe) async throws -> [PricePoint] {
+    func history(for symbol: String, timeframe: APTradeDomain.Timeframe) async throws -> [APTradeDomain.PricePoint] {
         await log.record("history"); return []
     }
-    func candles(for symbol: String, timeframe: Timeframe) async throws -> [Candle] {
+    func candles(for symbol: String, timeframe: APTradeDomain.Timeframe) async throws -> [APTradeDomain.Candle] {
         await log.record("candles"); return []
     }
-    func profile(for symbol: String) async throws -> Asset {
-        await log.record("profile"); return Asset(symbol: symbol, name: symbol, kind: .stock)
+    func profile(for symbol: String) async throws -> APTradeDomain.Asset {
+        await log.record("profile"); return APTradeDomain.Asset(symbol: symbol, name: symbol, kind: .stock)
     }
-    func search(query: String) async throws -> [Asset] {
+    func search(query: String) async throws -> [APTradeDomain.Asset] {
         await log.record("search"); return []
     }
 }
