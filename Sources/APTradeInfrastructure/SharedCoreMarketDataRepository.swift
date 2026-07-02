@@ -125,7 +125,9 @@ public final class SharedCoreMarketDataRepository: APTradeApplication.MarketData
         case .stock: return .stock
         case .etf: return .etf
         case .crypto: return .crypto
-        default: return .stock
+        // Shared.AssetKind is an ObjC-bridged class, not a closed Swift enum, so this switch cannot be proven exhaustive; this default is unreachable for the 3 real cases and should stay that way.
+        default:
+            fatalError("Unrecognized Shared.AssetKind case: \(kind) — the Kotlin AssetKind enum gained a case this switch doesn't handle yet")
         }
     }
 
