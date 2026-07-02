@@ -1,0 +1,114 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# APTrade CI/CD Pipeline
+#
+# Two parallel tracks:
+#   • Swift (macOS runner) — build + test the SwiftPM package (190 XCTest tests)
+#   • KMP JVM (Linux runner) — test the Kotlin Multiplatform shared module on JVM
+#
+# A third job assembles the Shared.xcframework on macOS, but only on main, since
+# it is expensive and only needed for integration / release.
+# ──────────────────────────────────────────────────────────────────────────────
+
+stages:
+  - test
+  - build
+
+# ── Shared base for all macOS jobs ────────────────────────────────────────────
+# Uses the GitLab SaaS M1 runner with the latest Xcode 26 image.
+# DEVELOPER_DIR is required so that `swift test` finds XCTest (full Xcode,
+# not just the Command Line Tools).
+.macos-base:
+  tags:
+    - saas-macos-medium-m1
+  image: macos-26-xcode-26
+  variables:
+    DEVELOPER_DIR: /Applications/Xcode.app
+
+# ── Shared base for all Linux jobs ────────────────────────────────────────────
+.linux-base:
+  tags:
+    - saas-linux-small-amd64
+  image: eclipse-temurin:21-jdk
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STAGE: test
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Swift: build + test ───────────────────────────────────────────────────────
+# Builds the SwiftPM package and runs all 190 XCTest tests across the four
+# Clean Architecture layers (Domain, Application, Infrastructure, App).
+# Runs on every push and MR so regressions are caught immediately.
+swift-test:
+  extends: .macos-base
+  stage: test
+  cache:
+    # Key on Package.resolved so the cache is invalidated when dependencies change.
+    key:
+      files:
+        - Package.resolved
+    paths:
+      - .build/
+  script:
+    - swift build
+    - swift test
+  rules:
+    # Run on MR pipelines and on every push to any branch (including main).
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# ── KMP: JVM unit tests ───────────────────────────────────────────────────────
+# Runs the Kotlin Multiplatform shared module's commonTest suite on the JVM
+# target. This is fast and cheap — no macOS or Xcode required.
+# Covers Money, Quote, FetchMarketQuotes, and YahooMarketDataRepository tests.
+kmp-jvm-test:
+  extends: .linux-base
+  stage: test
+  cache:
+    # Key on the Gradle wrapper properties so the cache is invalidated when
+    # the Gradle version changes.
+    key:
+      files:
+        - gradle/wrapper/gradle-wrapper.properties
+    paths:
+      - .gradle/
+      - ~/.gradle/caches/
+  script:
+    - ./gradlew :shared:jvmTest --no-daemon
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STAGE: build
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── KMP: assemble Shared.xcframework ─────────────────────────────────────────
+# Assembles the Shared.xcframework (iosArm64, iosSimulatorArm64, macosArm64)
+# from the Kotlin Multiplatform shared module. This artifact is consumed by the
+# Swift package via a binaryTarget in Package.swift.
+#
+# Only runs on main to avoid the cost on every branch push. The artifact is
+# kept for 7 days so it can be downloaded by downstream jobs or developers.
+kmp-xcframework:
+  extends: .macos-base
+  stage: build
+  cache:
+    key:
+      files:
+        - gradle/wrapper/gradle-wrapper.properties
+    paths:
+      - .gradle/
+      - ~/.gradle/caches/
+  script:
+    - ./gradlew :shared:assembleSharedXCFramework --no-daemon
+  artifacts:
+    # Expose the built XCFramework so it can be downloaded from the pipeline UI
+    # or consumed by future jobs.
+    name: "Shared-XCFramework-${CI_COMMIT_SHORT_SHA}"
+    paths:
+      - shared/build/XCFrameworks/release/Shared.xcframework
+    expire_in: 7 days
+  rules:
+    # Only assemble the XCFramework on the main branch — it is expensive and
+    # only needed for integration / release workflows.
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
