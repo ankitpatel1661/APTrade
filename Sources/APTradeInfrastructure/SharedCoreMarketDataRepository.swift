@@ -1,24 +1,29 @@
 import Foundation
 import APTradeApplication
 import APTradeDomain
-import Shared
+@preconcurrency import Shared
 
 /// Serves `quote(for:)` from the shared Kotlin core (KMP FetchMarketQuotes → Ktor);
 /// the four not-yet-ported calls delegate to the Swift-native fallback repository.
 /// @unchecked Sendable: all stored properties are immutable, and Kotlin/Native
 /// objects are safely shareable across threads under the current KMP memory model.
 public final class SharedCoreMarketDataRepository: MarketDataRepository, @unchecked Sendable {
-    private let fetchQuotes: Shared.FetchMarketQuotes
+    private let fetch: @Sendable ([String]) async throws -> [Shared.Quote]
     private let fallback: MarketDataRepository
 
-    public init(fallback: MarketDataRepository) {
-        self.fetchQuotes = Shared.FetchMarketQuotes(repository: Shared.YahooMarketDataRepository())
+    public convenience init(fallback: MarketDataRepository) {
+        let useCase = Shared.FetchMarketQuotes(repository: Shared.YahooMarketDataRepository())
+        self.init(fallback: fallback, fetch: { try await useCase.execute(symbols: $0) })
+    }
+
+    init(fallback: MarketDataRepository, fetch: @escaping @Sendable ([String]) async throws -> [Shared.Quote]) {
+        self.fetch = fetch
         self.fallback = fallback
     }
 
     public func quote(for symbol: String) async throws -> APTradeDomain.Quote {
         do {
-            let quotes = try await fetchQuotes.execute(symbols: [symbol])
+            let quotes = try await fetch([symbol])
             guard let first = quotes.first else { throw AppError.notFound }
             return try Self.mapQuote(first)
         } catch {

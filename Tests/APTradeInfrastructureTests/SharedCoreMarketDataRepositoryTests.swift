@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 import APTradeApplication
 import APTradeDomain
-import Shared
+@preconcurrency import Shared
 @testable import APTradeInfrastructure
 
 // NOTE: KMP `Quote`/`Money` collide with APTradeDomain's — Shared.X vs APTradeDomain.X.
@@ -49,6 +49,47 @@ final class SharedCoreMarketDataRepositoryTests: XCTestCase {
         _ = try await repo.search(query: "app")
         let calls = await fallback.calls
         XCTAssertEqual(calls, ["history", "candles", "profile", "search"])
+    }
+
+    func testQuoteForSuccessReturnsMappedQuote() async throws {
+        let kmp = Shared.Quote(
+            symbol: "AAPL",
+            price: kmpMoney("229.35"),
+            previousClose: kmpMoney("227.45"),
+            changePercent: 0.84)
+        let repo = SharedCoreMarketDataRepository(fallback: RecordingRepository()) { symbols in
+            XCTAssertEqual(symbols, ["AAPL"])
+            return [kmp]
+        }
+        let quote = try await repo.quote(for: "AAPL")
+        XCTAssertEqual(quote.symbol, "AAPL")
+        XCTAssertEqual(quote.price.amount, Decimal(string: "229.35")!)
+        XCTAssertEqual(quote.previousClose.amount, Decimal(string: "227.45")!)
+    }
+
+    func testQuoteForEmptyResultThrowsNotFound() async {
+        let repo = SharedCoreMarketDataRepository(fallback: RecordingRepository()) { _ in [] }
+        do {
+            _ = try await repo.quote(for: "AAPL")
+            XCTFail("Expected AppError.notFound")
+        } catch {
+            XCTAssertEqual(error as? AppError, .notFound)
+        }
+    }
+
+    func testQuoteForKotlinErrorMapsToAppError() async {
+        let repo = SharedCoreMarketDataRepository(fallback: RecordingRepository()) { _ in
+            throw NSError(
+                domain: "KotlinException",
+                code: 0,
+                userInfo: ["KotlinException": Shared.QuoteError.RateLimited.shared])
+        }
+        do {
+            _ = try await repo.quote(for: "AAPL")
+            XCTFail("Expected AppError.rateLimited")
+        } catch {
+            XCTAssertEqual(error as? AppError, .rateLimited)
+        }
     }
 }
 
