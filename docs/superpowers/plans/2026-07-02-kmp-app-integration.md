@@ -510,10 +510,10 @@ The generated `APTrade.xcodeproj` shadows the package — park it first:
 
 ```bash
 mv APTrade.xcodeproj APTrade.xcodeproj.parked
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -scheme APTradeLite-Package -destination 'generic/platform=iOS Simulator' build -quiet
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -scheme APTradeLite-Package -destination 'generic/platform=iOS Simulator' ARCHS=arm64 build -quiet
 mv APTrade.xcodeproj.parked APTrade.xcodeproj
 ```
-Expected: `** BUILD SUCCEEDED **`. Restore the project even if the build fails.
+Expected: `** BUILD SUCCEEDED **`. Restore the project even if the build fails. The shared framework ships arm64-only slices (no Intel x86_64 simulator), so the build is pinned to ARCHS=arm64.
 
 - [ ] **Step 4: Harness regression (shared module still consumable standalone)**
 

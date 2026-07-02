@@ -156,7 +156,8 @@ linked as `Shared.xcframework`. The framework is a build artifact (not committed
 once per clone — and again after any change under `shared/` — before `swift build` or
 opening the Xcode project. Requires JDK 17 and full Xcode (the script points at the
 Homebrew OpenJDK 17 and `/Applications/Xcode.app` by default; override via `JAVA_HOME`
-/ `DEVELOPER_DIR`).
+/ `DEVELOPER_DIR`). The framework ships Apple-Silicon (arm64) slices only — iOS Simulator
+builds must target arm64 (the default on Apple-Silicon Macs).
 
 ## Project Structure
 
