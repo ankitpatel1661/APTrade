@@ -146,6 +146,18 @@ DEVELOPER_DIR=/Applications/Xcode.app swift test
 
 > `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **190 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction), the market calendar, use cases, the market-activity planner, alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, and the view models.
 
+### Building the shared Kotlin core
+
+Parts of the app (live quotes) are served by a Kotlin Multiplatform core in `shared/`,
+linked as `Shared.xcframework`. The framework is a build artifact (not committed), so run
+
+    ./scripts/build-shared.sh
+
+once per clone — and again after any change under `shared/` — before `swift build` or
+opening the Xcode project. Requires JDK 17 and full Xcode (the script points at the
+Homebrew OpenJDK 17 and `/Applications/Xcode.app` by default; override via `JAVA_HOME`
+/ `DEVELOPER_DIR`).
+
 ## Project Structure
 
 ```
