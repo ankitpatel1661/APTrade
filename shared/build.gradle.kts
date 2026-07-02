@@ -1,12 +1,20 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
 
 plugins {
     kotlin("multiplatform")
     kotlin("plugin.serialization")
+    id("com.android.library")
 }
 
 kotlin {
     jvm()
+
+    androidTarget {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
 
     val xcf = XCFramework("Shared")
     listOf(
@@ -37,8 +45,23 @@ kotlin {
         jvmMain.dependencies {
             implementation("io.ktor:ktor-client-cio:3.0.3")
         }
+        androidMain.dependencies {
+            implementation("io.ktor:ktor-client-okhttp:3.0.3")
+        }
         appleMain.dependencies {
             implementation("io.ktor:ktor-client-darwin:3.0.3")
         }
+    }
+}
+
+android {
+    namespace = "com.aptrade.shared"
+    compileSdk = 35
+    defaultConfig {
+        minSdk = 26
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 }
