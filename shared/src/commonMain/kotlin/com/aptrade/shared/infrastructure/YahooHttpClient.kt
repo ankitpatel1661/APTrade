@@ -2,7 +2,6 @@ package com.aptrade.shared.infrastructure
 
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
-import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 
@@ -12,4 +11,8 @@ fun HttpClientConfig<*>.installYahoo() {
     expectSuccess = false
 }
 
-fun defaultYahooHttpClient(): HttpClient = HttpClient(CIO) { installYahoo() }
+/**
+ * Platform HTTP client: Darwin (NSURLSession) on Apple — CIO cannot do TLS on
+ * Kotlin/Native — and CIO on the JVM.
+ */
+expect fun defaultYahooHttpClient(): HttpClient
