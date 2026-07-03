@@ -42,7 +42,9 @@ data class WatchlistUiState(
 
 /** Owns the watchlist + 15s polling loop (quotes every tick, sparklines every
  *  `sparkEveryTicks`-th — the macOS cadence). Poll failures keep the last good
- *  rows and surface a banner; sparkline failures are silently tolerated. */
+ *  rows and surface a banner; sparkline failures are silently tolerated.
+ *  `scope` MUST be single-thread-confined (Dispatchers.Main on desktop): the internal
+ *  entries/quotes/sparks vars rely on that confinement instead of locks. */
 class WatchlistViewModel(
     private val fetchMarketQuotes: FetchMarketQuotes,
     private val fetchHistory: FetchHistory,
