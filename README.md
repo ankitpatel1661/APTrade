@@ -11,7 +11,7 @@ An ultra-premium **native macOS** investing platform — built in SwiftUI on a s
 ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-0C0B09?logo=apple)
 ![Swift](https://img.shields.io/badge/Swift-6.0-D4A94E?logo=swift)
 ![Architecture](https://img.shields.io/badge/architecture-Clean-D4A94E)
-![Tests](https://img.shields.io/badge/tests-190%20passing-46C98A)
+![Tests](https://img.shields.io/badge/tests-193%20passing-46C98A)
 
 </div>
 
@@ -144,7 +144,7 @@ The app ships as a bare SwiftPM executable. Launching the built binary directly 
 DEVELOPER_DIR=/Applications/Xcode.app swift test
 ```
 
-> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **190 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction), the market calendar, use cases, the market-activity planner, alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, and the view models.
+> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **193 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction), the market calendar, use cases, the market-activity planner, alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, and the view models.
 
 ### Building the shared Kotlin core
 
@@ -174,6 +174,27 @@ export JAVA_HOME="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
 adb install -r androidApp/build/outputs/apk/debug/androidApp-debug.apk
 ```
 
+### Windows desktop app (walking skeleton)
+
+A Compose Desktop app (`desktopApp/`) targets Windows, on the same shared Kotlin core as
+the macOS/iOS/Android apps: a Watchlist tab with live prices and add/remove, an asset
+detail view with line/candlestick charts, and a Ctrl+K search palette — recreating the
+macOS app's gold-on-black visual identity. It's developed and run on this Mac as a proxy
+for the Windows target; CI builds and tests it on an actual Windows runner.
+
+```bash
+export JAVA_HOME="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
+./gradlew :desktopApp:run    # Compose Desktop app (Windows target; runs on macOS for dev)
+./gradlew :desktopApp:test   # desktop ViewModel/store suites
+```
+
+Watchlist entries persist to a JSON file in the OS config directory: `%APPDATA%\APTrade\watchlist.json`
+on Windows, `~/Library/Application Support/APTrade/watchlist.json` on macOS (dev runs).
+The `windows-desktop` GitHub Actions workflow (`.github/workflows/windows-desktop.yml`)
+runs `:desktopApp:test` and `:shared:jvmTest` on `windows-latest`, then packages an
+`.msi` installer via `:desktopApp:packageMsi` and uploads it as the `APTrade-msi` build
+artifact — the Windows build proof for this increment.
+
 ## Project Structure
 
 ```
@@ -184,6 +205,7 @@ Sources/
 └── APTradeApp/             SwiftUI views, view models, DesignKit, Theme
 Tests/                      One test target per layer
 androidApp/                 Android app (Jetpack Compose walking skeleton)
+desktopApp/                 Windows app (Compose Desktop walking skeleton)
 logo/                       Brand assets
 ```
 
@@ -194,8 +216,14 @@ APTrade Lite is the foundation. Planned toward the full platform:
 - **VWAP** indicator (requires adding volume to the OHLC pipeline)
 - Market-holiday calendar for the scheduler
 - Real authentication (Apple Sign In), biometric gating, and cloud sync (Supabase)
+- **Windows parity, continued** — the `:desktopApp` Compose app (increment 6a) covers
+  Watchlist + detail + palette only. Still to come: **6b** portfolio tab (paper trading,
+  holdings, PnL, portfolio charts, export), **6c** News tab, **6d** alerts, account panel,
+  settings, and light theme.
 
-Recently shipped: a Finnhub-backed **News** tab (company/market/crypto headlines, filter, bookmarks) plus per-symbol company news on the asset view; a ⌘K **command palette**; **risk & performance** analytics (TWR/CAGR, volatility, drawdown, Sharpe/Beta/Alpha, benchmark overlay, concentration warnings); an in-app **language switcher** (English/Deutsch/Italiano/Español); candlestick charts, SMA/EMA/RSI/MACD/Bollinger indicators, realized P&L and a transactions ledger, allocation breakdown, historical P&L reconstruction, and PDF/Excel/Word portfolio export.
+Recently shipped: a **Windows Compose Desktop app** (`:desktopApp`, increment 6a) with a live
+Watchlist tab, asset detail (charts + stat tiles), and a Ctrl+K palette on the shared Kotlin
+core, plus a `windows-desktop` CI workflow producing a Windows `.msi`; a Finnhub-backed **News** tab (company/market/crypto headlines, filter, bookmarks) plus per-symbol company news on the asset view; a ⌘K **command palette**; **risk & performance** analytics (TWR/CAGR, volatility, drawdown, Sharpe/Beta/Alpha, benchmark overlay, concentration warnings); an in-app **language switcher** (English/Deutsch/Italiano/Español); candlestick charts, SMA/EMA/RSI/MACD/Bollinger indicators, realized P&L and a transactions ledger, allocation breakdown, historical P&L reconstruction, and PDF/Excel/Word portfolio export.
 
 ## Disclaimer
 

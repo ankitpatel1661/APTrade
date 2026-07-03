@@ -103,4 +103,9 @@ DEVELOPER_DIR=/Applications/Xcode.app swift test
 
 > Without `DEVELOPER_DIR`, the Command Line Tools lack XCTest and tests won't run.
 
+```bash
+./gradlew :desktopApp:run    # Compose Desktop app (Windows target; runs on macOS for dev)
+./gradlew :desktopApp:test   # desktop ViewModel/store suites
+```
+
 Keep changes green: build clean and all tests passing before committing.
