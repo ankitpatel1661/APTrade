@@ -2046,7 +2046,9 @@ git add desktopApp/src Screenshots/
 git commit -m "feat(desktop): app shell, watchlist master-detail, Ctrl+K palette — macOS visual identity"
 ```
 
----### Task 8: CI — Windows build, tests, `.msi` artifact
+---
+
+### Task 8: CI — Windows build, tests, `.msi` artifact
 
 **Files:**
 - Create: `.github/workflows/windows-desktop.yml`
