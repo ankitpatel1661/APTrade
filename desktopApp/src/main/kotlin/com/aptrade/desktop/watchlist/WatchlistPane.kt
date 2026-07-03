@@ -123,8 +123,9 @@ fun WatchlistPane(
                     )
                 }
             }
+            // Also gated on spark data: a poll can empty averageSpark while the card is open.
             AnimatedVisibility(
-                visible = chartExpanded,
+                visible = chartExpanded && state.averageSpark.size > 1,
                 enter = expandVertically() + fadeIn(),
                 exit = shrinkVertically() + fadeOut(),
             ) {

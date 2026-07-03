@@ -88,6 +88,8 @@ fun main() = application {
                     true
                 }
                 event.key == Key.Escape && openSymbol != null -> {
+                    // Window-level Esc ownership: preview handling wins over any focused child.
+                    // If a future detail-screen field needs Esc, rework this precedence first.
                     openSymbol = null
                     true
                 }
