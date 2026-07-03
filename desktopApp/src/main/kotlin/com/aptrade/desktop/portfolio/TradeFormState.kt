@@ -17,21 +17,26 @@ data class TradeFormState(
     val priceText: String?,
     val quantityText: String,
 ) {
-    /** The exact quantity as BigDecimal, or null when the text is empty, malformed,
-     *  non-positive, or has more than 8 fraction digits. Never uses Double. */
-    fun parsedQuantity(): BigDecimal? {
+    /** Parsed once and cached: `parsedQuantity()` may be called repeatedly per keystroke
+     *  (canSubmit, estimateText, and the VM's buy/sell), and re-running the regex + BigDecimal
+     *  parse on every call is wasted work for an immutable value type. */
+    private val parsed: BigDecimal? by lazy {
         val text = quantityText.trim()
-        if (!QUANTITY_PATTERN.matches(text)) return null
+        if (!QUANTITY_PATTERN.matches(text)) return@lazy null
         val value = try {
             BigDecimal.parseString(text)
         } catch (e: ArithmeticException) {
-            return null
+            return@lazy null
         } catch (e: NumberFormatException) {
-            return null
+            return@lazy null
         }
-        if (value.isZero() || value.isNegative) return null
-        return value
+        if (value.isZero() || value.isNegative) return@lazy null
+        value
     }
+
+    /** The exact quantity as BigDecimal, or null when the text is empty, malformed,
+     *  non-positive, or has more than 8 fraction digits. Never uses Double. */
+    fun parsedQuantity(): BigDecimal? = parsed
 
     /** Quantity × price as an exact decimal string, or null when either side is missing. */
     fun estimateText(price: Money?): String? {

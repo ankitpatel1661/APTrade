@@ -8,6 +8,7 @@ import com.aptrade.shared.application.BuyAsset
 import com.aptrade.shared.application.FetchCandles
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketQuotes
+import com.aptrade.shared.application.FetchPerformanceReport
 import com.aptrade.shared.application.FetchPortfolio
 import com.aptrade.shared.application.FetchPortfolioPerformance
 import com.aptrade.shared.application.FetchProfile
@@ -52,6 +53,7 @@ class AppGraph(
     val sellAsset = SellAsset(repository, portfolioStore)
     val resetPortfolio = ResetPortfolio(portfolioStore)
     val fetchPortfolioPerformance = FetchPortfolioPerformance(repository, portfolioStore)
+    val fetchPerformanceReport = FetchPerformanceReport(repository, fetchPortfolioPerformance)
 
     // Only the production Yahoo repository owns a closeable Ktor client; test doubles
     // passed via the constructor typically aren't AutoCloseable and are safely skipped.

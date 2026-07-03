@@ -3,6 +3,7 @@ package com.aptrade.desktop.portfolio
 import com.aptrade.desktop.FakeMarketDataRepository
 import com.aptrade.shared.application.BuyAsset
 import com.aptrade.shared.application.FetchMarketQuotes
+import com.aptrade.shared.application.FetchPerformanceReport
 import com.aptrade.shared.application.FetchPortfolio
 import com.aptrade.shared.application.FetchPortfolioPerformance
 import com.aptrade.shared.application.PortfolioStore
@@ -53,6 +54,7 @@ private fun vm(
     sellAsset = SellAsset(repo, store),
     resetPortfolio = ResetPortfolio(store),
     fetchPortfolioPerformance = FetchPortfolioPerformance(repo, store),
+    fetchPerformanceReport = FetchPerformanceReport(repo, FetchPortfolioPerformance(repo, store)),
     scope = scope,
     nowEpochSeconds = nowEpochSeconds,
 )
@@ -68,8 +70,8 @@ class PortfolioViewModelTest {
         val s = vm.state.value
         assertFalse(s.isLoading)
         assertTrue(s.holdings.isEmpty())
-        assertEquals("100000", s.cashText)
-        assertEquals("100000", s.totalValueText)
+        assertEquals("$100,000.00", s.cashText)
+        assertEquals("$100,000.00", s.totalValueText)
     }
 
     @Test
@@ -103,7 +105,7 @@ class PortfolioViewModelTest {
         val s = vm.state.value
         assertEquals("Insufficient funds.", s.tradeError)
         assertTrue(s.holdings.isEmpty())
-        assertEquals("100000", s.cashText)
+        assertEquals("$100,000.00", s.cashText)
         assertNull(store.stored)   // never persisted on failure
     }
 
@@ -170,6 +172,34 @@ class PortfolioViewModelTest {
     }
 
     @Test
+    fun moneyTextsAreFormattedAndSignedOnlyForPnlAndDayChange() = runTest {
+        val repo = FakeMarketDataRepository()
+        // previousClose ("1200.00") < price ("1234.50") so dayChange is strictly positive.
+        repo.quotesImpl = { symbols -> symbols.map { Quote(it, Money.usd("1234.50"), Money.usd("1200.00"), 1.0) } }
+        val seeded = Portfolio(
+            cash = Money.usd("99000"),
+            positions = listOf(Position(aapl, BigDecimal.parseString("10"), Money.usd("1000.00"), Money.usd("0"))),
+            transactions = listOf(
+                Transaction("txn-1", "AAPL", TradeSide.Buy, BigDecimal.parseString("10"), Money.usd("1000.00"), 500L),
+            ),
+        )
+        val vm = vm(repo, InMemoryPortfolioStore(seeded), backgroundScope)
+        vm.start(); runCurrent()
+
+        val s = vm.state.value
+        // Plain money texts: grouped, 2dp, no sign forced even though the value is positive.
+        assertEquals("$99,000.00", s.cashText)
+        assertEquals("$1,000.00", s.holdings.single().averageCostText)
+        assertEquals("$12,345.00", s.holdings.single().marketValueText)
+        assertEquals("$1,234.50", s.holdings.single().priceText)
+        // Signed money texts: P&L / day-change carry a leading "+" when strictly positive.
+        assertTrue(s.holdings.single().unrealizedText.startsWith("+$"))
+        assertEquals("+$2,345.00", s.holdings.single().unrealizedText)
+        assertTrue(s.unrealizedText!!.startsWith("+$"))
+        assertTrue(s.dayChangeText!!.startsWith("+$"))
+    }
+
+    @Test
     fun pollTickRefreshesQuotesForHeldSymbolsOnly() = runTest {
         val repo = FakeMarketDataRepository()
         var price = "100.00"
@@ -187,7 +217,37 @@ class PortfolioViewModelTest {
         advanceTimeBy(15_001); runCurrent()
 
         assertEquals(listOf("AAPL"), requestedSymbols)
-        assertEquals("110.25", vm.state.value.holdings.single().priceText)
+        assertEquals("$110.25", vm.state.value.holdings.single().priceText)
+    }
+
+    @Test
+    fun refreshQuotesMergesPerSymbolKeepingLastGoodQuoteForMissingSymbols() = runTest {
+        val repo = FakeMarketDataRepository()
+        var tick = 0
+        repo.quotesImpl = { symbols ->
+            tick += 1
+            if (tick == 1) symbols.map { quote(it, "100.00") }
+            else symbols.filter { it == "AAPL" }.map { quote(it, "150.00") }
+        }
+        val msft = Asset("MSFT", "Microsoft Corp.", AssetKind.Stock)
+        val seeded = Portfolio(
+            cash = Money.usd("99000"),
+            positions = listOf(
+                Position(aapl, BigDecimal.parseString("10"), Money.usd("100.00"), Money.usd("0")),
+                Position(msft, BigDecimal.parseString("5"), Money.usd("100.00"), Money.usd("0")),
+            ),
+        )
+        val vm = vm(repo, InMemoryPortfolioStore(seeded), backgroundScope)
+        vm.start(); runCurrent()
+        assertEquals("$100.00", vm.state.value.holdings.first { it.symbol == "MSFT" }.priceText)
+
+        // Simulate a subsequent poll that only returns AAPL (MSFT's quote drops out upstream).
+        vm.refresh(); runCurrent()
+
+        val s = vm.state.value
+        assertEquals("$150.00", s.holdings.first { it.symbol == "AAPL" }.priceText)
+        // MSFT keeps its last-good quote (tick 1's price), NOT falling back to averageCost-implied text.
+        assertEquals("$100.00", s.holdings.first { it.symbol == "MSFT" }.priceText)
     }
 
     @Test
@@ -218,6 +278,101 @@ class PortfolioViewModelTest {
     }
 
     @Test
+    fun performanceReportPopulatesRebasedSeriesAndMetricsOnStart() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
+        repo.historyImpl = { symbol, _ ->
+            if (symbol == "AAPL") {
+                listOf(PricePoint(86_400L * 1, Money.usd("100.00")), PricePoint(86_400L * 2, Money.usd("110.00")))
+            } else {
+                listOf(PricePoint(86_400L * 1, Money.usd("400.00")), PricePoint(86_400L * 2, Money.usd("420.00")))
+            }
+        }
+        val seeded = Portfolio(
+            cash = Money.usd("99000"),
+            positions = listOf(Position(aapl, BigDecimal.parseString("10"), Money.usd("100.00"), Money.usd("0"))),
+            transactions = listOf(
+                Transaction("txn-1", "AAPL", TradeSide.Buy, BigDecimal.parseString("10"), Money.usd("100.00"), 0L),
+            ),
+        )
+        val vm = vm(repo, InMemoryPortfolioStore(seeded), backgroundScope)
+        vm.start(); runCurrent()
+
+        val s = vm.state.value
+        assertEquals("SPY", s.benchmark)
+        assertEquals(listOf("SPY", "QQQ", "VTI"), s.benchmarks)
+        assertTrue(s.performanceRebased.isNotEmpty())
+        assertNotNull(s.benchmarkRebased)
+        assertNotNull(s.metrics)
+        // Only 2 points -> 1 daily return -> volatility needs >=2 returns -> sharpe is null -> "—"
+        assertEquals("—", s.metrics!!.sharpe)
+        assertNotNull(s.metrics!!.totalReturn)
+        assertTrue(s.metrics!!.totalReturn.endsWith("%"))
+    }
+
+    @Test
+    fun performanceReportBenchmarkOnlyFailureYieldsNullBenchmarkAndDashMetricsButKeepsPortfolioSeries() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
+        repo.historyImpl = { symbol, _ ->
+            if (symbol == "AAPL") {
+                listOf(PricePoint(86_400L * 1, Money.usd("100.00")), PricePoint(86_400L * 2, Money.usd("110.00")))
+            } else {
+                throw QuoteError.RateLimited
+            }
+        }
+        val seeded = Portfolio(
+            cash = Money.usd("99000"),
+            positions = listOf(Position(aapl, BigDecimal.parseString("10"), Money.usd("100.00"), Money.usd("0"))),
+            transactions = listOf(
+                Transaction("txn-1", "AAPL", TradeSide.Buy, BigDecimal.parseString("10"), Money.usd("100.00"), 0L),
+            ),
+        )
+        val vm = vm(repo, InMemoryPortfolioStore(seeded), backgroundScope)
+        vm.start(); runCurrent()
+
+        val s = vm.state.value
+        assertTrue(s.performanceRebased.isNotEmpty())
+        assertNull(s.benchmarkRebased)
+        assertNotNull(s.metrics)
+        assertEquals("—", s.metrics!!.beta)
+        assertEquals("—", s.metrics!!.alpha)
+    }
+
+    @Test
+    fun setBenchmarkTriggersARefetchOfThePerformanceReport() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
+        var callCount = 0
+        val requestedBenchmarks = mutableListOf<String>()
+        repo.historyImpl = { symbol, _ ->
+            if (symbol == "AAPL") {
+                listOf(PricePoint(86_400L * 1, Money.usd("100.00")), PricePoint(86_400L * 2, Money.usd("110.00")))
+            } else {
+                callCount += 1
+                requestedBenchmarks.add(symbol)
+                listOf(PricePoint(86_400L * 1, Money.usd("400.00")), PricePoint(86_400L * 2, Money.usd("420.00")))
+            }
+        }
+        val seeded = Portfolio(
+            cash = Money.usd("99000"),
+            positions = listOf(Position(aapl, BigDecimal.parseString("10"), Money.usd("100.00"), Money.usd("0"))),
+            transactions = listOf(
+                Transaction("txn-1", "AAPL", TradeSide.Buy, BigDecimal.parseString("10"), Money.usd("100.00"), 0L),
+            ),
+        )
+        val vm = vm(repo, InMemoryPortfolioStore(seeded), backgroundScope)
+        vm.start(); runCurrent()
+        assertEquals(1, callCount)
+
+        vm.setBenchmark("QQQ"); runCurrent()
+
+        assertEquals(2, callCount)
+        assertEquals("QQQ", vm.state.value.benchmark)
+        assertEquals(listOf("SPY", "QQQ"), requestedBenchmarks)
+    }
+
+    @Test
     fun resetReturnsToStartingAndClearsPerformance() = runTest {
         val repo = FakeMarketDataRepository()
         repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
@@ -235,7 +390,7 @@ class PortfolioViewModelTest {
 
         val s = vm.state.value
         assertTrue(s.holdings.isEmpty())
-        assertEquals("100000", s.cashText)
+        assertEquals("$100,000.00", s.cashText)
         assertTrue(s.performance.isEmpty())
         assertEquals(Portfolio.starting(), store.stored)
     }

@@ -1,9 +1,13 @@
 package com.aptrade.desktop.portfolio
 
+import com.aptrade.desktop.designkit.formatMoney
+import com.aptrade.desktop.designkit.formatPercent
 import com.aptrade.desktop.designkit.kindLabel
+import com.aptrade.desktop.designkit.signedMoney
 import com.aptrade.desktop.ui.userMessage
 import com.aptrade.shared.application.BuyAsset
 import com.aptrade.shared.application.FetchMarketQuotes
+import com.aptrade.shared.application.FetchPerformanceReport
 import com.aptrade.shared.application.FetchPortfolio
 import com.aptrade.shared.application.FetchPortfolioPerformance
 import com.aptrade.shared.application.QuoteError
@@ -14,6 +18,7 @@ import com.aptrade.shared.domain.AllocationSlice
 import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.domain.PortfolioExport
 import com.aptrade.shared.domain.Quote
+import com.aptrade.shared.domain.RiskMetrics
 import com.aptrade.shared.domain.TradeError
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.domain.Timeframe
@@ -31,6 +36,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 /** The portfolio P&L chart's time span. Mirrors the asset-detail timeframes but adds a
  *  **Max** option that runs since the portfolio's first purchase. */
@@ -71,6 +77,23 @@ data class TransactionRowUi(
     val epochSeconds: Long,
 )
 
+/** Percent metrics via `formatPercent` (e.g. "+4.84%", "—" only if a percent field were
+ *  nullable — currently all four are always computable, even if 0.0). Sharpe/beta/alpha are
+ *  plain 2-decimal text (no "%", no sign forcing) and "—" when the underlying stat is null
+ *  (insufficient data / degenerate variance — see RiskMetrics). */
+data class MetricTexts(
+    val totalReturn: String,
+    val annualizedReturn: String,
+    val volatility: String,
+    val maxDrawdown: String,
+    val sharpe: String,
+    val beta: String,
+    val alpha: String,
+)
+
+private fun plainMetric(value: Double?): String =
+    if (value == null) "—" else String.format(Locale.US, "%.2f", value)
+
 data class PortfolioUiState(
     val isLoading: Boolean = true,
     val totalValueText: String? = null,
@@ -89,6 +112,11 @@ data class PortfolioUiState(
     val performance: List<Double> = emptyList(),
     val isLoadingPerformance: Boolean = false,
     val span: PortfolioSpan = PortfolioSpan.Month,
+    val benchmark: String = "SPY",
+    val benchmarks: List<String> = listOf("SPY", "QQQ", "VTI"),
+    val performanceRebased: List<Double> = emptyList(),
+    val benchmarkRebased: List<Double>? = null,
+    val metrics: MetricTexts? = null,
     val error: String? = null,
     val tradeError: String? = null,
 )
@@ -110,6 +138,7 @@ class PortfolioViewModel(
     private val sellAsset: SellAsset,
     private val resetPortfolio: ResetPortfolio,
     private val fetchPortfolioPerformance: FetchPortfolioPerformance,
+    private val fetchPerformanceReport: FetchPerformanceReport,
     private val scope: CoroutineScope,
     private val tickMillis: Long = 15_000,
     private val nowEpochSeconds: () -> Long,
@@ -129,7 +158,10 @@ class PortfolioViewModel(
             while (isActive) {
                 refreshQuotes()
                 publish(loading = false)
-                if (tick == 0) loadPerformance()
+                if (tick == 0) {
+                    loadPerformance()
+                    loadPerformanceReport()
+                }
                 tick++
                 delay(tickMillis)
             }
@@ -144,6 +176,15 @@ class PortfolioViewModel(
         if (_state.value.span == span) return
         _state.update { it.copy(span = span) }
         loadPerformance()
+        loadPerformanceReport()
+    }
+
+    /** Switches the benchmark overlay (SPY/QQQ/VTI) and refetches the performance report —
+     *  a one-shot fetch, same cadence discipline as span changes (never on a poll tick). */
+    fun setBenchmark(symbol: String) {
+        if (_state.value.benchmark == symbol) return
+        _state.update { it.copy(benchmark = symbol) }
+        loadPerformanceReport()
     }
 
     fun buy(asset: Asset, quantityText: String) {
@@ -196,7 +237,14 @@ class PortfolioViewModel(
         scope.launch {
             portfolio = resetPortfolio.execute()
             quotes = emptyMap()
-            _state.update { it.copy(performance = emptyList()) }
+            _state.update {
+                it.copy(
+                    performance = emptyList(),
+                    performanceRebased = emptyList(),
+                    benchmarkRebased = null,
+                    metrics = null,
+                )
+            }
             publish(loading = false)
         }
     }
@@ -205,12 +253,15 @@ class PortfolioViewModel(
 
     fun exportJson(): String = PortfolioExport.from(portfolio, quotes, "APTrade", nowEpochSeconds()).renderJson()
 
+    /** Merges per-symbol instead of replacing wholesale: a poll that returns a SUBSET of held
+     *  symbols (e.g. a transient upstream omission) keeps the last-good quote for the symbols
+     *  missing from this tick, rather than dropping them back to an averageCost-implied price. */
     private suspend fun refreshQuotes() {
         val symbols = portfolio.positions.map { it.asset.symbol }
         if (symbols.isEmpty()) { quotes = emptyMap(); return }
         try {
             val fetched = fetchMarketQuotes.execute(symbols)
-            quotes = fetched.associateBy { it.symbol }
+            quotes = quotes + fetched.associateBy { it.symbol }
             _state.update { it.copy(error = null) }
         } catch (e: CancellationException) {
             throw e
@@ -225,6 +276,43 @@ class PortfolioViewModel(
             _state.update { it.copy(isLoadingPerformance = true) }
             val points = fetchPortfolioPerformance.execute(span.timeframe, span.sinceInception)
             _state.update { it.copy(isLoadingPerformance = false, performance = points.map { p -> p.value.amount.doubleValue(false) }) }
+        }
+    }
+
+    /** One-shot per span/benchmark change (mirrors `loadPerformance`'s cadence discipline) —
+     *  NEVER refetched on a poll tick. Rebases the portfolio curve and (when available) the
+     *  benchmark curve to a common 100-basis start so they're directly comparable on the
+     *  overlay chart, and renders the risk metrics to display text (percent fields via
+     *  `formatPercent`; sharpe/beta/alpha as plain 2-decimal text, "—" when null). */
+    private fun loadPerformanceReport() {
+        val span = _state.value.span
+        val benchmark = _state.value.benchmark
+        scope.launch {
+            try {
+                val report = fetchPerformanceReport.execute(span.timeframe, benchmark)
+                val values = report.points.map { it.value.amount.doubleValue(false) }
+                val metrics = MetricTexts(
+                    totalReturn = formatPercent(report.metrics.totalReturn),
+                    annualizedReturn = formatPercent(report.metrics.annualizedReturn),
+                    volatility = formatPercent(report.metrics.volatility),
+                    maxDrawdown = formatPercent(report.metrics.maxDrawdown),
+                    sharpe = plainMetric(report.metrics.sharpe),
+                    beta = plainMetric(report.metrics.beta),
+                    alpha = plainMetric(report.metrics.alpha),
+                )
+                _state.update {
+                    it.copy(
+                        performanceRebased = RiskMetrics.rebase(values),
+                        benchmarkRebased = report.benchmarkCloses?.let { closes -> RiskMetrics.rebase(closes) },
+                        metrics = metrics,
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: QuoteError) {
+                // Portfolio-side history failure (distinct from the benchmark-only swallow
+                // inside FetchPerformanceReport): leave prior report state as last-good.
+            }
         }
     }
 
@@ -244,11 +332,11 @@ class PortfolioViewModel(
                     name = position.asset.name,
                     kindLabel = kindLabel(position.asset.kind),
                     quantityText = position.quantity.toStringExpanded(),
-                    averageCostText = position.averageCost.amountText,
-                    marketValueText = marketValue.amountText,
-                    unrealizedText = unrealized.amountText,
+                    averageCostText = formatMoney(position.averageCost.amountText),
+                    marketValueText = formatMoney(marketValue.amountText),
+                    unrealizedText = signedMoney(unrealized.amountText),
                     unrealizedPositive = quote?.let { unrealized.amount.doubleValue(false) >= 0.0 },
-                    priceText = quote?.price?.amountText,
+                    priceText = quote?.price?.amountText?.let { formatMoney(it) },
                 )
             }
 
@@ -262,7 +350,7 @@ class PortfolioViewModel(
                     sideLabel = sideLabel(txn.side),
                     isBuy = txn.side == TradeSide.Buy,
                     quantityText = txn.quantity.toStringExpanded(),
-                    priceText = txn.price.amountText,
+                    priceText = formatMoney(txn.price.amountText),
                     epochSeconds = txn.epochSeconds,
                 )
             }
@@ -270,14 +358,14 @@ class PortfolioViewModel(
         _state.update {
             it.copy(
                 isLoading = loading,
-                totalValueText = valuation.totalValue.amountText,
-                dayChangeText = valuation.dayChange.amountText,
+                totalValueText = formatMoney(valuation.totalValue.amountText),
+                dayChangeText = signedMoney(valuation.dayChange.amountText),
                 dayChangePositive = if (portfolio.positions.isEmpty()) null else valuation.dayChange.amount.doubleValue(false) >= 0.0,
-                cashText = valuation.cash.amountText,
-                holdingsValueText = valuation.holdingsValue.amountText,
-                unrealizedText = valuation.unrealizedPnL.amountText,
+                cashText = formatMoney(valuation.cash.amountText),
+                holdingsValueText = formatMoney(valuation.holdingsValue.amountText),
+                unrealizedText = signedMoney(valuation.unrealizedPnL.amountText),
                 unrealizedPositive = if (portfolio.positions.isEmpty()) null else valuation.unrealizedPnL.amount.doubleValue(false) >= 0.0,
-                realizedText = realized.amountText,
+                realizedText = signedMoney(realized.amountText),
                 realizedPositive = if (portfolio.transactions.isEmpty()) null else realized.amount.doubleValue(false) >= 0.0,
                 holdings = holdingsUi,
                 allocationByHolding = portfolio.allocationByHolding(quotes),
