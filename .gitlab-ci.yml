@@ -44,24 +44,35 @@ stages:
     - .gradle/
     - ~/.gradle/caches/
 
-# ── Shared before_script for macOS Gradle jobs ──────────────────────────────
-# settings.gradle.kts always includes :androidApp and :shared (which both apply
-# the Android Gradle Plugin). Gradle configures ALL subprojects before running
-# any task, so even an XCFramework-only build requires a valid Android SDK.
-# We install the macOS Android command-line tools and the minimum required SDK
-# components (platforms;android-35) so the AGP can complete configuration.
-# ANDROID_HOME is set to ~/android-sdk to avoid permission issues.
-.macos-android-sdk: &macos-android-sdk
-  - export ANDROID_HOME="${HOME}/android-sdk"
-  - export ANDROID_SDK_ROOT="${HOME}/android-sdk"
-  - mkdir -p "${ANDROID_HOME}/cmdline-tools"
-  - curl -fsSL https://dl.google.com/android/repository/commandlinetools-mac-11076708_latest.zip -o /tmp/cmdline-tools.zip
-  - unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools-extract
-  - mv /tmp/cmdline-tools-extract/cmdline-tools "${ANDROID_HOME}/cmdline-tools/latest"
-  - export PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${PATH}"
-  - yes | sdkmanager --licenses > /dev/null 2>&1 || true
-  - sdkmanager "platforms;android-35"
-  - echo "sdk.dir=${ANDROID_HOME}" > local.properties
+# ── Shared base for macOS Gradle jobs ─────────────────────────────────────────
+# settings.gradle.kts always includes :androidApp and :shared (both apply AGP).
+# Gradle configures ALL subprojects before running any task, so even an
+# XCFramework-only build requires a valid Android SDK.
+#
+# ANDROID_HOME is declared as a CI variable (not via `export`) so it is
+# available in both before_script and script on the macOS instance runner.
+# On instance runners each script section runs in a fresh shell, so `export`
+# in before_script does not carry over into script — CI variables do.
+# The before_script installs the macOS Android command-line tools and
+# platforms;android-35 + build-tools;35.0.0 (both required by AGP 8.x),
+# then writes sdk.dir to local.properties.
+.macos-gradle-base:
+  extends: .macos-base
+  variables:
+    # Declared as CI variables so they persist across before_script and script
+    # on the macOS instance runner (unlike `export` which is shell-local).
+    ANDROID_HOME: /Users/gitlab/android-sdk
+    ANDROID_SDK_ROOT: /Users/gitlab/android-sdk
+  before_script:
+    - mkdir -p "${ANDROID_HOME}/cmdline-tools"
+    - curl -fsSL https://dl.google.com/android/repository/commandlinetools-mac-11076708_latest.zip -o /tmp/cmdline-tools.zip
+    - unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools-extract
+    - mv /tmp/cmdline-tools-extract/cmdline-tools "${ANDROID_HOME}/cmdline-tools/latest"
+    - export PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${PATH}"
+    - yes | sdkmanager --licenses > /dev/null 2>&1 || true
+    # AGP 8.x requires both platforms and build-tools to complete configuration.
+    - sdkmanager "platforms;android-35" "build-tools;35.0.0"
+    - echo "sdk.dir=${ANDROID_HOME}" > local.properties
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STAGE: test
@@ -73,13 +84,8 @@ stages:
 # swift build fails if the framework is absent.
 # Runs on every branch so swift-test always has the artifact.
 kmp-xcframework-test:
-  extends: .macos-base
+  extends: .macos-gradle-base
   stage: test
-  before_script:
-    # Install the minimum Android SDK so the AGP can configure :shared and
-    # :androidApp during Gradle's project configuration phase.
-    # See .macos-android-sdk anchor comment above for full explanation.
-    - *macos-android-sdk
   cache:
     <<: *gradle-cache
   script:
@@ -214,13 +220,8 @@ android-unit-test:
 # Only runs on main to avoid the cost on every branch push. The artifact is
 # kept for 7 days so it can be downloaded by downstream jobs or developers.
 kmp-xcframework:
-  extends: .macos-base
+  extends: .macos-gradle-base
   stage: build
-  before_script:
-    # Install the minimum Android SDK so the AGP can configure :shared and
-    # :androidApp during Gradle's project configuration phase.
-    # See .macos-android-sdk anchor comment above for full explanation.
-    - *macos-android-sdk
   cache:
     key:
       files:
