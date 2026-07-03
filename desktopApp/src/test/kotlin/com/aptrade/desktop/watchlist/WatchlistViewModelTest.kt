@@ -34,6 +34,13 @@ private val defaults = listOf(
     WatchlistEntry("BTC-USD", "Bitcoin USD", AssetKind.Crypto),
 )
 
+private fun assertDoubleListEquals(expected: List<Double>, actual: List<Double>, tolerance: Double = 1e-9) {
+    assertEquals(expected.size, actual.size)
+    for (i in expected.indices) {
+        assertEquals(expected[i], actual[i], tolerance)
+    }
+}
+
 // .25 cents: Money.amountText drops trailing zeros (known shared-core debt); display padding is splitPrice's job
 private fun quote(symbol: String, price: String, change: Double) =
     Quote(symbol, Money.usd(price), Money.usd(price), change)
@@ -183,5 +190,71 @@ class WatchlistViewModelTest {
         vm.start(); runCurrent()
         vm.onSelect("AAPL")
         assertEquals("AAPL", vm.state.value.selectedSymbol)
+    }
+
+    @Test
+    fun averageChangeIsMeanAcrossAllKinds() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols ->
+            symbols.map { quote(it, "100.25", when (it) { "AAPL" -> 2.0; "SPY" -> -1.0; else -> 5.0 }) }
+        }
+        val vm = vm(repo, InMemoryStore(), backgroundScope)
+        vm.start(); runCurrent()
+        assertEquals(2.0, vm.state.value.averageChange)   // (2 - 1 + 5) / 3
+    }
+
+    @Test
+    fun averageChangeIsNullWithoutQuotes() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { throw QuoteError.Network("down") }
+        val vm = vm(repo, InMemoryStore(), backgroundScope)
+        vm.start(); runCurrent()
+        assertNull(vm.state.value.averageChange)
+    }
+
+    @Test
+    fun averageSparkNormalizesEachSeriesToPercentThenAverages() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.25", 1.0) } }
+        repo.historyImpl = { symbol, _ ->
+            when (symbol) {
+                "AAPL" -> listOf(PricePoint(1, Money.usd("100.00")), PricePoint(2, Money.usd("110.00")))  // +10%
+                "SPY" -> listOf(PricePoint(1, Money.usd("200.00")), PricePoint(2, Money.usd("210.00")))   // +5%
+                else -> emptyList()
+            }
+        }
+        val vm = vm(repo, InMemoryStore(), backgroundScope)
+        vm.start(); runCurrent()
+        val spark = vm.state.value.averageSpark
+        assertEquals(2, spark.size)
+        assertEquals(0.0, spark[0], 1e-9)
+        assertEquals(7.5, spark[1], 1e-6)   // mean of +10% and +5%
+    }
+
+    @Test
+    fun averageSparkToleratesLengthMismatch() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.25", 1.0) } }
+        repo.historyImpl = { symbol, _ ->
+            when (symbol) {
+                "AAPL" -> listOf(PricePoint(1, Money.usd("100.00")), PricePoint(2, Money.usd("110.00")),
+                                 PricePoint(3, Money.usd("121.00")))                                       // 0, +10, +21
+                "SPY" -> listOf(PricePoint(1, Money.usd("200.00")), PricePoint(2, Money.usd("220.00")))   // 0, +10
+                else -> emptyList()
+            }
+        }
+        val vm = vm(repo, InMemoryStore(), backgroundScope)
+        vm.start(); runCurrent()
+        assertDoubleListEquals(listOf(0.0, 10.0, 21.0), vm.state.value.averageSpark, 1e-9)  // idx2 has only AAPL
+    }
+
+    @Test
+    fun averageSparkEmptyWhenFewerThanTwoPoints() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.25", 1.0) } }
+        repo.historyImpl = { _, _ -> listOf(PricePoint(1, Money.usd("100.25"))) }  // single point each
+        val vm = vm(repo, InMemoryStore(), backgroundScope)
+        vm.start(); runCurrent()
+        assertEquals(emptyList(), vm.state.value.averageSpark)
     }
 }

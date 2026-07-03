@@ -38,6 +38,8 @@ data class WatchlistUiState(
     val decliners: Int = 0,
     val selectedSymbol: String? = null,
     val error: String? = null,
+    val averageChange: Double? = null,        // mean change% across all entries; null when no quotes
+    val averageSpark: List<Double> = emptyList(),  // per-index mean of percent-normalized row sparks
 )
 
 /** Owns the watchlist + 15s polling loop (quotes every tick, sparklines every
@@ -135,6 +137,19 @@ class WatchlistViewModel(
         sparks = updated
     }
 
+    /** Each spark normalized to percent-change-from-first, then averaged per index across
+     *  the series that reach that index. Raw prices can't be averaged across symbols. */
+    private fun averageSpark(): List<Double> {
+        val normalized = entries.mapNotNull { e ->
+            val s = sparks[e.symbol] ?: return@mapNotNull null
+            val first = s.firstOrNull()?.takeIf { it != 0.0 } ?: return@mapNotNull null
+            s.map { (it / first - 1) * 100 }
+        }
+        val maxLen = normalized.maxOfOrNull { it.size } ?: 0
+        if (maxLen < 2) return emptyList()
+        return (0 until maxLen).map { i -> normalized.mapNotNull { it.getOrNull(i) }.average() }
+    }
+
     private fun publish(loading: Boolean) {
         val current = _state.value
         val rows = entries.filter { it.kind == current.kind }.map { e ->
@@ -149,6 +164,8 @@ class WatchlistViewModel(
                 counts = entries.groupingBy { e -> e.kind }.eachCount(),
                 advancers = changes.count { c -> c > 0 },
                 decliners = changes.count { c -> c < 0 },
+                averageChange = changes.takeIf { c -> c.isNotEmpty() }?.average(),
+                averageSpark = averageSpark(),
             )
         }
     }
