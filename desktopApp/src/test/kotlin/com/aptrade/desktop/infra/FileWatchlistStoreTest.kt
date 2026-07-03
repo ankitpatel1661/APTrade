@@ -48,4 +48,17 @@ class FileWatchlistStoreTest {
         assertTrue(file.readText().contains("AAPL"))
         assertEquals(listOf("watchlist.json"), dir.toFile().list()!!.toList())  // temp file was renamed away
     }
+
+    @Test
+    fun unknownKindSkipsThatRowOnly() = runTest {
+        val file = createTempDirectory("aptrade-test").resolve("watchlist.json")
+        file.writeText(
+            """[{"symbol":"AAPL","name":"Apple Inc.","kind":"Stock"},
+                {"symbol":"EURUSD=X","name":"EUR/USD","kind":"Forex"}]""",
+        )
+        assertEquals(
+            listOf(WatchlistEntry("AAPL", "Apple Inc.", AssetKind.Stock)),
+            FileWatchlistStore(file).load(),
+        )
+    }
 }
