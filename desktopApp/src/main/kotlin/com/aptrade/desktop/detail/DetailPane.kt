@@ -49,9 +49,14 @@ import androidx.compose.runtime.collectAsState
 
 /** Full-window asset detail. A fresh `DetailViewModel` (with its own single-thread
  *  scope) is built per `symbol` so a stale load dies with its symbol. A 48dp back bar
- *  sits above the existing `DetailContent`. */
+ *  sits above the existing `DetailContent`. `onBuy` (asset + live price text) opens the
+ *  paper-trade dialog — the macOS-parity entry point for buying an asset not yet held. */
 @Composable
-fun DetailScreen(symbol: String, onBack: () -> Unit) {
+fun DetailScreen(
+    symbol: String,
+    onBack: () -> Unit,
+    onBuy: ((com.aptrade.shared.domain.Asset, String?) -> Unit)? = null,
+) {
     val graph: AppGraph = LocalAppGraph.current
     val scope = remember(symbol) { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
     val vm = remember(symbol) {
@@ -91,8 +96,18 @@ fun DetailScreen(symbol: String, onBack: () -> Unit) {
             onTimeframeChange = vm::onTimeframeChange,
             onModeChange = vm::onModeChange,
             onRetry = vm::retryChart,
+            onBuy = onBuy,
         )
     }
+}
+
+/** Reverses `kindLabel` back to an AssetKind so the detail screen can build an Asset for a
+ *  trade. The mapping is the exact inverse of designkit.kindLabel; Stock is the safe default
+ *  for any unexpected label. */
+private fun assetKindFromLabel(label: String?): com.aptrade.shared.domain.AssetKind = when (label) {
+    "ETF" -> com.aptrade.shared.domain.AssetKind.Etf
+    "Crypto" -> com.aptrade.shared.domain.AssetKind.Crypto
+    else -> com.aptrade.shared.domain.AssetKind.Stock
 }
 
 @Composable
@@ -101,6 +116,7 @@ private fun DetailContent(
     onTimeframeChange: (com.aptrade.shared.domain.Timeframe) -> Unit,
     onModeChange: (ChartMode) -> Unit,
     onRetry: () -> Unit,
+    onBuy: ((com.aptrade.shared.domain.Asset, String?) -> Unit)? = null,
 ) {
     Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -114,6 +130,19 @@ private fun DetailContent(
                 ),
             )
             state.kindLabel?.let { KindChip(it) }
+            if (onBuy != null) {
+                Spacer(Modifier.weight(1f))
+                BuyButton(
+                    onClick = {
+                        val asset = com.aptrade.shared.domain.Asset(
+                            symbol = state.symbol,
+                            name = state.name ?: state.symbol,
+                            kind = assetKindFromLabel(state.kindLabel),
+                        )
+                        onBuy(asset, state.amountText)
+                    },
+                )
+            }
         }
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -149,6 +178,33 @@ private fun DetailContent(
         }
         Spacer(Modifier.height(20.dp))
         StatGrid(state)
+    }
+}
+
+/** Gold paper-trade entry point in the detail header (macOS parity: trades start here). */
+@Composable
+private fun BuyButton(onClick: () -> Unit) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(DK.goldGradient)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onClick() }
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+    ) {
+        Text(
+            "BUY",
+            style = TextStyle(
+                fontFamily = InterFamily,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = DK.bgBottom,
+                letterSpacing = 0.8.sp,
+            ),
+        )
     }
 }
 
