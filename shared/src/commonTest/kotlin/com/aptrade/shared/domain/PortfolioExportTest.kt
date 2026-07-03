@@ -111,4 +111,55 @@ class PortfolioExportTest {
         assertEquals("BTC-USD", first["symbol"]!!.jsonPrimitive.content)
         assertEquals("6000", first["marketValue"]!!.jsonPrimitive.content)
     }
+
+    @Test
+    fun tinyAllocationRenderAsPlainDecimalNotScientificNotation() {
+        // Boundary: allocation of 0.000001 (1 micro-unit) must render as "0.000001", not "1.0E-6"
+        val export = PortfolioExport(
+            generatedAtEpochSeconds = 1_700_000_000L,
+            accountName = "Boundary Test",
+            currencyCode = "USD",
+            totalValue = Money.usd("1000000"),
+            cash = Money.usd("999999"),
+            holdingsValue = Money.usd("1"),
+            dayChange = Money.usd("0"),
+            unrealizedPnL = Money.usd("0"),
+            holdings = listOf(
+                PortfolioExport.Holding(
+                    symbol = "TINY",
+                    name = "Tiny Holding",
+                    kind = "Stock",
+                    quantity = qty("1"),
+                    averageCost = qty("1"),
+                    lastPrice = qty("1"),
+                    marketValue = qty("1"),
+                    costBasis = qty("1"),
+                    unrealizedPnL = qty("0"),
+                    allocation = 0.000001,
+                )
+            ),
+        )
+        val csv = export.renderCsv()
+        assertTrue(csv.contains("0.000001"), "CSV should contain plain decimal '0.000001' for tiny allocation")
+        assertTrue(!csv.contains("E-"), "CSV should not contain scientific notation 'E-'")
+    }
+
+    @Test
+    fun zeroAllocationRendersAsZero() {
+        // Boundary: allocation of 0.0 must render as "0"
+        val export = PortfolioExport(
+            generatedAtEpochSeconds = 1_700_000_000L,
+            accountName = "Zero Test",
+            currencyCode = "USD",
+            totalValue = Money.usd("1000"),
+            cash = Money.usd("1000"),
+            holdingsValue = Money.usd("0"),
+            dayChange = Money.usd("0"),
+            unrealizedPnL = Money.usd("0"),
+            holdings = listOf(),
+        )
+        val csv = export.renderCsv()
+        // Verify zero rendering doesn't introduce artifacts
+        assertTrue(!csv.contains("E-"), "CSV should not contain scientific notation")
+    }
 }

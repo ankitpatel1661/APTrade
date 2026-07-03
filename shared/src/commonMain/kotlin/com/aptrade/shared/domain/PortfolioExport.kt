@@ -115,11 +115,13 @@ data class PortfolioExport(
 // trailing zeroes trimmed (e.g. "0.5", "0.340659"). Fields never contain commas, so no
 // quoting/escaping is required.
 
+/** Fraction (0..1) as a plain decimal string with up to 6 dp, never scientific notation. */
 private fun renderFraction(value: Double): String {
     if (value == 0.0) return "0"
-    val rounded = (kotlin.math.round(value * 1_000_000.0)) / 1_000_000.0
-    val text = rounded.toString()
-    return if (text.contains('.')) text.trimEnd('0').trimEnd('.') else text
+    val micro = kotlin.math.round(value * 1_000_000).toLong()   // fixed-point micro-units
+    val whole = micro / 1_000_000
+    val frac = (micro % 1_000_000).toString().padStart(6, '0').trimEnd('0')
+    return if (frac.isEmpty()) whole.toString() else "$whole.$frac"
 }
 
 /** Renders this export as the stable CSV format documented above. */
