@@ -1,11 +1,13 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # APTrade CI/CD Pipeline
 #
-# Two parallel tracks:
-#   • Swift (macOS runner) — build + test the SwiftPM package (190 XCTest tests)
+# Four parallel tracks:
+#   • Swift (macOS runner) — build + test the SwiftPM package (193 XCTest tests)
 #   • KMP JVM (Linux runner) — test the Kotlin Multiplatform shared module on JVM
+#   • Desktop JVM (Linux runner) — test the Compose Desktop app on JVM
+#   • Android (Linux runner) — run androidApp debug unit tests
 #
-# A third job assembles the Shared.xcframework on macOS, but only on main, since
+# A fifth job assembles the Shared.xcframework on macOS, but only on main, since
 # it is expensive and only needed for integration / release.
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -30,12 +32,24 @@ stages:
     - saas-linux-small-amd64
   image: eclipse-temurin:21-jdk
 
+# ── Shared Gradle cache configuration ─────────────────────────────────────────
+# YAML anchor reused by all three Gradle jobs so the cache definition stays DRY.
+# Keyed on gradle-wrapper.properties so the cache is invalidated when the
+# Gradle version changes.
+.gradle-cache: &gradle-cache
+  key:
+    files:
+      - gradle/wrapper/gradle-wrapper.properties
+  paths:
+    - .gradle/
+    - ~/.gradle/caches/
+
 # ══════════════════════════════════════════════════════════════════════════════
 # STAGE: test
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── Swift: build + test ───────────────────────────────────────────────────────
-# Builds the SwiftPM package and runs all 190 XCTest tests across the four
+# Builds the SwiftPM package and runs all 193 XCTest tests across the four
 # Clean Architecture layers (Domain, Application, Infrastructure, App).
 # Runs on every push and MR so regressions are caught immediately.
 swift-test:
@@ -66,14 +80,56 @@ kmp-jvm-test:
   cache:
     # Key on the Gradle wrapper properties so the cache is invalidated when
     # the Gradle version changes.
-    key:
-      files:
-        - gradle/wrapper/gradle-wrapper.properties
-    paths:
-      - .gradle/
-      - ~/.gradle/caches/
+    <<: *gradle-cache
   script:
     - ./gradlew :shared:jvmTest --no-daemon
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# ── Desktop: JVM unit tests ───────────────────────────────────────────────────
+# Runs the Compose Desktop app's test suite on the JVM target. Covers the
+# ViewModel, store, design-kit math, and infrastructure tests added in the
+# desktopApp module (FormattingTest, SmokeTest, ConfigDirTest,
+# ValueCardMathTest, FileWatchlistStoreTest). These were previously only
+# covered by the GitHub Actions windows-desktop workflow — now also run here
+# on every push and MR so regressions are caught on GitLab CI too.
+desktop-jvm-test:
+  extends: .linux-base
+  stage: test
+  cache:
+    # Shares the same Gradle cache key as kmp-jvm-test since both use the
+    # same Gradle wrapper version.
+    <<: *gradle-cache
+  script:
+    - ./gradlew :desktopApp:test --no-daemon
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# ── Android: debug unit tests ─────────────────────────────────────────────────
+# Runs the androidApp's debug unit tests (ViewModel and domain tests).
+# Uses eclipse-temurin:21-jdk; the before_script writes sdk.dir to
+# local.properties so the Android Gradle plugin resolves the SDK without a
+# local developer machine setup.
+# allow_failure: true because the Android SDK path on the shared runner needs
+# to be confirmed. Remove this flag once the job is verified green.
+android-unit-test:
+  extends: .linux-base
+  stage: test
+  cache:
+    <<: *gradle-cache
+  variables:
+    # Standard Android SDK path on GitLab SaaS Linux runners.
+    ANDROID_HOME: /usr/local/lib/android/sdk
+  before_script:
+    # Write sdk.dir so the Android Gradle plugin finds the SDK without a
+    # local.properties committed to the repo.
+    - echo "sdk.dir=${ANDROID_HOME}" > local.properties
+  script:
+    - ./gradlew :androidApp:testDebugUnitTest --no-daemon
+  # allow_failure: remove once the Android SDK path is confirmed on the runner.
+  allow_failure: true
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH
