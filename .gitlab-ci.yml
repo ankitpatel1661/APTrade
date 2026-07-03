@@ -44,6 +44,18 @@ stages:
     - .gradle/
     - ~/.gradle/caches/
 
+# ── Shared before_script for macOS Gradle jobs ──────────────────────────────
+# The root build.gradle.kts applies the Android Gradle Plugin for :shared and
+# :androidApp. Gradle configures ALL subprojects before executing any task, so
+# even an XCFramework-only build triggers Android SDK resolution.
+# Rather than relying on a pre-installed SDK at a fixed path (which varies
+# across runner images), we create a stub directory and point local.properties
+# at it. The AGP only checks the directory exists during configuration — it
+# does not need actual SDK contents to configure Apple-target tasks.
+.macos-gradle-before: &macos-gradle-before
+  - mkdir -p /tmp/android-sdk-stub
+  - echo "sdk.dir=/tmp/android-sdk-stub" > local.properties
+
 # ══════════════════════════════════════════════════════════════════════════════
 # STAGE: test
 # ══════════════════════════════════════════════════════════════════════════════
@@ -53,21 +65,14 @@ stages:
 # Package.swift declares Shared as a binaryTarget pointing to this path, so
 # swift build fails if the framework is absent.
 # Runs on every branch so swift-test always has the artifact.
-#
-# ANDROID_HOME is set to the pre-installed Android SDK path on GitLab SaaS
-# macOS runners. The root build.gradle.kts applies the Android Gradle Plugin
-# for :shared and :androidApp, so Gradle needs a valid SDK path even when only
-# building the XCFramework target — otherwise it exits with code 25 at the
-# project configuration phase.
 kmp-xcframework-test:
   extends: .macos-base
   stage: test
-  variables:
-    # Android SDK is pre-installed on GitLab SaaS macOS M1 runners at this path.
-    # Required so the Android Gradle Plugin can configure :shared/:androidApp
-    # without failing at project configuration time (Gradle exit code 25).
-    ANDROID_HOME: /Users/gitlab/Library/Android/sdk
-    ANDROID_SDK_ROOT: /Users/gitlab/Library/Android/sdk
+  before_script:
+    # Create a stub Android SDK directory so the Android Gradle Plugin can
+    # complete project configuration without a real SDK install.
+    # See .macos-gradle-before anchor comment above for full explanation.
+    - *macos-gradle-before
   cache:
     <<: *gradle-cache
   script:
@@ -204,12 +209,11 @@ android-unit-test:
 kmp-xcframework:
   extends: .macos-base
   stage: build
-  variables:
-    # Android SDK is pre-installed on GitLab SaaS macOS M1 runners at this path.
-    # Required so the Android Gradle Plugin can configure :shared/:androidApp
-    # without failing at project configuration time (Gradle exit code 25).
-    ANDROID_HOME: /Users/gitlab/Library/Android/sdk
-    ANDROID_SDK_ROOT: /Users/gitlab/Library/Android/sdk
+  before_script:
+    # Create a stub Android SDK directory so the Android Gradle Plugin can
+    # complete project configuration without a real SDK install.
+    # See .macos-gradle-before anchor comment above for full explanation.
+    - *macos-gradle-before
   cache:
     key:
       files:
