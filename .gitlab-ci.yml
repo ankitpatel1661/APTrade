@@ -48,13 +48,43 @@ stages:
 # STAGE: test
 # ══════════════════════════════════════════════════════════════════════════════
 
+# ── KMP: build Shared.xcframework (all branches) ──────────────────────────────
+# Builds the Shared.xcframework so swift-test can consume it via `needs`.
+# Package.swift declares Shared as a binaryTarget pointing to this path, so
+# swift build fails if the framework is absent.
+# Runs on every branch (not just main) so swift-test always has the artifact.
+# The heavier kmp-xcframework job in the build stage still runs on main only
+# for release/integration purposes.
+kmp-xcframework-test:
+  extends: .macos-base
+  stage: test
+  cache:
+    <<: *gradle-cache
+  script:
+    - ./gradlew :shared:assembleSharedXCFramework --no-daemon
+  artifacts:
+    # Pass the XCFramework to swift-test via needs/artifacts.
+    name: "Shared-XCFramework-test-${CI_COMMIT_SHORT_SHA}"
+    paths:
+      - shared/build/XCFrameworks/release/Shared.xcframework
+    expire_in: 1 day
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
 # ── Swift: build + test ───────────────────────────────────────────────────────
 # Builds the SwiftPM package and runs all 193 XCTest tests across the four
 # Clean Architecture layers (Domain, Application, Infrastructure, App).
-# Runs on every push and MR so regressions are caught immediately.
+# needs: kmp-xcframework-test so the Shared.xcframework binary artifact is
+# present before swift build runs (Package.swift binaryTarget requirement).
 swift-test:
   extends: .macos-base
   stage: test
+  needs:
+    # Depend on kmp-xcframework-test to ensure Shared.xcframework exists
+    # before swift build attempts to resolve the binaryTarget in Package.swift.
+    - job: kmp-xcframework-test
+      artifacts: true
   cache:
     # Key on Package.resolved so the cache is invalidated when dependencies change.
     key:
@@ -91,12 +121,17 @@ kmp-jvm-test:
 # Runs the Compose Desktop app's test suite on the JVM target. Covers the
 # ViewModel, store, design-kit math, and infrastructure tests added in the
 # desktopApp module (FormattingTest, SmokeTest, ConfigDirTest,
-# ValueCardMathTest, FileWatchlistStoreTest). These were previously only
-# covered by the GitHub Actions windows-desktop workflow — now also run here
-# on every push and MR so regressions are caught on GitLab CI too.
+# ValueCardMathTest, FileWatchlistStoreTest).
+# image: eclipse-temurin:17-jdk is used instead of 21-jdk because
+# desktopApp/build.gradle.kts sets jvmTarget = JVM_17. Running under JDK 21
+# causes a compileJava(21) vs compileKotlin(17) target mismatch that Gradle
+# rejects at configuration time.
 desktop-jvm-test:
   extends: .linux-base
   stage: test
+  # Override the image from .linux-base: desktopApp targets JVM 17, so we
+  # must compile under JDK 17 to avoid the compileJava/compileKotlin mismatch.
+  image: eclipse-temurin:17-jdk
   cache:
     # Shares the same Gradle cache key as kmp-jvm-test since both use the
     # same Gradle wrapper version.
@@ -109,26 +144,38 @@ desktop-jvm-test:
 
 # ── Android: debug unit tests ─────────────────────────────────────────────────
 # Runs the androidApp's debug unit tests (ViewModel and domain tests).
-# Uses eclipse-temurin:21-jdk; the before_script writes sdk.dir to
-# local.properties so the Android Gradle plugin resolves the SDK without a
-# local developer machine setup.
-# allow_failure: true because the Android SDK path on the shared runner needs
-# to be confirmed. Remove this flag once the job is verified green.
+# The before_script installs the Android SDK build-tools and platform via
+# sdkmanager (bundled in the eclipse-temurin:17-jdk image via the
+# android-sdk-tools layer). sdk.dir is written to local.properties so the
+# Android Gradle plugin resolves the SDK path.
+# image: eclipse-temurin:17-jdk matches the androidApp jvmTarget (JVM_17).
+# allow_failure: true is kept as a safety net while the SDK install is
+# validated. Remove once the job is confirmed green.
 android-unit-test:
   extends: .linux-base
   stage: test
+  # Override image to JDK 17 to match androidApp's jvmTarget = JVM_17.
+  image: eclipse-temurin:17-jdk
   cache:
     <<: *gradle-cache
   variables:
-    # Standard Android SDK path on GitLab SaaS Linux runners.
-    ANDROID_HOME: /usr/local/lib/android/sdk
+    ANDROID_HOME: /root/android-sdk
+    ANDROID_SDK_ROOT: /root/android-sdk
   before_script:
-    # Write sdk.dir so the Android Gradle plugin finds the SDK without a
-    # local.properties committed to the repo.
+    # Install Android command-line tools, then use sdkmanager to install the
+    # platform and build-tools required by androidApp (compileSdk 35).
+    - apt-get update -qq && apt-get install -y -qq wget unzip
+    - mkdir -p ${ANDROID_HOME}/cmdline-tools
+    - wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/cmdline-tools.zip
+    - unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools-extract
+    - mv /tmp/cmdline-tools-extract/cmdline-tools ${ANDROID_HOME}/cmdline-tools/latest
+    - export PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${PATH}"
+    - yes | sdkmanager --licenses > /dev/null 2>&1 || true
+    - sdkmanager "platforms;android-35" "build-tools;35.0.0"
     - echo "sdk.dir=${ANDROID_HOME}" > local.properties
   script:
     - ./gradlew :androidApp:testDebugUnitTest --no-daemon
-  # allow_failure: remove once the Android SDK path is confirmed on the runner.
+  # allow_failure: remove once the Android SDK install is confirmed green.
   allow_failure: true
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
