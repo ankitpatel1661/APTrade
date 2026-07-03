@@ -195,6 +195,17 @@ runs `:desktopApp:test` and `:shared:jvmTest` on `windows-latest`, then packages
 `.msi` installer via `:desktopApp:packageMsi` and uploads it as the `APTrade-msi` build
 artifact — the Windows build proof for this increment.
 
+A **Portfolio tab** brings paper trading to the desktop app on the same shared portfolio
+core as macOS: a summary header (value, day change, total return) with CSV/JSON export
+and a reset action; an expandable account-value chart across the `1D · 1W · 1M · 1Y · MAX`
+spans; a **Holdings / Allocation / Activity** switcher — holdings sorted by market value with
+per-row **BUY/SELL** and unrealized P&L, allocation as per-holding and by-asset-class
+percentage bars, and an activity ledger of every buy/sell (symbol, quantity, price — no
+dates yet). Buying a symbol not yet held starts from the **BUY** button on its asset detail
+screen. The `PortfolioViewModel`, trade dialog, and file-backed `PortfolioStore` all live on
+the `:shared` Kotlin core, so the same domain math and persistence format will carry to the
+macOS app in a later increment.
+
 ## Project Structure
 
 ```
@@ -216,12 +227,17 @@ APTrade Lite is the foundation. Planned toward the full platform:
 - **VWAP** indicator (requires adding volume to the OHLC pipeline)
 - Market-holiday calendar for the scheduler
 - Real authentication (Apple Sign In), biometric gating, and cloud sync (Supabase)
-- **Windows parity, continued** — the `:desktopApp` Compose app (increment 6a) covers
-  Watchlist + detail + palette only. Still to come: **6b** portfolio tab (paper trading,
-  holdings, PnL, portfolio charts, export), **6c** News tab, **6d** alerts, account panel,
-  settings, and light theme.
+- **Windows parity, continued** — the `:desktopApp` Compose app now covers Watchlist +
+  detail + palette (6a) and a Portfolio tab (6b.1). Still to come: **6b.2** performance/risk
+  intelligence on desktop, **6b.3** macOS adoption of the shared portfolio core, **6b.4** an
+  Android portfolio screen, then **6c** News tab and **6d** alerts, account panel, settings,
+  and light theme.
 
-Recently shipped: a **Windows Compose Desktop app** (`:desktopApp`, increment 6a) with a live
+Recently shipped: a desktop **Portfolio tab** (`:desktopApp`, increment 6b.1) — paper
+trading, holdings with per-row buy/sell, allocation bars, an activity ledger, an
+account-value chart, and CSV/JSON export, on a new shared Kotlin portfolio core
+(`PortfolioStore`, buy/sell/reset/performance use cases) also consumed by a file-backed
+persistence adapter; a **Windows Compose Desktop app** (`:desktopApp`, increment 6a) with a live
 Watchlist tab, asset detail (charts + stat tiles), and a Ctrl+K palette on the shared Kotlin
 core, plus a `windows-desktop` CI workflow producing a Windows `.msi`; a Finnhub-backed **News** tab (company/market/crypto headlines, filter, bookmarks) plus per-symbol company news on the asset view; a ⌘K **command palette**; **risk & performance** analytics (TWR/CAGR, volatility, drawdown, Sharpe/Beta/Alpha, benchmark overlay, concentration warnings); an in-app **language switcher** (English/Deutsch/Italiano/Español); candlestick charts, SMA/EMA/RSI/MACD/Bollinger indicators, realized P&L and a transactions ledger, allocation breakdown, historical P&L reconstruction, and PDF/Excel/Word portfolio export.
 
