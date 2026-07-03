@@ -33,7 +33,7 @@ stages:
   image: eclipse-temurin:21-jdk
 
 # ── Shared Gradle cache configuration ─────────────────────────────────────────
-# YAML anchor reused by all three Gradle jobs so the cache definition stays DRY.
+# YAML anchor reused by all Gradle jobs so the cache definition stays DRY.
 # Keyed on gradle-wrapper.properties so the cache is invalidated when the
 # Gradle version changes.
 .gradle-cache: &gradle-cache
@@ -52,12 +52,22 @@ stages:
 # Builds the Shared.xcframework so swift-test can consume it via `needs`.
 # Package.swift declares Shared as a binaryTarget pointing to this path, so
 # swift build fails if the framework is absent.
-# Runs on every branch (not just main) so swift-test always has the artifact.
-# The heavier kmp-xcframework job in the build stage still runs on main only
-# for release/integration purposes.
+# Runs on every branch so swift-test always has the artifact.
+#
+# ANDROID_HOME is set to the pre-installed Android SDK path on GitLab SaaS
+# macOS runners. The root build.gradle.kts applies the Android Gradle Plugin
+# for :shared and :androidApp, so Gradle needs a valid SDK path even when only
+# building the XCFramework target — otherwise it exits with code 25 at the
+# project configuration phase.
 kmp-xcframework-test:
   extends: .macos-base
   stage: test
+  variables:
+    # Android SDK is pre-installed on GitLab SaaS macOS M1 runners at this path.
+    # Required so the Android Gradle Plugin can configure :shared/:androidApp
+    # without failing at project configuration time (Gradle exit code 25).
+    ANDROID_HOME: /Users/gitlab/Library/Android/sdk
+    ANDROID_SDK_ROOT: /Users/gitlab/Library/Android/sdk
   cache:
     <<: *gradle-cache
   script:
@@ -145,9 +155,8 @@ desktop-jvm-test:
 # ── Android: debug unit tests ─────────────────────────────────────────────────
 # Runs the androidApp's debug unit tests (ViewModel and domain tests).
 # The before_script installs the Android SDK build-tools and platform via
-# sdkmanager (bundled in the eclipse-temurin:17-jdk image via the
-# android-sdk-tools layer). sdk.dir is written to local.properties so the
-# Android Gradle plugin resolves the SDK path.
+# sdkmanager. sdk.dir is written to local.properties so the Android Gradle
+# plugin resolves the SDK path.
 # image: eclipse-temurin:17-jdk matches the androidApp jvmTarget (JVM_17).
 # allow_failure: true is kept as a safety net while the SDK install is
 # validated. Remove once the job is confirmed green.
@@ -195,6 +204,12 @@ android-unit-test:
 kmp-xcframework:
   extends: .macos-base
   stage: build
+  variables:
+    # Android SDK is pre-installed on GitLab SaaS macOS M1 runners at this path.
+    # Required so the Android Gradle Plugin can configure :shared/:androidApp
+    # without failing at project configuration time (Gradle exit code 25).
+    ANDROID_HOME: /Users/gitlab/Library/Android/sdk
+    ANDROID_SDK_ROOT: /Users/gitlab/Library/Android/sdk
   cache:
     key:
       files:
