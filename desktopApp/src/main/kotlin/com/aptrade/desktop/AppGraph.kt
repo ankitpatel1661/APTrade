@@ -20,7 +20,7 @@ import com.aptrade.shared.infrastructure.YahooMarketDataRepository
  *  NOT an `object` (increment-5 review: don't copy the Android singleton to desktop).
  *  Exactly ONE YahooMarketDataRepository (one Ktor client) exists per process. */
 class AppGraph(
-    repository: MarketDataRepository = YahooMarketDataRepository(),
+    private val repository: MarketDataRepository = YahooMarketDataRepository(),
     store: WatchlistStore = FileWatchlistStore(resolveConfigDir().resolve("watchlist.json")),
 ) {
     val fetchMarketQuotes = FetchMarketQuotes(repository)
@@ -38,4 +38,8 @@ class AppGraph(
     val fetchWatchlist = FetchWatchlist(store, defaultEntries)
     val addToWatchlist = AddToWatchlist(store)
     val removeFromWatchlist = RemoveFromWatchlist(store)
+
+    // Only the production Yahoo repository owns a closeable Ktor client; test doubles
+    // passed via the constructor typically aren't AutoCloseable and are safely skipped.
+    fun close() { (repository as? AutoCloseable)?.close() }
 }

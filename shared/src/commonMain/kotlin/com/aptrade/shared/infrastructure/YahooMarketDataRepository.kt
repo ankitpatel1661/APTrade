@@ -20,10 +20,12 @@ import kotlinx.coroutines.coroutineScope
 
 class YahooMarketDataRepository internal constructor(
     private val client: HttpClient,
-) : MarketDataRepository {
+) : MarketDataRepository, AutoCloseable {
 
     // Production / Swift-harness entry point: builds the default CIO client.
     constructor() : this(defaultYahooHttpClient())
+
+    override fun close() { client.close() }
 
     override suspend fun quotes(symbols: List<String>): List<Quote> = coroutineScope {
         symbols.map { symbol ->

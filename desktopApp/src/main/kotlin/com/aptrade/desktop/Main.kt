@@ -85,7 +85,7 @@ fun main() = application {
             window.minimumSize = Dimension(1000, 680)
             watchlistViewModel.start()
         }
-        DisposableEffect(Unit) { onDispose { appScope.cancel() } }
+        DisposableEffect(Unit) { onDispose { appScope.cancel(); graph.close() } }
 
         CompositionLocalProvider(LocalAppGraph provides graph) {
             APTradeDesktopTheme {
