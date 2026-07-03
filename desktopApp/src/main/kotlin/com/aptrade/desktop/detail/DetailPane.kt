@@ -47,31 +47,16 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import androidx.compose.runtime.collectAsState
 
-/** Right-hand asset detail. A fresh `DetailViewModel` (with its own single-thread
- *  scope) is built per selection so a stale load dies with its symbol. Empty when
- *  nothing is selected. */
+/** Full-window asset detail. A fresh `DetailViewModel` (with its own single-thread
+ *  scope) is built per `symbol` so a stale load dies with its symbol. A 48dp back bar
+ *  sits above the existing `DetailContent`. */
 @Composable
-fun DetailPane(selectedSymbol: String?) {
-    if (selectedSymbol == null) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                "Select a symbol",
-                style = TextStyle(
-                    fontFamily = InterFamily,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = DK.textTertiary,
-                ),
-            )
-        }
-        return
-    }
-
+fun DetailScreen(symbol: String, onBack: () -> Unit) {
     val graph: AppGraph = LocalAppGraph.current
-    val scope = remember(selectedSymbol) { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
-    val vm = remember(selectedSymbol) {
+    val scope = remember(symbol) { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
+    val vm = remember(symbol) {
         DetailViewModel(
-            symbol = selectedSymbol,
+            symbol = symbol,
             fetchProfile = graph.fetchProfile,
             fetchMarketQuotes = graph.fetchMarketQuotes,
             fetchHistory = graph.fetchHistory,
@@ -79,15 +64,35 @@ fun DetailPane(selectedSymbol: String?) {
             scope = scope,
         )
     }
-    DisposableEffect(selectedSymbol) { onDispose { scope.cancel() } }
+    DisposableEffect(symbol) { onDispose { scope.cancel() } }
 
     val state by vm.state.collectAsState()
-    DetailContent(
-        state = state,
-        onTimeframeChange = vm::onTimeframeChange,
-        onModeChange = vm::onModeChange,
-        onRetry = vm::retryChart,
-    )
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "‹  Back",
+                style = TextStyle(
+                    fontFamily = InterFamily,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = DK.textSecondary,
+                ),
+                modifier = Modifier.clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { onBack() },
+            )
+        }
+        DetailContent(
+            state = state,
+            onTimeframeChange = vm::onTimeframeChange,
+            onModeChange = vm::onModeChange,
+            onRetry = vm::retryChart,
+        )
+    }
 }
 
 @Composable

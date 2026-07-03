@@ -23,6 +23,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.aptrade.desktop.designkit.APTradeDesktopTheme
+import com.aptrade.desktop.detail.DetailScreen
 import com.aptrade.desktop.search.PaletteOverlay
 import com.aptrade.desktop.search.SearchViewModel
 import com.aptrade.desktop.ui.AppShell
@@ -60,6 +61,9 @@ fun main() = application {
     val addFieldViewModel = remember { SearchViewModel(graph.fetchSearch, appScope) }
 
     var paletteOpen by remember { mutableStateOf(false) }
+    // Navigation state for the Watchlist tab: the open detail symbol (null = list).
+    // Hoisted here so window-level Esc can pop it.
+    var openSymbol by remember { mutableStateOf<String?>(null) }
     val windowState = rememberWindowState(width = 1280.dp, height = 800.dp)
 
     fun closePalette() {
@@ -73,11 +77,21 @@ fun main() = application {
         title = "APTrade",
         onPreviewKeyEvent = { event ->
             val isK = event.key == Key.K && (event.isMetaPressed || event.isCtrlPressed)
-            if (event.type == KeyEventType.KeyDown && isK) {
-                paletteOpen = true
-                true
-            } else {
-                false
+            when {
+                event.type != KeyEventType.KeyDown -> false
+                isK -> {
+                    paletteOpen = true
+                    true
+                }
+                event.key == Key.Escape && paletteOpen -> {
+                    closePalette()
+                    true
+                }
+                event.key == Key.Escape && openSymbol != null -> {
+                    openSymbol = null
+                    true
+                }
+                else -> false
             }
         },
     ) {
@@ -96,6 +110,9 @@ fun main() = application {
                     paletteOpen = paletteOpen,
                     onOpenPalette = { paletteOpen = true },
                     onClosePalette = { closePalette() },
+                    openSymbol = openSymbol,
+                    onOpenDetail = { symbol -> openSymbol = symbol },
+                    onBack = { openSymbol = null },
                 )
             }
         }
@@ -110,6 +127,9 @@ private fun AppRoot(
     paletteOpen: Boolean,
     onOpenPalette: () -> Unit,
     onClosePalette: () -> Unit,
+    openSymbol: String?,
+    onOpenDetail: (String) -> Unit,
+    onBack: () -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(AppTab.Watchlist) }
     val watchState by watchlistViewModel.state.collectAsState()
@@ -123,17 +143,25 @@ private fun AppRoot(
             onOpenPalette = onOpenPalette,
         ) {
             when (selectedTab) {
-                AppTab.Watchlist -> WatchlistPane(
-                    state = watchState,
-                    onKindSelect = watchlistViewModel::onKindSelect,
-                    onSelect = watchlistViewModel::onSelect,
-                    onAdd = watchlistViewModel::onAdd,
-                    onRemove = watchlistViewModel::onRemove,
-                    suggestQuery = addFieldState.query,
-                    suggestResults = addFieldState.results,
-                    onSuggestQueryChange = addFieldViewModel::onQueryChange,
-                    onSuggestReset = addFieldViewModel::reset,
-                )
+                AppTab.Watchlist ->
+                    if (openSymbol != null) {
+                        DetailScreen(symbol = openSymbol, onBack = onBack)
+                    } else {
+                        WatchlistPane(
+                            state = watchState,
+                            onKindSelect = watchlistViewModel::onKindSelect,
+                            onSelect = { symbol ->
+                                watchlistViewModel.onSelect(symbol)
+                                onOpenDetail(symbol)
+                            },
+                            onAdd = watchlistViewModel::onAdd,
+                            onRemove = watchlistViewModel::onRemove,
+                            suggestQuery = addFieldState.query,
+                            suggestResults = addFieldState.results,
+                            onSuggestQueryChange = addFieldViewModel::onQueryChange,
+                            onSuggestReset = addFieldViewModel::reset,
+                        )
+                    }
                 AppTab.Portfolio -> PlaceholderPane("Portfolio — coming soon")
                 AppTab.News -> PlaceholderPane("News — coming soon")
             }
@@ -145,6 +173,7 @@ private fun AppRoot(
                 onAdd = { asset ->
                     watchlistViewModel.onAdd(WatchlistEntry(asset.symbol, asset.name, asset.kind))
                     watchlistViewModel.onSelect(asset.symbol)
+                    onOpenDetail(asset.symbol)
                 },
                 onClose = onClosePalette,
             )

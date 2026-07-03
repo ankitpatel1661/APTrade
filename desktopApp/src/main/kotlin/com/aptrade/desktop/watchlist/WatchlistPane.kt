@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -54,14 +53,22 @@ import com.aptrade.desktop.designkit.MagnifierIcon
 import com.aptrade.desktop.designkit.PulseBar
 import com.aptrade.desktop.designkit.Sparkline
 import com.aptrade.desktop.designkit.SuperscriptPrice
+import com.aptrade.desktop.designkit.ExpandedValueCard
+import com.aptrade.desktop.designkit.formatPercent
 import com.aptrade.desktop.designkit.kindLabel
-import com.aptrade.desktop.detail.DetailPane
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.WatchlistEntry
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 
-/** Watchlist tab: master (left, 0.42) / detail (right, 0.58) split, 1dp hairline between.
- *  All state comes from `WatchlistViewModel`; the search-suggestions VM is passed in so
- *  the pane never owns fetch logic. */
+/** Watchlist tab: a full-width single column. A macOS-style header (average day-change
+ *  figure + clickable sparkline that toggles an expandable value card, over a PulseBar)
+ *  sits above the KindToggle/LiveBadge row, add-field, and list. All state comes from
+ *  `WatchlistViewModel`; the search-suggestions VM is passed in so the pane never owns
+ *  fetch logic. Row selection (`onSelect`) opens the full-window detail. */
 @Composable
 fun WatchlistPane(
     state: WatchlistUiState,
@@ -74,24 +81,79 @@ fun WatchlistPane(
     onSuggestQueryChange: (String) -> Unit,
     onSuggestReset: () -> Unit,
 ) {
-    Row(Modifier.fillMaxSize()) {
-        Box(Modifier.weight(0.42f).fillMaxHeight()) {
-            MasterPane(
-                state = state,
-                onKindSelect = onKindSelect,
-                onSelect = onSelect,
-                onAdd = onAdd,
-                onRemove = onRemove,
-                suggestQuery = suggestQuery,
-                suggestResults = suggestResults,
-                onSuggestQueryChange = onSuggestQueryChange,
-                onSuggestReset = onSuggestReset,
+    var chartExpanded by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
+            Spacer(Modifier.height(4.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    formatPercent(state.averageChange),
+                    style = TextStyle(
+                        fontFamily = InterFamily,
+                        fontSize = 34.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = DK.changeColor(state.averageChange),
+                        fontFeatureSettings = "tnum",
+                    ),
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "Avg day change",
+                    style = TextStyle(
+                        fontFamily = InterFamily,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = DK.textSecondary,
+                    ),
+                )
+                Spacer(Modifier.weight(1f))
+                if (state.averageSpark.size > 1) {
+                    Sparkline(
+                        values = state.averageSpark,
+                        color = DK.changeColor(state.averageChange),
+                        modifier = Modifier
+                            .size(width = 140.dp, height = 36.dp)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) { chartExpanded = !chartExpanded },
+                    )
+                }
+            }
+            AnimatedVisibility(
+                visible = chartExpanded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut(),
+            ) {
+                Box(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+                    ExpandedValueCard(
+                        title = "Avg day change",
+                        values = state.averageSpark,
+                        onClose = { chartExpanded = false },
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            PulseBar(
+                advancers = state.advancers,
+                decliners = state.decliners,
+                modifier = Modifier.width(180.dp),
             )
         }
-        Box(Modifier.width(1.dp).fillMaxHeight().background(DK.hairline))
-        Box(Modifier.weight(0.58f).fillMaxHeight()) {
-            DetailPane(selectedSymbol = state.selectedSymbol)
-        }
+        MasterPane(
+            state = state,
+            onKindSelect = onKindSelect,
+            onSelect = onSelect,
+            onAdd = onAdd,
+            onRemove = onRemove,
+            suggestQuery = suggestQuery,
+            suggestResults = suggestResults,
+            onSuggestQueryChange = onSuggestQueryChange,
+            onSuggestReset = onSuggestReset,
+        )
     }
 }
 
@@ -108,7 +170,7 @@ private fun MasterPane(
     onSuggestReset: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(14.dp))
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -117,12 +179,6 @@ private fun MasterPane(
             KindToggle(selection = state.kind, counts = state.counts, onSelect = onKindSelect)
             LiveBadge()
         }
-        Spacer(Modifier.height(12.dp))
-        PulseBar(
-            advancers = state.advancers,
-            decliners = state.decliners,
-            modifier = Modifier.fillMaxWidth(),
-        )
         Spacer(Modifier.height(14.dp))
         AddField(
             query = suggestQuery,
