@@ -1,0 +1,183 @@
+package com.aptrade.desktop.designkit
+
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.aptrade.shared.domain.AssetKind
+import com.aptrade.shared.domain.Timeframe
+
+fun timeframeLabel(tf: Timeframe): String = when (tf) {
+    Timeframe.OneDay -> "1D"; Timeframe.OneWeek -> "1W"
+    Timeframe.OneMonth -> "1M"; Timeframe.OneYear -> "1Y"
+}
+
+fun kindLabel(kind: AssetKind): String = when (kind) {
+    AssetKind.Stock -> "Stock"; AssetKind.Etf -> "ETF"; AssetKind.Crypto -> "Crypto"
+}
+
+private fun numericStyle(size: TextUnit, weight: FontWeight, color: Color) = TextStyle(
+    fontFamily = InterFamily, fontSize = size, fontWeight = weight, color = color,
+    fontFeatureSettings = "tnum",
+)
+
+/** The full "AP Trade" lockup PNG (dark-mode champagne original). */
+@Composable
+fun BrandWordmark(height: Dp) {
+    Image(
+        painter = painterResource("brand/AppWordmark.png"),
+        contentDescription = "APTrade",
+        modifier = Modifier.height(height),
+    )
+}
+
+/** Pulsing gold "LIVE" capsule — DesignKit.swift LiveBadge (1.1s ease pulse). */
+@Composable
+fun LiveBadge() {
+    val pulse by rememberInfiniteTransition().animateFloat(
+        initialValue = 1f, targetValue = 0.35f,
+        animationSpec = infiniteRepeatable(tween(1100), RepeatMode.Reverse),
+    )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(DK.gold.copy(alpha = 0.10f))
+            .border(1.dp, DK.gold.copy(alpha = 0.28f), RoundedCornerShape(50))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    ) {
+        Box(Modifier.size(6.dp).alpha(pulse).background(DK.gold, CircleShape))
+        Text("LIVE", style = TextStyle(fontFamily = InterFamily, fontSize = 10.sp,
+            fontWeight = FontWeight.Bold, color = DK.gold, letterSpacing = 1.6.sp))
+    }
+}
+
+/** "$308⁶³" — symbol and cents at half size, raised to the top. */
+@Composable
+fun SuperscriptPrice(amountText: String, size: TextUnit = 34.sp, color: Color = DK.textPrimary) {
+    val parts = splitPrice(amountText)
+    Row(verticalAlignment = Alignment.Top) {
+        Text(parts.symbol, style = numericStyle(size * 0.5f, FontWeight.SemiBold, DK.textSecondary),
+            modifier = Modifier.padding(end = 1.dp))
+        Text(parts.whole, style = numericStyle(size, FontWeight.SemiBold, color))
+        Text(parts.fraction, style = numericStyle(size * 0.5f, FontWeight.SemiBold, color.copy(alpha = 0.85f)),
+            modifier = Modifier.padding(start = 1.dp))
+    }
+}
+
+/** Bordered, faintly tinted percent chip in its own direction color. */
+@Composable
+fun ChangePill(changePercent: Double?) {
+    val color = DK.changeColor(changePercent)
+    Text(
+        formatPercent(changePercent),
+        style = numericStyle(12.sp, FontWeight.SemiBold, color),
+        modifier = Modifier
+            .clip(RoundedCornerShape(7.dp))
+            .background(color.copy(alpha = 0.12f))
+            .border(1.dp, color.copy(alpha = 0.24f), RoundedCornerShape(7.dp))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    )
+}
+
+/** Stocks / ETFs / Crypto segmented capsule with per-kind counts. */
+@Composable
+fun KindToggle(selection: AssetKind, counts: Map<AssetKind, Int>, onSelect: (AssetKind) -> Unit) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(DK.surface)
+            .border(1.dp, DK.hairline, RoundedCornerShape(50))
+            .padding(4.dp),
+    ) {
+        for (kind in listOf(AssetKind.Stock, AssetKind.Etf, AssetKind.Crypto)) {
+            val selected = kind == selection
+            val count = counts[kind] ?: 0
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(if (selected) DK.surfaceHi else Color.Transparent)
+                    .then(if (selected) Modifier.border(1.dp, DK.gold.copy(alpha = 0.40f), RoundedCornerShape(50)) else Modifier)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onSelect(kind) }
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    when (kind) { AssetKind.Stock -> "Stocks"; AssetKind.Etf -> "ETFs"; AssetKind.Crypto -> "Crypto" },
+                    style = TextStyle(fontFamily = InterFamily, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        color = if (selected) DK.textPrimary else DK.textSecondary),
+                )
+                if (count > 0) Text("$count", style = numericStyle(11.sp, FontWeight.SemiBold,
+                    if (selected) DK.gold else DK.textTertiary))
+            }
+        }
+    }
+}
+
+/** Underline-selected 1D / 1W / 1M / 1Y row. */
+@Composable
+fun TimeframeBar(selection: Timeframe, onSelect: (Timeframe) -> Unit) {
+    Row(Modifier.fillMaxWidth()) {
+        for (tf in Timeframe.entries) {
+            val selected = tf == selection
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.weight(1f)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onSelect(tf) },
+            ) {
+                Text(timeframeLabel(tf), style = numericStyle(13.sp, FontWeight.SemiBold,
+                    if (selected) DK.gold else DK.textSecondary))
+                Spacer(Modifier.height(6.dp))
+                Box(Modifier.height(2.dp).fillMaxWidth(0.6f).clip(RoundedCornerShape(1.dp))
+                    .background(if (selected) DK.gold else Color.Transparent))
+            }
+        }
+    }
+}
+
+/** One labeled figure in the key-stats grid. */
+@Composable
+fun StatTile(label: String, value: String, valueColor: Color = DK.textPrimary) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label.uppercase(), style = TextStyle(fontFamily = InterFamily, fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold, color = DK.textTertiary, letterSpacing = 1.sp))
+        Text(value, style = numericStyle(16.sp, FontWeight.SemiBold, valueColor))
+    }
+}
+
+/** Thin advancers/decliners split capsule. */
+@Composable
+fun PulseBar(advancers: Int, decliners: Int, modifier: Modifier = Modifier) {
+    val total = (advancers + decliners).coerceAtLeast(1)
+    Row(modifier.height(4.dp).clip(RoundedCornerShape(50))) {
+        Box(Modifier.weight(advancers.toFloat().coerceAtLeast(0.0001f)).fillMaxHeight().background(DK.up))
+        Box(Modifier.weight((total - advancers).toFloat().coerceAtLeast(0.0001f)).fillMaxHeight().background(DK.down))
+    }
+}
