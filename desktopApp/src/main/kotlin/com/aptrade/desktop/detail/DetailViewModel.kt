@@ -31,6 +31,9 @@ data class DetailUiState(
     val mode: ChartMode = ChartMode.Line,
     val lineValues: List<Double> = emptyList(),
     val candles: List<ChartCandle> = emptyList(),
+    /** True while any indicator chip is toggled on. Drives the candle fetch in Line mode
+     *  (indicators need OHLCV even when the price chart is drawn from line history). */
+    val indicatorsActive: Boolean = false,
     val isLoadingChart: Boolean = true,
     val chartError: String? = null,
 )
@@ -88,6 +91,19 @@ class DetailViewModel(
         loadChart()
     }
 
+    /** The indicator chips are local to the composable; it reports here whether any is on so
+     *  the VM can fetch candles in Line mode (indicator math needs OHLCV). Only reloads when
+     *  the flag actually flips, and never when Candles mode already has the bars in hand. */
+    fun onIndicatorsActiveChange(active: Boolean) {
+        if (_state.value.indicatorsActive == active) return
+        _state.update { it.copy(indicatorsActive = active) }
+        // Candles mode already fetches bars; Line mode only needs a (re)load when we now
+        // require candles and don't yet have them for the current selection.
+        if (_state.value.mode == ChartMode.Line && active && _state.value.candles.isEmpty()) {
+            loadChart()
+        }
+    }
+
     fun retryChart() = loadChart()
 
     private fun loadChart() {
@@ -95,23 +111,32 @@ class DetailViewModel(
         // was triggered for, even if state mutates before or while it runs.
         val timeframe = _state.value.timeframe
         val mode = _state.value.mode
+        val needsCandles = mode == ChartMode.Candles || _state.value.indicatorsActive
         chartJob?.cancel()
         chartJob = scope.launch {
             _state.update { it.copy(isLoadingChart = true, chartError = null) }
             try {
-                when (mode) {
-                    ChartMode.Line -> {
-                        val points = fetchHistory.execute(symbol, timeframe)
-                        _state.update { it.copy(isLoadingChart = false,
-                            lineValues = points.map { p -> p.close.amount.doubleValue(false) }) }
+                // In Line mode the price chart is drawn from history points; candles are
+                // fetched additionally (same use case, no second data path) only to seed
+                // indicator math when a chip is on.
+                val lineValues = if (mode == ChartMode.Line) {
+                    fetchHistory.execute(symbol, timeframe).map { p -> p.close.amount.doubleValue(false) }
+                } else {
+                    _state.value.lineValues
+                }
+                val candles = if (needsCandles) {
+                    fetchCandles.execute(symbol, timeframe).map { c ->
+                        ChartCandle(
+                            c.open.amount.doubleValue(false), c.high.amount.doubleValue(false),
+                            c.low.amount.doubleValue(false), c.close.amount.doubleValue(false),
+                            c.volume,
+                        )
                     }
-                    ChartMode.Candles -> {
-                        val bars = fetchCandles.execute(symbol, timeframe)
-                        _state.update { it.copy(isLoadingChart = false,
-                            candles = bars.map { c -> ChartCandle(
-                                c.open.amount.doubleValue(false), c.high.amount.doubleValue(false),
-                                c.low.amount.doubleValue(false), c.close.amount.doubleValue(false)) }) }
-                    }
+                } else {
+                    _state.value.candles
+                }
+                _state.update {
+                    it.copy(isLoadingChart = false, lineValues = lineValues, candles = candles)
                 }
             } catch (e: CancellationException) {
                 throw e

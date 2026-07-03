@@ -13,7 +13,15 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 
-data class ChartCandle(val open: Double, val high: Double, val low: Double, val close: Double)
+data class ChartCandle(
+    val open: Double,
+    val high: Double,
+    val low: Double,
+    val close: Double,
+    /** 0.0 when the source doesn't report volume. Consumed by the VWAP overlay; the
+     *  CandleChart itself ignores it. */
+    val volume: Double = 0.0,
+)
 
 /** Minimal intraday trace with soft gradient fill — Sparkline.swift, dark-mode tuning. */
 @Composable

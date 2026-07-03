@@ -1,0 +1,304 @@
+package com.aptrade.desktop.detail
+
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.background
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.material3.Text
+import com.aptrade.desktop.designkit.ChartCandle
+import com.aptrade.desktop.designkit.DK
+import com.aptrade.desktop.designkit.InterFamily
+import com.aptrade.shared.domain.TechnicalIndicators
+
+/** The six chart indicators. Overlays draw on the price chart; RSI/MACD get their own pane.
+ *  Chip labels and colors are macOS-parity (AssetDetailView.swift). */
+enum class Indicator(val label: String, val color: Color, val isOverlay: Boolean) {
+    Sma("SMA 20", DK.gold, true),
+    Ema("EMA 12", Color(0.30f, 0.74f, 0.86f), true),
+    Vwap("VWAP", DK.silver, true),
+    Bollinger("BB 20", Color(0.38f, 0.56f, 0.95f), true),
+    Rsi("RSI 14", Color(0.65f, 0.49f, 0.92f), false),
+    Macd("MACD 12·26·9", Color(0.90f, 0.58f, 0.26f), false);
+}
+
+/** MACD signal line — pink, distinct from the amber MACD line (macOS parity). */
+val MacdSignalColor = Color(0.84f, 0.45f, 0.67f)
+
+private const val SmaPeriod = 20
+private const val EmaPeriod = 12
+private const val RsiPeriod = 14
+private const val BollingerPeriod = 20
+
+/** Precomputed, index-aligned indicator series for a candle set. Nulls are preserved so the
+ *  seed prefix is skipped (never drawn as zero). Built via `remember(candles, selection)`. */
+data class IndicatorSeries(
+    val closes: List<Double>,
+    val sma: List<Double?>,
+    val ema: List<Double?>,
+    val vwap: List<Double?>,
+    val bollinger: List<com.aptrade.shared.domain.BollingerBand?>,
+    val rsi: List<Double?>,
+    val macd: List<com.aptrade.shared.domain.MacdPoint?>,
+)
+
+/** Computes every enabled indicator once. VWAP requires equal-length H/L/C/volume lists —
+ *  guaranteed here since all four come from the same candle list. */
+fun computeIndicators(candles: List<ChartCandle>, selection: Set<Indicator>): IndicatorSeries {
+    val closes = candles.map { it.close }
+    val active = { ind: Indicator -> selection.contains(ind) }
+    return IndicatorSeries(
+        closes = closes,
+        sma = if (active(Indicator.Sma)) TechnicalIndicators.sma(closes, SmaPeriod) else emptyList(),
+        ema = if (active(Indicator.Ema)) TechnicalIndicators.ema(closes, EmaPeriod) else emptyList(),
+        vwap = if (active(Indicator.Vwap)) TechnicalIndicators.vwap(
+            highs = candles.map { it.high },
+            lows = candles.map { it.low },
+            closes = closes,
+            volumes = candles.map { it.volume },
+        ) else emptyList(),
+        bollinger = if (active(Indicator.Bollinger)) TechnicalIndicators.bollingerBands(closes, BollingerPeriod) else emptyList(),
+        rsi = if (active(Indicator.Rsi)) TechnicalIndicators.rsi(closes, RsiPeriod) else emptyList(),
+        macd = if (active(Indicator.Macd)) TechnicalIndicators.macd(closes) else emptyList(),
+    )
+}
+
+/** Price chart (line drawn from candle closes) with the enabled overlays. The y-domain pads
+ *  the close extremes 12% and widens to include Bollinger extremes when BB is on, matching the
+ *  macOS chart's domain logic. All series share one index → x space so overlays align. */
+@Composable
+fun PriceChartWithOverlays(
+    candles: List<ChartCandle>,
+    series: IndicatorSeries,
+    selection: Set<Indicator>,
+    lineColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier) {
+        if (candles.size < 2) return@Canvas
+        val closes = candles.map { it.close }
+        var lo = closes.min()
+        var hi = closes.max()
+        if (selection.contains(Indicator.Bollinger)) {
+            series.bollinger.forEach { band ->
+                if (band != null) { lo = minOf(lo, band.lower); hi = maxOf(hi, band.upper) }
+            }
+        }
+        if (hi <= lo) return@Canvas
+        val padding = (hi - lo) * 0.12
+        val domainLo = lo - padding
+        val domainHi = hi + padding
+        val span = (domainHi - domainLo).takeIf { it > 0.0 } ?: 1.0
+        val stepX = size.width / (candles.size - 1)
+        fun x(i: Int) = i * stepX
+        fun y(v: Double) = size.height - ((v - domainLo) / span * size.height).toFloat()
+
+        // Bollinger band fill first, so it sits BEHIND the price line and band edges.
+        if (selection.contains(Indicator.Bollinger)) {
+            drawBollingerFill(series.bollinger, ::x, ::y)
+        }
+
+        // Price line (from candle closes).
+        val pricePath = Path()
+        candles.forEachIndexed { i, c ->
+            if (i == 0) pricePath.moveTo(x(i), y(c.close)) else pricePath.lineTo(x(i), y(c.close))
+        }
+        drawPath(pricePath, lineColor, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+
+        // Overlay polylines — each skips the null seed prefix.
+        if (selection.contains(Indicator.Sma)) {
+            drawSeries(series.sma, Indicator.Sma.color, 1.5.dp.toPx(), ::x, ::y)
+        }
+        if (selection.contains(Indicator.Ema)) {
+            drawSeries(series.ema, Indicator.Ema.color, 1.5.dp.toPx(), ::x, ::y)
+        }
+        if (selection.contains(Indicator.Vwap)) {
+            drawSeries(series.vwap, Indicator.Vwap.color, 1.5.dp.toPx(), ::x, ::y,
+                dash = floatArrayOf(5f, 3f))
+        }
+        if (selection.contains(Indicator.Bollinger)) {
+            val bbColor = Indicator.Bollinger.color
+            drawSeries(series.bollinger.map { it?.upper }, bbColor, 1.dp.toPx(), ::x, ::y)
+            drawSeries(series.bollinger.map { it?.lower }, bbColor, 1.dp.toPx(), ::x, ::y)
+            drawSeries(series.bollinger.map { it?.middle }, bbColor.copy(alpha = 0.6f), 1.dp.toPx(), ::x, ::y,
+                dash = floatArrayOf(3f, 3f))
+        }
+    }
+}
+
+/** Draws a nullable series as a polyline, breaking the path across null gaps so a leading
+ *  (or interior) null prefix is never rendered as a zero-valued point. */
+private fun DrawScope.drawSeries(
+    values: List<Double?>,
+    color: Color,
+    strokeWidth: Float,
+    x: (Int) -> Float,
+    y: (Double) -> Float,
+    dash: FloatArray? = null,
+) {
+    if (values.isEmpty()) return
+    val effect = dash?.let { PathEffect.dashPathEffect(it, 0f) }
+    var path: Path? = null
+    values.forEachIndexed { i, v ->
+        if (v == null) {
+            path?.let { drawPath(it, color, style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round, pathEffect = effect)) }
+            path = null
+        } else {
+            if (path == null) { path = Path().apply { moveTo(x(i), y(v)) } }
+            else path!!.lineTo(x(i), y(v))
+        }
+    }
+    path?.let { drawPath(it, color, style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round, pathEffect = effect)) }
+}
+
+/** Translucent fill between the Bollinger upper and lower band (band color at 0.07 alpha),
+ *  built as one closed polygon over the run of defined points. */
+private fun DrawScope.drawBollingerFill(
+    bands: List<com.aptrade.shared.domain.BollingerBand?>,
+    x: (Int) -> Float,
+    y: (Double) -> Float,
+) {
+    val fillColor = Indicator.Bollinger.color.copy(alpha = 0.07f)
+    var upper: Path? = null
+    val lowerPoints = ArrayList<Offset>()
+    fun flush() {
+        val u = upper ?: return
+        if (lowerPoints.isNotEmpty()) {
+            for (k in lowerPoints.indices.reversed()) u.lineTo(lowerPoints[k].x, lowerPoints[k].y)
+            u.close()
+            drawPath(u, fillColor)
+        }
+        upper = null
+        lowerPoints.clear()
+    }
+    bands.forEachIndexed { i, band ->
+        if (band == null) { flush() } else {
+            val xi = x(i)
+            if (upper == null) { upper = Path().apply { moveTo(xi, y(band.upper)) } }
+            else upper!!.lineTo(xi, y(band.upper))
+            lowerPoints.add(Offset(xi, y(band.lower)))
+        }
+    }
+    flush()
+}
+
+/** RSI sub-pane: 90dp, y-domain 0..100, dashed 30/70 guides with Oversold/Overbought labels,
+ *  the RSI polyline in its color. No x-axis. */
+@Composable
+fun RsiPane(series: IndicatorSeries, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            "RSI 14",
+            style = TextStyle(fontFamily = InterFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                color = DK.textTertiary, letterSpacing = 1.2.sp),
+        )
+        Box(Modifier.fillMaxWidth().height(90.dp)) {
+            Canvas(Modifier.fillMaxSize()) {
+                val dash = PathEffect.dashPathEffect(floatArrayOf(3f, 3f), 0f)
+                fun y(v: Double) = size.height - (v / 100.0 * size.height).toFloat()
+                drawLine(DK.hairline, Offset(0f, y(70.0)), Offset(size.width, y(70.0)), 1.dp.toPx(), pathEffect = dash)
+                drawLine(DK.hairline, Offset(0f, y(30.0)), Offset(size.width, y(30.0)), 1.dp.toPx(), pathEffect = dash)
+                if (series.rsi.size >= 2) {
+                    val stepX = size.width / (series.rsi.size - 1)
+                    drawSeries(series.rsi, Indicator.Rsi.color, 1.5.dp.toPx(), { it * stepX }, ::y)
+                }
+            }
+            Text(
+                "Overbought",
+                style = TextStyle(fontFamily = InterFamily, fontSize = 9.sp, fontWeight = FontWeight.Medium,
+                    color = DK.textTertiary),
+                modifier = Modifier.align(Alignment.TopStart),
+            )
+            Text(
+                "Oversold",
+                style = TextStyle(fontFamily = InterFamily, fontSize = 9.sp, fontWeight = FontWeight.Medium,
+                    color = DK.textTertiary),
+                modifier = Modifier.align(Alignment.BottomStart),
+            )
+        }
+    }
+}
+
+/** MACD sub-pane: 100dp, zero-centered histogram bars (up/down at 0.5 alpha), MACD + signal
+ *  lines, a small dot legend. No x-axis. */
+@Composable
+fun MacdPane(series: IndicatorSeries, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                "MACD 12·26·9",
+                style = TextStyle(fontFamily = InterFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                    color = DK.textTertiary, letterSpacing = 1.2.sp),
+            )
+            LegendDot(Indicator.Macd.color, "MACD")
+            LegendDot(MacdSignalColor, "Signal")
+        }
+        Box(Modifier.fillMaxWidth().height(100.dp)) {
+            Canvas(Modifier.fillMaxSize()) {
+                val points = series.macd
+                if (points.size < 2) return@Canvas
+                val macdVals = points.map { it?.macd }
+                val signalVals = points.map { it?.signal }
+                val histVals = points.map { it?.histogram }
+                // Shared y-domain across macd line, signal line, and histogram (zero-centered).
+                var lo = 0.0
+                var hi = 0.0
+                (macdVals + signalVals + histVals).forEach { v -> if (v != null) { lo = minOf(lo, v); hi = maxOf(hi, v) } }
+                if (hi <= lo) { hi = 1.0; lo = -1.0 }
+                val pad = (hi - lo) * 0.1
+                val domainLo = lo - pad
+                val domainHi = hi + pad
+                val vspan = (domainHi - domainLo).takeIf { it > 0.0 } ?: 1.0
+                val stepX = size.width / (points.size - 1)
+                fun y(v: Double) = size.height - ((v - domainLo) / vspan * size.height).toFloat()
+                val zeroY = y(0.0)
+                val barW = (stepX * 0.6f).coerceAtLeast(1f)
+                histVals.forEachIndexed { i, v ->
+                    if (v != null) {
+                        val cx = i * stepX
+                        val top = if (v >= 0) y(v) else zeroY
+                        val h = kotlin.math.abs(y(v) - zeroY).coerceAtLeast(1f)
+                        val color = (if (v >= 0) DK.up else DK.down).copy(alpha = 0.5f)
+                        drawRect(color, Offset(cx - barW / 2f, top), Size(barW, h))
+                    }
+                }
+                drawSeries(macdVals, Indicator.Macd.color, 1.5.dp.toPx(), { it * stepX }, ::y)
+                drawSeries(signalVals, MacdSignalColor, 1.5.dp.toPx(), { it * stepX }, ::y)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LegendDot(color: Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Box(Modifier.size(6.dp).background(color, CircleShape))
+        Text(
+            label,
+            style = TextStyle(fontFamily = InterFamily, fontSize = 9.sp, fontWeight = FontWeight.SemiBold,
+                color = DK.textTertiary),
+        )
+    }
+}

@@ -33,6 +33,7 @@ import com.aptrade.desktop.search.SearchViewModel
 import com.aptrade.desktop.ui.AppShell
 import com.aptrade.desktop.ui.AppTab
 import com.aptrade.desktop.ui.PlaceholderPane
+import com.aptrade.desktop.ui.assetKindFromLabel
 import com.aptrade.desktop.watchlist.WatchlistPane
 import com.aptrade.desktop.watchlist.WatchlistViewModel
 import com.aptrade.shared.domain.Asset
@@ -185,6 +186,9 @@ private fun AppRoot(
                     if (openSymbol != null) {
                         DetailScreen(
                             symbol = openSymbol,
+                            // Pass the held position row (or null) from portfolio state — the
+                            // detail screen's YOUR POSITION card reads it directly; no second store.
+                            heldPosition = portfolioState.holdings.firstOrNull { it.symbol == openSymbol },
                             onBack = onBack,
                             onBuy = { asset, priceText ->
                                 onOpenTrade(TradeTarget(asset, TradeSide.Buy, priceText))
@@ -228,6 +232,7 @@ private fun AppRoot(
             }
         }
 
+
         if (paletteOpen) {
             PaletteOverlay(
                 viewModel = searchViewModel,
@@ -265,12 +270,4 @@ private fun AppRoot(
             )
         }
     }
-}
-
-/** Inverse of designkit.kindLabel — rebuilds an AssetKind from its display label so the host
- *  can construct an Asset for a trade. Stock is the safe default for any unexpected label. */
-private fun assetKindFromLabel(label: String?): com.aptrade.shared.domain.AssetKind = when (label) {
-    "ETF" -> com.aptrade.shared.domain.AssetKind.Etf
-    "Crypto" -> com.aptrade.shared.domain.AssetKind.Crypto
-    else -> com.aptrade.shared.domain.AssetKind.Stock
 }
