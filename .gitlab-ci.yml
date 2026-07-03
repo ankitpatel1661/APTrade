@@ -45,16 +45,23 @@ stages:
     - ~/.gradle/caches/
 
 # ── Shared before_script for macOS Gradle jobs ──────────────────────────────
-# The root build.gradle.kts applies the Android Gradle Plugin for :shared and
-# :androidApp. Gradle configures ALL subprojects before executing any task, so
-# even an XCFramework-only build triggers Android SDK resolution.
-# Rather than relying on a pre-installed SDK at a fixed path (which varies
-# across runner images), we create a stub directory and point local.properties
-# at it. The AGP only checks the directory exists during configuration — it
-# does not need actual SDK contents to configure Apple-target tasks.
-.macos-gradle-before: &macos-gradle-before
-  - mkdir -p /tmp/android-sdk-stub
-  - echo "sdk.dir=/tmp/android-sdk-stub" > local.properties
+# settings.gradle.kts always includes :androidApp and :shared (which both apply
+# the Android Gradle Plugin). Gradle configures ALL subprojects before running
+# any task, so even an XCFramework-only build requires a valid Android SDK.
+# We install the macOS Android command-line tools and the minimum required SDK
+# components (platforms;android-35) so the AGP can complete configuration.
+# ANDROID_HOME is set to ~/android-sdk to avoid permission issues.
+.macos-android-sdk: &macos-android-sdk
+  - export ANDROID_HOME="${HOME}/android-sdk"
+  - export ANDROID_SDK_ROOT="${HOME}/android-sdk"
+  - mkdir -p "${ANDROID_HOME}/cmdline-tools"
+  - curl -fsSL https://dl.google.com/android/repository/commandlinetools-mac-11076708_latest.zip -o /tmp/cmdline-tools.zip
+  - unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools-extract
+  - mv /tmp/cmdline-tools-extract/cmdline-tools "${ANDROID_HOME}/cmdline-tools/latest"
+  - export PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${PATH}"
+  - yes | sdkmanager --licenses > /dev/null 2>&1 || true
+  - sdkmanager "platforms;android-35"
+  - echo "sdk.dir=${ANDROID_HOME}" > local.properties
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STAGE: test
@@ -69,10 +76,10 @@ kmp-xcframework-test:
   extends: .macos-base
   stage: test
   before_script:
-    # Create a stub Android SDK directory so the Android Gradle Plugin can
-    # complete project configuration without a real SDK install.
-    # See .macos-gradle-before anchor comment above for full explanation.
-    - *macos-gradle-before
+    # Install the minimum Android SDK so the AGP can configure :shared and
+    # :androidApp during Gradle's project configuration phase.
+    # See .macos-android-sdk anchor comment above for full explanation.
+    - *macos-android-sdk
   cache:
     <<: *gradle-cache
   script:
@@ -210,10 +217,10 @@ kmp-xcframework:
   extends: .macos-base
   stage: build
   before_script:
-    # Create a stub Android SDK directory so the Android Gradle Plugin can
-    # complete project configuration without a real SDK install.
-    # See .macos-gradle-before anchor comment above for full explanation.
-    - *macos-gradle-before
+    # Install the minimum Android SDK so the AGP can configure :shared and
+    # :androidApp during Gradle's project configuration phase.
+    # See .macos-android-sdk anchor comment above for full explanation.
+    - *macos-android-sdk
   cache:
     key:
       files:
