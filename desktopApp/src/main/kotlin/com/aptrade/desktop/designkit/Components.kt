@@ -45,6 +45,32 @@ private fun numericStyle(size: TextUnit, weight: FontWeight, color: Color) = Tex
     fontFeatureSettings = "tnum",
 )
 
+/** A hand-drawn magnifier glyph (circle + handle) — SF Symbol "magnifyingglass"
+ *  stand-in, so the app needs no material-icons dependency. */
+@Composable
+fun MagnifierIcon(tint: Color = DK.textSecondary, modifier: Modifier = Modifier.size(16.dp)) {
+    androidx.compose.foundation.Canvas(modifier) {
+        val stroke = 1.6.dp.toPx()
+        val r = size.minDimension * 0.32f
+        val cx = size.width * 0.42f
+        val cy = size.height * 0.42f
+        drawCircle(
+            color = tint,
+            radius = r,
+            center = androidx.compose.ui.geometry.Offset(cx, cy),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke),
+        )
+        val diag = r * 0.72f
+        drawLine(
+            color = tint,
+            start = androidx.compose.ui.geometry.Offset(cx + diag, cy + diag),
+            end = androidx.compose.ui.geometry.Offset(size.width * 0.9f, size.height * 0.9f),
+            strokeWidth = stroke,
+            cap = androidx.compose.ui.graphics.StrokeCap.Round,
+        )
+    }
+}
+
 /** The full "AP Trade" lockup PNG (dark-mode champagne original). */
 @Composable
 fun BrandWordmark(height: Dp) {

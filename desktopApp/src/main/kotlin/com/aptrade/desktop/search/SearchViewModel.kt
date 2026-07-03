@@ -22,7 +22,9 @@ data class SearchUiState(
 )
 
 /** Ctrl+K palette state: 300ms debounce, blank queries short-circuit locally,
- *  keyboard selection clamped to the result range. */
+ *  keyboard selection clamped to the result range.
+ *  `scope` MUST be single-thread-confined (Dispatchers.Main on desktop): the internal
+ *  searchJob var and state updates rely on that confinement instead of locks. */
 class SearchViewModel(
     private val fetchSearch: FetchSearch,
     private val scope: CoroutineScope,

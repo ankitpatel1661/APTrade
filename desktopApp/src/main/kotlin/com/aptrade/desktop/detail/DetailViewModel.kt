@@ -35,6 +35,9 @@ data class DetailUiState(
     val chartError: String? = null,
 )
 
+/** Per-selection asset detail: profile, quote, and the timeframe/mode chart load.
+ *  `scope` MUST be single-thread-confined (Dispatchers.Main on desktop): the internal
+ *  chartJob var and state updates rely on that confinement instead of locks. */
 class DetailViewModel(
     private val symbol: String,
     private val fetchProfile: FetchProfile,
