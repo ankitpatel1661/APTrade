@@ -145,8 +145,11 @@ class PortfolioExportTest {
     }
 
     @Test
-    fun zeroAllocationRendersAsZero() {
-        // Boundary: allocation of 0.0 must render as "0"
+    fun zeroValuedHoldingRendersZeroAllocation() {
+        // Boundary: a NON-empty holding whose allocation is exactly 0.0 (e.g. a still-held
+        // position now worth nothing) must render its Allocation cell as "0", not "0E-6" or
+        // similar scientific-notation artifact. Unlike the prior version of this test,
+        // `holdings` is non-empty here, so `renderFraction` actually executes on a real row.
         val export = PortfolioExport(
             generatedAtEpochSeconds = 1_700_000_000L,
             accountName = "Zero Test",
@@ -156,10 +159,26 @@ class PortfolioExportTest {
             holdingsValue = Money.usd("0"),
             dayChange = Money.usd("0"),
             unrealizedPnL = Money.usd("0"),
-            holdings = listOf(),
+            holdings = listOf(
+                PortfolioExport.Holding(
+                    symbol = "WORTHLESS",
+                    name = "Worthless Corp.",
+                    kind = "Stock",
+                    quantity = qty("10"),
+                    averageCost = qty("0"),
+                    lastPrice = qty("0"),
+                    marketValue = qty("0"),
+                    costBasis = qty("0"),
+                    unrealizedPnL = qty("0"),
+                    allocation = 0.0,
+                )
+            ),
         )
         val csv = export.renderCsv()
-        // Verify zero rendering doesn't introduce artifacts
+        assertTrue(
+            csv.contains("WORTHLESS,Worthless Corp.,Stock,10,0,0,0,0,0,0"),
+            "CSV should render the zero-valued holding's allocation as plain '0'",
+        )
         assertTrue(!csv.contains("E-"), "CSV should not contain scientific notation")
     }
 }
