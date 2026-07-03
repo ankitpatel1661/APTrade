@@ -71,7 +71,7 @@ class PortfolioViewModelTest {
         assertFalse(s.isLoading)
         assertTrue(s.holdings.isEmpty())
         assertEquals("$100,000.00", s.cashText)
-        assertEquals("$100,000.00", s.totalValueText)
+        assertEquals("100000", s.totalValueText)   // RAW — SuperscriptPrice/splitPrice consumer
     }
 
     @Test
@@ -172,29 +172,31 @@ class PortfolioViewModelTest {
     }
 
     @Test
-    fun moneyTextsAreFormattedAndSignedOnlyForPnlAndDayChange() = runTest {
+    fun moneyTextsAreFormattedAndSignedOnlyForPnlAndDayChangeWhileSuperscriptFieldsStayRaw() = runTest {
         val repo = FakeMarketDataRepository()
-        // previousClose ("1200.00") < price ("1234.50") so dayChange is strictly positive.
-        repo.quotesImpl = { symbols -> symbols.map { Quote(it, Money.usd("1234.50"), Money.usd("1200.00"), 1.0) } }
+        // previousClose ("1200.15") < price ("1234.55") so dayChange is strictly positive.
+        repo.quotesImpl = { symbols -> symbols.map { Quote(it, Money.usd("1234.55"), Money.usd("1200.15"), 1.0) } }
         val seeded = Portfolio(
             cash = Money.usd("99000"),
-            positions = listOf(Position(aapl, BigDecimal.parseString("10"), Money.usd("1000.00"), Money.usd("0"))),
+            positions = listOf(Position(aapl, BigDecimal.parseString("3"), Money.usd("1000.00"), Money.usd("0"))),
             transactions = listOf(
-                Transaction("txn-1", "AAPL", TradeSide.Buy, BigDecimal.parseString("10"), Money.usd("1000.00"), 500L),
+                Transaction("txn-1", "AAPL", TradeSide.Buy, BigDecimal.parseString("3"), Money.usd("1000.00"), 500L),
             ),
         )
         val vm = vm(repo, InMemoryPortfolioStore(seeded), backgroundScope)
         vm.start(); runCurrent()
 
         val s = vm.state.value
-        // Plain money texts: grouped, 2dp, no sign forced even though the value is positive.
+        // Pre-formatted plain money texts: grouped, 2dp, no sign forced despite positive values.
         assertEquals("$99,000.00", s.cashText)
         assertEquals("$1,000.00", s.holdings.single().averageCostText)
-        assertEquals("$12,345.00", s.holdings.single().marketValueText)
-        assertEquals("$1,234.50", s.holdings.single().priceText)
+        // RAW fields — consumed by SuperscriptPrice/splitPrice (and TradeDialog's Money.usd
+        // re-parse for priceText); they must NOT carry "$" or grouping.
+        assertEquals("102703.65", s.totalValueText)                      // 99000 + 3703.65, raw: no "$", no commas
+        assertEquals("3703.65", s.holdings.single().marketValueText)     // 1234.55 × 3, raw
+        assertEquals("1234.55", s.holdings.single().priceText)           // raw quote amountText
         // Signed money texts: P&L / day-change carry a leading "+" when strictly positive.
-        assertTrue(s.holdings.single().unrealizedText.startsWith("+$"))
-        assertEquals("+$2,345.00", s.holdings.single().unrealizedText)
+        assertEquals("+$703.65", s.holdings.single().unrealizedText)     // (1234.55 − 1000) × 3
         assertTrue(s.unrealizedText!!.startsWith("+$"))
         assertTrue(s.dayChangeText!!.startsWith("+$"))
     }
@@ -217,7 +219,7 @@ class PortfolioViewModelTest {
         advanceTimeBy(15_001); runCurrent()
 
         assertEquals(listOf("AAPL"), requestedSymbols)
-        assertEquals("$110.25", vm.state.value.holdings.single().priceText)
+        assertEquals("110.25", vm.state.value.holdings.single().priceText)   // RAW — TradeDialog/SuperscriptPrice consumer
     }
 
     @Test
@@ -226,28 +228,28 @@ class PortfolioViewModelTest {
         var tick = 0
         repo.quotesImpl = { symbols ->
             tick += 1
-            if (tick == 1) symbols.map { quote(it, "100.00") }
-            else symbols.filter { it == "AAPL" }.map { quote(it, "150.00") }
+            if (tick == 1) symbols.map { quote(it, "100.25") }
+            else symbols.filter { it == "AAPL" }.map { quote(it, "150.75") }
         }
         val msft = Asset("MSFT", "Microsoft Corp.", AssetKind.Stock)
         val seeded = Portfolio(
             cash = Money.usd("99000"),
             positions = listOf(
-                Position(aapl, BigDecimal.parseString("10"), Money.usd("100.00"), Money.usd("0")),
-                Position(msft, BigDecimal.parseString("5"), Money.usd("100.00"), Money.usd("0")),
+                Position(aapl, BigDecimal.parseString("10"), Money.usd("100.25"), Money.usd("0")),
+                Position(msft, BigDecimal.parseString("5"), Money.usd("100.25"), Money.usd("0")),
             ),
         )
         val vm = vm(repo, InMemoryPortfolioStore(seeded), backgroundScope)
         vm.start(); runCurrent()
-        assertEquals("$100.00", vm.state.value.holdings.first { it.symbol == "MSFT" }.priceText)
+        assertEquals("100.25", vm.state.value.holdings.first { it.symbol == "MSFT" }.priceText)
 
         // Simulate a subsequent poll that only returns AAPL (MSFT's quote drops out upstream).
         vm.refresh(); runCurrent()
 
         val s = vm.state.value
-        assertEquals("$150.00", s.holdings.first { it.symbol == "AAPL" }.priceText)
+        assertEquals("150.75", s.holdings.first { it.symbol == "AAPL" }.priceText)
         // MSFT keeps its last-good quote (tick 1's price), NOT falling back to averageCost-implied text.
-        assertEquals("$100.00", s.holdings.first { it.symbol == "MSFT" }.priceText)
+        assertEquals("100.25", s.holdings.first { it.symbol == "MSFT" }.priceText)
     }
 
     @Test
@@ -370,6 +372,10 @@ class PortfolioViewModelTest {
         assertEquals(2, callCount)
         assertEquals("QQQ", vm.state.value.benchmark)
         assertEquals(listOf("SPY", "QQQ"), requestedBenchmarks)
+
+        // A poll tick refreshes quotes only — it must NOT refetch the performance report.
+        advanceTimeBy(15_001); runCurrent()
+        assertEquals(2, callCount)
     }
 
     @Test

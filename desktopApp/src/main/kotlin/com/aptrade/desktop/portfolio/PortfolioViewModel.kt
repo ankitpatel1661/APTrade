@@ -55,6 +55,14 @@ enum class PortfolioSpan(val label: String) {
     val sinceInception: Boolean get() = this == Max
 }
 
+/** Per-field text contract (Task 7/8 implementers: do NOT re-format on either side):
+ *  - `marketValueText` and `priceText` are RAW `Money.amountText` — `marketValueText` feeds
+ *    `SuperscriptPrice`/`splitPrice` (which performs its own "$" + grouping + cents split),
+ *    and `priceText` is handed to `TradeDialog`, which BOTH re-parses it (`Money.usd`) and
+ *    renders it via `SuperscriptPrice`. Pre-formatting these breaks parsing and garbles the
+ *    render.
+ *  - `averageCostText` (plain, `formatMoney`) and `unrealizedText` (signed, `signedMoney`)
+ *    are PRE-FORMATTED — render verbatim. */
 data class HoldingRowUi(
     val symbol: String,
     val name: String,
@@ -94,6 +102,13 @@ data class MetricTexts(
 private fun plainMetric(value: Double?): String =
     if (value == null) "—" else String.format(Locale.US, "%.2f", value)
 
+/** Per-field money-text contract (Task 7/8 implementers: do NOT re-format on either side):
+ *  - `totalValueText` is RAW `Money.amountText` — it feeds `SuperscriptPrice`/`splitPrice`
+ *    in PortfolioPane's header, which performs its own "$" + grouping + cents split.
+ *  - Every other money text is PRE-FORMATTED and rendered verbatim: `cashText` and
+ *    `holdingsValueText` via `formatMoney`; `dayChangeText`, `unrealizedText`, and
+ *    `realizedText` via `signedMoney` ("+" when strictly positive).
+ *  See `HoldingRowUi` for the per-row contract. */
 data class PortfolioUiState(
     val isLoading: Boolean = true,
     val totalValueText: String? = null,
@@ -333,10 +348,10 @@ class PortfolioViewModel(
                     kindLabel = kindLabel(position.asset.kind),
                     quantityText = position.quantity.toStringExpanded(),
                     averageCostText = formatMoney(position.averageCost.amountText),
-                    marketValueText = formatMoney(marketValue.amountText),
+                    marketValueText = marketValue.amountText,          // RAW — SuperscriptPrice consumer
                     unrealizedText = signedMoney(unrealized.amountText),
                     unrealizedPositive = quote?.let { unrealized.amount.doubleValue(false) >= 0.0 },
-                    priceText = quote?.price?.amountText?.let { formatMoney(it) },
+                    priceText = quote?.price?.amountText,              // RAW — TradeDialog re-parses + SuperscriptPrice
                 )
             }
 
@@ -358,7 +373,7 @@ class PortfolioViewModel(
         _state.update {
             it.copy(
                 isLoading = loading,
-                totalValueText = formatMoney(valuation.totalValue.amountText),
+                totalValueText = valuation.totalValue.amountText,      // RAW — SuperscriptPrice consumer
                 dayChangeText = signedMoney(valuation.dayChange.amountText),
                 dayChangePositive = if (portfolio.positions.isEmpty()) null else valuation.dayChange.amount.doubleValue(false) >= 0.0,
                 cashText = formatMoney(valuation.cash.amountText),
