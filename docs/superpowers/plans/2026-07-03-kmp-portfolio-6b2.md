@@ -287,11 +287,11 @@ git commit -m "feat(shared): technical indicator math (SMA/EMA/RSI/VWAP/Bollinge
   `totalReturn(values: List<Double>): Double`,
   `annualizedReturn(values: List<Double>): Double` (252 periods/yr CAGR),
   `annualizedVolatility(values: List<Double>): Double` (SAMPLE stddev × √252),
-  `maxDrawdown(values: List<Double>): Double`,
+  `maxDrawdown(values: List<Double>): Double` (NEGATIVE fraction — worst `v/peak − 1`, e.g. −0.25; Swift parity),
   `sharpe(values: List<Double>, riskFree: Double = 0.04): Double?` (null when volatility 0),
   `beta(portfolioValues: List<Double>, benchmarkValues: List<Double>): Double?` (index-paired from the END/recency; null when var==0 or <2 pairs),
   `alpha(portfolioValues: List<Double>, benchmarkValues: List<Double>, riskFree: Double = 0.04): Double?` (CAPM),
-  `rebase(values: List<Double>): List<Double>` (value/first×100; empty/zero-first → emptyList()).
+  `rebase(values: List<Double>): List<Double>` (value/first×100 when first > 0; otherwise the ORIGINAL series unchanged — Swift PerformanceSection parity; empty → empty).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -326,8 +326,11 @@ class RiskMetricsTest {
         // returns are all exactly 10% → sample stddev 0
         assertClose(0.0, RiskMetrics.annualizedVolatility(listOf(100.0, 110.0, 121.0)))
     }
-    @Test fun maxDrawdownWorstPeakToTrough() {
-        assertClose(0.5, RiskMetrics.maxDrawdown(listOf(100.0, 120.0, 60.0, 80.0)))
+    @Test fun maxDrawdownWorstPeakToTroughIsNegative() {
+        // Swift convention: worst v/peak − 1 (negative). 60/120 − 1 = −0.5
+        assertClose(-0.5, RiskMetrics.maxDrawdown(listOf(100.0, 120.0, 60.0, 80.0)))
+        // Swift's own test fixture: 90/120 − 1 = −0.25
+        assertClose(-0.25, RiskMetrics.maxDrawdown(listOf(100.0, 120.0, 90.0, 110.0)))
         assertClose(0.0, RiskMetrics.maxDrawdown(listOf(100.0, 110.0, 121.0)))
     }
     @Test fun sharpeIsNullWhenVolatilityZero() {
@@ -355,6 +358,8 @@ class RiskMetricsTest {
     @Test fun rebaseTo100() {
         assertEquals(listOf(100.0, 110.0, 90.0), RiskMetrics.rebase(listOf(50.0, 55.0, 45.0)))
         assertTrue(RiskMetrics.rebase(emptyList()).isEmpty())
+        // Swift parity: non-positive base → series returned unchanged
+        assertEquals(listOf(0.0, 5.0), RiskMetrics.rebase(listOf(0.0, 5.0)))
     }
 }
 ```
@@ -409,14 +414,15 @@ object RiskMetrics {
         return sqrt(sampleVar) * sqrt(TRADING_DAYS_PER_YEAR.toDouble())
     }
 
+    /** NEGATIVE fraction: worst v/peak − 1 (Swift parity — e.g. −0.25 for a 25% drawdown). */
     fun maxDrawdown(values: List<Double>): Double {
         var peak = Double.NEGATIVE_INFINITY
         var worst = 0.0
         for (v in values) {
             if (v > peak) peak = v
             if (peak > 0.0) {
-                val dd = (peak - v) / peak
-                if (dd > worst) worst = dd
+                val dd = v / peak - 1.0
+                if (dd < worst) worst = dd
             }
         }
         return worst
@@ -458,7 +464,7 @@ object RiskMetrics {
 
     fun rebase(values: List<Double>): List<Double> {
         val first = values.firstOrNull() ?: return emptyList()
-        if (first == 0.0) return emptyList()
+        if (first <= 0.0) return values                       // Swift parity: degenerate base → unchanged
         return values.map { it / first * 100.0 }
     }
 }
