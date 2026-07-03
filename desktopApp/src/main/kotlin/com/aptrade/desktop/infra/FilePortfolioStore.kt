@@ -8,6 +8,7 @@ import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.domain.Position
 import com.aptrade.shared.domain.Transaction
 import com.aptrade.shared.domain.TradeSide
+import com.ionspin.kotlin.bignum.decimal.BigDecimal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
@@ -67,22 +68,22 @@ class FilePortfolioStore(private val file: Path) : PortfolioStore {
 
             // Parse cash
             val cash = Money(
-                amount = com.ionspin.kotlin.bignum.decimal.BigDecimal.parseString(dto.cash.amount),
+                amount = BigDecimal.parseString(dto.cash.amount),
                 currencyCode = dto.cash.currency,
             )
 
             // Parse positions
             val positions = dto.positions.map { posDto ->
                 val kind = AssetKind.entries.firstOrNull { it.name == posDto.asset.kind }
-                    ?: return@withContext null  // unknown kind: entire file is corrupt
+                    ?: return@withContext null  // unknown kind: entire file is corrupt (non-local return — aborts the WHOLE load to null, not a per-row skip)
                 val asset = Asset(posDto.asset.symbol, posDto.asset.name, kind)
-                val quantity = com.ionspin.kotlin.bignum.decimal.BigDecimal.parseString(posDto.quantity)
+                val quantity = BigDecimal.parseString(posDto.quantity)
                 val averageCost = Money(
-                    amount = com.ionspin.kotlin.bignum.decimal.BigDecimal.parseString(posDto.averageCost.amount),
+                    amount = BigDecimal.parseString(posDto.averageCost.amount),
                     currencyCode = posDto.averageCost.currency,
                 )
                 val realizedPnL = Money(
-                    amount = com.ionspin.kotlin.bignum.decimal.BigDecimal.parseString(posDto.realizedPnL.amount),
+                    amount = BigDecimal.parseString(posDto.realizedPnL.amount),
                     currencyCode = posDto.realizedPnL.currency,
                 )
                 Position(asset, quantity, averageCost, realizedPnL)
@@ -91,12 +92,12 @@ class FilePortfolioStore(private val file: Path) : PortfolioStore {
             // Parse transactions
             val transactions = dto.transactions.map { txnDto ->
                 val side = TradeSide.entries.firstOrNull { it.name == txnDto.side }
-                    ?: return@withContext null  // unknown side: entire file is corrupt (would break cash accounting)
+                    ?: return@withContext null  // unknown side: entire file is corrupt (would break cash accounting) (non-local return — aborts the WHOLE load to null, not a per-row skip)
                 val price = Money(
-                    amount = com.ionspin.kotlin.bignum.decimal.BigDecimal.parseString(txnDto.price.amount),
+                    amount = BigDecimal.parseString(txnDto.price.amount),
                     currencyCode = txnDto.price.currency,
                 )
-                Transaction(txnDto.id, txnDto.symbol, side, com.ionspin.kotlin.bignum.decimal.BigDecimal.parseString(txnDto.quantity), price, txnDto.epochSeconds)
+                Transaction(txnDto.id, txnDto.symbol, side, BigDecimal.parseString(txnDto.quantity), price, txnDto.epochSeconds)
             }
 
             Portfolio(cash, positions, transactions)
