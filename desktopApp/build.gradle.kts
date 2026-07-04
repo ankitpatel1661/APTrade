@@ -16,7 +16,6 @@ kotlin {
 
 dependencies {
     implementation(project(":shared"))
-    implementation("io.ktor:ktor-client-core:3.0.3")
 
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)

@@ -23,11 +23,14 @@ private const val LOOKBACK_DAYS = 7L
  * `nowEpochSeconds` is an injectable clock seam for company-news' 7-day lookback
  * window, defaulting to the real wall clock.
  */
-class FinnhubNewsRepository(
+class FinnhubNewsRepository internal constructor(
     private val apiKey: String,
-    private val client: HttpClient = defaultYahooHttpClient(),
+    private val client: HttpClient,
     private val nowEpochSeconds: () -> Long = { epochSecondsNow() },
 ) : NewsRepository, AutoCloseable {
+
+    // Production / Swift-harness entry point: builds the default CIO client.
+    constructor(apiKey: String) : this(apiKey, defaultYahooHttpClient())
 
     override fun close() { client.close() }
 
