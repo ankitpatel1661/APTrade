@@ -174,6 +174,22 @@ export JAVA_HOME="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
 adb install -r androidApp/build/outputs/apk/debug/androidApp-debug.apk
 ```
 
+A **Portfolio screen** brings paper trading to Android on the same shared portfolio core as
+macOS and the desktop app — reached from the list icon in the quotes top bar. It opens with a
+summary header (total value, day-change pill, and cash / holdings / unrealized / realized
+metrics) starting from $100,000, a span-driven **Performance** chart (`1D · 1W · 1M · 1Y ·
+MAX`) with a **SPY/QQQ/VTI** benchmark picker overlaying the portfolio's equity curve against
+a cash-flow-replay benchmark twin, per-holding rows with **BUY/SELL** trading through a modal
+bottom sheet, allocation bars by holding and by asset class, an activity ledger of every
+buy/sell with its trade date, an **Export…** action, and a **Reset portfolio** action.
+
+Divergences from the macOS/desktop Portfolio in this first Android cut: export is a plain-text
+**share-sheet** (CSV / JSON) with **no PDF**; the performance chart has **no crosshair
+scrubber**; allocation is **bars only** (no donut chart); and the entry point is the top-bar
+**List icon** rather than a dedicated tab. Trading is only reachable from an existing holding
+row's BUY/SELL — an empty portfolio has no first-buy entry point on Android yet (the macOS
+app buys from asset detail screens; the Android detail screen has no BUY action).
+
 ### Windows desktop app (walking skeleton)
 
 A Compose Desktop app (`desktopApp/`) targets Windows, on the same shared Kotlin core as
@@ -281,11 +297,18 @@ APTrade Lite is the foundation. Planned toward the full platform:
 - **Windows parity, continued** — the `:desktopApp` Compose app now covers Watchlist +
   detail + palette (6a), a Portfolio tab with detail-screen indicators, performance/risk
   intelligence, and export (6b.1 + 6b.2), a News tab with per-symbol company news and
-  bookmarks (6c), and macOS adoption of the shared portfolio core's all-priced performance
-  gate (6b.3). Still to come: **6b.4** an Android portfolio screen, then **6d** alerts,
-  account panel, settings, and light theme.
+  bookmarks (6c), macOS adoption of the shared portfolio core's all-priced performance
+  gate (6b.3), and an Android Portfolio screen on the shared portfolio core (6b.4). Still to
+  come: **6d** alerts, account panel, settings, and light theme.
 
-Recently shipped: macOS **parity payback** (increment 6b.3) — the native `performanceSeries`
+Recently shipped: an Android **Portfolio screen** (increment 6b.4) — paper trading on the
+shared Kotlin portfolio core, reached from the quotes top-bar list icon: a summary header
+(value, day-change pill, cash/holdings/unrealized/realized) from a $100,000 start, a
+span-driven Performance chart (1D · 1W · 1M · 1Y · MAX) with an SPY/QQQ/VTI benchmark twin,
+per-holding BUY/SELL through a modal bottom sheet, allocation bars by holding and asset class,
+a dated activity ledger, a share-sheet CSV/JSON export, and a reset action — with
+`FilePortfolioStore` relocated into the `:shared` `jvmCommon` source set so desktop and
+Android share one persistence adapter; macOS **parity payback** (increment 6b.3) — the native `performanceSeries`
 reconstruction now adopts the shared Kotlin core's all-priced gate (a date only counts once
 every symbol with history is priced, rather than the moment any symbol is), and the
 benchmark curve is head-trimmed to the portfolio curve's post-gate start date before risk
