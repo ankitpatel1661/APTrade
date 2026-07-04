@@ -1,4 +1,4 @@
-package com.aptrade.desktop.infra
+package com.aptrade.shared.infrastructure
 
 import com.aptrade.shared.application.PortfolioStore
 import com.aptrade.shared.domain.Asset
@@ -25,7 +25,10 @@ import kotlin.io.path.readText
  *  can never leave a half-written portfolio. Missing file loads null; corrupt file loads null.
  *  Unlike FileWatchlistStore, a portfolio with an unknown AssetKind or TradeSide loads as null
  *  (not row-skipped), since the entire portfolio's cash accounting depends on every transaction,
- *  and a dropped transaction would corrupt the balances. */
+ *  and a dropped transaction would corrupt the balances.
+ *
+ *  Lives in the `jvmCommon` intermediate source set (java.nio), shared by the JVM (desktop)
+ *  and Android targets — verified portable to Android API 26+. */
 class FilePortfolioStore(private val file: Path) : PortfolioStore {
 
     @Serializable
@@ -130,7 +133,9 @@ class FilePortfolioStore(private val file: Path) : PortfolioStore {
         )
         val text = json.encodeToString(PortfolioDTO.serializer(), dto)
         val temp = Files.createTempFile(file.parent, "portfolio", ".tmp")
-        Files.writeString(temp, text)
+        // Files.write(Path, byte[]) is API 26; Files.writeString is API 33+, so avoid it
+        // here — this code runs on Android minSdk 26 as well as desktop JVM.
+        Files.write(temp, text.toByteArray(Charsets.UTF_8))
         Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         Unit
     }

@@ -18,6 +18,9 @@ import com.aptrade.android.ui.theme.APTradeTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Provide app-private storage to the composition root BEFORE any screen composes,
+        // so AppGraph.portfolio is materialized against the right directory.
+        AppGraph.initialize(filesDir)
         setContent {
             APTradeTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {

@@ -1,18 +1,34 @@
 package com.aptrade.android
 
+import com.aptrade.shared.application.BuyAsset
 import com.aptrade.shared.application.FetchCandles
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketQuotes
+import com.aptrade.shared.application.FetchPerformanceReport
+import com.aptrade.shared.application.FetchPortfolio
+import com.aptrade.shared.application.FetchPortfolioPerformance
 import com.aptrade.shared.application.FetchProfile
 import com.aptrade.shared.application.FetchSearch
 import com.aptrade.shared.application.MarketDataRepository
+import com.aptrade.shared.application.PortfolioStore
+import com.aptrade.shared.application.ResetPortfolio
+import com.aptrade.shared.application.SellAsset
+import com.aptrade.shared.infrastructure.FilePortfolioStore
 import com.aptrade.shared.infrastructure.YahooMarketDataRepository
+import java.io.File
 
 /**
  * Process-wide composition root, mirroring the Swift CompositionRoot's `static let`
  * pattern. Exactly ONE YahooMarketDataRepository (and therefore ONE Ktor HttpClient
  * with its own connection pool) exists per process — constructing a repository per
  * ViewModel would leak a new never-closed client each time.
+ *
+ * The portfolio graph needs an Android [File] (app-private storage), which the market
+ * use cases do not. Rather than thread a Context through every construction site, the
+ * Activity calls [initialize] with `filesDir` exactly once, BEFORE any screen is
+ * composed (MainActivity.onCreate, before setContent). The portfolio graph is then
+ * materialized lazily on first access. Accessing it before [initialize] is a programmer
+ * error and fails fast rather than silently writing to the wrong location.
  */
 object AppGraph {
     private val repository: MarketDataRepository = YahooMarketDataRepository()
@@ -25,4 +41,35 @@ object AppGraph {
 
     // The macOS app's seed watchlist.
     val defaultSymbols = listOf("AAPL", "SPY", "BTC-USD", "ETH-USD")
+
+    private var filesDir: File? = null
+
+    /** Supply the app-private storage directory. Call once from MainActivity.onCreate
+     *  BEFORE setContent, so [portfolio] is ready by the time any screen composes. */
+    fun initialize(filesDir: File) {
+        this.filesDir = filesDir
+    }
+
+    /** Portfolio use cases, built lazily from the [filesDir] provided by [initialize].
+     *  Shares the single process-wide [repository]. */
+    val portfolio: PortfolioGraph by lazy {
+        val dir = requireNotNull(filesDir) {
+            "AppGraph.initialize(filesDir) must be called before accessing AppGraph.portfolio"
+        }
+        PortfolioGraph(repository, FilePortfolioStore(File(dir, "portfolio.json").toPath()))
+    }
+}
+
+/** The portfolio slice of the composition root: everything that depends on the
+ *  [PortfolioStore]. Groups the trade + read + performance use cases sharing one store. */
+class PortfolioGraph(
+    repository: MarketDataRepository,
+    portfolioStore: PortfolioStore,
+) {
+    val fetchPortfolio = FetchPortfolio(portfolioStore)
+    val buyAsset = BuyAsset(repository, portfolioStore)
+    val sellAsset = SellAsset(repository, portfolioStore)
+    val resetPortfolio = ResetPortfolio(portfolioStore)
+    val fetchPortfolioPerformance = FetchPortfolioPerformance(repository, portfolioStore)
+    val fetchPerformanceReport = FetchPerformanceReport(repository, fetchPortfolioPerformance)
 }

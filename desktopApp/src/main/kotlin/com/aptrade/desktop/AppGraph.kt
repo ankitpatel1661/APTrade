@@ -1,7 +1,6 @@
 package com.aptrade.desktop
 
 import com.aptrade.desktop.infra.FileBookmarkStore
-import com.aptrade.desktop.infra.FilePortfolioStore
 import com.aptrade.desktop.infra.FileSettingsStore
 import com.aptrade.desktop.infra.FileWatchlistStore
 import com.aptrade.desktop.infra.FinnhubKeyConfig
@@ -31,6 +30,7 @@ import com.aptrade.shared.application.ToggleBookmark
 import com.aptrade.shared.application.WatchlistStore
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.WatchlistEntry
+import com.aptrade.shared.infrastructure.FilePortfolioStore
 import com.aptrade.shared.infrastructure.FinnhubNewsRepository
 import com.aptrade.shared.infrastructure.YahooMarketDataRepository
 

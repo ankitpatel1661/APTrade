@@ -8,6 +8,11 @@ plugins {
 }
 
 kotlin {
+    // Keep the standard KMP source-set graph (commonMain → appleMain → iosMain/macosMain,
+    // etc.). Applied explicitly because the manual jvmCommon wiring below would otherwise
+    // suppress the automatic template and orphan the Apple actuals.
+    applyDefaultHierarchyTemplate()
+
     jvm()
 
     androidTarget {
@@ -29,6 +34,16 @@ kotlin {
     }
 
     sourceSets {
+        // Intermediate source set shared by the JVM and Android targets ONLY (java.nio +
+        // JVM stdlib). It deliberately does NOT join the Apple tree, so the macOS/iOS
+        // xcframework stays free of any java.nio dependency. Holds FilePortfolioStore,
+        // which is pure java.nio + kotlinx-serialization + ionspin BigDecimal.
+        val jvmCommonMain by creating { dependsOn(commonMain.get()) }
+        val jvmCommonTest by creating { dependsOn(commonTest.get()) }
+        jvmMain.get().dependsOn(jvmCommonMain)
+        androidMain.get().dependsOn(jvmCommonMain)
+        jvmTest.get().dependsOn(jvmCommonTest)
+
         commonMain.dependencies {
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
             api("com.ionspin.kotlin:bignum:0.3.10")
