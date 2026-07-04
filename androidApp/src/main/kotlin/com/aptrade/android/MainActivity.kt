@@ -11,6 +11,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.aptrade.android.detail.DetailScreen
+import com.aptrade.android.portfolio.PortfolioScreen
 import com.aptrade.android.quotes.QuotesScreen
 import com.aptrade.android.search.SearchScreen
 import com.aptrade.android.ui.theme.APTradeTheme
@@ -39,6 +40,7 @@ fun AppNavHost() {
             QuotesScreen(
                 onOpenSearch = { navController.navigate("search") },
                 onOpenDetail = { symbol -> navController.navigate("detail/$symbol") },
+                onOpenPortfolio = { navController.navigate("portfolio") },
             )
         }
         composable("search") {
@@ -46,6 +48,12 @@ fun AppNavHost() {
         }
         composable("detail/{symbol}") { backStackEntry ->
             DetailScreen(symbol = backStackEntry.arguments?.getString("symbol").orEmpty())
+        }
+        composable("portfolio") {
+            PortfolioScreen(
+                onBack = { navController.popBackStack() },
+                onOpenDetail = { symbol -> navController.navigate("detail/$symbol") },
+            )
         }
     }
 }

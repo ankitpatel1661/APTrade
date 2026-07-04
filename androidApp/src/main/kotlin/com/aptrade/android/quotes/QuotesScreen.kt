@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,12 +35,16 @@ import com.aptrade.android.ui.theme.LossRed
 import java.util.Locale
 
 @Composable
-fun QuotesScreen(onOpenSearch: () -> Unit, onOpenDetail: (String) -> Unit) {
+fun QuotesScreen(
+    onOpenSearch: () -> Unit,
+    onOpenDetail: (String) -> Unit,
+    onOpenPortfolio: () -> Unit,
+) {
     val viewModel: QuotesViewModel = viewModel {
         QuotesViewModel(AppGraph.fetchMarketQuotes, AppGraph.defaultSymbols)
     }
     val state by viewModel.state.collectAsState()
-    QuotesContent(state, viewModel::refresh, onOpenSearch, onOpenDetail)
+    QuotesContent(state, viewModel::refresh, onOpenSearch, onOpenDetail, onOpenPortfolio)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,12 +54,16 @@ private fun QuotesContent(
     onRefresh: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenDetail: (String) -> Unit,
+    onOpenPortfolio: () -> Unit,
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("APTrade") },
                 actions = {
+                    IconButton(onClick = onOpenPortfolio) {
+                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Portfolio")
+                    }
                     IconButton(onClick = onOpenSearch) {
                         Icon(Icons.Filled.Search, contentDescription = "Search")
                     }
