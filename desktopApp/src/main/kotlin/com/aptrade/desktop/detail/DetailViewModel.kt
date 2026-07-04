@@ -53,6 +53,14 @@ class DetailViewModel(
     val state: StateFlow<DetailUiState> = _state
     private var chartJob: Job? = null
 
+    /** Timeframe the currently-held `candles` were fetched for, or null if none have been
+     *  fetched yet. A plain timeframe change never refetches candles by itself (Line mode
+     *  without indicators has no use for them), so this can silently go stale relative to
+     *  `state.timeframe`; `candlesStale` below is what actually gates a refetch. */
+    private var candlesTimeframe: Timeframe? = null
+    private val candlesStale: Boolean
+        get() = candlesTimeframe != _state.value.timeframe
+
     init {
         scope.launch {
             try {
@@ -98,8 +106,10 @@ class DetailViewModel(
         if (_state.value.indicatorsActive == active) return
         _state.update { it.copy(indicatorsActive = active) }
         // Candles mode already fetches bars; Line mode only needs a (re)load when we now
-        // require candles and don't yet have them for the current selection.
-        if (_state.value.mode == ChartMode.Line && active && _state.value.candles.isEmpty()) {
+        // require candles and either don't have any yet, or the ones we're holding were
+        // fetched for a since-changed timeframe (e.g. deactivate -> setTimeframe -> reactivate,
+        // which never refetches candles on its own and would otherwise leave them stale).
+        if (_state.value.mode == ChartMode.Line && active && candlesStale) {
             loadChart()
         }
     }
@@ -112,6 +122,7 @@ class DetailViewModel(
         val timeframe = _state.value.timeframe
         val mode = _state.value.mode
         val needsCandles = mode == ChartMode.Candles || _state.value.indicatorsActive
+        val shouldFetchCandles = needsCandles && candlesStale
         chartJob?.cancel()
         chartJob = scope.launch {
             _state.update { it.copy(isLoadingChart = true, chartError = null) }
@@ -124,14 +135,14 @@ class DetailViewModel(
                 } else {
                     _state.value.lineValues
                 }
-                val candles = if (needsCandles) {
+                val candles = if (shouldFetchCandles) {
                     fetchCandles.execute(symbol, timeframe).map { c ->
                         ChartCandle(
                             c.open.amount.doubleValue(false), c.high.amount.doubleValue(false),
                             c.low.amount.doubleValue(false), c.close.amount.doubleValue(false),
                             c.volume,
                         )
-                    }
+                    }.also { candlesTimeframe = timeframe }
                 } else {
                     _state.value.candles
                 }

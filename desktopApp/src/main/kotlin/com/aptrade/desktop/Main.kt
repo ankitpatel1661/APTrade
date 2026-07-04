@@ -232,7 +232,6 @@ private fun AppRoot(
             }
         }
 
-
         if (paletteOpen) {
             PaletteOverlay(
                 viewModel = searchViewModel,

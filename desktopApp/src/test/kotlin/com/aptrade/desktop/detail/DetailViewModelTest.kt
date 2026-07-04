@@ -94,4 +94,62 @@ class DetailViewModelTest {
         vm.retryChart(); runCurrent()
         assertEquals(listOf(1.0), vm.state.value.lineValues)
     }
+
+    @Test
+    fun reactivatingIndicatorsAfterTimeframeChangeRefetchesCandlesForNewTimeframe() = runTest {
+        val repo = FakeMarketDataRepository()
+        val candleFetches = mutableListOf<Timeframe>()
+        repo.candlesImpl = { _, tf ->
+            candleFetches += tf
+            listOf(Candle(1, Money.usd("1.00"), Money.usd("3.00"), Money.usd("0.50"), Money.usd("2.00")))
+        }
+        val vm = vm(repo, backgroundScope); runCurrent()
+
+        // Activate: first fetch, seeded for the initial timeframe (OneDay).
+        vm.onIndicatorsActiveChange(true); runCurrent()
+        assertEquals(listOf(Timeframe.OneDay), candleFetches)
+
+        // Deactivate: no fetch (candles just sit there, now a stale cache waiting to happen).
+        vm.onIndicatorsActiveChange(false); runCurrent()
+        assertEquals(listOf(Timeframe.OneDay), candleFetches)
+
+        // Timeframe change while inactive: Line mode with no active indicator doesn't need
+        // candles, so this must NOT fetch — the stale OneDay candles are left in state.
+        vm.onTimeframeChange(Timeframe.OneMonth); runCurrent()
+        assertEquals(listOf(Timeframe.OneDay), candleFetches)
+
+        // Reactivate: must detect the cached candles were fetched for OneDay while the
+        // selection is now OneMonth, and refetch for the NEW timeframe.
+        vm.onIndicatorsActiveChange(true); runCurrent()
+        assertEquals(listOf(Timeframe.OneDay, Timeframe.OneMonth), candleFetches)
+    }
+
+    @Test
+    fun candleModeTimeframeChangeFetchesCandlesExactlyOnce() = runTest {
+        val repo = FakeMarketDataRepository()
+        val candleFetches = mutableListOf<Timeframe>()
+        repo.candlesImpl = { _, tf ->
+            candleFetches += tf
+            listOf(Candle(1, Money.usd("1.00"), Money.usd("3.00"), Money.usd("0.50"), Money.usd("2.00")))
+        }
+        val vm = vm(repo, backgroundScope); runCurrent()
+        vm.onModeChange(ChartMode.Candles); runCurrent()
+        assertEquals(listOf(Timeframe.OneDay), candleFetches)
+
+        vm.onTimeframeChange(Timeframe.OneWeek); runCurrent()
+        assertEquals(listOf(Timeframe.OneDay, Timeframe.OneWeek), candleFetches)
+    }
+
+    @Test
+    fun firstIndicatorActivationFetchesCandlesExactlyOnce() = runTest {
+        val repo = FakeMarketDataRepository()
+        val candleFetches = mutableListOf<Timeframe>()
+        repo.candlesImpl = { _, tf ->
+            candleFetches += tf
+            listOf(Candle(1, Money.usd("1.00"), Money.usd("3.00"), Money.usd("0.50"), Money.usd("2.00")))
+        }
+        val vm = vm(repo, backgroundScope); runCurrent()
+        vm.onIndicatorsActiveChange(true); runCurrent()
+        assertEquals(listOf(Timeframe.OneDay), candleFetches)
+    }
 }
