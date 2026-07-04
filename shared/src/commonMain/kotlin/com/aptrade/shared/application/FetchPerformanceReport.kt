@@ -1,8 +1,12 @@
 package com.aptrade.shared.application
 
+import com.aptrade.shared.domain.Money
+import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.domain.PortfolioPerformancePoint
+import com.aptrade.shared.domain.PricePoint
 import com.aptrade.shared.domain.RiskMetrics
 import com.aptrade.shared.domain.Timeframe
+import com.aptrade.shared.domain.benchmarkTwinSeries
 import kotlin.coroutines.cancellation.CancellationException
 
 data class PerformanceMetrics(
@@ -19,13 +23,23 @@ data class PerformanceReport(
     val points: List<PortfolioPerformancePoint>,
     val benchmarkCloses: List<Double>?,
     val metrics: PerformanceMetrics,
+    /** Cash-flow replay twin: what the same trades would be worth in the benchmark instead
+     *  of the current holdings (see `benchmarkTwinSeries` KDoc for the exact semantics).
+     *  Null when there's no benchmark history to replay against, or when no portfolio store
+     *  was supplied to [FetchPerformanceReport]. Aligned 1:1 with [points] when present. */
+    val benchmarkTwinValues: List<Money>? = null,
 )
 
 /** Portfolio equity curve + benchmark overlay + risk metrics (macOS PerformanceSection parity).
- *  Benchmark fetch failure is swallowed (report survives); CancellationException always rethrows. */
+ *  Benchmark fetch failure is swallowed (report survives); CancellationException always rethrows.
+ *
+ *  [portfolioStore] is optional (defaults to null) to keep this class's existing 2-arg
+ *  construction sites compiling unchanged; when absent, `benchmarkTwinValues` on the report is
+ *  always null since there's no portfolio to source transactions/cash from. */
 class FetchPerformanceReport(
     private val repository: MarketDataRepository,
     private val fetchPortfolioPerformance: FetchPortfolioPerformance,
+    private val portfolioStore: PortfolioStore? = null,
 ) {
     @Throws(CancellationException::class)
     suspend fun execute(timeframe: Timeframe, benchmark: String, riskFree: Double = 0.04): PerformanceReport {
@@ -37,16 +51,17 @@ class FetchPerformanceReport(
         // Align the benchmark window to the (post-gate) portfolio curve start so the overlay
         // and beta/alpha describe the same span of time.
         val curveStart = points.first().epochSeconds
-        val benchmarkCloses: List<Double>? = try {
+        val benchmarkPoints: List<PricePoint>? = try {
             repository.history(benchmark, timeframe)
-                .filter { it.epochSeconds >= curveStart }
-                .map { it.close.amount.doubleValue(false) }
-                .ifEmpty { null }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             null
         }
+        val benchmarkCloses: List<Double>? = benchmarkPoints
+            ?.filter { it.epochSeconds >= curveStart }
+            ?.map { it.close.amount.doubleValue(false) }
+            ?.ifEmpty { null }
         val metrics = PerformanceMetrics(
             totalReturn = RiskMetrics.totalReturn(values),
             annualizedReturn = RiskMetrics.annualizedReturn(values),
@@ -56,6 +71,21 @@ class FetchPerformanceReport(
             beta = benchmarkCloses?.let { RiskMetrics.beta(values, it) },
             alpha = benchmarkCloses?.let { RiskMetrics.alpha(values, it, riskFree) },
         )
-        return PerformanceReport(points, benchmarkCloses, metrics)
+        // The twin needs the UNTRIMMED benchmark points (trades may predate the portfolio
+        // curve's start), unlike benchmarkCloses above which is head-trimmed to curveStart.
+        val benchmarkTwinValues: List<Money>? = if (benchmarkPoints.isNullOrEmpty()) {
+            null
+        } else {
+            val portfolio: Portfolio? = portfolioStore?.load()
+            portfolio?.let {
+                benchmarkTwinSeries(
+                    transactions = it.transactions,
+                    benchmarkPoints = benchmarkPoints,
+                    cash = it.cash,
+                    curveDates = points.map { point -> point.epochSeconds },
+                )
+            }
+        }
+        return PerformanceReport(points, benchmarkCloses, metrics, benchmarkTwinValues)
     }
 }

@@ -230,4 +230,63 @@ class FetchPerformanceReportTest {
         assertNull(report.metrics.alpha)
         assertTrue(!benchmarkFetched, "empty portfolio must short-circuit before fetching the benchmark")
     }
+
+    @Test
+    fun benchmarkTwinValuesUseUntrimmedBenchmarkHistoryAndPortfolioStore() = runTest {
+        // Portfolio curve starts at day 2 (AAPL's first candle). The trade itself happened
+        // at day 1 (epoch 86_400), before the curve start — the twin must still see the
+        // benchmark candle at day 1 (pre-head-trim) to value that trade correctly, even
+        // though benchmarkCloses (post head-trim) excludes it.
+        val portfolio = Portfolio.starting()
+            .buying(aapl, BigDecimal.parseString("1"), Money.usd("100.00"), 86_400L, "txn-1")
+        val store = PerfInMemoryPortfolioStore(portfolio)
+        val aaplHistory = listOf(
+            PricePoint(86_400L * 2, Money.usd("100.00")),
+            PricePoint(86_400L * 3, Money.usd("110.00")),
+        )
+        val spyHistory = listOf(
+            PricePoint(86_400L * 1, Money.usd("400.00")),
+            PricePoint(86_400L * 2, Money.usd("400.00")),
+            PricePoint(86_400L * 3, Money.usd("440.00")),
+        )
+        val repository = PerfFakeMarketDataRepository(
+            historiesBySymbol = mapOf("AAPL" to aaplHistory, "SPY" to spyHistory),
+        )
+        val fetchPerformance = FetchPortfolioPerformance(repository, store)
+
+        val report = FetchPerformanceReport(repository, fetchPerformance, store)
+            .execute(Timeframe.OneMonth, benchmark = "SPY")
+
+        assertNotNull(report.benchmarkTwinValues)
+        assertEquals(report.points.size, report.benchmarkTwinValues!!.size)
+        // Trade at day 1: $100 spent, benchmark close at day 1 = 400 -> U = 0.25.
+        // Portfolio cash after the buy is 100000 - 100 = 99900.
+        // At day 2 (curve start), benchmark close = 400 -> value = 99900 + 0.25*400 = 100000.
+        assertEquals(BigDecimal.parseString("100000"), report.benchmarkTwinValues!![0].amount)
+        // At day 3, benchmark close = 440 -> value = 99900 + 0.25*440 = 100010.
+        assertEquals(BigDecimal.parseString("100010"), report.benchmarkTwinValues!![1].amount)
+    }
+
+    @Test
+    fun benchmarkTwinValuesAreNullWithoutAPortfolioStore() = runTest {
+        val portfolio = Portfolio.starting().buying(aapl, BigDecimal.parseString("1"), Money.usd("100.00"), 1000L, "txn-1")
+        val store = PerfInMemoryPortfolioStore(portfolio)
+        val aaplHistory = listOf(
+            PricePoint(86_400L * 1, Money.usd("100.00")),
+            PricePoint(86_400L * 2, Money.usd("110.00")),
+        )
+        val spyHistory = listOf(
+            PricePoint(86_400L * 1, Money.usd("400.00")),
+            PricePoint(86_400L * 2, Money.usd("410.00")),
+        )
+        val repository = PerfFakeMarketDataRepository(
+            historiesBySymbol = mapOf("AAPL" to aaplHistory, "SPY" to spyHistory),
+        )
+        val fetchPerformance = FetchPortfolioPerformance(repository, store)
+
+        val report = FetchPerformanceReport(repository, fetchPerformance)
+            .execute(Timeframe.OneMonth, benchmark = "SPY")
+
+        assertNull(report.benchmarkTwinValues)
+    }
 }
