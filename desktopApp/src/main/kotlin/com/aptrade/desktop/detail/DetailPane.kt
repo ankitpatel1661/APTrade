@@ -51,6 +51,8 @@ import com.aptrade.desktop.designkit.TimeframeBar
 import com.aptrade.desktop.designkit.formatMoney
 import com.aptrade.desktop.designkit.formatPercent
 import com.aptrade.desktop.designkit.signedMoney
+import com.aptrade.desktop.infra.openUrlInBrowser
+import com.aptrade.desktop.news.ArticleRow
 import com.aptrade.desktop.portfolio.HoldingRowUi
 import com.aptrade.desktop.ui.assetKindFromLabel
 import java.math.BigDecimal
@@ -118,6 +120,7 @@ fun DetailScreen(
             onIndicatorsActiveChange = vm::onIndicatorsActiveChange,
             onRetry = vm::retryChart,
             onBuy = onBuy,
+            onToggleBookmark = vm::onToggleBookmark,
         )
     }
 }
@@ -131,6 +134,7 @@ private fun DetailContent(
     onIndicatorsActiveChange: (Boolean) -> Unit,
     onRetry: () -> Unit,
     onBuy: ((com.aptrade.shared.domain.Asset, String?) -> Unit)? = null,
+    onToggleBookmark: (com.aptrade.shared.domain.NewsArticle) -> Unit,
 ) {
     // Indicator selection is view-local UI state (macOS parity: view @State), none on by default.
     var selection by remember { mutableStateOf(emptySet<Indicator>()) }
@@ -232,6 +236,43 @@ private fun DetailContent(
         if (heldPosition != null) {
             Spacer(Modifier.height(16.dp))
             PositionCard(heldPosition)
+        }
+        NewsSection(state = state, onToggleBookmark = onToggleBookmark)
+    }
+}
+
+/** Company-news section: a "News" section label over up to 8 article rows (hairline divider
+ *  between them). Renders NOTHING — no heading — when the news key is missing or when there
+ *  are no articles and we're not loading. A bare spinner shows while loading with none yet. */
+@Composable
+private fun NewsSection(state: DetailUiState, onToggleBookmark: (com.aptrade.shared.domain.NewsArticle) -> Unit) {
+    if (state.newsKeyMissing) return
+    val articles = state.newsArticles
+    if (articles.isEmpty() && !state.newsLoading) return
+
+    Spacer(Modifier.height(24.dp))
+    CardHeader("News")
+    Spacer(Modifier.height(8.dp))
+    if (articles.isEmpty()) {
+        // Loading with nothing yet: a bare, centered spinner (no heading duplication).
+        Box(Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = DK.gold)
+        }
+        return
+    }
+    val now = System.currentTimeMillis() / 1000
+    Column(Modifier.fillMaxWidth()) {
+        articles.forEachIndexed { index, article ->
+            if (index > 0) {
+                Box(Modifier.fillMaxWidth().height(1.dp).background(DK.hairline))
+            }
+            ArticleRow(
+                article = article,
+                bookmarked = state.bookmarkedIds.contains(article.id),
+                now = now,
+                onOpen = { openUrlInBrowser(article.url) },
+                onToggleBookmark = { onToggleBookmark(article) },
+            )
         }
     }
 }

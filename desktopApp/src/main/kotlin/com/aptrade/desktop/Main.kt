@@ -24,6 +24,8 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.aptrade.desktop.designkit.APTradeDesktopTheme
 import com.aptrade.desktop.detail.DetailScreen
+import com.aptrade.desktop.news.NewsPane
+import com.aptrade.desktop.news.NewsViewModel
 import com.aptrade.desktop.portfolio.PortfolioPane
 import com.aptrade.desktop.portfolio.PortfolioViewModel
 import com.aptrade.desktop.portfolio.TradeDialog
@@ -37,7 +39,6 @@ import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.ui.AccountPanel
 import com.aptrade.desktop.ui.AppShell
 import com.aptrade.desktop.ui.AppTab
-import com.aptrade.desktop.ui.PlaceholderPane
 import com.aptrade.desktop.ui.assetKindFromLabel
 import com.aptrade.desktop.watchlist.WatchlistPane
 import com.aptrade.desktop.watchlist.WatchlistViewModel
@@ -78,6 +79,16 @@ fun main() = application {
             fetchPerformanceReport = graph.fetchPerformanceReport,
             scope = appScope,
             nowEpochSeconds = { System.currentTimeMillis() / 1000 },
+        )
+    }
+    // News VM is created once (like the others) but started lazily on the first visit to the
+    // News tab — its single fetch shouldn't run until the user asks for it.
+    val newsViewModel = remember {
+        NewsViewModel(
+            fetchMarketNews = graph.fetchMarketNews,
+            loadBookmarks = graph.loadBookmarks,
+            toggleBookmark = graph.toggleBookmark,
+            scope = appScope,
         )
     }
     // Two independent search surfaces (palette + the watchlist add-field) get their
@@ -173,6 +184,7 @@ fun main() = application {
                 AppRoot(
                     watchlistViewModel = watchlistViewModel,
                     portfolioViewModel = portfolioViewModel,
+                    newsViewModel = newsViewModel,
                     searchViewModel = searchViewModel,
                     addFieldViewModel = addFieldViewModel,
                     paletteOpen = paletteOpen,
@@ -203,6 +215,7 @@ data class TradeTarget(val asset: Asset, val side: TradeSide, val priceText: Str
 private fun AppRoot(
     watchlistViewModel: WatchlistViewModel,
     portfolioViewModel: PortfolioViewModel,
+    newsViewModel: NewsViewModel,
     searchViewModel: SearchViewModel,
     addFieldViewModel: SearchViewModel,
     paletteOpen: Boolean,
@@ -223,8 +236,19 @@ private fun AppRoot(
     var selectedTab by remember { mutableStateOf(AppTab.Watchlist) }
     val watchState by watchlistViewModel.state.collectAsState()
     val portfolioState by portfolioViewModel.state.collectAsState()
+    val newsState by newsViewModel.state.collectAsState()
     val searchState by searchViewModel.state.collectAsState()
     val addFieldState by addFieldViewModel.state.collectAsState()
+
+    // Lazy first-visit start for the News VM: fire its single fetch only once the user opens
+    // the News tab, and never again. Guarded by a one-shot flag so re-entering the tab is free.
+    var newsStarted by remember { mutableStateOf(false) }
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == AppTab.News && !newsStarted) {
+            newsStarted = true
+            newsViewModel.start()
+        }
+    }
 
     Box(Modifier.fillMaxSize()) {
         AppShell(
@@ -288,7 +312,14 @@ private fun AppRoot(
                         )
                     },
                 )
-                AppTab.News -> PlaceholderPane("News — coming soon")
+                AppTab.News -> NewsPane(
+                    state = newsState,
+                    onSetCategory = newsViewModel::setCategory,
+                    onSetShowingSaved = newsViewModel::setShowingSaved,
+                    onSetFilter = newsViewModel::setFilter,
+                    onRefresh = newsViewModel::refresh,
+                    onToggleBookmark = newsViewModel::toggleBookmark,
+                )
             }
         }
 

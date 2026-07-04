@@ -154,19 +154,3 @@ private fun TabRow(selectedTab: AppTab, onTabSelect: (AppTab) -> Unit) {
         }
     }
 }
-
-/** Simple centered placeholder for the not-yet-built tabs. */
-@Composable
-fun PlaceholderPane(label: String) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            label,
-            style = TextStyle(
-                fontFamily = InterFamily,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-                color = DK.textTertiary,
-            ),
-        )
-    }
-}
