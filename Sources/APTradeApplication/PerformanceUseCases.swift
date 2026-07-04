@@ -66,7 +66,7 @@ public struct ComputePerformanceMetricsUseCase: Sendable {
         }
 
         let equity = portfolio.equitySeries(histories: histories)
-        guard equity.count > 1 else { return .empty }
+        guard equity.count > 1, let firstEquityPoint = equity.first else { return .empty }
 
         let values = equity.map { ($0.value.amount as NSDecimalNumber).doubleValue }
         let returns = RiskMetrics.dailyReturns(values)
@@ -77,7 +77,7 @@ public struct ComputePerformanceMetricsUseCase: Sendable {
         // Head-trim to the (post-gate) equity curve start (adopted from the Kotlin shared core
         // in increment 6b.3, mirroring FetchPerformanceReport) so the overlay and beta/alpha
         // describe the same span of time — benchmark closes that predate the curve are dropped.
-        let curveStart = equity.first!.date   // safe: equity.count > 1 guaranteed above
+        let curveStart = firstEquityPoint.date
         let benchmarkCurve = ((try? await repository.history(for: benchmark, timeframe: timeframe)) ?? [])
             .filter { $0.date >= curveStart }
         var beta: Double?
