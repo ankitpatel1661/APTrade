@@ -205,7 +205,10 @@ trade timestamp (symbol, quantity, price, and the date/time it executed). Direct
 the summary header sits **one** span-driven **Performance** chart — the sole portfolio
 chart, replacing the previous separate account-value chart — with a five-span bar
 (`1D · 1W · 1M · 1Y · MAX`), a segmented **SPY/QQQ/VTI** benchmark picker overlaying the
-portfolio and benchmark curves rebased to a common 100-point start, a hover **crosshair
+portfolio's dollar equity curve against a **cash-flow-replay benchmark twin** — the same
+dollars invested in the benchmark at each historical trade, so both curves are actual
+dollar values plotted dollar-vs-dollar rather than rebased to a common index start (a
+desktop-first design beyond the current macOS overlay) — a hover **crosshair
 scrubber** over the overlay (a tooltip pill showing the hovered point's value and date,
 plus a live running-change readout next to the "PERFORMANCE" label that tracks the
 crosshair), and a 7-tile risk grid below it (Total Return, Annualized, Volatility, Max
@@ -215,16 +218,21 @@ day change/%, symbol, type) and, when held, a **YOUR POSITION** card (shares, av
 market value, unrealized P&L), plus the same six chart indicators as macOS — **SMA 20,
 EMA 12, VWAP, Bollinger Bands (20), RSI (14), and MACD (12·26·9)** — as overlays and
 dedicated RSI/MACD panes. An **account panel** (⋯ button) offers Appearance — **5** accent
-themes (Champagne Gold, Rose Gold, Sapphire, Amethyst, Platinum) persisted to a
-`settings.json` in the OS config directory — and an About page; every other row (Profile,
-Notifications, Security & Privacy, etc.) is a shared "not available yet" placeholder.
+themes (Champagne Gold, Rose Gold, Sapphire, Amethyst, Platinum), each of which also
+retints the brand wordmark itself (gold pixels remapped onto the chosen accent's ramp by
+luminance, the same technique as macOS) — persisted to a `settings.json` in the OS config
+directory — and an About page; every other row (Profile, Notifications, Security &
+Privacy, etc.) is a shared "not available yet" placeholder.
 **Recorded divergences from macOS:** desktop Appearance has no Dark/Light toggle yet, and
 most account-panel pages beyond Appearance/Export/About are placeholders. The
-`PortfolioViewModel`, trade dialog, indicator math (`TechnicalIndicators`), and
-risk/performance calculations (`RiskMetrics`, `FetchPerformanceReport`) all live on the
-`:shared` Kotlin core alongside the file-backed `PortfolioStore`, so the same domain math
-and persistence format will carry to the macOS app in a later increment; only the PDF
-byte-rendering itself is a desktop-(JVM)-side adapter.
+`PortfolioViewModel`, trade dialog, indicator math (`TechnicalIndicators`), and risk
+metrics (`RiskMetrics`) all live on the `:shared` Kotlin core alongside the file-backed
+`PortfolioStore`, so the same domain math and persistence format will carry to the macOS
+app in a later increment; the risk-metrics grid itself (Total Return through Alpha) stays
+macOS-parity, computed on benchmark closes exactly as before. The cash-flow-replay
+benchmark twin feeding the overlay chart (`FetchPerformanceReport.benchmarkTwinValues`) is
+a desktop-first design with no macOS equivalent yet; only the PDF byte-rendering itself is
+a desktop-(JVM)-side adapter.
 
 A **News tab** brings Finnhub-backed headlines to the desktop app: a category pill row —
 **General · Crypto · Merger** — plus a trailing **Saved** toggle that swaps the feed for
