@@ -106,3 +106,33 @@ Docs-only commit if needed; suite failure = BLOCKED.
 - Swift bridging: T2 changes ToggleBookmark's public shared API (param dropped) —
   grep Sources/ for the bridged name before assuming safety (Swift has its OWN native
   ToggleBookmarkUseCase; the Kotlin one should have zero Swift consumers — verify).
+
+---
+
+# AMENDMENT 2026-07-04 — gate feedback (Task 4)
+
+Authority: the 6b.3 human gate. Two findings, fix before merge.
+
+### Task 4: candle-mode overlays + benchmark line distinction
+
+Files: desktopApp detail/DetailPane.kt + designkit chart file(s) as needed;
+portfolio/PerformanceSection.kt. UI waiver applies (pure helpers tested if added).
+
+1. CANDLES + OVERLAYS (user rejects the 6b.2-era disclosed divergence): the branch at
+   DetailPane.kt:207-224 forces PriceChartWithOverlays (a LINE from candles) whenever
+   any overlay indicator is active, ignoring ChartMode.Candles. Fix: when
+   mode == Candles && overlays active, render REAL CANDLESTICKS with the overlay
+   polylines (SMA/EMA/VWAP/BB) drawn on top, sharing the candle index space for exact
+   x-alignment (candle i center == overlay point i). Line mode with overlays keeps the
+   existing PriceChartWithOverlays. RSI/MACD panes unchanged. Overlay colors/legend
+   chips unchanged. macOS parity: AssetDetailView draws indicators over both styles.
+   Degenerate guards (size<2) preserved.
+2. BENCHMARK LINE DISTINCTION (Portfolio tab): the benchmark twin polyline becomes
+   DASHED (silver, dash pattern distinct from the crosshair's (3,3) — use e.g. (8,6))
+   AND a small legend row appears above/below the overlay chart: a gold solid swatch +
+   "Portfolio" and a silver dashed swatch + the selected benchmark symbol (SPY/QQQ/VTI,
+   live from state.benchmark). DK styling idiom (11sp tertiary labels). Crosshair/
+   tooltip/header readout untouched.
+3. Verify: :desktopApp:test --rerun-tasks 167 (no count change expected unless a pure
+   helper gains a test); live-run ≥45s — candle mode + SMA shows candles+overlay, line
+   mode unchanged, benchmark dashed + legend renders; zero exceptions.
