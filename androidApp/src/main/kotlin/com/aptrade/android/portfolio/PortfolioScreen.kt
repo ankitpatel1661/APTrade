@@ -37,6 +37,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -470,14 +471,11 @@ private fun ActivityRow(txn: TransactionRowUi) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Column(horizontalAlignment = Alignment.End) {
-            Text(txn.priceText, style = MaterialTheme.typography.bodyMedium)
-            Text(
-                "${txn.quantityText} @ ${txn.priceText}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        Text(
+            "${txn.quantityText} @ ${txn.priceText}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -509,9 +507,10 @@ private fun TradeSheet(
     // Only surface the shared tradeError once the user has attempted a submit in THIS sheet.
     var hasSubmitted by remember { mutableStateOf(false) }
     // Snapshot the transaction count on open; dismiss once it grows (a successful trade).
+    // Effect-scoped like the desktop TradeDialog — never call callbacks during composition.
     val countAtOpen = remember(target) { transactionCount }
-    if (transactionCount > countAtOpen) {
-        onDismiss()
+    LaunchedEffect(transactionCount) {
+        if (transactionCount > countAtOpen) onDismiss()
     }
 
     val validQuantity = quantity.trim().toDoubleOrNull()?.let { it > 0.0 } == true
