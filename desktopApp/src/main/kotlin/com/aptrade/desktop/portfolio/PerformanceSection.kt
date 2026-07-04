@@ -208,17 +208,17 @@ private fun OverlayChart(
                     fontWeight = FontWeight.Medium, color = DK.textTertiary,
                 ),
             )
-            benchmark == null -> Text(
-                "Benchmark unavailable",
-                style = TextStyle(
-                    fontFamily = InterFamily, fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium, color = DK.textTertiary,
-                ),
-            )
             portfolio.size < 2 -> Text(
                 "No performance data yet.",
                 style = TextStyle(
                     fontFamily = InterFamily, fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium, color = DK.textTertiary,
+                ),
+            )
+            benchmark == null -> Text(
+                "Benchmark unavailable",
+                style = TextStyle(
+                    fontFamily = InterFamily, fontSize = 12.sp,
                     fontWeight = FontWeight.Medium, color = DK.textTertiary,
                 ),
             )

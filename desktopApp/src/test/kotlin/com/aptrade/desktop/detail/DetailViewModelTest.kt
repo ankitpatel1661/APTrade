@@ -81,6 +81,27 @@ class DetailViewModelTest {
     }
 
     @Test
+    fun staleCandleResponseNeverOverwritesNewerSelection() = runTest {
+        // Symmetric to the history-path stale test, but on the candles data path: a slow
+        // in-flight candle fetch for the first timeframe must not write after the selection
+        // moves on. loadChart() cancels the prior chartJob, so the hung fetch is abandoned.
+        val repo = FakeMarketDataRepository()
+        val slowFirst = CompletableDeferred<Unit>()
+        repo.candlesImpl = { _, tf ->
+            if (tf == Timeframe.OneDay) { slowFirst.await() }   // first (1D) candle fetch hangs
+            val close = if (tf == Timeframe.OneDay) "1.00" else "2.00"
+            listOf(Candle(1, Money.usd("1.00"), Money.usd("3.00"), Money.usd("0.50"), Money.usd(close)))
+        }
+        val vm = vm(repo, backgroundScope); runCurrent()
+        vm.onModeChange(ChartMode.Candles); runCurrent()        // 1D candle fetch in flight
+        vm.onTimeframeChange(Timeframe.OneMonth); runCurrent()  // cancels it, fetches 1M candles
+        slowFirst.complete(Unit); runCurrent()
+
+        // 1M candles won; the stale 1D response never overwrote them.
+        assertEquals(listOf(2.0), vm.state.value.candles.map { it.close })
+    }
+
+    @Test
     fun chartErrorSurfacesAndRetryRecovers() = runTest {
         val repo = FakeMarketDataRepository()
         var fail = true

@@ -1,5 +1,6 @@
 package com.aptrade.desktop.designkit
 
+import androidx.compose.ui.graphics.asSkiaBitmap
 import kotlinx.coroutines.runBlocking
 import org.jetbrains.skia.Bitmap as SkiaBitmap
 import org.jetbrains.skia.Image as SkiaImage
@@ -133,6 +134,34 @@ class BrandTintTest {
         return -1
     }
 
+    /** Hand-rolls the exact production remap (un-premultiply → classify → sample ramp →
+     *  re-premultiply, respecting channel order) into a fresh copy of [original]. This is the
+     *  reference the production output is byte-compared against. */
+    private fun handRolledRemap(bitmap: SkiaBitmap, original: ByteArray, accent: AccentTheme): ByteArray {
+        val mutated = original.copyOf()
+        val rgba = bitmap.imageInfo.colorInfo.colorType == org.jetbrains.skia.ColorType.RGBA_8888
+        val rOff = if (rgba) 0 else 2
+        val bOff = if (rgba) 2 else 0
+        var i = 0
+        while (i < mutated.size) {
+            val a = mutated[i + 3].toInt() and 0xFF
+            if (a != 0) {
+                val af = a / 255.0
+                val r = (mutated[i + rOff].toInt() and 0xFF) / 255.0 / af
+                val g = (mutated[i + 1].toInt() and 0xFF) / 255.0 / af
+                val b = (mutated[i + bOff].toInt() and 0xFF) / 255.0 / af
+                if (!isNeutralPixel(r, g, b)) {
+                    val (or, og, ob) = sampleRamp(accent, goldT(luminance(r, g, b)))
+                    mutated[i + rOff] = (or.coerceIn(0.0, 1.0) * af * 255.0).toInt().toByte()
+                    mutated[i + 1] = (og.coerceIn(0.0, 1.0) * af * 255.0).toInt().toByte()
+                    mutated[i + bOff] = (ob.coerceIn(0.0, 1.0) * af * 255.0).toInt().toByte()
+                }
+            }
+            i += 4
+        }
+        return mutated
+    }
+
     @Test fun resourceContainsAClassifiableGoldRegion() {
         val (bitmap, px) = decodeWordmarkPixels()
         assertTrue(
@@ -153,29 +182,11 @@ class BrandTintTest {
         assertNotNull(tinted, "sapphire wordmark should decode")
 
         // Re-decode via the same path the impl used and remap by hand to compare bytes.
-        val (b2, mutated) = decodeWordmarkPixels()
+        val (b2, decoded) = decodeWordmarkPixels()
         val rgba = b2.imageInfo.colorInfo.colorType == org.jetbrains.skia.ColorType.RGBA_8888
         val rOff = if (rgba) 0 else 2
         val bOff = if (rgba) 2 else 0
-        run {
-            var i = 0
-            while (i < mutated.size) {
-                val a = mutated[i + 3].toInt() and 0xFF
-                if (a != 0) {
-                    val af = a / 255.0
-                    val r = (mutated[i + rOff].toInt() and 0xFF) / 255.0 / af
-                    val g = (mutated[i + 1].toInt() and 0xFF) / 255.0 / af
-                    val b = (mutated[i + bOff].toInt() and 0xFF) / 255.0 / af
-                    if (!isNeutralPixel(r, g, b)) {
-                        val (or, og, ob) = sampleRamp(AccentTheme.Sapphire, goldT(luminance(r, g, b)))
-                        mutated[i + rOff] = (or.coerceIn(0.0, 1.0) * af * 255.0).toInt().toByte()
-                        mutated[i + 1] = (og.coerceIn(0.0, 1.0) * af * 255.0).toInt().toByte()
-                        mutated[i + bOff] = (ob.coerceIn(0.0, 1.0) * af * 255.0).toInt().toByte()
-                    }
-                }
-                i += 4
-            }
-        }
+        val mutated = handRolledRemap(b2, decoded, AccentTheme.Sapphire)
 
         // (a) the gold region's bytes actually changed under sapphire
         assertFalse(
@@ -194,6 +205,26 @@ class BrandTintTest {
                 )
             }
         }
+    }
+
+    @Test fun sapphireProductionOutputMatchesHandRolledRemapByteForByte() = runBlocking {
+        // Closes the plumbing gap: read the PRODUCTION tintedWordmark(Sapphire) pixels back out
+        // and byte-compare against the hand-rolled reference remap. This proves the whole decode
+        // → remapGoldPixels → installPixels → asComposeImageBitmap path produces exactly the
+        // expected bytes, not just that "some gold pixel changed".
+        BrandTintCache.clear()
+        val (refBitmap, decoded) = decodeWordmarkPixels()
+        val expected = handRolledRemap(refBitmap, decoded, AccentTheme.Sapphire)
+
+        val tinted = tintedWordmark(AccentTheme.Sapphire)
+        assertNotNull(tinted, "sapphire wordmark should decode")
+
+        val producedBytes = tinted.asSkiaBitmap().readPixels()!!
+        assertEquals(expected.size, producedBytes.size, "pixel buffer sizes must match")
+        assertTrue(
+            expected.contentEquals(producedBytes),
+            "production remap output must equal the hand-rolled reference byte-for-byte",
+        )
     }
 
     @Test fun champagnePassthroughDoesNotDecodeAndReturnsNull() = runBlocking {

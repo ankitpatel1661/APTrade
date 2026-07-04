@@ -109,6 +109,10 @@ fun main() = application {
     // The right-anchored account/settings panel (⋯ button). Hoisted here so it overlays the
     // whole window like the palette; it self-consumes Esc on its own panel, never the window's.
     var accountOpen by remember { mutableStateOf(false) }
+    // One-shot trigger for the ⋯ panel's "Export Portfolio Data" row: flipping it true switches
+    // to the Portfolio tab AND has PortfolioPane auto-open the export chooser (the pane consumes
+    // and clears it). Hoisted here so the account panel and the pane share one signal.
+    val pendingExport = remember { mutableStateOf(false) }
     val windowState = rememberWindowState(width = 1280.dp, height = 800.dp)
 
     // Load persisted settings once at startup. DK.accent stays Champagne Gold until this
@@ -199,6 +203,7 @@ fun main() = application {
                     accountOpen = accountOpen,
                     onOpenAccount = { accountOpen = true },
                     onCloseAccount = { accountOpen = false },
+                    pendingExport = pendingExport,
                     accent = DK.accent.value,
                     onSelectAccent = { theme -> selectAccent(theme) },
                 )
@@ -230,6 +235,7 @@ private fun AppRoot(
     accountOpen: Boolean,
     onOpenAccount: () -> Unit,
     onCloseAccount: () -> Unit,
+    pendingExport: androidx.compose.runtime.MutableState<Boolean>,
     accent: com.aptrade.desktop.designkit.AccentTheme,
     onSelectAccent: (com.aptrade.desktop.designkit.AccentTheme) -> Unit,
 ) {
@@ -311,6 +317,7 @@ private fun AppRoot(
                             renderPortfolioPdf(portfolioViewModel.exportSnapshot()),
                         )
                     },
+                    pendingExport = pendingExport,
                 )
                 AppTab.News -> NewsPane(
                     state = newsState,
@@ -337,14 +344,16 @@ private fun AppRoot(
 
         // The account/settings panel overlays the shell. It self-consumes Esc on its own panel
         // (TradeDialog pattern), so it never competes with the window's palette Esc. The Export
-        // Portfolio Data row switches to the Portfolio tab (where the Export… chooser lives) and
-        // closes the panel — see the DEVIATION note in the task report.
+        // Portfolio Data row switches to the Portfolio tab AND raises the one-shot pendingExport
+        // trigger, which PortfolioPane consumes to auto-open its Export… chooser — the earlier
+        // DEVIATION (row only switched tabs) is now resolved.
         if (accountOpen) {
             AccountPanel(
                 accent = accent,
                 onSelectAccent = onSelectAccent,
                 onExportPortfolio = {
                     selectedTab = AppTab.Portfolio
+                    pendingExport.value = true
                     onCloseAccount()
                 },
                 onClose = onCloseAccount,

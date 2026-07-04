@@ -74,8 +74,8 @@ class PortfolioExportTest {
             "Currency,USD",
             "",
             "Symbol,Name,Kind,Quantity,Average Cost,Last Price,Market Value,Cost Basis,Unrealized PnL,Allocation",
-            "BTC-USD,Bitcoin USD,Crypto,0.1,60000,60000,6000,6000,0,0.05994",
-            "AAPL,Apple Inc.,Stock,10,300,310,3100,3000,100,0.030969",
+            "BTC-USD,Bitcoin USD,crypto,0.1,60000,60000,6000,6000,0,0.05994",
+            "AAPL,Apple Inc.,stock,10,300,310,3100,3000,100,0.030969",
             "",
             "Total Value,100100",
             "Cash,91000",
@@ -110,6 +110,9 @@ class PortfolioExportTest {
         val first = holdings[0].jsonObject
         assertEquals("BTC-USD", first["symbol"]!!.jsonPrimitive.content)
         assertEquals("6000", first["marketValue"]!!.jsonPrimitive.content)
+        // The kind is the canonical lowercase machine key (decided 6b.3).
+        assertEquals("crypto", first["kind"]!!.jsonPrimitive.content)
+        assertEquals("stock", holdings[1].jsonObject["kind"]!!.jsonPrimitive.content)
     }
 
     @Test

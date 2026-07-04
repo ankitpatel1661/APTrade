@@ -112,6 +112,12 @@ fun exportFileName(extension: String, epochSeconds: Long): String {
     return "APTrade-Portfolio-$date.$extension"
 }
 
+/** Clamps [text] to at most [maxCount] characters, replacing the tail with a single "…" when
+ *  it overflows (so the result is exactly [maxCount] chars: `take(maxCount - 1) + "…"`).
+ *  `internal` so the char-exact boundary is unit-testable without a PDF round-trip. */
+internal fun truncate(text: String, maxCount: Int): String =
+    if (text.length <= maxCount) text else text.take(maxCount - 1) + "…"
+
 // PDFBox 3.x removed the static PDType1Font.HELVETICA constants in favor of constructing
 // a standard-14 font from Standard14Fonts.FontName.
 private val HELVETICA: PDFont = PDType1Font(Standard14Fonts.FontName.HELVETICA)
@@ -239,9 +245,6 @@ private class PageCursor(private val document: PDDocument) {
         amount < 0 -> COLOR_LOSS
         else -> COLOR_PRIMARY
     }
-
-    private fun truncate(text: String, maxCount: Int): String =
-        if (text.length <= maxCount) text else text.take(maxCount - 1) + "…"
 
     fun finish() {
         stream?.close()

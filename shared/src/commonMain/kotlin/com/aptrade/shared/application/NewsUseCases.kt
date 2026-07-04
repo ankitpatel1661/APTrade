@@ -2,6 +2,8 @@ package com.aptrade.shared.application
 
 import com.aptrade.shared.domain.NewsArticle
 import com.aptrade.shared.domain.NewsCategory
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.cancellation.CancellationException
 
 /** Fetches market news for a category. Failures are swallowed to an empty list (macOS
@@ -37,16 +39,24 @@ class LoadBookmarks(private val store: BookmarkStore) {
     suspend fun execute(): List<NewsArticle> = store.load()
 }
 
-/** Toggles an article's bookmark state against the given current list, persists the
- *  result, and returns it: present (by id) -> removed; absent -> inserted at index 0. */
+/** Toggles an article's bookmark state, persists the result, and returns it: present
+ *  (by id) -> removed; absent -> inserted at index 0.
+ *
+ *  The read-modify-write runs under a [Mutex]: the current list is re-loaded from the store
+ *  *inside* the lock (never taken from a possibly-stale caller snapshot), so a single shared
+ *  instance serializes concurrent toggles — the second caller sees the first's write. This is
+ *  why [AppGraph] hands the same instance to every view model. */
 class ToggleBookmark(private val store: BookmarkStore) {
-    suspend fun execute(article: NewsArticle, current: List<NewsArticle>): List<NewsArticle> {
+    private val mutex = Mutex()
+
+    suspend fun execute(article: NewsArticle): List<NewsArticle> = mutex.withLock {
+        val current = store.load()
         val result = if (current.any { it.id == article.id }) {
             current.filter { it.id != article.id }
         } else {
             listOf(article) + current
         }
         store.save(result)
-        return result
+        result
     }
 }

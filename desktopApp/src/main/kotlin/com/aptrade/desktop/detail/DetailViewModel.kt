@@ -133,7 +133,7 @@ class DetailViewModel(
         val toggle = toggleBookmark ?: return
         scope.launch {
             try {
-                val updated = toggle.execute(article, _state.value.bookmarks)
+                val updated = toggle.execute(article)
                 _state.update { it.copy(bookmarks = updated) }
             } catch (e: CancellationException) {
                 throw e

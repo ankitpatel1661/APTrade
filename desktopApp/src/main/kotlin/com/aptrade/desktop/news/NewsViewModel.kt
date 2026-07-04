@@ -83,7 +83,7 @@ class NewsViewModel(
     fun toggleBookmark(article: NewsArticle) {
         scope.launch {
             try {
-                val updated = toggleBookmark.execute(article, _state.value.bookmarks)
+                val updated = toggleBookmark.execute(article)
                 _state.update { it.copy(bookmarks = updated) }
             } catch (e: CancellationException) {
                 throw e

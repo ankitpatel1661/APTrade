@@ -28,6 +28,10 @@ data class PortfolioExport(
     data class Holding(
         val symbol: String,
         val name: String,
+        /** The canonical machine key for the asset kind: lowercase ("stock"/"etf"/"crypto"),
+         *  matching the Swift domain's `AssetKind.rawValue`. Decided 6b.3 — this is write-only
+         *  export data with no in-app consumers, so the casing is a clean break from the enum's
+         *  PascalCase `name`. */
         val kind: String,
         val quantity: BigDecimal,
         val averageCost: BigDecimal,
@@ -66,7 +70,7 @@ data class PortfolioExport(
                 Holding(
                     symbol = position.asset.symbol,
                     name = position.asset.name,
-                    kind = position.asset.kind.name,
+                    kind = position.asset.kind.name.lowercase(),
                     quantity = qty,
                     averageCost = position.averageCost.amount,
                     lastPrice = price,

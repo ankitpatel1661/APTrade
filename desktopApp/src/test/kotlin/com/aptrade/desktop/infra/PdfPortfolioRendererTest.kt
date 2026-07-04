@@ -124,4 +124,17 @@ class PdfPortfolioRendererTest {
 
         assertEquals("APTrade-Portfolio-2026-07-03.pdf", exportFileName("pdf", epochSeconds))
     }
+
+    @Test
+    fun truncateIsCharExactAtTheBoundary() {
+        // A name exactly at the cap passes through untouched; one char over collapses to
+        // `take(25) + "…"` — exactly 26 chars, with the 26th being the ellipsis.
+        val exact = "A".repeat(26)                 // 26 chars: fits
+        assertEquals(exact, truncate(exact, 26))
+
+        val over = "A".repeat(27)                  // 27 chars: overflows by one
+        val expected = "A".repeat(25) + "…"        // 25 A's + ellipsis = 26 chars
+        assertEquals(expected, truncate(over, 26))
+        assertEquals(26, truncate(over, 26).length)
+    }
 }

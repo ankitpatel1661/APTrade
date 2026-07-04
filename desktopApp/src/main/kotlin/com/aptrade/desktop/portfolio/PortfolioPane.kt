@@ -20,6 +20,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,6 +76,9 @@ fun PortfolioPane(
     onExportCsv: () -> Unit,
     onExportJson: () -> Unit,
     onExportPdf: () -> Unit,
+    /** One-shot trigger raised by the host (⋯ panel's Export row): when it flips true, the
+     *  export chooser auto-opens on this pane. The pane consumes and clears it. */
+    pendingExport: MutableState<Boolean> = remember { mutableStateOf(false) },
 ) {
     var section by remember { mutableStateOf(PortfolioSection.Holdings) }
     var showResetConfirm by remember { mutableStateOf(false) }
@@ -88,6 +93,7 @@ fun PortfolioPane(
             onExportCsv = onExportCsv,
             onExportJson = onExportJson,
             onExportPdf = onExportPdf,
+            pendingExport = pendingExport,
         )
         // The Performance section is now THE chart block — span bar, benchmark picker, and the
         // crosshair-scrubbed dual-line overlay live there, directly under the summary header.
@@ -133,8 +139,17 @@ private fun SummaryHeader(
     onExportCsv: () -> Unit,
     onExportJson: () -> Unit,
     onExportPdf: () -> Unit,
+    pendingExport: MutableState<Boolean>,
 ) {
     var exportOpen by remember { mutableStateOf(false) }
+    // Consume the host's one-shot Export trigger: open the chooser here, then clear the flag
+    // so a later ⋯ → Export re-fires it.
+    LaunchedEffect(pendingExport.value) {
+        if (pendingExport.value) {
+            exportOpen = true
+            pendingExport.value = false
+        }
+    }
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(top = 20.dp, bottom = 18.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),

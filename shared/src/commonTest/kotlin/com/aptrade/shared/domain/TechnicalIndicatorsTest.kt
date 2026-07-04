@@ -65,4 +65,20 @@ class TechnicalIndicatorsTest {
         assertTrue(out[25] != null && out[25]?.signal == null)
         assertTrue(out[32]?.signal == null && out[33]?.signal != null)
     }
+
+    @Test fun nonPositivePeriodIsAllNullSameLength() {
+        // A period of 0 (or negative) is degenerate: every windowed indicator must return a
+        // null-filled list index-aligned with the input rather than throw or divide by zero.
+        val values = listOf(1.0, 2.0, 3.0, 4.0, 5.0)
+        for (period in listOf(0, -1)) {
+            val sma = TechnicalIndicators.sma(values, period)
+            assertTrue(sma.size == values.size && sma.all { it == null }, "sma period=$period")
+            val ema = TechnicalIndicators.ema(values, period)
+            assertTrue(ema.size == values.size && ema.all { it == null }, "ema period=$period")
+            val rsi = TechnicalIndicators.rsi(values, period)
+            assertTrue(rsi.size == values.size && rsi.all { it == null }, "rsi period=$period")
+            val boll = TechnicalIndicators.bollingerBands(values, period)
+            assertTrue(boll.size == values.size && boll.all { it == null }, "bollinger period=$period")
+        }
+    }
 }

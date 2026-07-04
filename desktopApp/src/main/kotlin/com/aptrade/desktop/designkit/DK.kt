@@ -63,8 +63,12 @@ val InterFamily = FontFamily(
     Font(resource = "fonts/Inter-Bold.ttf", weight = FontWeight.Bold),
 )
 
-private val DKColorScheme = darkColorScheme(
-    primary = DK.gold,
+/** Constructs the Material color scheme per composition so `primary` tracks the active
+ *  accent: reading `DK.accent.value` here makes an accent switch recompose the theme (a
+ *  top-level `val` would have captured the gold stop once at class-load). */
+@Composable
+private fun dkColorScheme() = darkColorScheme(
+    primary = DK.accent.value.mid,
     onPrimary = Color.Black,
     background = DK.bgTop,
     onBackground = DK.textPrimary,
@@ -79,7 +83,7 @@ private val DKColorScheme = darkColorScheme(
 @Composable
 fun APTradeDesktopTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = DKColorScheme,
+        colorScheme = dkColorScheme(),
         typography = Typography(bodyLarge = TextStyle(fontFamily = InterFamily)),
         content = content,
     )

@@ -126,10 +126,10 @@ class NewsUseCasesTest {
     fun toggleBookmarkRemovesArticleAlreadyPresentById() = runTest {
         val existing = article("1")
         val other = article("2")
-        val store = FakeBookmarkStore()
+        val store = FakeBookmarkStore(initial = listOf(existing, other))
         val useCase = ToggleBookmark(store)
 
-        val result = useCase.execute(existing, listOf(existing, other))
+        val result = useCase.execute(existing)
 
         assertEquals(listOf(other), result)
         assertEquals(listOf(other), store.saved)
@@ -139,13 +139,44 @@ class NewsUseCasesTest {
     fun toggleBookmarkInsertsNewArticleAtIndexZeroAndSaves() = runTest {
         val existing = article("1")
         val incoming = article("2")
-        val store = FakeBookmarkStore()
+        val store = FakeBookmarkStore(initial = listOf(existing))
         val useCase = ToggleBookmark(store)
 
-        val result = useCase.execute(incoming, listOf(existing))
+        val result = useCase.execute(incoming)
 
         assertEquals(listOf(incoming, existing), result)
         assertEquals(listOf(incoming, existing), store.saved)
         assertTrue(store.saved!!.first() === incoming)
+    }
+
+    @Test
+    fun toggleBookmarkLoadsFreshStateInsteadOfCallerSnapshot() = runTest {
+        // The use case must re-load from the store, not trust any stale snapshot: an article
+        // that appears absent to a stale caller but present in the store gets removed.
+        val existing = article("1")
+        val store = FakeBookmarkStore(initial = listOf(existing))
+        val useCase = ToggleBookmark(store)
+
+        val result = useCase.execute(existing)
+
+        assertEquals(emptyList(), result)
+        assertEquals(emptyList(), store.saved)
+    }
+
+    @Test
+    fun interleavedTogglesThroughOneInstanceBothPersist() = runTest {
+        // Two toggles of different articles routed through the SAME instance: because the list
+        // is re-loaded under the mutex inside execute(), the second toggle sees the first's
+        // write, so both end up persisted (no lost update).
+        val first = article("1")
+        val second = article("2")
+        val store = FakeBookmarkStore()
+        val useCase = ToggleBookmark(store)
+
+        useCase.execute(first)
+        val result = useCase.execute(second)
+
+        assertEquals(listOf(second, first), result)
+        assertEquals(listOf(second, first), store.saved)
     }
 }
