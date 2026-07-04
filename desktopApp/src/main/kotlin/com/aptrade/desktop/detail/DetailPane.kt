@@ -83,6 +83,9 @@ fun DetailScreen(
             fetchHistory = graph.fetchHistory,
             fetchCandles = graph.fetchCandles,
             scope = scope,
+            fetchCompanyNews = graph.fetchCompanyNews,
+            loadBookmarks = graph.loadBookmarks,
+            toggleBookmark = graph.toggleBookmark,
         )
     }
     DisposableEffect(symbol) { onDispose { scope.cancel() } }

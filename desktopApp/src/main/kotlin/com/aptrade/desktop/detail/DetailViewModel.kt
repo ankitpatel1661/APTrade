@@ -4,10 +4,14 @@ import com.aptrade.desktop.designkit.ChartCandle
 import com.aptrade.desktop.designkit.kindLabel
 import com.aptrade.desktop.ui.userMessage
 import com.aptrade.shared.application.FetchCandles
+import com.aptrade.shared.application.FetchCompanyNews
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchProfile
+import com.aptrade.shared.application.LoadBookmarks
 import com.aptrade.shared.application.QuoteError
+import com.aptrade.shared.application.ToggleBookmark
+import com.aptrade.shared.domain.NewsArticle
 import com.aptrade.shared.domain.Timeframe
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -36,7 +40,17 @@ data class DetailUiState(
     val indicatorsActive: Boolean = false,
     val isLoadingChart: Boolean = true,
     val chartError: String? = null,
-)
+    /** Up to 8 company-news articles for this symbol (prefix applied in the VM). Empty when
+     *  no news key is configured or the fetch yields nothing. */
+    val newsArticles: List<NewsArticle> = emptyList(),
+    val newsLoading: Boolean = false,
+    val newsKeyMissing: Boolean = false,
+    /** Bookmarked-article state shared with the News tab (same store). */
+    val bookmarks: List<NewsArticle> = emptyList(),
+) {
+    /** Ids of bookmarked articles — lets each news row render its bookmark glyph. */
+    val bookmarkedIds: Set<String> get() = bookmarks.mapTo(HashSet()) { it.id }
+}
 
 /** Per-selection asset detail: profile, quote, and the timeframe/mode chart load.
  *  `scope` MUST be single-thread-confined (Dispatchers.Main on desktop): the internal
@@ -48,8 +62,15 @@ class DetailViewModel(
     private val fetchHistory: FetchHistory,
     private val fetchCandles: FetchCandles,
     private val scope: CoroutineScope,
+    /** Null when no news key is configured — surfaces as [DetailUiState.newsKeyMissing] and
+     *  the company-news section stays empty. */
+    private val fetchCompanyNews: FetchCompanyNews? = null,
+    private val loadBookmarks: LoadBookmarks? = null,
+    private val toggleBookmark: ToggleBookmark? = null,
 ) {
-    private val _state = MutableStateFlow(DetailUiState(symbol = symbol))
+    private val _state = MutableStateFlow(
+        DetailUiState(symbol = symbol, newsKeyMissing = fetchCompanyNews == null),
+    )
     val state: StateFlow<DetailUiState> = _state
     private var chartJob: Job? = null
 
@@ -87,6 +108,39 @@ class DetailViewModel(
             }
         }
         loadChart()
+        // Company news loads exactly once per symbol in its own isolated coroutine (like
+        // profile/quote/chart) and dies with this VM instance when the symbol changes — no
+        // stale guard needed. The use case already swallows failures to an empty list.
+        fetchCompanyNews?.let { fetch ->
+            scope.launch {
+                _state.update { it.copy(newsLoading = true) }
+                try {
+                    val articles = fetch.execute(symbol).take(8)
+                    _state.update { it.copy(newsArticles = articles, newsLoading = false) }
+                } catch (e: CancellationException) {
+                    throw e
+                }
+            }
+        }
+        loadBookmarks?.let { load ->
+            scope.launch { _state.update { it.copy(bookmarks = load.execute()) } }
+        }
+    }
+
+    /** Toggles the article's bookmark against the shared store; no-op if this VM was built
+     *  without a bookmark use case (news key absent). */
+    fun onToggleBookmark(article: NewsArticle) {
+        val toggle = toggleBookmark ?: return
+        scope.launch {
+            try {
+                val updated = toggle.execute(article, _state.value.bookmarks)
+                _state.update { it.copy(bookmarks = updated) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // best-effort persistence; keep the last-good bookmark list
+            }
+        }
     }
 
     fun onTimeframeChange(timeframe: Timeframe) {
