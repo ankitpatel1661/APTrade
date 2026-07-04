@@ -22,7 +22,8 @@ class YahooMarketDataRepository internal constructor(
     private val client: HttpClient,
 ) : MarketDataRepository, AutoCloseable {
 
-    // Production / Swift-harness entry point: builds the default CIO client.
+    // Production / Swift-harness entry point: builds the platform HTTP client via the
+    // defaultYahooHttpClient expect/actual (Darwin on Apple, CIO on the JVM).
     constructor() : this(defaultYahooHttpClient())
 
     override fun close() { client.close() }
