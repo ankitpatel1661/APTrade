@@ -108,6 +108,11 @@ fun PerformanceSection(
             maxDayOne = maxDayOne,
             onHoverIndex = { hoverIndex = it },
         )
+        // Legend for the two overlay curves — only meaningful when the benchmark twin renders.
+        // Gold solid = portfolio; silver dashed = the live benchmark symbol (state.benchmark).
+        if (state.benchmarkTwinValues != null && state.performanceValues.size >= 2 && !maxDayOne) {
+            ChartLegend(benchmarkSymbol = state.benchmark)
+        }
         MetricGrid(metrics = state.metrics)
     }
 }
@@ -239,17 +244,25 @@ private fun OverlayChart(
                     chartWidthPx = size.width
                     val stepX = size.width / (portfolio.size - 1)
                     fun y(v: Double) = size.height - ((v - min) / span * size.height).toFloat()
-                    fun drawSeries(values: List<Double>, color: Color) {
+                    fun drawSeries(values: List<Double>, color: Color, dash: FloatArray? = null) {
                         if (values.size < 2) return
                         val path = Path()
                         values.forEachIndexed { i, v ->
                             val x = i * stepX
                             if (i == 0) path.moveTo(x, y(v)) else path.lineTo(x, y(v))
                         }
-                        drawPath(path, color, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                        drawPath(
+                            path, color,
+                            style = Stroke(
+                                width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round,
+                                pathEffect = dash?.let { PathEffect.dashPathEffect(it, 0f) },
+                            ),
+                        )
                     }
                     // Benchmark first, so the gold portfolio line reads on top where they cross.
-                    drawSeries(benchmark, DK.silver)
+                    // The benchmark twin is DASHED (8,6) — distinct from the crosshair's (3,3)
+                    // hairline — matching the legend's dashed silver swatch.
+                    drawSeries(benchmark, DK.silver, dash = floatArrayOf(8f, 6f))
                     drawSeries(portfolio, DK.gold)
 
                     // Crosshair on the PORTFOLIO polyline only: dashed (3,3) hairline vertical +
@@ -317,6 +330,37 @@ private fun CrosshairTooltip(
                 ),
             )
         }
+    }
+}
+
+/** Two-entry legend under the overlay chart: a gold SOLID swatch + "Portfolio" and a silver
+ *  DASHED swatch + the live benchmark symbol. DK tertiary-label idiom (11sp). The swatch dash
+ *  mirrors the (8,6) benchmark polyline so the legend reads as its key. */
+@Composable
+private fun ChartLegend(benchmarkSymbol: String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        LegendEntry(color = DK.gold, dashed = false, label = "Portfolio")
+        LegendEntry(color = DK.silver, dashed = true, label = benchmarkSymbol)
+    }
+}
+
+@Composable
+private fun LegendEntry(color: Color, dashed: Boolean, label: String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Canvas(Modifier.width(16.dp).height(2.dp)) {
+            val cy = size.height / 2f
+            drawLine(
+                color, Offset(0f, cy), Offset(size.width, cy), 2.dp.toPx(), cap = StrokeCap.Round,
+                pathEffect = if (dashed) PathEffect.dashPathEffect(floatArrayOf(4f, 3f), 0f) else null,
+            )
+        }
+        Text(
+            label,
+            style = TextStyle(
+                fontFamily = InterFamily, fontSize = 11.sp, fontWeight = FontWeight.Medium,
+                color = DK.textTertiary, fontFeatureSettings = "tnum",
+            ),
+        )
     }
 }
 

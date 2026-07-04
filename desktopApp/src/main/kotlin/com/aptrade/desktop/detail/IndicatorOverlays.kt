@@ -115,10 +115,8 @@ fun PriceChartWithOverlays(
         fun x(i: Int) = i * stepX
         fun y(v: Double) = size.height - ((v - domainLo) / span * size.height).toFloat()
 
-        // Bollinger band fill first, so it sits BEHIND the price line and band edges.
-        if (selection.contains(Indicator.Bollinger)) {
-            drawBollingerFill(series.bollinger, ::x, ::y)
-        }
+        // Bollinger fill sits BEHIND the price line and band edges.
+        drawBollingerFillIfOn(series, selection, ::x, ::y)
 
         // Price line (from candle closes).
         val pricePath = Path()
@@ -128,23 +126,92 @@ fun PriceChartWithOverlays(
         drawPath(pricePath, lineColor, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
 
         // Overlay polylines — each skips the null seed prefix.
-        if (selection.contains(Indicator.Sma)) {
-            drawSeries(series.sma, Indicator.Sma.color, 1.5.dp.toPx(), ::x, ::y)
-        }
-        if (selection.contains(Indicator.Ema)) {
-            drawSeries(series.ema, Indicator.Ema.color, 1.5.dp.toPx(), ::x, ::y)
-        }
-        if (selection.contains(Indicator.Vwap)) {
-            drawSeries(series.vwap, Indicator.Vwap.color, 1.5.dp.toPx(), ::x, ::y,
-                dash = floatArrayOf(5f, 3f))
-        }
+        drawOverlaySeries(series, selection, ::x, ::y)
+    }
+}
+
+/** REAL candlesticks (identical geometry to [com.aptrade.desktop.designkit.CandleChart]) with
+ *  the enabled overlays drawn on top, sharing the candle index → x space so overlay point i sits
+ *  at candle i's center. The y-domain spans candle low/high (widened to include Bollinger extremes
+ *  when BB is on) so candles and overlay lines read on one scale. This is the Candles-mode
+ *  counterpart to [PriceChartWithOverlays] (which draws a line from closes for Line mode);
+ *  macOS `AssetDetailView` likewise draws indicators over both chart styles. */
+@Composable
+fun CandleChartWithOverlays(
+    candles: List<ChartCandle>,
+    series: IndicatorSeries,
+    selection: Set<Indicator>,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier) {
+        if (candles.size < 2) return@Canvas
+        var lo = candles.minOf { it.low }
+        var hi = candles.maxOf { it.high }
         if (selection.contains(Indicator.Bollinger)) {
-            val bbColor = Indicator.Bollinger.color
-            drawSeries(series.bollinger.map { it?.upper }, bbColor, 1.dp.toPx(), ::x, ::y)
-            drawSeries(series.bollinger.map { it?.lower }, bbColor, 1.dp.toPx(), ::x, ::y)
-            drawSeries(series.bollinger.map { it?.middle }, bbColor.copy(alpha = 0.6f), 1.dp.toPx(), ::x, ::y,
-                dash = floatArrayOf(3f, 3f))
+            series.bollinger.forEach { band ->
+                if (band != null) { lo = minOf(lo, band.lower); hi = maxOf(hi, band.upper) }
+            }
         }
+        val span = (hi - lo).takeIf { it > 0.0 } ?: 1.0
+        val slot = size.width / candles.size
+        val bodyWidth = (slot * 0.6f).coerceAtLeast(1f)
+        // Candle i center — the shared x for both wicks/bodies and every overlay point.
+        fun x(i: Int) = i * slot + slot / 2f
+        fun y(v: Double) = size.height - ((v - lo) / span * size.height).toFloat()
+
+        // Bollinger fill behind the candles and overlay edges.
+        drawBollingerFillIfOn(series, selection, ::x, ::y)
+
+        // Candlesticks (same wick/body drawing as CandleChart, on the extended domain).
+        candles.forEachIndexed { i, c ->
+            val cx = x(i)
+            val color = if (c.close >= c.open) DK.up else DK.down
+            drawLine(color, Offset(cx, y(c.high)), Offset(cx, y(c.low)), 1.dp.toPx())
+            val top = y(maxOf(c.open, c.close)); val bottom = y(minOf(c.open, c.close))
+            drawRect(color, Offset(cx - bodyWidth / 2f, top), Size(bodyWidth, (bottom - top).coerceAtLeast(1f)))
+        }
+
+        // Overlay polylines on top, aligned to candle centers.
+        drawOverlaySeries(series, selection, ::x, ::y)
+    }
+}
+
+/** Draws the enabled Bollinger translucent fill (nothing if BB is off). Shared by both chart
+ *  variants so the fill geometry lives in one place. */
+private fun DrawScope.drawBollingerFillIfOn(
+    series: IndicatorSeries,
+    selection: Set<Indicator>,
+    x: (Int) -> Float,
+    y: (Double) -> Float,
+) {
+    if (selection.contains(Indicator.Bollinger)) drawBollingerFill(series.bollinger, x, y)
+}
+
+/** Draws every enabled overlay polyline (SMA / EMA / VWAP / Bollinger bands) with the given
+ *  index → pixel mapping. Extracted so the Line-mode and Candles-mode variants share identical
+ *  overlay geometry — only the price backdrop and x/y mapping differ. */
+private fun DrawScope.drawOverlaySeries(
+    series: IndicatorSeries,
+    selection: Set<Indicator>,
+    x: (Int) -> Float,
+    y: (Double) -> Float,
+) {
+    if (selection.contains(Indicator.Sma)) {
+        drawSeries(series.sma, Indicator.Sma.color, 1.5.dp.toPx(), x, y)
+    }
+    if (selection.contains(Indicator.Ema)) {
+        drawSeries(series.ema, Indicator.Ema.color, 1.5.dp.toPx(), x, y)
+    }
+    if (selection.contains(Indicator.Vwap)) {
+        drawSeries(series.vwap, Indicator.Vwap.color, 1.5.dp.toPx(), x, y,
+            dash = floatArrayOf(5f, 3f))
+    }
+    if (selection.contains(Indicator.Bollinger)) {
+        val bbColor = Indicator.Bollinger.color
+        drawSeries(series.bollinger.map { it?.upper }, bbColor, 1.dp.toPx(), x, y)
+        drawSeries(series.bollinger.map { it?.lower }, bbColor, 1.dp.toPx(), x, y)
+        drawSeries(series.bollinger.map { it?.middle }, bbColor.copy(alpha = 0.6f), 1.dp.toPx(), x, y,
+            dash = floatArrayOf(3f, 3f))
     }
 }
 

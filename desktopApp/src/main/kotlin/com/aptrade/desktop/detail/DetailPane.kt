@@ -207,8 +207,17 @@ private fun DetailContent(
             when {
                 state.isLoadingChart -> CircularProgressIndicator(color = DK.gold)
                 state.chartError != null -> ChartError(message = state.chartError, onRetry = onRetry)
-                // Any overlay on → draw the price line from candles so overlays align on one
-                // index space. Otherwise the original Line/Candles rendering.
+                // Overlays on: honor the mode. Candles mode → REAL candlesticks with overlay
+                // polylines on top (shared candle index space); Line mode → the price line drawn
+                // from closes. Both share one index → x space so overlays align. Otherwise the
+                // original Line/Candles rendering.
+                selection.any { it.isOverlay } && state.candles.size >= 2 && state.mode == ChartMode.Candles ->
+                    CandleChartWithOverlays(
+                        candles = state.candles,
+                        series = series,
+                        selection = selection,
+                        modifier = Modifier.fillMaxSize(),
+                    )
                 selection.any { it.isOverlay } && state.candles.size >= 2 ->
                     PriceChartWithOverlays(
                         candles = state.candles,
