@@ -67,7 +67,6 @@ fun renderPortfolioPdf(export: PortfolioExport): ByteArray {
         cursor.drawText("Portfolio Statement · $generated", HELVETICA, 11f, COLOR_SECONDARY)
         cursor.advance(22f)
 
-        val code = export.currencyCode
         val summary = listOf(
             "Total Value" to formatMoney(export.totalValue.amount.toStringExpanded()),
             "Cash" to formatMoney(export.cash.amount.toStringExpanded()),
@@ -93,7 +92,7 @@ fun renderPortfolioPdf(export: PortfolioExport): ByteArray {
 
             for (holding in export.holdings) {
                 cursor.ensureRoomFor(14f)
-                cursor.drawHoldingRow(holding, code)
+                cursor.drawHoldingRow(holding)
                 cursor.advance(14f)
             }
         }
@@ -188,7 +187,7 @@ private class PageCursor(private val document: PDDocument) {
         drawColumn(active, font, size, COLOR_PRIMARY, "ALLOC", COL_ALLOC, alignRight = true)
     }
 
-    fun drawHoldingRow(holding: PortfolioExport.Holding, currencyCode: String) {
+    fun drawHoldingRow(holding: PortfolioExport.Holding) {
         val active = stream ?: error("no active content stream")
         val font = HELVETICA
         val size = 9.5f

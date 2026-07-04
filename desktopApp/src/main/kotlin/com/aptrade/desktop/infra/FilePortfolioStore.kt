@@ -66,13 +66,11 @@ class FilePortfolioStore(private val file: Path) : PortfolioStore {
         try {
             val dto = json.decodeFromString<PortfolioDTO>(file.readText())
 
-            // Parse cash
             val cash = Money(
                 amount = BigDecimal.parseString(dto.cash.amount),
                 currencyCode = dto.cash.currency,
             )
 
-            // Parse positions
             val positions = dto.positions.map { posDto ->
                 val kind = AssetKind.entries.firstOrNull { it.name == posDto.asset.kind }
                     ?: return@withContext null  // unknown kind: entire file is corrupt (non-local return — aborts the WHOLE load to null, not a per-row skip)
@@ -89,7 +87,6 @@ class FilePortfolioStore(private val file: Path) : PortfolioStore {
                 Position(asset, quantity, averageCost, realizedPnL)
             }
 
-            // Parse transactions
             val transactions = dto.transactions.map { txnDto ->
                 val side = TradeSide.entries.firstOrNull { it.name == txnDto.side }
                     ?: return@withContext null  // unknown side: entire file is corrupt (would break cash accounting) (non-local return — aborts the WHOLE load to null, not a per-row skip)
