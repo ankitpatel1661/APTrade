@@ -233,7 +233,7 @@ class FetchPerformanceReportTest {
     }
 
     @Test
-    fun benchmarkTwinValuesUseUntrimmedBenchmarkHistoryAndPortfolioStore() = runTest {
+    fun benchmarkTwinValuesUseUntrimmedBenchmarkHistory() = runTest {
         // Portfolio curve starts at day 2 (AAPL's first candle). The trade itself happened
         // at day 1 (epoch 86_400), before the curve start — the twin must still see the
         // benchmark candle at day 1 (pre-head-trim) to value that trade correctly, even
