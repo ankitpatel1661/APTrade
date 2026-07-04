@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -71,14 +72,39 @@ fun MagnifierIcon(tint: Color = DK.textSecondary, modifier: Modifier = Modifier.
     }
 }
 
-/** The full "AP Trade" lockup PNG (dark-mode champagne original). */
+/**
+ * The full "AP Trade" lockup — champagne original for the default accent, otherwise the gold
+ * pixels are recolored onto the active accent's ramp (macOS `recoloredBrandImage` port).
+ *
+ * champagneGold takes the zero-cost `painterResource` passthrough (pixel-identical shipped artwork).
+ * Any other accent decodes + remaps off the UI thread ([tintedWordmark]); until that async tint
+ * lands the champagne original shows as the placeholder — a brief beat of default, never a blank gap.
+ * The accent is read from snapshot state inside composition, so switching accents retints live.
+ */
 @Composable
 fun BrandWordmark(height: Dp) {
-    Image(
-        painter = painterResource("brand/AppWordmark.png"),
-        contentDescription = "APTrade",
-        modifier = Modifier.height(height),
-    )
+    val accent = DK.accent.value
+    val tinted: ImageBitmap? by produceState<ImageBitmap?>(
+        initialValue = BrandTintCache.get(accent),
+        key1 = accent,
+    ) {
+        value = tintedWordmark(accent)
+    }
+
+    val bitmap = tinted
+    if (accent != AccentTheme.ChampagneGold && bitmap != null) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = "APTrade",
+            modifier = Modifier.height(height),
+        )
+    } else {
+        Image(
+            painter = painterResource("brand/AppWordmark.png"),
+            contentDescription = "APTrade",
+            modifier = Modifier.height(height),
+        )
+    }
 }
 
 /** Pulsing gold "LIVE" capsule — DesignKit.swift LiveBadge (1.1s ease pulse). */
