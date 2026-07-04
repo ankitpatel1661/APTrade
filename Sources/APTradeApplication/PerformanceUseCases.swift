@@ -74,7 +74,12 @@ public struct ComputePerformanceMetricsUseCase: Sendable {
         let vol = RiskMetrics.annualizedVolatility(returns)
 
         // Benchmark (optional — failure must not sink the report).
-        let benchmarkCurve = (try? await repository.history(for: benchmark, timeframe: timeframe)) ?? []
+        // Head-trim to the (post-gate) equity curve start (adopted from the Kotlin shared core
+        // in increment 6b.3, mirroring FetchPerformanceReport) so the overlay and beta/alpha
+        // describe the same span of time — benchmark closes that predate the curve are dropped.
+        let curveStart = equity.first!.date   // safe: equity.count > 1 guaranteed above
+        let benchmarkCurve = ((try? await repository.history(for: benchmark, timeframe: timeframe)) ?? [])
+            .filter { $0.date >= curveStart }
         var beta: Double?
         var alpha: Double?
         if benchmarkCurve.count > 1 {

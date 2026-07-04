@@ -25,6 +25,29 @@ private final class RisingRepo: MarketDataRepository, @unchecked Sendable {
     }
 }
 
+/// Serves a fixed holding history (AAPL, days 5..9) and a benchmark (SPY) whose closes
+/// START BEFORE the holding history — days 0..9. The pre-curve benchmark closes (days 0..4)
+/// must be head-trimmed out of the metrics input so beta/alpha describe the same span.
+private final class StaggeredRepo: MarketDataRepository, @unchecked Sendable {
+    func quote(for symbol: String) async throws -> Quote {
+        Quote(symbol: symbol, price: Money(amount: 110), previousClose: Money(amount: 100))
+    }
+    func history(for symbol: String, timeframe: Timeframe) async throws -> [PricePoint] {
+        if symbol == "SPY" {
+            // Benchmark trades all 10 days; days 0..4 predate the equity curve start.
+            return (0..<10).map { i in
+                PricePoint(date: Date(timeIntervalSince1970: TimeInterval(i) * 86_400),
+                           close: Money(amount: Decimal(200 + i)))
+            }
+        }
+        // Holding history only from day 5 → equity curve starts at day 5.
+        return (5..<10).map { i in
+            PricePoint(date: Date(timeIntervalSince1970: TimeInterval(i) * 86_400),
+                       close: Money(amount: Decimal(100 + i)))
+        }
+    }
+}
+
 final class PerformanceUseCasesTests: XCTestCase {
     private func portfolioWithAAPL() -> Portfolio {
         let aapl = Asset(symbol: "AAPL", name: "Apple", kind: .stock)
@@ -59,5 +82,23 @@ final class PerformanceUseCasesTests: XCTestCase {
         XCTAssertNil(report.metrics.beta)            // no benchmark → no beta
         XCTAssertNil(report.metrics.alpha)
         XCTAssertTrue(report.benchmarkCurve.isEmpty)
+    }
+
+    /// Head-trim (increment 6b.3): benchmark closes that predate the equity curve's first
+    /// date must be excluded before the count>1 gate, so the overlay and beta/alpha describe
+    /// the same span. Equity curve starts at day 5; SPY has closes from day 0.
+    func test_benchmarkHeadTrimmedToCurveStart() async {
+        let useCase = ComputePerformanceMetricsUseCase(repository: StaggeredRepo(),
+                                                       store: MemoryStore(portfolioWithAAPL()))
+        let report = await useCase(timeframe: .oneYear, benchmark: "SPY")
+
+        XCTAssertFalse(report.isEmpty)
+        let curveStart = report.equityCurve.first!.date
+        // No benchmark point may precede the curve start.
+        XCTAssertFalse(report.benchmarkCurve.contains { $0.date < curveStart })
+        // SPY served 10 closes (days 0..9); trimming to day 5 leaves exactly 5.
+        XCTAssertEqual(report.benchmarkCurve.count, 5)
+        XCTAssertEqual(report.benchmarkCurve.first?.date, curveStart)
+        XCTAssertNotNil(report.metrics.beta)
     }
 }

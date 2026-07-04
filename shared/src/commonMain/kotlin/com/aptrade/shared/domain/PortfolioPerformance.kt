@@ -5,15 +5,15 @@ import com.ionspin.kotlin.bignum.decimal.BigDecimal
 /**
  * Transcribed from `Sources/APTradeDomain/PortfolioPerformance.swift` (`performanceSeries`).
  *
- * RECORDED DIVERGENCE (kmp-portfolio-6b2, user-mandated): the Swift original silently drops
- * any symbol that has no `lastClose` yet at a given union date, so a leading window before a
- * mixed-calendar symbol's first candle (e.g. crypto trading 24/7 alongside equities that only
- * have market-hours candles) still emits a point valuing only the already-priced symbols. That
- * produces a valuation cliff the moment the late symbol's first candle joins. This Kotlin
- * implementation instead gates the curve: it emits nothing until every symbol with any history
- * is priced, so the curve starts flat at the first fully-priced date. macOS adoption of this
- * gate is tracked for increment 6b.3 — do not backport this diff into the Swift file without
- * that decision.
+ * ALL-PRICED GATE (kmp-portfolio-6b2, user-mandated; ADOPTED by macOS in 6b.3): the Swift
+ * original once silently dropped any symbol that had no `lastClose` yet at a given union date,
+ * so a leading window before a mixed-calendar symbol's first candle (e.g. crypto trading 24/7
+ * alongside equities that only have market-hours candles) still emitted a point valuing only
+ * the already-priced symbols — producing a valuation cliff the moment the late symbol's first
+ * candle joined. This Kotlin implementation instead gates the curve: it emits nothing until
+ * every symbol with any history is priced, so the curve starts flat at the first fully-priced
+ * date. As of increment 6b.3 the Swift `performanceSeries` adopts this exact gate (reversing
+ * the original macOS-first direction), so the two implementations are back in lockstep.
  */
 
 /** One point on a reconstructed portfolio performance curve: the account's value and its

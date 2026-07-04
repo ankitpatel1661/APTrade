@@ -22,6 +22,15 @@ public extension Portfolio {
     /// close at every date so symbols with different trading calendars (e.g. crypto vs.
     /// equities) stay aligned. Cash is treated as constant. Pure — callers supply the
     /// per-symbol histories; this does no networking.
+    ///
+    /// All-priced gate (adopted from the Kotlin shared core in increment 6b.3, reversing the
+    /// original macOS-first direction): a date is emitted only once *every* symbol with any
+    /// history is priced. A symbol that has history but no close yet at a given date sets
+    /// `allPriced = false` and the whole date is skipped, so a leading window before a
+    /// mixed-calendar symbol's first candle (e.g. crypto trading 24/7 alongside market-hours
+    /// equities) no longer emits a point valuing only the already-priced symbols — that
+    /// avoided a valuation cliff the moment the late symbol's first candle joins. Symbols
+    /// with NO history at all stay excluded from the gate (they must not blank the curve).
     func performanceSeries(histories: [String: [PricePoint]]) -> [PortfolioPerformancePoint] {
         guard !positions.isEmpty else { return [] }
         let code = cash.currencyCode
@@ -44,23 +53,27 @@ public extension Portfolio {
         for date in allDates.sorted() {
             var holdings = Decimal(0)
             var pnl = Decimal(0)
-            var priced = false
+            var allPriced = true
             for position in positions {
                 let symbol = position.asset.symbol
-                guard let points = sorted[symbol] else { continue }
+                guard let points = sorted[symbol] else { continue }  // no history at all: excluded, doesn't gate
                 var i = cursor[symbol] ?? 0
                 while i < points.count, points[i].date <= date {
                     lastClose[symbol] = points[i].close.amount
                     i += 1
                 }
                 cursor[symbol] = i
-                guard let close = lastClose[symbol] else { continue }  // no data yet at this date
+                guard let close = lastClose[symbol] else {
+                    // Gate: this symbol has history but no close yet at this date. Skip the
+                    // whole date rather than valuing only the already-priced symbols.
+                    allPriced = false
+                    continue
+                }
                 let quantity = position.quantity.amount
                 holdings += close * quantity
                 pnl += (close - position.averageCost.amount) * quantity
-                priced = true
             }
-            guard priced else { continue }
+            guard allPriced else { continue }
             result.append(PortfolioPerformancePoint(
                 date: date,
                 value: Money(amount: cash.amount + holdings, currencyCode: code),
