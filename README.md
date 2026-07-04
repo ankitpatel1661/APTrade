@@ -226,6 +226,30 @@ risk/performance calculations (`RiskMetrics`, `FetchPerformanceReport`) all live
 and persistence format will carry to the macOS app in a later increment; only the PDF
 byte-rendering itself is a desktop-(JVM)-side adapter.
 
+A **News tab** brings Finnhub-backed headlines to the desktop app: a category pill row —
+**General · Crypto · Merger** — plus a trailing **Saved** toggle that swaps the feed for
+bookmarked articles (selecting Saved visually deselects the category pills; picking a
+category leaves the Saved view). A live filter capsule narrows the visible feed by headline
+or source as you type, with no debounce. Each article row shows a thumbnail, headline,
+`source · relative time` (e.g. "3 hours ago"), and a per-row bookmark toggle; clicking the
+row body opens the article in your default browser. The same asset detail screen used for
+Watchlist/Portfolio gained a **News** section — up to **8** company-news headlines for that
+symbol, reusing the same row/bookmark behavior, and rendering nothing at all when there's no
+key or no articles. Bookmarks persist to a `bookmarks.json` in the OS config directory (the
+same directory `watchlist.json`/`settings.json` already use) and survive restarts via the
+**Saved** view. **No-key state:** without a Finnhub key the whole News tab is replaced by a
+"connect a news source" prompt reading *"Add a Finnhub API key to
+`~/.config/aptrade/config.json` (field `finnhubAPIKey`) and relaunch."* The key itself is
+read from `<config dir>/config.json` first (`~/Library/Application Support/APTrade/config.json`
+on macOS dev runs, `%APPDATA%\APTrade\config.json` on Windows), falling back to the
+macOS-style dotfile path `~/.config/aptrade/config.json` if the primary file is absent —
+never from the source tree or the app bundle.
+**Recorded divergences from macOS:** bookmarks persist to a JSON file in the OS config
+directory rather than macOS `UserDefaults`, since the desktop app has no `UserDefaults`
+equivalent; and relative-time labels ("N minutes/hours/days ago", falling back to an
+absolute `MMM d` date past 7 days) are a custom fixed English-only formatter, since the JDK
+has no equivalent to Foundation's locale-aware `RelativeDateTimeFormatter` that macOS uses.
+
 ## Project Structure
 
 ```
@@ -247,24 +271,37 @@ APTrade Lite is the foundation. Planned toward the full platform:
 - Market-holiday calendar for the scheduler
 - Real authentication (Apple Sign In), biometric gating, and cloud sync (Supabase)
 - **Windows parity, continued** — the `:desktopApp` Compose app now covers Watchlist +
-  detail + palette (6a) and a Portfolio tab with detail-screen indicators, performance/risk
-  intelligence, and export (6b.1 + 6b.2). Still to come: **6b.3** macOS adoption of the
-  shared portfolio core, **6b.4** an Android portfolio screen, then **6c** News tab and
-  **6d** alerts, account panel, settings, and light theme.
+  detail + palette (6a), a Portfolio tab with detail-screen indicators, performance/risk
+  intelligence, and export (6b.1 + 6b.2), and a News tab with per-symbol company news and
+  bookmarks (6c). Still to come: **6b.3** macOS adoption of the shared portfolio core,
+  **6b.4** an Android portfolio screen, then **6d** alerts, account panel, settings, and
+  light theme.
 
-Recently shipped: desktop **portfolio intelligence and fidelity** (`:desktopApp`, increment
-6b.2) — six chart indicators (SMA 20, EMA 12, VWAP, Bollinger Bands, RSI, MACD) as detail-
-screen overlays with dedicated RSI/MACD panes, KEY STATS and YOUR POSITION cards with a
-BUY/SELL action on the detail screen, an allocation donut chart, a Performance section with
-an SPY/QQQ/VTI benchmark picker and a 7-metric risk grid (Total Return, Annualized,
-Volatility, Max Drawdown, Sharpe, Beta, Alpha), a single Export… chooser (CSV/JSON/PDF), and
-formatted money throughout; a desktop **Portfolio tab** (`:desktopApp`, increment 6b.1) —
-paper trading, holdings with per-row buy/sell, allocation bars, an activity ledger, an
-account-value chart, and CSV/JSON export, on a new shared Kotlin portfolio core
-(`PortfolioStore`, buy/sell/reset/performance use cases) also consumed by a file-backed
-persistence adapter; a **Windows Compose Desktop app** (`:desktopApp`, increment 6a) with a live
-Watchlist tab, asset detail (charts + stat tiles), and a Ctrl+K palette on the shared Kotlin
-core, plus a `windows-desktop` CI workflow producing a Windows `.msi`; a Finnhub-backed **News** tab (company/market/crypto headlines, filter, bookmarks) plus per-symbol company news on the asset view; a ⌘K **command palette**; **risk & performance** analytics (TWR/CAGR, volatility, drawdown, Sharpe/Beta/Alpha, benchmark overlay, concentration warnings); an in-app **language switcher** (English/Deutsch/Italiano/Español); candlestick charts, SMA/EMA/RSI/MACD/Bollinger indicators, realized P&L and a transactions ledger, allocation breakdown, historical P&L reconstruction, and PDF/Excel/Word portfolio export.
+Recently shipped: desktop **News** (`:desktopApp`, increment 6c) — a Finnhub-backed News tab
+(General/Crypto/Merger categories, live headline/source filter, bookmarks with a persisted
+Saved view, open-in-browser) plus a per-symbol News section (≤8 articles) on the asset detail
+screen, backed by a new shared `:shared` Finnhub news core (`NewsRepository`,
+`FetchMarketNews`/`FetchCompanyNews`/bookmark use cases) also consumed by a file-backed
+`FileBookmarkStore` and a `FinnhubKeyConfig` reader; desktop **portfolio intelligence and
+fidelity** (`:desktopApp`, increment 6b.2) — six chart indicators (SMA 20, EMA 12, VWAP,
+Bollinger Bands, RSI, MACD) as detail-screen overlays with dedicated RSI/MACD panes, KEY
+STATS and YOUR POSITION cards with a BUY/SELL action on the detail screen, an allocation
+donut chart, a Performance section with an SPY/QQQ/VTI benchmark picker and a 7-metric risk
+grid (Total Return, Annualized, Volatility, Max Drawdown, Sharpe, Beta, Alpha), a single
+Export… chooser (CSV/JSON/PDF), and formatted money throughout; a desktop **Portfolio tab**
+(`:desktopApp`, increment 6b.1) — paper trading, holdings with per-row buy/sell, allocation
+bars, an activity ledger, an account-value chart, and CSV/JSON export, on a new shared Kotlin
+portfolio core (`PortfolioStore`, buy/sell/reset/performance use cases) also consumed by a
+file-backed persistence adapter; a **Windows Compose Desktop app** (`:desktopApp`, increment
+6a) with a live Watchlist tab, asset detail (charts + stat tiles), and a Ctrl+K palette on
+the shared Kotlin core, plus a `windows-desktop` CI workflow producing a Windows `.msi`; a
+Finnhub-backed **News** tab (company/market/crypto headlines, filter, bookmarks) plus
+per-symbol company news on the asset view — for the native **macOS** app; a ⌘K **command
+palette**; **risk & performance** analytics (TWR/CAGR, volatility, drawdown, Sharpe/Beta/
+Alpha, benchmark overlay, concentration warnings); an in-app **language switcher**
+(English/Deutsch/Italiano/Español); candlestick charts, SMA/EMA/RSI/MACD/Bollinger
+indicators, realized P&L and a transactions ledger, allocation breakdown, historical P&L
+reconstruction, and PDF/Excel/Word portfolio export.
 
 ## Disclaimer
 
