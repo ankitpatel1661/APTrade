@@ -278,7 +278,7 @@ class PortfolioViewModelTest {
         assertEquals(PortfolioSpan.Max, vm.state.value.span)
         // The report path (the single chart feed) carries both history points.
         assertEquals(2, vm.state.value.performancePoints.size)
-        assertEquals(2, vm.state.value.performanceRebased.size)
+        assertEquals(2, vm.state.value.performanceValues.size)
     }
 
     @Test
@@ -352,7 +352,7 @@ class PortfolioViewModelTest {
     }
 
     @Test
-    fun performanceReportPopulatesRebasedSeriesAndMetricsOnStart() = runTest {
+    fun performanceReportPopulatesDollarSeriesAndMetricsOnStart() = runTest {
         val repo = FakeMarketDataRepository()
         repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
         repo.historyImpl = { symbol, _ ->
@@ -375,8 +375,10 @@ class PortfolioViewModelTest {
         val s = vm.state.value
         assertEquals("SPY", s.benchmark)
         assertEquals(listOf("SPY", "QQQ", "VTI"), s.benchmarks)
-        assertTrue(s.performanceRebased.isNotEmpty())
-        assertNotNull(s.benchmarkRebased)
+        assertTrue(s.performanceValues.isNotEmpty())
+        // Twin present (SPY history supplied), aligned 1:1 with the equity curve.
+        assertNotNull(s.benchmarkTwinValues)
+        assertEquals(s.performanceValues.size, s.benchmarkTwinValues!!.size)
         assertNotNull(s.metrics)
         // Only 2 points -> 1 daily return -> volatility needs >=2 returns -> sharpe is null -> "—"
         assertEquals("—", s.metrics!!.sharpe)
@@ -406,8 +408,8 @@ class PortfolioViewModelTest {
         vm.start(); runCurrent()
 
         val s = vm.state.value
-        assertTrue(s.performanceRebased.isNotEmpty())
-        assertNull(s.benchmarkRebased)
+        assertTrue(s.performanceValues.isNotEmpty())
+        assertNull(s.benchmarkTwinValues)
         assertNotNull(s.metrics)
         assertEquals("—", s.metrics!!.beta)
         assertEquals("—", s.metrics!!.alpha)
@@ -463,7 +465,7 @@ class PortfolioViewModelTest {
         val vm = vm(repo, store, backgroundScope)
         vm.start(); runCurrent()
         assertTrue(vm.state.value.performancePoints.isNotEmpty())
-        assertTrue(vm.state.value.performanceRebased.isNotEmpty())
+        assertTrue(vm.state.value.performanceValues.isNotEmpty())
 
         vm.reset(); runCurrent()
 
@@ -471,7 +473,7 @@ class PortfolioViewModelTest {
         assertTrue(s.holdings.isEmpty())
         assertEquals("$100,000.00", s.cashText)
         assertTrue(s.performancePoints.isEmpty())
-        assertTrue(s.performanceRebased.isEmpty())
+        assertTrue(s.performanceValues.isEmpty())
         assertEquals(Portfolio.starting(), store.stored)
     }
 
@@ -489,5 +491,101 @@ class PortfolioViewModelTest {
         val csv = vm.exportCsv()
 
         assertTrue(csv.lines().any { it.startsWith("AAPL,") })
+    }
+
+    @Test
+    fun performanceValuesAreTheEquityCurveInRawDollars() = runTest {
+        // 10 AAPL bought @ $100 (cash after = 99000). Equity curve = cash + qty × price along
+        // AAPL's history 100/110/90 -> 100000, 100100, 99900. performanceValues is the RAW
+        // dollar series (no rebasing), one entry per report point.
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
+        repo.historyImpl = { symbol, _ ->
+            if (symbol == "AAPL") {
+                listOf(
+                    PricePoint(86_400L, Money.usd("100.00")),
+                    PricePoint(172_800L, Money.usd("110.00")),
+                    PricePoint(259_200L, Money.usd("90.00")),
+                )
+            } else {
+                listOf(PricePoint(86_400L, Money.usd("400.00")), PricePoint(172_800L, Money.usd("410.00")))
+            }
+        }
+        val seeded = Portfolio(
+            cash = Money.usd("99000"),
+            positions = listOf(Position(aapl, BigDecimal.parseString("10"), Money.usd("100.00"), Money.usd("0"))),
+            transactions = listOf(
+                Transaction("txn-1", "AAPL", TradeSide.Buy, BigDecimal.parseString("10"), Money.usd("100.00"), 0L),
+            ),
+        )
+        val vm = vm(repo, InMemoryPortfolioStore(seeded), backgroundScope)
+        vm.start(); runCurrent()
+
+        assertEquals(listOf(100000.0, 100100.0, 99900.0), vm.state.value.performanceValues)
+    }
+
+    @Test
+    fun benchmarkTwinValuesNullWhenBenchmarkHistoryIsUnavailable() = runTest {
+        // Benchmark history throws -> report.benchmarkTwinValues is null -> VM surfaces null,
+        // which PerformanceSection reads as the "Benchmark unavailable" path.
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
+        repo.historyImpl = { symbol, _ ->
+            if (symbol == "AAPL") {
+                listOf(PricePoint(86_400L, Money.usd("100.00")), PricePoint(172_800L, Money.usd("110.00")))
+            } else {
+                throw QuoteError.RateLimited
+            }
+        }
+        val seeded = Portfolio(
+            cash = Money.usd("99000"),
+            positions = listOf(Position(aapl, BigDecimal.parseString("10"), Money.usd("100.00"), Money.usd("0"))),
+            transactions = listOf(
+                Transaction("txn-1", "AAPL", TradeSide.Buy, BigDecimal.parseString("10"), Money.usd("100.00"), 0L),
+            ),
+        )
+        val vm = vm(repo, InMemoryPortfolioStore(seeded), backgroundScope)
+        vm.start(); runCurrent()
+
+        assertNull(vm.state.value.benchmarkTwinValues)
+    }
+
+    @Test
+    fun benchmarkTwinValuesAreTheReplayTwinConvertedToRawDollars() = runTest {
+        // Buy 10 AAPL @ $100 (spend $1000) at epoch 0; cash after = 99000. SPY closes
+        // 400/440/400. Trade predates the first SPY point -> forward-fill uses close 400, so
+        // units = 1000/400 = 2.5. Twin value = 99000 + 2.5 × close:
+        //   day1 400 -> 100000, day2 440 -> 100100, day3 400 -> 100000.
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
+        repo.historyImpl = { symbol, _ ->
+            if (symbol == "AAPL") {
+                listOf(
+                    PricePoint(86_400L, Money.usd("100.00")),
+                    PricePoint(172_800L, Money.usd("110.00")),
+                    PricePoint(259_200L, Money.usd("90.00")),
+                )
+            } else {
+                listOf(
+                    PricePoint(86_400L, Money.usd("400.00")),
+                    PricePoint(172_800L, Money.usd("440.00")),
+                    PricePoint(259_200L, Money.usd("400.00")),
+                )
+            }
+        }
+        val seeded = Portfolio(
+            cash = Money.usd("99000"),
+            positions = listOf(Position(aapl, BigDecimal.parseString("10"), Money.usd("100.00"), Money.usd("0"))),
+            transactions = listOf(
+                Transaction("txn-1", "AAPL", TradeSide.Buy, BigDecimal.parseString("10"), Money.usd("100.00"), 0L),
+            ),
+        )
+        val vm = vm(repo, InMemoryPortfolioStore(seeded), backgroundScope)
+        vm.start(); runCurrent()
+
+        val s = vm.state.value
+        assertEquals(listOf(100000.0, 100100.0, 100000.0), s.benchmarkTwinValues)
+        // Equal length by Task-1 alignment.
+        assertEquals(s.performanceValues.size, s.benchmarkTwinValues!!.size)
     }
 }

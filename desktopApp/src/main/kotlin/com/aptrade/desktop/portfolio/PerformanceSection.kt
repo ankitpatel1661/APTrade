@@ -100,8 +100,8 @@ fun PerformanceSection(
         }
         SpanBar(selection = state.span, onSelect = onSetSpan)
         OverlayChart(
-            portfolio = state.performanceRebased,
-            benchmark = state.benchmarkRebased,
+            portfolio = state.performanceValues,
+            benchmark = state.benchmarkTwinValues,
             points = points,
             activeIndex = activeIndex,
             isHovering = hoverIndex != null,
@@ -177,14 +177,14 @@ private fun BenchmarkPicker(selection: String, options: List<String>, onSelect: 
     }
 }
 
-/** 200dp crosshair-scrubbed overlay of the two rebased-to-100 curves on a shared y-axis:
- *  portfolio in gold, benchmark in silver. Hover → nearest index via the shared designkit
- *  [crosshairIndex] helper; a dashed (3,3) hairline vertical + a small filled gold circle mark
- *  the PORTFOLIO polyline at the index (the benchmark line gets no marker — macOS single-series
- *  parity), and a tooltip pill near the crosshair shows the hovered point's valueText +
- *  tooltipDateText. When the benchmark curve is null the whole plot is replaced by a
- *  "Benchmark unavailable" line; on MAX day-one the plot shows the tracking-starts message.
- *  Both series are pre-rebased to a common 100-basis start by the VM, so a single min/max
+/** 200dp crosshair-scrubbed overlay of the two DOLLAR-valued curves on a shared y-axis:
+ *  portfolio in gold, the cash-flow-replay benchmark twin in silver. Hover → nearest index via
+ *  the shared designkit [crosshairIndex] helper; a dashed (3,3) hairline vertical + a small
+ *  filled gold circle mark the PORTFOLIO polyline at the index (the benchmark line gets no
+ *  marker — macOS single-series parity), and a tooltip pill near the crosshair shows the hovered
+ *  point's valueText + tooltipDateText. When the benchmark twin is null the whole plot is
+ *  replaced by a "Benchmark unavailable" line; on MAX day-one the plot shows the tracking-starts
+ *  message. Both series are actual dollars aligned 1:1 (Task 1 construction), so a single min/max
  *  across both is a like-for-like vertical scale; [points] (same length/order) supplies the
  *  scrubber's display text. */
 @OptIn(ExperimentalComposeUiApi::class)

@@ -25,24 +25,29 @@ data class PerformanceReport(
     val metrics: PerformanceMetrics,
     /** Cash-flow replay twin: what the same trades would be worth in the benchmark instead
      *  of the current holdings (see `benchmarkTwinSeries` KDoc for the exact semantics).
-     *  Null when there's no benchmark history to replay against, or when no portfolio store
-     *  was supplied to [FetchPerformanceReport]. Aligned 1:1 with [points] when present. */
+     *  Null when there's no benchmark history to replay against. Aligned 1:1 with [points]
+     *  when present. */
     val benchmarkTwinValues: List<Money>? = null,
 )
 
 /** Portfolio equity curve + benchmark overlay + risk metrics (macOS PerformanceSection parity).
  *  Benchmark fetch failure is swallowed (report survives); CancellationException always rethrows.
  *
- *  [portfolioStore] is optional (defaults to null) to keep this class's existing 2-arg
- *  construction sites compiling unchanged; when absent, `benchmarkTwinValues` on the report is
- *  always null since there's no portfolio to source transactions/cash from. */
+ *  The caller supplies the [Portfolio] whose transactions/cash source the benchmark twin — it is
+ *  a required argument to [execute], compile-enforcing a real portfolio (no silently-null twin).
+ *  Presentation callers pass the portfolio they already own; save-then-return coherence
+ *  guarantees it matches disk at report time. */
 class FetchPerformanceReport(
     private val repository: MarketDataRepository,
     private val fetchPortfolioPerformance: FetchPortfolioPerformance,
-    private val portfolioStore: PortfolioStore? = null,
 ) {
     @Throws(CancellationException::class)
-    suspend fun execute(timeframe: Timeframe, benchmark: String, riskFree: Double = 0.04): PerformanceReport {
+    suspend fun execute(
+        timeframe: Timeframe,
+        benchmark: String,
+        portfolio: Portfolio,
+        riskFree: Double = 0.04,
+    ): PerformanceReport {
         val points = fetchPortfolioPerformance.execute(timeframe)
         if (points.isEmpty()) {
             return PerformanceReport(points, null, PerformanceMetrics(0.0, 0.0, 0.0, 0.0, null, null, null))
@@ -76,15 +81,12 @@ class FetchPerformanceReport(
         val benchmarkTwinValues: List<Money>? = if (benchmarkPoints.isNullOrEmpty()) {
             null
         } else {
-            val portfolio: Portfolio? = portfolioStore?.load()
-            portfolio?.let {
-                benchmarkTwinSeries(
-                    transactions = it.transactions,
-                    benchmarkPoints = benchmarkPoints,
-                    cash = it.cash,
-                    curveDates = points.map { point -> point.epochSeconds },
-                )
-            }
+            benchmarkTwinSeries(
+                transactions = portfolio.transactions,
+                benchmarkPoints = benchmarkPoints,
+                cash = portfolio.cash,
+                curveDates = points.map { point -> point.epochSeconds },
+            )
         }
         return PerformanceReport(points, benchmarkCloses, metrics, benchmarkTwinValues)
     }

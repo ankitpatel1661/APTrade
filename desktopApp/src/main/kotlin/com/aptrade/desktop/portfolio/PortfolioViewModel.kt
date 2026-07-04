@@ -18,7 +18,6 @@ import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.domain.PortfolioExport
 import com.aptrade.shared.domain.PortfolioPerformancePoint
 import com.aptrade.shared.domain.Quote
-import com.aptrade.shared.domain.RiskMetrics
 import com.aptrade.shared.domain.TradeError
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.domain.Timeframe
@@ -105,7 +104,7 @@ private fun plainMetric(value: Double?): String =
     if (value == null) "—" else String.format(Locale.US, "%.2f", value)
 
 /** One point on the P&L chart scrubber, derived from the same `PerformanceReport`/`points`
- *  list that feeds `performanceRebased`. `valueText` and `deltaText` are PRE-FORMATTED,
+ *  list that feeds `performanceValues`. `valueText` and `deltaText` are PRE-FORMATTED,
  *  display-only strings (same contract as the rest of this file) — NEVER feed them into
  *  `splitPrice`/`SuperscriptPrice`/`Money.usd` or any other numeric parsing. */
 data class PerfPointUi(
@@ -144,9 +143,9 @@ data class PortfolioUiState(
     val span: PortfolioSpan = PortfolioSpan.Month,
     val benchmark: String = "SPY",
     val benchmarks: List<String> = listOf("SPY", "QQQ", "VTI"),
-    val performanceRebased: List<Double> = emptyList(),
+    val performanceValues: List<Double> = emptyList(),
     val performancePoints: List<PerfPointUi> = emptyList(),
-    val benchmarkRebased: List<Double>? = null,
+    val benchmarkTwinValues: List<Double>? = null,
     val metrics: MetricTexts? = null,
     val error: String? = null,
     val tradeError: String? = null,
@@ -268,9 +267,9 @@ class PortfolioViewModel(
             quotes = emptyMap()
             _state.update {
                 it.copy(
-                    performanceRebased = emptyList(),
+                    performanceValues = emptyList(),
                     performancePoints = emptyList(),
-                    benchmarkRebased = null,
+                    benchmarkTwinValues = null,
                     metrics = null,
                 )
             }
@@ -305,20 +304,24 @@ class PortfolioViewModel(
         }
     }
 
-    /** One-shot per span/benchmark change — NEVER refetched on a poll tick. Rebases the
-     *  portfolio curve and (when available) the benchmark curve to a common 100-basis start
-     *  so they're directly comparable on the overlay chart, renders the risk metrics to
-     *  display text (percent fields via `formatPercent`; sharpe/beta/alpha as plain 2-decimal
-     *  text, "—" when null), and derives the scrubber's [PerfPointUi] list from the SAME
-     *  `report.points` that feed `performanceRebased`. This report is the ONLY P&L chart feed
-     *  (the legacy `loadPerformance()`/`performance` path was removed in Task 11). */
+    /** One-shot per span/benchmark change — NEVER refetched on a poll tick. Feeds the overlay
+     *  chart the two DOLLAR-valued series: the portfolio equity curve (`performanceValues`) and,
+     *  when a benchmark twin is available, the cash-flow-replay twin (`benchmarkTwinValues`) —
+     *  what the same trades would be worth had the cash gone into the benchmark instead. Both are
+     *  `value.amount.doubleValue(false)` (the sanctioned pixels-only Double), aligned 1:1 by Task
+     *  1 construction. Renders the risk metrics to display text (percent fields via
+     *  `formatPercent`; sharpe/beta/alpha as plain 2-decimal text, "—" when null), and derives the
+     *  scrubber's [PerfPointUi] list from the SAME `report.points` that feed `performanceValues`.
+     *
+     *  The `portfolio` passed to `execute` is this VM's already-loaded copy: trades/reset update
+     *  it (and persist) before this runs, so it is coherent with disk at report time. */
     private fun loadPerformanceReport() {
         val span = _state.value.span
         val benchmark = _state.value.benchmark
+        val portfolioSnapshot = portfolio
         scope.launch {
             try {
-                val report = fetchPerformanceReport.execute(span.timeframe, benchmark)
-                val values = report.points.map { it.value.amount.doubleValue(false) }
+                val report = fetchPerformanceReport.execute(span.timeframe, benchmark, portfolioSnapshot)
                 val metrics = MetricTexts(
                     totalReturn = formatPercent(report.metrics.totalReturn),
                     annualizedReturn = formatPercent(report.metrics.annualizedReturn),
@@ -330,9 +333,10 @@ class PortfolioViewModel(
                 )
                 _state.update {
                     it.copy(
-                        performanceRebased = RiskMetrics.rebase(values),
+                        performanceValues = report.points.map { p -> p.value.amount.doubleValue(false) },
                         performancePoints = perfPointsUi(report.points),
-                        benchmarkRebased = report.benchmarkCloses?.let { closes -> RiskMetrics.rebase(closes) },
+                        benchmarkTwinValues = report.benchmarkTwinValues
+                            ?.map { m -> m.amount.doubleValue(false) },
                         metrics = metrics,
                     )
                 }

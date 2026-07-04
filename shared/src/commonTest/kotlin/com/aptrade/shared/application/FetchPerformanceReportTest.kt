@@ -61,7 +61,7 @@ class FetchPerformanceReportTest {
         val fetchPerformance = FetchPortfolioPerformance(repository, store)
 
         val report = FetchPerformanceReport(repository, fetchPerformance)
-            .execute(Timeframe.OneMonth, benchmark = "SPY")
+            .execute(Timeframe.OneMonth, benchmark = "SPY", portfolio = portfolio)
 
         assertEquals(3, report.points.size)
         val values = report.points.map { it.value.amount.doubleValue(false) }
@@ -92,7 +92,7 @@ class FetchPerformanceReportTest {
         val fetchPerformance = FetchPortfolioPerformance(repository, store)
 
         val report = FetchPerformanceReport(repository, fetchPerformance)
-            .execute(Timeframe.OneMonth, benchmark = "SPY")
+            .execute(Timeframe.OneMonth, benchmark = "SPY", portfolio = portfolio)
 
         assertNotNull(report.benchmarkCloses)
         assertEquals(spyHistory.map { it.close.amount.doubleValue(false) }, report.benchmarkCloses)
@@ -122,7 +122,7 @@ class FetchPerformanceReportTest {
         val fetchPerformance = FetchPortfolioPerformance(repository, store)
 
         val report = FetchPerformanceReport(repository, fetchPerformance)
-            .execute(Timeframe.OneMonth, benchmark = "SPY")
+            .execute(Timeframe.OneMonth, benchmark = "SPY", portfolio = portfolio)
 
         assertNotNull(report.benchmarkCloses)
         assertEquals(2, report.benchmarkCloses!!.size)
@@ -149,7 +149,7 @@ class FetchPerformanceReportTest {
         val fetchPerformance = FetchPortfolioPerformance(repository, store)
 
         val report = FetchPerformanceReport(repository, fetchPerformance)
-            .execute(Timeframe.OneMonth, benchmark = "SPY")
+            .execute(Timeframe.OneMonth, benchmark = "SPY", portfolio = portfolio)
 
         assertNotNull(report.benchmarkCloses)
         assertEquals(spyHistory.map { it.close.amount.doubleValue(false) }, report.benchmarkCloses)
@@ -170,7 +170,7 @@ class FetchPerformanceReportTest {
         val fetchPerformance = FetchPortfolioPerformance(repository, store)
 
         val report = FetchPerformanceReport(repository, fetchPerformance)
-            .execute(Timeframe.OneMonth, benchmark = "SPY")
+            .execute(Timeframe.OneMonth, benchmark = "SPY", portfolio = portfolio)
 
         assertNull(report.benchmarkCloses)
         assertNull(report.metrics.beta)
@@ -196,13 +196,14 @@ class FetchPerformanceReportTest {
         val fetchPerformance = FetchPortfolioPerformance(repository, store)
 
         assertFailsWith<kotlinx.coroutines.CancellationException> {
-            FetchPerformanceReport(repository, fetchPerformance).execute(Timeframe.OneMonth, benchmark = "SPY")
+            FetchPerformanceReport(repository, fetchPerformance).execute(Timeframe.OneMonth, benchmark = "SPY", portfolio = portfolio)
         }
     }
 
     @Test
     fun emptyPortfolioYieldsEmptyReport() = runTest {
-        val store = PerfInMemoryPortfolioStore(Portfolio.starting())
+        val portfolio = Portfolio.starting()
+        val store = PerfInMemoryPortfolioStore(portfolio)
         var benchmarkFetched = false
         val repository = object : MarketDataRepository {
             override suspend fun quotes(symbols: List<String>): List<Quote> = emptyList()
@@ -217,7 +218,7 @@ class FetchPerformanceReportTest {
         val fetchPerformance = FetchPortfolioPerformance(repository, store)
 
         val report = FetchPerformanceReport(repository, fetchPerformance)
-            .execute(Timeframe.OneMonth, benchmark = "SPY")
+            .execute(Timeframe.OneMonth, benchmark = "SPY", portfolio = portfolio)
 
         assertEquals(emptyList(), report.points)
         assertNull(report.benchmarkCloses)
@@ -254,8 +255,8 @@ class FetchPerformanceReportTest {
         )
         val fetchPerformance = FetchPortfolioPerformance(repository, store)
 
-        val report = FetchPerformanceReport(repository, fetchPerformance, store)
-            .execute(Timeframe.OneMonth, benchmark = "SPY")
+        val report = FetchPerformanceReport(repository, fetchPerformance)
+            .execute(Timeframe.OneMonth, benchmark = "SPY", portfolio = portfolio)
 
         assertNotNull(report.benchmarkTwinValues)
         assertEquals(report.points.size, report.benchmarkTwinValues!!.size)
@@ -268,25 +269,24 @@ class FetchPerformanceReportTest {
     }
 
     @Test
-    fun benchmarkTwinValuesAreNullWithoutAPortfolioStore() = runTest {
+    fun benchmarkTwinValuesAreNullWhenBenchmarkHistoryIsEmpty() = runTest {
+        // No SPY history to replay against -> twin (like benchmarkCloses) is null. This is the
+        // "Benchmark unavailable" path the desktop overlay reads.
         val portfolio = Portfolio.starting().buying(aapl, BigDecimal.parseString("1"), Money.usd("100.00"), 1000L, "txn-1")
         val store = PerfInMemoryPortfolioStore(portfolio)
         val aaplHistory = listOf(
             PricePoint(86_400L * 1, Money.usd("100.00")),
             PricePoint(86_400L * 2, Money.usd("110.00")),
         )
-        val spyHistory = listOf(
-            PricePoint(86_400L * 1, Money.usd("400.00")),
-            PricePoint(86_400L * 2, Money.usd("410.00")),
-        )
         val repository = PerfFakeMarketDataRepository(
-            historiesBySymbol = mapOf("AAPL" to aaplHistory, "SPY" to spyHistory),
+            historiesBySymbol = mapOf("AAPL" to aaplHistory),   // no "SPY" -> empty benchmark history
         )
         val fetchPerformance = FetchPortfolioPerformance(repository, store)
 
         val report = FetchPerformanceReport(repository, fetchPerformance)
-            .execute(Timeframe.OneMonth, benchmark = "SPY")
+            .execute(Timeframe.OneMonth, benchmark = "SPY", portfolio = portfolio)
 
+        assertNull(report.benchmarkCloses)
         assertNull(report.benchmarkTwinValues)
     }
 }
