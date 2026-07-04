@@ -1,11 +1,13 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # APTrade CI/CD Pipeline
 #
-# Two parallel tracks:
-#   • Swift (macOS runner) — build + test the SwiftPM package (190 XCTest tests)
+# Four parallel tracks:
+#   • Swift (macOS runner) — build + test the SwiftPM package (193 XCTest tests)
 #   • KMP JVM (Linux runner) — test the Kotlin Multiplatform shared module on JVM
+#   • Desktop JVM (Linux runner) — test the Compose Desktop app on JVM
+#   • Android (Linux runner) — run androidApp debug unit tests
 #
-# A third job assembles the Shared.xcframework on macOS, but only on main, since
+# A fifth job assembles the Shared.xcframework on macOS, but only on main, since
 # it is expensive and only needed for integration / release.
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -30,17 +32,120 @@ stages:
     - saas-linux-small-amd64
   image: eclipse-temurin:21-jdk
 
+# ── Shared Gradle cache configuration ─────────────────────────────────────────
+# YAML anchor reused by all Gradle jobs so the cache definition stays DRY.
+# Keyed on gradle-wrapper.properties so the cache is invalidated when the
+# Gradle version changes.
+.gradle-cache: &gradle-cache
+  key:
+    files:
+      - gradle/wrapper/gradle-wrapper.properties
+  paths:
+    - .gradle/
+    - ~/.gradle/caches/
+
+# ── macOS Gradle job cache ─────────────────────────────────────────────────────
+# Extends the Gradle cache with macOS-specific paths:
+# - openjdk@17 Homebrew install (~320MB) — avoids re-downloading on every run
+# - Android SDK platforms and build-tools — avoids re-downloading on every run
+# Keyed on gradle-wrapper.properties so it shares invalidation with the
+# Gradle cache. Expected speedup on cache hit: ~8 min → ~2 min.
+.macos-gradle-cache: &macos-gradle-cache
+  key:
+    files:
+      - gradle/wrapper/gradle-wrapper.properties
+  paths:
+    - .gradle/
+    - ~/.gradle/caches/
+    - /opt/homebrew/Cellar/openjdk@17/
+    - /opt/homebrew/Cellar/fontconfig/
+    - /opt/homebrew/Cellar/glib/
+    - /opt/homebrew/Cellar/harfbuzz/
+    - /opt/homebrew/Cellar/cairo/
+    - /Users/gitlab/android-sdk/
+
+# ── Shared base for macOS Gradle jobs ─────────────────────────────────────────
+# The macos-26-xcode-26 image ships with a JDK that is too new for AGP 8.7.2
+# (Gradle exit code 25 at configuration time). The project targets JVM 17
+# throughout (jvmTarget = JVM_17 in all build.gradle.kts files).
+#
+# Fix: install openjdk@17 via Homebrew (pre-installed on all macOS runners)
+# and set JAVA_HOME to it. Conditional checks skip the download when the
+# cache is warm, cutting setup time from ~4 min to seconds.
+#
+# ANDROID_HOME is a CI variable (not `export`) so it persists across
+# before_script and script on the macOS instance runner.
+.macos-gradle-base:
+  extends: .macos-base
+  variables:
+    # CI variables persist across before_script and script on instance runners.
+    ANDROID_HOME: /Users/gitlab/android-sdk
+    ANDROID_SDK_ROOT: /Users/gitlab/android-sdk
+  before_script:
+    # 1. Install JDK 17 via Homebrew (no-op on cache hit).
+    #    The macos-26-xcode-26 image's default JDK is incompatible with
+    #    AGP 8.7.2 / Gradle 8.9, causing exit code 25 at configuration time.
+    - brew install --quiet openjdk@17
+    - export JAVA_HOME="$(brew --prefix openjdk@17)/libexec/openjdk.jdk/Contents/Home"
+    - export PATH="${JAVA_HOME}/bin:${PATH}"
+    # 2. Install Android SDK command-line tools (skipped on cache hit).
+    - mkdir -p "${ANDROID_HOME}/cmdline-tools"
+    - |
+      if [ ! -f "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" ]; then
+        curl -fsSL https://dl.google.com/android/repository/commandlinetools-mac-11076708_latest.zip -o /tmp/cmdline-tools.zip
+        unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools-extract
+        mv /tmp/cmdline-tools-extract/cmdline-tools "${ANDROID_HOME}/cmdline-tools/latest"
+      fi
+    - export PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${PATH}"
+    - yes | sdkmanager --licenses > /dev/null 2>&1 || true
+    # 3. Install Android platform + build-tools (skipped on cache hit).
+    - |
+      if [ ! -d "${ANDROID_HOME}/platforms/android-35" ]; then
+        sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      fi
+    - echo "sdk.dir=${ANDROID_HOME}" > local.properties
+
 # ══════════════════════════════════════════════════════════════════════════════
 # STAGE: test
 # ══════════════════════════════════════════════════════════════════════════════
 
+# ── KMP: build Shared.xcframework (all branches) ──────────────────────────────
+# Builds the Shared.xcframework so swift-test can consume it via `needs`.
+# Package.swift declares Shared as a binaryTarget pointing to this path, so
+# swift build fails if the framework is absent.
+# Runs on every branch so swift-test always has the artifact.
+kmp-xcframework-test:
+  extends: .macos-gradle-base
+  stage: test
+  cache:
+    # Uses the extended macOS cache that includes openjdk@17 and Android SDK
+    # to avoid re-downloading ~400MB of tooling on every pipeline run.
+    <<: *macos-gradle-cache
+  script:
+    - ./gradlew :shared:assembleSharedXCFramework --no-daemon
+  artifacts:
+    # Pass the XCFramework to swift-test via needs/artifacts.
+    name: "Shared-XCFramework-test-${CI_COMMIT_SHORT_SHA}"
+    paths:
+      - shared/build/XCFrameworks/release/Shared.xcframework
+    expire_in: 1 day
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
 # ── Swift: build + test ───────────────────────────────────────────────────────
-# Builds the SwiftPM package and runs all 190 XCTest tests across the four
+# Builds the SwiftPM package and runs all 193 XCTest tests across the four
 # Clean Architecture layers (Domain, Application, Infrastructure, App).
-# Runs on every push and MR so regressions are caught immediately.
+# needs: kmp-xcframework-test so the Shared.xcframework binary artifact is
+# present before swift build runs (Package.swift binaryTarget requirement).
 swift-test:
   extends: .macos-base
   stage: test
+  needs:
+    # Depend on kmp-xcframework-test to ensure Shared.xcframework exists
+    # before swift build attempts to resolve the binaryTarget in Package.swift.
+    - job: kmp-xcframework-test
+      artifacts: true
   cache:
     # Key on Package.resolved so the cache is invalidated when dependencies change.
     key:
@@ -66,14 +171,72 @@ kmp-jvm-test:
   cache:
     # Key on the Gradle wrapper properties so the cache is invalidated when
     # the Gradle version changes.
-    key:
-      files:
-        - gradle/wrapper/gradle-wrapper.properties
-    paths:
-      - .gradle/
-      - ~/.gradle/caches/
+    <<: *gradle-cache
   script:
     - ./gradlew :shared:jvmTest --no-daemon
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# ── Desktop: JVM unit tests ───────────────────────────────────────────────────
+# Runs the Compose Desktop app's test suite on the JVM target. Covers the
+# ViewModel, store, design-kit math, and infrastructure tests added in the
+# desktopApp module (FormattingTest, SmokeTest, ConfigDirTest,
+# ValueCardMathTest, FileWatchlistStoreTest).
+# image: eclipse-temurin:17-jdk is used instead of 21-jdk because
+# desktopApp/build.gradle.kts sets jvmTarget = JVM_17. Running under JDK 21
+# causes a compileJava(21) vs compileKotlin(17) target mismatch that Gradle
+# rejects at configuration time.
+desktop-jvm-test:
+  extends: .linux-base
+  stage: test
+  # Override the image from .linux-base: desktopApp targets JVM 17, so we
+  # must compile under JDK 17 to avoid the compileJava/compileKotlin mismatch.
+  image: eclipse-temurin:17-jdk
+  cache:
+    # Shares the same Gradle cache key as kmp-jvm-test since both use the
+    # same Gradle wrapper version.
+    <<: *gradle-cache
+  script:
+    - ./gradlew :desktopApp:test --no-daemon
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# ── Android: debug unit tests ─────────────────────────────────────────────────
+# Runs the androidApp's debug unit tests (ViewModel and domain tests).
+# The before_script installs the Android SDK build-tools and platform via
+# sdkmanager. sdk.dir is written to local.properties so the Android Gradle
+# plugin resolves the SDK path.
+# image: eclipse-temurin:17-jdk matches the androidApp jvmTarget (JVM_17).
+# allow_failure: true is kept as a safety net while the SDK install is
+# validated. Remove once the job is confirmed green.
+android-unit-test:
+  extends: .linux-base
+  stage: test
+  # Override image to JDK 17 to match androidApp's jvmTarget = JVM_17.
+  image: eclipse-temurin:17-jdk
+  cache:
+    <<: *gradle-cache
+  variables:
+    ANDROID_HOME: /root/android-sdk
+    ANDROID_SDK_ROOT: /root/android-sdk
+  before_script:
+    # Install Android command-line tools, then use sdkmanager to install the
+    # platform and build-tools required by androidApp (compileSdk 35).
+    - apt-get update -qq && apt-get install -y -qq wget unzip
+    - mkdir -p ${ANDROID_HOME}/cmdline-tools
+    - wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/cmdline-tools.zip
+    - unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools-extract
+    - mv /tmp/cmdline-tools-extract/cmdline-tools ${ANDROID_HOME}/cmdline-tools/latest
+    - export PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${PATH}"
+    - yes | sdkmanager --licenses > /dev/null 2>&1 || true
+    - sdkmanager "platforms;android-35" "build-tools;35.0.0"
+    - echo "sdk.dir=${ANDROID_HOME}" > local.properties
+  script:
+    - ./gradlew :androidApp:testDebugUnitTest --no-daemon
+  # allow_failure: remove once the Android SDK install is confirmed green.
+  allow_failure: true
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH
@@ -90,15 +253,12 @@ kmp-jvm-test:
 # Only runs on main to avoid the cost on every branch push. The artifact is
 # kept for 7 days so it can be downloaded by downstream jobs or developers.
 kmp-xcframework:
-  extends: .macos-base
+  extends: .macos-gradle-base
   stage: build
   cache:
-    key:
-      files:
-        - gradle/wrapper/gradle-wrapper.properties
-    paths:
-      - .gradle/
-      - ~/.gradle/caches/
+    # Uses the extended macOS cache that includes openjdk@17 and Android SDK
+    # to avoid re-downloading ~400MB of tooling on every pipeline run.
+    <<: *macos-gradle-cache
   script:
     - ./gradlew :shared:assembleSharedXCFramework --no-daemon
   artifacts:
