@@ -133,3 +133,40 @@ the normalization if extracted → test it; otherwise UI waiver applies.
   is the behavioral reference either way); AppGraph Context injection shape (T1 reads
   MainActivity and chooses minimal-safe); KMP intermediate source set (T1 has the
   explicit fallback); Android money formatting (T2 pins by test).
+
+---
+
+# AMENDMENT 2026-07-04 — Task 6: first-buy path (E2E finding)
+
+Authority: Task 5's step-4 probe. A fresh Android portfolio has NO first-buy entry
+point (TradeSheet opens only from holding rows; DetailScreen lacks the BUY that
+macOS/desktop have). This guts the feature on first install — in-scope fix.
+
+### Task 6: BUY/SELL from the Android DetailScreen
+
+1. Extract TradeSheet (+ its success-detection/hasSubmitted logic) from
+   PortfolioScreen.kt into portfolio/TradeSheet.kt, reused by both callers —
+   behavior identical (the 29 tests + compile stay green).
+2. DetailScreen gains a "BUY / SELL" action (single button, desktop parity idiom —
+   TopAppBar action or a prominent button near the price; match the screen's
+   existing Material3 idiom) opening the TradeSheet for the current symbol.
+   The Asset: symbol from the route; name/kind from the detail state (read
+   DetailViewModel — increment 5 loads a profile; fall back to Asset(symbol,
+   symbol, Stock) ONLY if kind is genuinely absent, and flag it).
+3. Trade wiring: the shared BuyAsset/SellAsset use cases are store-mediated
+   (quote-first, load-fresh, save) — DetailScreen may call them via a minimal
+   addition to DetailViewModel (buy/sell + tradeError + transactionCount for the
+   sheet's success detection; CancellationException-first; mirror the
+   PortfolioViewModel's trade methods — read them). Do NOT duplicate portfolio
+   state into the detail VM beyond what the sheet needs.
+4. STALENESS COHERENCE: verify PortfolioViewModel.start() RELOADS the portfolio
+   when re-armed (nav to detail STOPs it, return STARTs it) so a trade made from
+   detail appears on return. If start() does not reload today, make it reload
+   (small VM change + a test pinning trade-from-elsewhere-appears-after-restart).
+5. Tests: DetailViewModel trade additions (≥3: buy success, tradeError mapping,
+   transactionCount increments); the start()-reload pin if changed.
+6. Mini-E2E (focused, not the full script): fresh app data (adb pm clear), quotes →
+   detail (AAPL) → BUY 1 via the sheet → back → portfolio shows the position.
+   Screenshots (3-4); logcat zero-FATAL; emulator down after. This is THE
+   acceptance of the gap fix.
+7. README: replace the first-buy divergence disclosure with the shipped behavior.
