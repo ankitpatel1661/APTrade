@@ -45,7 +45,6 @@ import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.designkit.DonutChart
 import com.aptrade.desktop.designkit.DonutSlice
 import com.aptrade.desktop.designkit.InterFamily
-import com.aptrade.desktop.designkit.LineChart
 import com.aptrade.desktop.designkit.LiveBadge
 import com.aptrade.desktop.designkit.StatTile
 import com.aptrade.desktop.designkit.SuperscriptPrice
@@ -58,9 +57,10 @@ private enum class PortfolioSection(val label: String) {
 }
 
 /** Portfolio tab: the Compose port of `Sources/APTradeApp/PortfolioView.swift`. A full-width
- *  column — summary header, an expandable P&L chart block (span bar + gold LineChart of the
- *  account-value series), a Holdings / Allocation / Activity section switcher, and the section
- *  content. All state is read from [PortfolioUiState]; trades are raised through [onTrade],
+ *  column — summary header, the [PerformanceSection] chart block (span bar + benchmark picker +
+ *  crosshair-scrubbed dual-line overlay + risk metrics), a Holdings / Allocation / Activity
+ *  section switcher, and the section content. All state is read from [PortfolioUiState]; trades
+ *  are raised through [onTrade],
  *  which the host opens as a [TradeDialog] overlaying the whole window. Row clicks open the
  *  existing full-window detail via [onOpenDetail]. */
 @Composable
@@ -89,13 +89,15 @@ fun PortfolioPane(
             onExportJson = onExportJson,
             onExportPdf = onExportPdf,
         )
-        ChartBlock(state = state, onSetSpan = onSetSpan)
+        // The Performance section is now THE chart block — span bar, benchmark picker, and the
+        // crosshair-scrubbed dual-line overlay live there, directly under the summary header.
+        PerformanceSection(
+            state = state,
+            onSetSpan = onSetSpan,
+            onSetBenchmark = onSetBenchmark,
+            modifier = Modifier.padding(horizontal = 24.dp).padding(top = 4.dp, bottom = 20.dp),
+        )
         if (state.holdings.isNotEmpty()) {
-            PerformanceSection(
-                state = state,
-                onSetBenchmark = onSetBenchmark,
-                modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 20.dp),
-            )
             SectionSwitcher(
                 selected = section,
                 onSelect = { section = it },
@@ -284,71 +286,6 @@ private fun TextButton(label: String, color: Color, onClick: () -> Unit) {
         modifier = Modifier
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() },
     )
-}
-
-// MARK: - P&L chart
-
-@Composable
-private fun ChartBlock(state: PortfolioUiState, onSetSpan: (PortfolioSpan) -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 16.dp)) {
-        SpanBar(selection = state.span, onSelect = onSetSpan)
-        Spacer(Modifier.height(12.dp))
-        Box(Modifier.fillMaxWidth().height(260.dp), contentAlignment = Alignment.Center) {
-            // On MAX, a portfolio that has traded but has fewer than two performance points is
-            // day-one: the tracking curve fills in from the first market close, not instantly.
-            // TODO(Task 12): rewire this block onto `state.performancePoints` (the new
-            // scrubber-driven chart feed) instead of the raw `performanceRebased` doubles —
-            // this is a minimal compile-keeping stub after Task 11 removed the legacy
-            // `performance`/`isLoadingPerformance` fields, not the real chart redesign.
-            val maxDayOne = state.span == PortfolioSpan.Max &&
-                state.transactions.isNotEmpty() && state.performanceRebased.size < 2
-            when {
-                state.performanceRebased.size > 1 -> LineChart(values = state.performanceRebased, modifier = Modifier.fillMaxSize(), color = DK.gold)
-                maxDayOne -> Text(
-                    "Tracking starts today — performance appears after your first market day.",
-                    style = TextStyle(
-                        fontFamily = InterFamily, fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium, color = DK.textTertiary,
-                    ),
-                )
-                else -> Text(
-                    "No performance data yet.",
-                    style = TextStyle(
-                        fontFamily = InterFamily, fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium, color = DK.textTertiary,
-                    ),
-                )
-            }
-        }
-    }
-}
-
-/** The TimeframeBar idiom extended to the five portfolio spans (1D · 1W · 1M · 1Y · MAX). */
-@Composable
-private fun SpanBar(selection: PortfolioSpan, onSelect: (PortfolioSpan) -> Unit) {
-    Row(Modifier.fillMaxWidth()) {
-        for (span in PortfolioSpan.entries) {
-            val selected = span == selection
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.weight(1f)
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onSelect(span) },
-            ) {
-                Text(
-                    span.label,
-                    style = TextStyle(
-                        fontFamily = InterFamily, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                        color = if (selected) DK.gold else DK.textSecondary, fontFeatureSettings = "tnum",
-                    ),
-                )
-                Spacer(Modifier.height(6.dp))
-                Box(
-                    Modifier.height(2.dp).fillMaxWidth(0.6f).clip(RoundedCornerShape(1.dp))
-                        .background(if (selected) DK.gold else Color.Transparent),
-                )
-            }
-        }
-    }
 }
 
 // MARK: - Section switcher
@@ -645,14 +582,22 @@ private fun TransactionRow(txn: TransactionRowUi) {
                 ),
             )
         }
-        Text(
-            txn.symbol,
-            style = TextStyle(
-                fontFamily = InterFamily, fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold, color = DK.textPrimary,
-            ),
-            modifier = Modifier.weight(1f),
-        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                txn.symbol,
+                style = TextStyle(
+                    fontFamily = InterFamily, fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold, color = DK.textPrimary,
+                ),
+            )
+            Text(
+                txn.dateText,
+                style = TextStyle(
+                    fontFamily = InterFamily, fontSize = 11.sp, fontWeight = FontWeight.Medium,
+                    color = DK.textTertiary, fontFeatureSettings = "tnum",
+                ),
+            )
+        }
         Text(
             "${txn.quantityText} @ ${txn.priceText}",
             style = TextStyle(
