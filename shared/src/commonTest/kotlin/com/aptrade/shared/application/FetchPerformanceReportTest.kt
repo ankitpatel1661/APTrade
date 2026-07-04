@@ -101,6 +101,61 @@ class FetchPerformanceReportTest {
     }
 
     @Test
+    fun benchmarkPointsBeforeCurveStartAreExcluded() = runTest {
+        // Portfolio curve starts at day 2 (points.first()); benchmark has an extra earlier
+        // point at day 1 that must be dropped before mapping to benchmarkCloses so the two
+        // curves describe the same window.
+        val portfolio = Portfolio.starting().buying(aapl, BigDecimal.parseString("1"), Money.usd("100.00"), 1000L, "txn-1")
+        val store = PerfInMemoryPortfolioStore(portfolio)
+        val aaplHistory = listOf(
+            PricePoint(86_400L * 2, Money.usd("100.00")),
+            PricePoint(86_400L * 3, Money.usd("110.00")),
+        )
+        val spyHistory = listOf(
+            PricePoint(86_400L * 1, Money.usd("390.00")),
+            PricePoint(86_400L * 2, Money.usd("400.00")),
+            PricePoint(86_400L * 3, Money.usd("405.00")),
+        )
+        val repository = PerfFakeMarketDataRepository(
+            historiesBySymbol = mapOf("AAPL" to aaplHistory, "SPY" to spyHistory),
+        )
+        val fetchPerformance = FetchPortfolioPerformance(repository, store)
+
+        val report = FetchPerformanceReport(repository, fetchPerformance)
+            .execute(Timeframe.OneMonth, benchmark = "SPY")
+
+        assertNotNull(report.benchmarkCloses)
+        assertEquals(2, report.benchmarkCloses!!.size)
+        assertEquals(400.0, report.benchmarkCloses!!.first())
+    }
+
+    @Test
+    fun benchmarkEntirelyInsideWindowIsUntouched() = runTest {
+        val portfolio = Portfolio.starting().buying(aapl, BigDecimal.parseString("1"), Money.usd("100.00"), 1000L, "txn-1")
+        val store = PerfInMemoryPortfolioStore(portfolio)
+        val aaplHistory = listOf(
+            PricePoint(86_400L * 1, Money.usd("100.00")),
+            PricePoint(86_400L * 2, Money.usd("110.00")),
+            PricePoint(86_400L * 3, Money.usd("120.00")),
+        )
+        val spyHistory = listOf(
+            PricePoint(86_400L * 1, Money.usd("400.00")),
+            PricePoint(86_400L * 2, Money.usd("410.00")),
+            PricePoint(86_400L * 3, Money.usd("405.00")),
+        )
+        val repository = PerfFakeMarketDataRepository(
+            historiesBySymbol = mapOf("AAPL" to aaplHistory, "SPY" to spyHistory),
+        )
+        val fetchPerformance = FetchPortfolioPerformance(repository, store)
+
+        val report = FetchPerformanceReport(repository, fetchPerformance)
+            .execute(Timeframe.OneMonth, benchmark = "SPY")
+
+        assertNotNull(report.benchmarkCloses)
+        assertEquals(spyHistory.map { it.close.amount.doubleValue(false) }, report.benchmarkCloses)
+    }
+
+    @Test
     fun benchmarkFailureIsSwallowed() = runTest {
         val portfolio = Portfolio.starting().buying(aapl, BigDecimal.parseString("1"), Money.usd("100.00"), 1000L, "txn-1")
         val store = PerfInMemoryPortfolioStore(portfolio)

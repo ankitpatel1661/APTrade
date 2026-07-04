@@ -4,7 +4,16 @@ import com.ionspin.kotlin.bignum.decimal.BigDecimal
 
 /**
  * Transcribed from `Sources/APTradeDomain/PortfolioPerformance.swift` (`performanceSeries`).
- * Semantics must not drift from the Swift original.
+ *
+ * RECORDED DIVERGENCE (kmp-portfolio-6b2, user-mandated): the Swift original silently drops
+ * any symbol that has no `lastClose` yet at a given union date, so a leading window before a
+ * mixed-calendar symbol's first candle (e.g. crypto trading 24/7 alongside equities that only
+ * have market-hours candles) still emits a point valuing only the already-priced symbols. That
+ * produces a valuation cliff the moment the late symbol's first candle joins. This Kotlin
+ * implementation instead gates the curve: it emits nothing until every symbol with any history
+ * is priced, so the curve starts flat at the first fully-priced date. macOS adoption of this
+ * gate is tracked for increment 6b.3 — do not backport this diff into the Swift file without
+ * that decision.
  */
 
 /** One point on a reconstructed portfolio performance curve: the account's value and its
@@ -43,23 +52,29 @@ fun Portfolio.performanceSeries(histories: Map<String, List<PricePoint>>): List<
     for (date in allDates.sorted()) {
         var holdings = BigDecimal.ZERO
         var pnl = BigDecimal.ZERO
-        var priced = false
+        var allPriced = true
         for (position in positions) {
             val symbol = position.asset.symbol
-            val points = sorted[symbol] ?: continue
+            val points = sorted[symbol] ?: continue  // no history at all: excluded, doesn't gate
             var i = cursor[symbol] ?: 0
             while (i < points.size && points[i].epochSeconds <= date) {
                 lastClose[symbol] = points[i].close.amount
                 i += 1
             }
             cursor[symbol] = i
-            val close = lastClose[symbol] ?: continue  // no data yet at this date
+            val close = lastClose[symbol]
+            if (close == null) {
+                // Gate: this symbol has history but no close yet at this date. Per the
+                // recorded divergence above, skip the whole date rather than valuing only
+                // the already-priced symbols.
+                allPriced = false
+                continue
+            }
             val quantity = position.quantity
             holdings += close * quantity
             pnl += (close - position.averageCost.amount) * quantity
-            priced = true
         }
-        if (!priced) continue
+        if (!allPriced) continue
         result.add(
             PortfolioPerformancePoint(
                 epochSeconds = date,

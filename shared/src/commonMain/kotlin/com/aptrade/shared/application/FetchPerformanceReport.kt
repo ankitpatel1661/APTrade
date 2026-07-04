@@ -34,8 +34,14 @@ class FetchPerformanceReport(
             return PerformanceReport(points, null, PerformanceMetrics(0.0, 0.0, 0.0, 0.0, null, null, null))
         }
         val values = points.map { it.value.amount.doubleValue(false) }
+        // Align the benchmark window to the (post-gate) portfolio curve start so the overlay
+        // and beta/alpha describe the same span of time.
+        val curveStart = points.first().epochSeconds
         val benchmarkCloses: List<Double>? = try {
-            repository.history(benchmark, timeframe).map { it.close.amount.doubleValue(false) }.ifEmpty { null }
+            repository.history(benchmark, timeframe)
+                .filter { it.epochSeconds >= curveStart }
+                .map { it.close.amount.doubleValue(false) }
+                .ifEmpty { null }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
