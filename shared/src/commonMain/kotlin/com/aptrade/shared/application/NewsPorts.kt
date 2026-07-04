@@ -1,4 +1,7 @@
-package com.aptrade.shared.domain
+package com.aptrade.shared.application
+
+import com.aptrade.shared.domain.NewsArticle
+import com.aptrade.shared.domain.NewsCategory
 
 /** Fetches news articles from a remote news source. */
 interface NewsRepository {
