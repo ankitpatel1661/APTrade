@@ -186,9 +186,11 @@ buy/sell with its trade date, an **Export…** action, and a **Reset portfolio**
 Divergences from the macOS/desktop Portfolio in this first Android cut: export is a plain-text
 **share-sheet** (CSV / JSON) with **no PDF**; the performance chart has **no crosshair
 scrubber**; allocation is **bars only** (no donut chart); and the entry point is the top-bar
-**List icon** rather than a dedicated tab. Trading is only reachable from an existing holding
-row's BUY/SELL — an empty portfolio has no first-buy entry point on Android yet (the macOS
-app buys from asset detail screens; the Android detail screen has no BUY action).
+**List icon** rather than a dedicated tab. Trading is reachable both from an existing holding
+row's BUY/SELL **and** from a prominent **BUY / SELL** action on each asset's detail screen
+(matching the macOS app) — so a fresh $100,000 portfolio can make its first buy from asset
+detail. Both entry points open the same modal-bottom-sheet trade form; a detail-made trade
+persists to the shared store and appears in the Portfolio on return.
 
 ### Windows desktop app (walking skeleton)
 
