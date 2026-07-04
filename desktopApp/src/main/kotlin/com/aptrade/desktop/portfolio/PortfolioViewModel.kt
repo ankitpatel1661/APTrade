@@ -264,9 +264,15 @@ class PortfolioViewModel(
         }
     }
 
-    fun exportCsv(): String = PortfolioExport.from(portfolio, quotes, "APTrade", nowEpochSeconds()).renderCsv()
+    fun exportCsv(): String = exportSnapshot().renderCsv()
 
-    fun exportJson(): String = PortfolioExport.from(portfolio, quotes, "APTrade", nowEpochSeconds()).renderJson()
+    fun exportJson(): String = exportSnapshot().renderJson()
+
+    /** The current portfolio valued against the last-good quotes, as a [PortfolioExport]
+     *  snapshot. The single source for all three export formats: CSV/JSON render it to text
+     *  (above), and the desktop host hands it to `renderPortfolioPdf` for the PDF path. */
+    fun exportSnapshot(): PortfolioExport =
+        PortfolioExport.from(portfolio, quotes, "APTrade", nowEpochSeconds())
 
     /** Merges per-symbol instead of replacing wholesale: a poll that returns a SUBSET of held
      *  symbols (e.g. a transient upstream omission) keeps the last-good quote for the symbols

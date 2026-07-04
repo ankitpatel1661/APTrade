@@ -24,3 +24,20 @@ fun saveTextFile(suggestedName: String, content: String) {
         // A failed disk write must not crash the app; the user can retry the export.
     }
 }
+
+/** Binary sibling of [saveTextFile] for exports whose payload is raw bytes (PDF). Same native
+ *  macOS Save panel, same cancel/failure discipline: a cancelled panel or a failed write is
+ *  swallowed rather than taking the window down. */
+fun saveBinaryFile(suggestedName: String, bytes: ByteArray) {
+    val dialog = FileDialog(null as Frame?, "Export", FileDialog.SAVE).apply {
+        file = suggestedName
+        isVisible = true
+    }
+    val directory = dialog.directory ?: return
+    val chosen = dialog.file ?: return
+    try {
+        File(directory, chosen).writeBytes(bytes)
+    } catch (_: Exception) {
+        // A failed disk write must not crash the app; the user can retry the export.
+    }
+}

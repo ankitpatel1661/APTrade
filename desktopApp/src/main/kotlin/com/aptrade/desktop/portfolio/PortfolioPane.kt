@@ -3,6 +3,7 @@ package com.aptrade.desktop.portfolio
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,9 +15,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,7 +29,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.TextStyle
@@ -36,6 +43,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aptrade.desktop.designkit.DK
+import com.aptrade.desktop.designkit.DonutChart
+import com.aptrade.desktop.designkit.DonutSlice
 import com.aptrade.desktop.designkit.InterFamily
 import com.aptrade.desktop.designkit.LineChart
 import com.aptrade.desktop.designkit.LiveBadge
@@ -59,24 +68,35 @@ private enum class PortfolioSection(val label: String) {
 fun PortfolioPane(
     state: PortfolioUiState,
     onSetSpan: (PortfolioSpan) -> Unit,
+    onSetBenchmark: (String) -> Unit,
     onOpenDetail: (String) -> Unit,
     onTrade: (symbol: String, side: com.aptrade.shared.domain.TradeSide) -> Unit,
     onReset: () -> Unit,
     onExportCsv: () -> Unit,
     onExportJson: () -> Unit,
+    onExportPdf: () -> Unit,
 ) {
     var section by remember { mutableStateOf(PortfolioSection.Holdings) }
     var showResetConfirm by remember { mutableStateOf(false) }
 
-    Column(Modifier.fillMaxSize()) {
+    // The whole pane scrolls as one column: summary → P&L chart → PERFORMANCE → section
+    // switcher → section content. The bounded paper-trading portfolio makes plain Columns
+    // (not nested LazyColumns) the right fit here — everything flows under a single scroll.
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         SummaryHeader(
             state = state,
             onReset = { showResetConfirm = true },
             onExportCsv = onExportCsv,
             onExportJson = onExportJson,
+            onExportPdf = onExportPdf,
         )
         ChartBlock(state = state, onSetSpan = onSetSpan)
         if (state.holdings.isNotEmpty()) {
+            PerformanceSection(
+                state = state,
+                onSetBenchmark = onSetBenchmark,
+                modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 20.dp),
+            )
             SectionSwitcher(
                 selected = section,
                 onSelect = { section = it },
@@ -84,15 +104,13 @@ fun PortfolioPane(
             )
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(DK.hairline))
-        Box(Modifier.fillMaxSize()) {
-            if (state.holdings.isEmpty()) {
-                EmptyState()
-            } else {
-                when (section) {
-                    PortfolioSection.Holdings -> HoldingsList(state, onOpenDetail, onTrade)
-                    PortfolioSection.Allocation -> AllocationView(state)
-                    PortfolioSection.Activity -> ActivityView(state)
-                }
+        if (state.holdings.isEmpty()) {
+            EmptyState()
+        } else {
+            when (section) {
+                PortfolioSection.Holdings -> HoldingsList(state, onOpenDetail, onTrade)
+                PortfolioSection.Allocation -> AllocationView(state)
+                PortfolioSection.Activity -> ActivityView(state)
             }
         }
     }
@@ -113,7 +131,9 @@ private fun SummaryHeader(
     onReset: () -> Unit,
     onExportCsv: () -> Unit,
     onExportJson: () -> Unit,
+    onExportPdf: () -> Unit,
 ) {
+    var exportOpen by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(top = 20.dp, bottom = 18.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -146,8 +166,17 @@ private fun SummaryHeader(
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 if (state.holdings.isNotEmpty()) LiveBadge()
-                TextButton("Export CSV", DK.textSecondary, onExportCsv)
-                TextButton("Export JSON", DK.textSecondary, onExportJson)
+                Box {
+                    TextButton("Export…", DK.textSecondary) { exportOpen = true }
+                    if (exportOpen) {
+                        ExportChooser(
+                            onDismiss = { exportOpen = false },
+                            onExportCsv = { exportOpen = false; onExportCsv() },
+                            onExportJson = { exportOpen = false; onExportJson() },
+                            onExportPdf = { exportOpen = false; onExportPdf() },
+                        )
+                    }
+                }
                 TextButton("Reset portfolio…", DK.textTertiary, onReset)
             }
         }
@@ -186,6 +215,66 @@ private fun SignedMoneyPill(text: String, positive: Boolean?) {
     )
 }
 
+/** The unified export menu: a small DK-styled popup panel anchored under the "Export…" button
+ *  with CSV / JSON / PDF entries. Dismisses on any selection, on a click outside, and on Esc —
+ *  the Esc handler runs on the panel's own `onPreviewKeyEvent` (TradeDialog pattern) so it
+ *  never reaches the window's Esc-priority chain. */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun ExportChooser(
+    onDismiss: () -> Unit,
+    onExportCsv: () -> Unit,
+    onExportJson: () -> Unit,
+    onExportPdf: () -> Unit,
+) {
+    androidx.compose.ui.window.Popup(
+        alignment = Alignment.TopEnd,
+        offset = androidx.compose.ui.unit.IntOffset(0, 26),
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.PopupProperties(focusable = true),
+    ) {
+        Column(
+            Modifier
+                .width(160.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(DK.surface)
+                .border(1.dp, DK.hairline, RoundedCornerShape(10.dp))
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                        onDismiss(); true
+                    } else {
+                        false
+                    }
+                }
+                .padding(vertical = 6.dp),
+        ) {
+            ExportChooserItem("CSV", onExportCsv)
+            ExportChooserItem("JSON", onExportJson)
+            ExportChooserItem("PDF", onExportPdf)
+        }
+    }
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun ExportChooserItem(label: String, onClick: () -> Unit) {
+    var hovered by remember { mutableStateOf(false) }
+    Text(
+        label,
+        style = TextStyle(
+            fontFamily = InterFamily, fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold, color = DK.textPrimary,
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .onPointerEvent(PointerEventType.Enter) { hovered = true }
+            .onPointerEvent(PointerEventType.Exit) { hovered = false }
+            .background(if (hovered) DK.surfaceHi else Color.Transparent)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() }
+            .padding(horizontal = 14.dp, vertical = 9.dp),
+    )
+}
+
 @Composable
 private fun TextButton(label: String, color: Color, onClick: () -> Unit) {
     Text(
@@ -206,9 +295,20 @@ private fun ChartBlock(state: PortfolioUiState, onSetSpan: (PortfolioSpan) -> Un
         SpanBar(selection = state.span, onSelect = onSetSpan)
         Spacer(Modifier.height(12.dp))
         Box(Modifier.fillMaxWidth().height(260.dp), contentAlignment = Alignment.Center) {
+            // On MAX, a portfolio that has traded but has fewer than two performance points is
+            // day-one: the tracking curve fills in from the first market close, not instantly.
+            val maxDayOne = state.span == PortfolioSpan.Max &&
+                state.transactions.isNotEmpty() && state.performance.size < 2
             when {
                 state.isLoadingPerformance -> CircularProgressIndicator(color = DK.gold)
                 state.performance.size > 1 -> LineChart(values = state.performance, modifier = Modifier.fillMaxSize(), color = DK.gold)
+                maxDayOne -> Text(
+                    "Tracking starts today — performance appears after your first market day.",
+                    style = TextStyle(
+                        fontFamily = InterFamily, fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium, color = DK.textTertiary,
+                    ),
+                )
                 else -> Text(
                     "No performance data yet.",
                     style = TextStyle(
@@ -291,8 +391,8 @@ private fun HoldingsList(
     onOpenDetail: (String) -> Unit,
     onTrade: (String, com.aptrade.shared.domain.TradeSide) -> Unit,
 ) {
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        items(state.holdings, key = { it.symbol }) { row ->
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        for (row in state.holdings) {
             HoldingRow(row = row, onClick = { onOpenDetail(row.symbol) }, onTrade = onTrade)
         }
     }
@@ -359,27 +459,90 @@ private fun HoldingRow(
 
 @Composable
 private fun AllocationView(state: PortfolioUiState) {
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
-        item {
-            Spacer(Modifier.height(18.dp))
-            AllocationGroupHeader("BY HOLDING")
-            Spacer(Modifier.height(12.dp))
-        }
-        items(state.allocationByHolding, key = { "hold-" + it.id }) { slice ->
+    Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
+        Spacer(Modifier.height(20.dp))
+        AllocationDonutRow(state)
+        Spacer(Modifier.height(24.dp))
+        AllocationGroupHeader("BY HOLDING")
+        Spacer(Modifier.height(12.dp))
+        for (slice in state.allocationByHolding) {
             AllocationBar(label = slice.label, fraction = slice.fraction, fillColor = null)
             Spacer(Modifier.height(14.dp))
         }
-        item {
-            Spacer(Modifier.height(10.dp))
-            AllocationGroupHeader("BY CLASS")
-            Spacer(Modifier.height(12.dp))
-        }
-        items(state.allocationByKind, key = { "class-" + it.id }) { slice ->
+        Spacer(Modifier.height(10.dp))
+        AllocationGroupHeader("BY CLASS")
+        Spacer(Modifier.height(12.dp))
+        for (slice in state.allocationByKind) {
             AllocationBar(label = slice.label, fraction = slice.fraction, fillColor = kindColor(slice.id))
             Spacer(Modifier.height(14.dp))
         }
-        item { Spacer(Modifier.height(24.dp)) }
+        Spacer(Modifier.height(24.dp))
     }
+}
+
+/** The allocation donut (150dp) with a HOLDINGS + total-value center overlay, beside a manual
+ *  legend (dot · class label · right-aligned percent). Slices are the by-class breakdown in
+ *  Stock/ETF/Crypto order with zero slices omitted (the source list already drops them). */
+@Composable
+private fun AllocationDonutRow(state: PortfolioUiState) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        DonutChart(
+            slices = state.allocationByKind.map { DonutSlice(fraction = it.fraction, color = donutColor(it.id)) },
+        ) {
+            Column(
+                Modifier.align(Alignment.Center).padding(horizontal = 18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    "HOLDINGS",
+                    style = TextStyle(
+                        fontFamily = InterFamily, fontSize = 8.sp, fontWeight = FontWeight.Bold,
+                        color = DK.textTertiary, letterSpacing = 1.2.sp,
+                    ),
+                )
+                Text(
+                    state.holdingsValueText ?: "—",
+                    style = TextStyle(
+                        fontFamily = InterFamily, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                        color = DK.textPrimary, fontFeatureSettings = "tnum",
+                    ),
+                    maxLines = 1,
+                )
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            for (slice in state.allocationByKind) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.width(9.dp).height(9.dp).clip(RoundedCornerShape(50)).background(donutColor(slice.id)))
+                    Text(
+                        slice.label,
+                        style = TextStyle(
+                            fontFamily = InterFamily, fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium, color = DK.textPrimary,
+                        ),
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        String.format(java.util.Locale.US, "%.1f%%", slice.fraction * 100),
+                        style = TextStyle(
+                            fontFamily = InterFamily, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                            color = DK.textSecondary, fontFeatureSettings = "tnum",
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Donut + legend slice colors (brief: Stock=gold, ETF=goldDeep, Crypto=silver), keyed by
+ *  `AllocationSlice.id` (the `AssetKind` name). Distinct from the by-class BAR colors below. */
+private fun donutColor(id: String): Color = when (id) {
+    "Stock" -> DK.gold
+    "Etf" -> DK.goldDeep
+    "Crypto" -> DK.silver
+    else -> DK.textTertiary
 }
 
 @Composable
@@ -440,7 +603,7 @@ private fun kindColor(id: String): Color = when (id) {
 @Composable
 private fun ActivityView(state: PortfolioUiState) {
     if (state.transactions.isEmpty()) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
             Text(
                 "No transactions yet.",
                 style = TextStyle(
@@ -451,8 +614,10 @@ private fun ActivityView(state: PortfolioUiState) {
         }
         return
     }
-    LazyColumn(Modifier.fillMaxSize()) {
-        items(state.transactions, key = { it.id }) { txn -> TransactionRow(txn) }
+    Column(Modifier.fillMaxWidth()) {
+        for (txn in state.transactions) {
+            TransactionRow(txn)
+        }
     }
 }
 
@@ -500,7 +665,7 @@ private fun TransactionRow(txn: TransactionRowUi) {
 
 @Composable
 private fun EmptyState() {
-    Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxWidth().height(320.dp).padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
             "No holdings yet — open an asset and hit Buy.",
             style = TextStyle(
@@ -511,8 +676,10 @@ private fun EmptyState() {
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun ResetConfirmDialog(onConfirm: () -> Unit, onCancel: () -> Unit) {
+    val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
     Box(
         Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onCancel() },
@@ -524,6 +691,17 @@ private fun ResetConfirmDialog(onConfirm: () -> Unit, onCancel: () -> Unit) {
                 .clip(RoundedCornerShape(14.dp))
                 .background(DK.surface)
                 .border(1.dp, DK.hairline, RoundedCornerShape(14.dp))
+                // Consume Esc on the panel's own preview handler (TradeDialog pattern) so it
+                // dismisses the dialog before ever reaching the window's Esc-priority chain.
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                        onCancel(); true
+                    } else {
+                        false
+                    }
+                }
+                .focusRequester(focusRequester)
+                .focusable()
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { }
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -571,6 +749,8 @@ private fun ResetConfirmDialog(onConfirm: () -> Unit, onCancel: () -> Unit) {
             }
         }
     }
+    // Focus the panel on open so its onPreviewKeyEvent receives Esc.
+    androidx.compose.runtime.LaunchedEffect(Unit) { focusRequester.requestFocus() }
 }
 
 // MARK: - Shared helpers

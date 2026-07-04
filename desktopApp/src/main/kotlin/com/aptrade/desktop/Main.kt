@@ -27,6 +27,9 @@ import com.aptrade.desktop.detail.DetailScreen
 import com.aptrade.desktop.portfolio.PortfolioPane
 import com.aptrade.desktop.portfolio.PortfolioViewModel
 import com.aptrade.desktop.portfolio.TradeDialog
+import com.aptrade.desktop.infra.exportFileName
+import com.aptrade.desktop.infra.renderPortfolioPdf
+import com.aptrade.desktop.infra.saveBinaryFile
 import com.aptrade.desktop.infra.saveTextFile
 import com.aptrade.desktop.search.PaletteOverlay
 import com.aptrade.desktop.search.SearchViewModel
@@ -85,7 +88,9 @@ fun main() = application {
     // Hoisted here so window-level Esc can pop it.
     var openSymbol by remember { mutableStateOf<String?>(null) }
     // The open trade dialog's target (asset + side + live price text), hoisted here like the
-    // palette so the dialog overlays the whole window. The dialog owns its own Esc handling.
+    // palette so the dialog overlays the whole window. The dialog owns its own Esc handling —
+    // as do the Portfolio pane's own overlays (the reset-confirm dialog and the export chooser),
+    // each consuming Esc on its own onPreviewKeyEvent before the window chain below sees it.
     var tradeTarget by remember { mutableStateOf<TradeTarget?>(null) }
     val windowState = rememberWindowState(width = 1280.dp, height = 800.dp)
 
@@ -213,6 +218,7 @@ private fun AppRoot(
                 AppTab.Portfolio -> PortfolioPane(
                     state = portfolioState,
                     onSetSpan = portfolioViewModel::setSpan,
+                    onSetBenchmark = portfolioViewModel::setBenchmark,
                     onOpenDetail = onOpenDetail,
                     onTrade = { symbol, side ->
                         // Held-asset trades: reuse the row's name/kind + live price from state.
@@ -227,6 +233,13 @@ private fun AppRoot(
                     onReset = portfolioViewModel::reset,
                     onExportCsv = { saveTextFile("portfolio.csv", portfolioViewModel.exportCsv()) },
                     onExportJson = { saveTextFile("portfolio.json", portfolioViewModel.exportJson()) },
+                    onExportPdf = {
+                        val now = System.currentTimeMillis() / 1000
+                        saveBinaryFile(
+                            exportFileName("pdf", now),
+                            renderPortfolioPdf(portfolioViewModel.exportSnapshot()),
+                        )
+                    },
                 )
                 AppTab.News -> PlaceholderPane("News — coming soon")
             }
