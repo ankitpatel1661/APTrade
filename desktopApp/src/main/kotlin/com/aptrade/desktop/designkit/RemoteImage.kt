@@ -18,6 +18,8 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.jetbrains.skia.Bitmap as SkiaBitmap
 import org.jetbrains.skia.Image as SkiaImage
 
@@ -89,21 +91,23 @@ private suspend fun fetchImageBitmap(url: String): ImageBitmap? {
     RemoteImageCache.get(url)?.let { return it }
 
     return try {
-        val request = HttpRequest.newBuilder(URI.create(url))
-            .timeout(Duration.ofSeconds(15))
-            .GET()
-            .build()
-        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray())
-        if (response.statusCode() !in 200..299) return null
+        withContext(Dispatchers.IO) {
+            val request = HttpRequest.newBuilder(URI.create(url))
+                .timeout(Duration.ofSeconds(15))
+                .GET()
+                .build()
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray())
+            if (response.statusCode() !in 200..299) return@withContext null
 
-        val skiaImage = SkiaImage.makeFromEncoded(response.body())
-        val skiaBitmap = SkiaBitmap().apply {
-            allocN32Pixels(skiaImage.width, skiaImage.height)
-            skiaImage.readPixels(this)
+            val skiaImage = SkiaImage.makeFromEncoded(response.body())
+            val skiaBitmap = SkiaBitmap().apply {
+                allocN32Pixels(skiaImage.width, skiaImage.height)
+                skiaImage.readPixels(this)
+            }
+            val bitmap = skiaBitmap.asComposeImageBitmap()
+            RemoteImageCache.put(url, bitmap)
+            bitmap
         }
-        val bitmap = skiaBitmap.asComposeImageBitmap()
-        RemoteImageCache.put(url, bitmap)
-        bitmap
     } catch (e: kotlinx.coroutines.CancellationException) {
         throw e
     } catch (e: Exception) {
