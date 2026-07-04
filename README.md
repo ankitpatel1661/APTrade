@@ -197,24 +197,34 @@ artifact — the Windows build proof for this increment.
 
 A **Portfolio tab** brings paper trading to the desktop app on the same shared portfolio
 core as macOS: a summary header (value, day change, total return) with formatted money
-throughout, a single **Export…** chooser (CSV / JSON / PDF), and a reset action; an
-expandable account-value chart across the `1D · 1W · 1M · 1Y · MAX` spans; a **Holdings /
-Allocation / Activity** switcher — holdings sorted by market value with per-row **BUY/SELL**
-and unrealized P&L, allocation as a donut chart plus per-holding and by-asset-class
-percentage bars, and an activity ledger of every buy/sell (symbol, quantity, price — no
-dates yet). A **Performance** section below the chart adds a segmented **SPY/QQQ/VTI**
-benchmark picker overlaying a rebased portfolio-vs-benchmark curve, and a 7-tile risk grid
-(Total Return, Annualized, Volatility, Max Drawdown, Sharpe, Beta, Alpha). Buying a
-symbol not yet held starts from the **BUY / SELL** button on its asset detail screen, which
-also gained **KEY STATS** (last, previous close, day change/%, symbol, type) and, when held,
-a **YOUR POSITION** card (shares, average cost, market value, unrealized P&L), plus the same
-six chart indicators as macOS — **SMA 20, EMA 12, VWAP, Bollinger Bands (20), RSI (14), and
-MACD (12·26·9)** — as overlays and dedicated RSI/MACD panes. The `PortfolioViewModel`, trade
-dialog, indicator math (`TechnicalIndicators`), and risk/performance calculations
-(`RiskMetrics`, `FetchPerformanceReport`) all live on the `:shared` Kotlin core alongside the
-file-backed `PortfolioStore`, so the same domain math and persistence format will carry to
-the macOS app in a later increment; only the PDF byte-rendering itself is a
-desktop-(JVM)-side adapter.
+throughout, a single **Export…** chooser (CSV / JSON / PDF), and a reset action; a
+**Holdings / Allocation / Activity** switcher — holdings sorted by market value with
+per-row **BUY/SELL** and unrealized P&L, allocation as a donut chart plus per-holding and
+by-asset-class percentage bars, and an activity ledger of every buy/sell with an absolute
+trade timestamp (symbol, quantity, price, and the date/time it executed). Directly under
+the summary header sits **one** span-driven **Performance** chart — the sole portfolio
+chart, replacing the previous separate account-value chart — with a five-span bar
+(`1D · 1W · 1M · 1Y · MAX`), a segmented **SPY/QQQ/VTI** benchmark picker overlaying the
+portfolio and benchmark curves rebased to a common 100-point start, a hover **crosshair
+scrubber** over the overlay (a tooltip pill showing the hovered point's value and date,
+plus a live running-change readout next to the "PERFORMANCE" label that tracks the
+crosshair), and a 7-tile risk grid below it (Total Return, Annualized, Volatility, Max
+Drawdown, Sharpe, Beta, Alpha). Buying a symbol not yet held starts from the **BUY / SELL**
+button on its asset detail screen, which also gained **KEY STATS** (last, previous close,
+day change/%, symbol, type) and, when held, a **YOUR POSITION** card (shares, average cost,
+market value, unrealized P&L), plus the same six chart indicators as macOS — **SMA 20,
+EMA 12, VWAP, Bollinger Bands (20), RSI (14), and MACD (12·26·9)** — as overlays and
+dedicated RSI/MACD panes. An **account panel** (⋯ button) offers Appearance — **5** accent
+themes (Champagne Gold, Rose Gold, Sapphire, Amethyst, Platinum) persisted to a
+`settings.json` in the OS config directory — and an About page; every other row (Profile,
+Notifications, Security & Privacy, etc.) is a shared "not available yet" placeholder.
+**Recorded divergences from macOS:** desktop Appearance has no Dark/Light toggle yet, and
+most account-panel pages beyond Appearance/Export/About are placeholders. The
+`PortfolioViewModel`, trade dialog, indicator math (`TechnicalIndicators`), and
+risk/performance calculations (`RiskMetrics`, `FetchPerformanceReport`) all live on the
+`:shared` Kotlin core alongside the file-backed `PortfolioStore`, so the same domain math
+and persistence format will carry to the macOS app in a later increment; only the PDF
+byte-rendering itself is a desktop-(JVM)-side adapter.
 
 ## Project Structure
 
