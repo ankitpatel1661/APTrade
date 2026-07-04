@@ -9,7 +9,6 @@ import com.aptrade.shared.application.BuyAsset
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchPerformanceReport
 import com.aptrade.shared.application.FetchPortfolio
-import com.aptrade.shared.application.FetchPortfolioPerformance
 import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.ResetPortfolio
 import com.aptrade.shared.application.SellAsset
@@ -17,6 +16,7 @@ import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.AllocationSlice
 import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.domain.PortfolioExport
+import com.aptrade.shared.domain.PortfolioPerformancePoint
 import com.aptrade.shared.domain.Quote
 import com.aptrade.shared.domain.RiskMetrics
 import com.aptrade.shared.domain.TradeError
@@ -36,6 +36,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /** The portfolio P&L chart's time span. Mirrors the asset-detail timeframes but adds a
@@ -50,9 +53,6 @@ enum class PortfolioSpan(val label: String) {
             Month -> Timeframe.OneMonth
             Year, Max -> Timeframe.OneYear
         }
-
-    /** Max trims the curve to begin at the first transaction (the portfolio's inception). */
-    val sinceInception: Boolean get() = this == Max
 }
 
 /** Per-field text contract (Task 7/8 implementers: do NOT re-format on either side):
@@ -83,6 +83,8 @@ data class TransactionRowUi(
     val quantityText: String,
     val priceText: String,
     val epochSeconds: Long,
+    /** PRE-FORMATTED, display-only — en_US absolute "MMM d, uuuu, h:mm a". Never re-parse. */
+    val dateText: String,
 )
 
 /** Percent metrics via `formatPercent` (e.g. "+4.84%", "—" only if a percent field were
@@ -102,12 +104,27 @@ data class MetricTexts(
 private fun plainMetric(value: Double?): String =
     if (value == null) "—" else String.format(Locale.US, "%.2f", value)
 
+/** One point on the P&L chart scrubber, derived from the same [PerformanceReport]/`points`
+ *  list that feeds `performanceRebased`. `valueText` and `deltaText` are PRE-FORMATTED,
+ *  display-only strings (same contract as the rest of this file) — NEVER feed them into
+ *  `splitPrice`/`SuperscriptPrice`/`Money.usd` or any other numeric parsing. */
+data class PerfPointUi(
+    val epochSeconds: Long,
+    val valueText: String,
+    val deltaText: String,
+    val isUp: Boolean,
+    val tooltipDateText: String,
+)
+
 /** Per-field money-text contract (Task 7/8 implementers: do NOT re-format on either side):
  *  - `totalValueText` is RAW `Money.amountText` — it feeds `SuperscriptPrice`/`splitPrice`
  *    in PortfolioPane's header, which performs its own "$" + grouping + cents split.
  *  - Every other money text is PRE-FORMATTED and rendered verbatim: `cashText` and
  *    `holdingsValueText` via `formatMoney`; `dayChangeText`, `unrealizedText`, and
  *    `realizedText` via `signedMoney` ("+" when strictly positive).
+ *  - `performancePoints`' `valueText`/`deltaText` (see [PerfPointUi]) and `transactions`'
+ *    `dateText` (see [TransactionRowUi]) are likewise PRE-FORMATTED, display-only strings —
+ *    NEVER feed them into `splitPrice`/`SuperscriptPrice`/`Money.usd` or any numeric parsing.
  *  See `HoldingRowUi` for the per-row contract. */
 data class PortfolioUiState(
     val isLoading: Boolean = true,
@@ -124,12 +141,11 @@ data class PortfolioUiState(
     val allocationByHolding: List<AllocationSlice> = emptyList(),
     val allocationByKind: List<AllocationSlice> = emptyList(),
     val transactions: List<TransactionRowUi> = emptyList(),
-    val performance: List<Double> = emptyList(),
-    val isLoadingPerformance: Boolean = false,
     val span: PortfolioSpan = PortfolioSpan.Month,
     val benchmark: String = "SPY",
     val benchmarks: List<String> = listOf("SPY", "QQQ", "VTI"),
     val performanceRebased: List<Double> = emptyList(),
+    val performancePoints: List<PerfPointUi> = emptyList(),
     val benchmarkRebased: List<Double>? = null,
     val metrics: MetricTexts? = null,
     val error: String? = null,
@@ -152,11 +168,11 @@ class PortfolioViewModel(
     private val buyAsset: BuyAsset,
     private val sellAsset: SellAsset,
     private val resetPortfolio: ResetPortfolio,
-    private val fetchPortfolioPerformance: FetchPortfolioPerformance,
     private val fetchPerformanceReport: FetchPerformanceReport,
     private val scope: CoroutineScope,
     private val tickMillis: Long = 15_000,
     private val nowEpochSeconds: () -> Long,
+    private val zoneId: ZoneId = ZoneId.systemDefault(),
 ) {
     private val _state = MutableStateFlow(PortfolioUiState())
     val state: StateFlow<PortfolioUiState> = _state
@@ -174,7 +190,6 @@ class PortfolioViewModel(
                 refreshQuotes()
                 publish(loading = false)
                 if (tick == 0) {
-                    loadPerformance()
                     loadPerformanceReport()
                 }
                 tick++
@@ -190,7 +205,6 @@ class PortfolioViewModel(
     fun setSpan(span: PortfolioSpan) {
         if (_state.value.span == span) return
         _state.update { it.copy(span = span) }
-        loadPerformance()
         loadPerformanceReport()
     }
 
@@ -254,8 +268,8 @@ class PortfolioViewModel(
             quotes = emptyMap()
             _state.update {
                 it.copy(
-                    performance = emptyList(),
                     performanceRebased = emptyList(),
+                    performancePoints = emptyList(),
                     benchmarkRebased = null,
                     metrics = null,
                 )
@@ -291,20 +305,13 @@ class PortfolioViewModel(
         }
     }
 
-    private fun loadPerformance() {
-        val span = _state.value.span
-        scope.launch {
-            _state.update { it.copy(isLoadingPerformance = true) }
-            val points = fetchPortfolioPerformance.execute(span.timeframe, span.sinceInception)
-            _state.update { it.copy(isLoadingPerformance = false, performance = points.map { p -> p.value.amount.doubleValue(false) }) }
-        }
-    }
-
-    /** One-shot per span/benchmark change (mirrors `loadPerformance`'s cadence discipline) —
-     *  NEVER refetched on a poll tick. Rebases the portfolio curve and (when available) the
-     *  benchmark curve to a common 100-basis start so they're directly comparable on the
-     *  overlay chart, and renders the risk metrics to display text (percent fields via
-     *  `formatPercent`; sharpe/beta/alpha as plain 2-decimal text, "—" when null). */
+    /** One-shot per span/benchmark change — NEVER refetched on a poll tick. Rebases the
+     *  portfolio curve and (when available) the benchmark curve to a common 100-basis start
+     *  so they're directly comparable on the overlay chart, renders the risk metrics to
+     *  display text (percent fields via `formatPercent`; sharpe/beta/alpha as plain 2-decimal
+     *  text, "—" when null), and derives the scrubber's [PerfPointUi] list from the SAME
+     *  `report.points` that feed `performanceRebased`. This report is the ONLY P&L chart feed
+     *  (the legacy `loadPerformance()`/`performance` path was removed in Task 11). */
     private fun loadPerformanceReport() {
         val span = _state.value.span
         val benchmark = _state.value.benchmark
@@ -324,6 +331,7 @@ class PortfolioViewModel(
                 _state.update {
                     it.copy(
                         performanceRebased = RiskMetrics.rebase(values),
+                        performancePoints = perfPointsUi(report.points),
                         benchmarkRebased = report.benchmarkCloses?.let { closes -> RiskMetrics.rebase(closes) },
                         metrics = metrics,
                     )
@@ -333,6 +341,45 @@ class PortfolioViewModel(
             } catch (e: QuoteError) {
                 // Portfolio-side history failure (distinct from the benchmark-only swallow
                 // inside FetchPerformanceReport): leave prior report state as last-good.
+            }
+        }
+    }
+
+    /** Derives the P&L chart scrubber's per-point display strings from the performance
+     *  report's raw points. Money deltas are BigDecimal subtraction on the underlying amounts
+     *  (never Double); the percent delta is the one sanctioned Double ratio, formatted via
+     *  `formatPercent` (which takes a percentage-point value, hence the ×100). */
+    private fun perfPointsUi(points: List<PortfolioPerformancePoint>): List<PerfPointUi> {
+        if (points.isEmpty()) return emptyList()
+        val first = points.first()
+        val dateFormatter = DateTimeFormatter.ofPattern("MMM d, h:mm a", Locale.US)
+        return points.mapIndexed { index, point ->
+            val tooltipDateText = Instant.ofEpochSecond(point.epochSeconds).atZone(zoneId).format(dateFormatter)
+            if (index == 0) {
+                PerfPointUi(
+                    epochSeconds = point.epochSeconds,
+                    valueText = formatMoney(point.value.amountText),
+                    deltaText = "+\$0.00 (+0.00%)",
+                    isUp = true,
+                    tooltipDateText = tooltipDateText,
+                )
+            } else {
+                val deltaAmount = point.value.amount - first.value.amount
+                val deltaMoneyText = signedMoney(deltaAmount.toStringExpanded())
+                val v0 = first.value.amount.doubleValue(false)
+                val percentRatio = if (v0 != 0.0) {
+                    (point.value.amount.doubleValue(false) - v0) / v0 * 100.0
+                } else {
+                    0.0
+                }
+                val deltaText = "$deltaMoneyText (${formatPercent(percentRatio)})"
+                PerfPointUi(
+                    epochSeconds = point.epochSeconds,
+                    valueText = formatMoney(point.value.amountText),
+                    deltaText = deltaText,
+                    isUp = deltaAmount.signum() >= 0,
+                    tooltipDateText = tooltipDateText,
+                )
             }
         }
     }
@@ -362,6 +409,7 @@ class PortfolioViewModel(
             }
 
         val realized = portfolio.realizedPnL
+        val transactionDateFormatter = DateTimeFormatter.ofPattern("MMM d, uuuu, h:mm a", Locale.US)
         val transactionsUi = portfolio.transactions
             .sortedByDescending { it.epochSeconds }
             .map { txn ->
@@ -373,6 +421,7 @@ class PortfolioViewModel(
                     quantityText = txn.quantity.toStringExpanded(),
                     priceText = formatMoney(txn.price.amountText),
                     epochSeconds = txn.epochSeconds,
+                    dateText = Instant.ofEpochSecond(txn.epochSeconds).atZone(zoneId).format(transactionDateFormatter),
                 )
             }
 

@@ -47,16 +47,17 @@ private fun vm(
     store: PortfolioStore,
     scope: kotlinx.coroutines.CoroutineScope,
     nowEpochSeconds: () -> Long = { 0L },
+    zoneId: java.time.ZoneId = java.time.ZoneId.systemDefault(),
 ) = PortfolioViewModel(
     fetchPortfolio = FetchPortfolio(store),
     fetchMarketQuotes = FetchMarketQuotes(repo),
     buyAsset = BuyAsset(repo, store),
     sellAsset = SellAsset(repo, store),
     resetPortfolio = ResetPortfolio(store),
-    fetchPortfolioPerformance = FetchPortfolioPerformance(repo, store),
     fetchPerformanceReport = FetchPerformanceReport(repo, FetchPortfolioPerformance(repo, store)),
     scope = scope,
     nowEpochSeconds = nowEpochSeconds,
+    zoneId = zoneId,
 )
 
 class PortfolioViewModelTest {
@@ -253,7 +254,7 @@ class PortfolioViewModelTest {
     }
 
     @Test
-    fun setSpanMaxFetchesPerformanceWithSinceInceptionTrue() = runTest {
+    fun setSpanMaxRequestsOneYearTimeframeAndRefeedsTheReportChart() = runTest {
         val repo = FakeMarketDataRepository()
         repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
         var requestedTimeframe: Timeframe? = null
@@ -275,8 +276,79 @@ class PortfolioViewModelTest {
 
         assertEquals(Timeframe.OneYear, requestedTimeframe)
         assertEquals(PortfolioSpan.Max, vm.state.value.span)
-        // trimmed to the transaction's inception day (200_000) — the point at epoch 100 is dropped
-        assertEquals(1, vm.state.value.performance.size)
+        // The report path (the single chart feed) carries both history points.
+        assertEquals(2, vm.state.value.performancePoints.size)
+        assertEquals(2, vm.state.value.performanceRebased.size)
+    }
+
+    @Test
+    fun performancePointsCarryFormattedValueDeltaDirectionAndTooltipDate() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
+        repo.historyImpl = { symbol, _ ->
+            if (symbol == "AAPL") {
+                listOf(
+                    PricePoint(86_400L, Money.usd("100.00")),      // Jan 2, 1970 00:00 UTC
+                    PricePoint(172_800L, Money.usd("110.00")),     // Jan 3
+                    PricePoint(259_200L, Money.usd("90.00")),      // Jan 4
+                )
+            } else {
+                listOf(
+                    PricePoint(86_400L, Money.usd("400.00")),
+                    PricePoint(172_800L, Money.usd("420.00")),
+                    PricePoint(259_200L, Money.usd("410.00")),
+                )
+            }
+        }
+        val seeded = Portfolio(
+            cash = Money.usd("99000"),
+            positions = listOf(Position(aapl, BigDecimal.parseString("10"), Money.usd("100.00"), Money.usd("0"))),
+            transactions = listOf(
+                Transaction("txn-1", "AAPL", TradeSide.Buy, BigDecimal.parseString("10"), Money.usd("100.00"), 0L),
+            ),
+        )
+        val vm = vm(repo, InMemoryPortfolioStore(seeded), backgroundScope, zoneId = java.time.ZoneId.of("UTC"))
+        vm.start(); runCurrent()
+
+        val points = vm.state.value.performancePoints
+        assertEquals(3, points.size)
+
+        // First point: hardcoded zero delta, always up. Value = 99000 cash + 10 × 100.00.
+        assertEquals(86_400L, points[0].epochSeconds)
+        assertEquals("$100,000.00", points[0].valueText)
+        assertEquals("+$0.00 (+0.00%)", points[0].deltaText)
+        assertTrue(points[0].isUp)
+        assertEquals("Jan 2, 12:00 AM", points[0].tooltipDateText)
+
+        // Up day: 10 × 110 → 100,100; +100 vs first = +0.10%.
+        assertEquals("$100,100.00", points[1].valueText)
+        assertEquals("+$100.00 (+0.10%)", points[1].deltaText)
+        assertTrue(points[1].isUp)
+        assertEquals("Jan 3, 12:00 AM", points[1].tooltipDateText)
+
+        // Down day: 10 × 90 → 99,900; -100 vs first = -0.10%.
+        assertEquals("$99,900.00", points[2].valueText)
+        assertEquals("-$100.00 (-0.10%)", points[2].deltaText)
+        assertFalse(points[2].isUp)
+        assertEquals("Jan 4, 12:00 AM", points[2].tooltipDateText)
+    }
+
+    @Test
+    fun transactionRowsCarryAbsoluteDateTextWithYear() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
+        val seeded = Portfolio(
+            cash = Money.usd("99000"),
+            positions = listOf(Position(aapl, BigDecimal.parseString("10"), Money.usd("100.00"), Money.usd("0"))),
+            transactions = listOf(
+                // Epoch 500 = Jan 1, 1970 00:08:20 UTC.
+                Transaction("txn-1", "AAPL", TradeSide.Buy, BigDecimal.parseString("10"), Money.usd("100.00"), 500L),
+            ),
+        )
+        val vm = vm(repo, InMemoryPortfolioStore(seeded), backgroundScope, zoneId = java.time.ZoneId.of("UTC"))
+        vm.start(); runCurrent()
+
+        assertEquals("Jan 1, 1970, 12:08 AM", vm.state.value.transactions.single().dateText)
     }
 
     @Test
@@ -390,14 +462,16 @@ class PortfolioViewModelTest {
         val store = InMemoryPortfolioStore(seeded)
         val vm = vm(repo, store, backgroundScope)
         vm.start(); runCurrent()
-        assertTrue(vm.state.value.performance.isNotEmpty())
+        assertTrue(vm.state.value.performancePoints.isNotEmpty())
+        assertTrue(vm.state.value.performanceRebased.isNotEmpty())
 
         vm.reset(); runCurrent()
 
         val s = vm.state.value
         assertTrue(s.holdings.isEmpty())
         assertEquals("$100,000.00", s.cashText)
-        assertTrue(s.performance.isEmpty())
+        assertTrue(s.performancePoints.isEmpty())
+        assertTrue(s.performanceRebased.isEmpty())
         assertEquals(Portfolio.starting(), store.stored)
     }
 

@@ -72,7 +72,6 @@ fun main() = application {
             buyAsset = graph.buyAsset,
             sellAsset = graph.sellAsset,
             resetPortfolio = graph.resetPortfolio,
-            fetchPortfolioPerformance = graph.fetchPortfolioPerformance,
             fetchPerformanceReport = graph.fetchPerformanceReport,
             scope = appScope,
             nowEpochSeconds = { System.currentTimeMillis() / 1000 },

@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -297,11 +296,14 @@ private fun ChartBlock(state: PortfolioUiState, onSetSpan: (PortfolioSpan) -> Un
         Box(Modifier.fillMaxWidth().height(260.dp), contentAlignment = Alignment.Center) {
             // On MAX, a portfolio that has traded but has fewer than two performance points is
             // day-one: the tracking curve fills in from the first market close, not instantly.
+            // TODO(Task 12): rewire this block onto `state.performancePoints` (the new
+            // scrubber-driven chart feed) instead of the raw `performanceRebased` doubles —
+            // this is a minimal compile-keeping stub after Task 11 removed the legacy
+            // `performance`/`isLoadingPerformance` fields, not the real chart redesign.
             val maxDayOne = state.span == PortfolioSpan.Max &&
-                state.transactions.isNotEmpty() && state.performance.size < 2
+                state.transactions.isNotEmpty() && state.performanceRebased.size < 2
             when {
-                state.isLoadingPerformance -> CircularProgressIndicator(color = DK.gold)
-                state.performance.size > 1 -> LineChart(values = state.performance, modifier = Modifier.fillMaxSize(), color = DK.gold)
+                state.performanceRebased.size > 1 -> LineChart(values = state.performanceRebased, modifier = Modifier.fillMaxSize(), color = DK.gold)
                 maxDayOne -> Text(
                     "Tracking starts today — performance appears after your first market day.",
                     style = TextStyle(
