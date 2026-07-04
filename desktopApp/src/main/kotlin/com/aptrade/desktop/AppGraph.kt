@@ -1,6 +1,7 @@
 package com.aptrade.desktop
 
 import com.aptrade.desktop.infra.FilePortfolioStore
+import com.aptrade.desktop.infra.FileSettingsStore
 import com.aptrade.desktop.infra.FileWatchlistStore
 import com.aptrade.desktop.infra.resolveConfigDir
 import com.aptrade.shared.application.AddToWatchlist
@@ -31,6 +32,7 @@ class AppGraph(
     private val repository: MarketDataRepository = YahooMarketDataRepository(),
     store: WatchlistStore = FileWatchlistStore(resolveConfigDir().resolve("watchlist.json")),
     portfolioStore: PortfolioStore = FilePortfolioStore(resolveConfigDir().resolve("portfolio.json")),
+    val settingsStore: FileSettingsStore = FileSettingsStore(resolveConfigDir().resolve("settings.json")),
 ) {
     val fetchMarketQuotes = FetchMarketQuotes(repository)
     val fetchSearch = FetchSearch(repository)

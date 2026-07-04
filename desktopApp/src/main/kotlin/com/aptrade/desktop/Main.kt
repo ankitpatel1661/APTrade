@@ -33,6 +33,8 @@ import com.aptrade.desktop.infra.saveBinaryFile
 import com.aptrade.desktop.infra.saveTextFile
 import com.aptrade.desktop.search.PaletteOverlay
 import com.aptrade.desktop.search.SearchViewModel
+import com.aptrade.desktop.designkit.DK
+import com.aptrade.desktop.ui.AccountPanel
 import com.aptrade.desktop.ui.AppShell
 import com.aptrade.desktop.ui.AppTab
 import com.aptrade.desktop.ui.PlaceholderPane
@@ -46,6 +48,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import java.awt.Dimension
 
 fun main() = application {
@@ -88,10 +91,44 @@ fun main() = application {
     var openSymbol by remember { mutableStateOf<String?>(null) }
     // The open trade dialog's target (asset + side + live price text), hoisted here like the
     // palette so the dialog overlays the whole window. The dialog owns its own Esc handling —
-    // as do the Portfolio pane's own overlays (the reset-confirm dialog and the export chooser),
-    // each consuming Esc on its own onPreviewKeyEvent before the window chain below sees it.
+    // as do the Portfolio pane's own overlays (the reset-confirm dialog and the export chooser)
+    // and the account/settings panel, each consuming Esc on its own onPreviewKeyEvent before the
+    // window chain below sees it.
     var tradeTarget by remember { mutableStateOf<TradeTarget?>(null) }
+    // The right-anchored account/settings panel (⋯ button). Hoisted here so it overlays the
+    // whole window like the palette; it self-consumes Esc on its own panel, never the window's.
+    var accountOpen by remember { mutableStateOf(false) }
     val windowState = rememberWindowState(width = 1280.dp, height = 800.dp)
+
+    // Load persisted settings once at startup. DK.accent stays Champagne Gold until this
+    // resolves — pixel-identical to the default, so no flash of the wrong accent. Applying the
+    // loaded accent flips DK.accent, which recomposes every gold reader. CancellationException
+    // must propagate so scope teardown isn't swallowed.
+    LaunchedEffect(Unit) {
+        try {
+            DK.accent.value = graph.settingsStore.load().accent
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+            // Corrupt/unreadable settings already fall back to defaults inside the store; any
+            // other unexpected failure keeps the default accent rather than crashing startup.
+        }
+    }
+
+    // Fire-and-forget accent change: flip the live accent, then persist on the Main scope.
+    fun selectAccent(theme: com.aptrade.desktop.designkit.AccentTheme) {
+        DK.accent.value = theme
+        appScope.launch {
+            try {
+                graph.settingsStore.save(com.aptrade.desktop.infra.AppSettings(accent = theme))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+                // A failed persist leaves the in-memory accent applied; it just won't survive a
+                // restart. Not worth interrupting the user with an error for a cosmetic write.
+            }
+        }
+    }
 
     fun closePalette() {
         paletteOpen = false
@@ -147,6 +184,11 @@ fun main() = application {
                     tradeTarget = tradeTarget,
                     onOpenTrade = { target -> tradeTarget = target },
                     onCloseTrade = { tradeTarget = null },
+                    accountOpen = accountOpen,
+                    onOpenAccount = { accountOpen = true },
+                    onCloseAccount = { accountOpen = false },
+                    accent = DK.accent.value,
+                    onSelectAccent = { theme -> selectAccent(theme) },
                 )
             }
         }
@@ -172,6 +214,11 @@ private fun AppRoot(
     tradeTarget: TradeTarget?,
     onOpenTrade: (TradeTarget) -> Unit,
     onCloseTrade: () -> Unit,
+    accountOpen: Boolean,
+    onOpenAccount: () -> Unit,
+    onCloseAccount: () -> Unit,
+    accent: com.aptrade.desktop.designkit.AccentTheme,
+    onSelectAccent: (com.aptrade.desktop.designkit.AccentTheme) -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(AppTab.Watchlist) }
     val watchState by watchlistViewModel.state.collectAsState()
@@ -184,6 +231,7 @@ private fun AppRoot(
             selectedTab = selectedTab,
             onTabSelect = { selectedTab = it },
             onOpenPalette = onOpenPalette,
+            onOpenAccount = onOpenAccount,
         ) {
             when (selectedTab) {
                 AppTab.Watchlist ->
@@ -253,6 +301,22 @@ private fun AppRoot(
                     onOpenDetail(asset.symbol)
                 },
                 onClose = onClosePalette,
+            )
+        }
+
+        // The account/settings panel overlays the shell. It self-consumes Esc on its own panel
+        // (TradeDialog pattern), so it never competes with the window's palette Esc. The Export
+        // Portfolio Data row switches to the Portfolio tab (where the Export… chooser lives) and
+        // closes the panel — see the DEVIATION note in the task report.
+        if (accountOpen) {
+            AccountPanel(
+                accent = accent,
+                onSelectAccent = onSelectAccent,
+                onExportPortfolio = {
+                    selectedTab = AppTab.Portfolio
+                    onCloseAccount()
+                },
+                onClose = onCloseAccount,
             )
         }
 

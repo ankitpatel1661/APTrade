@@ -47,6 +47,7 @@ fun AppShell(
     selectedTab: AppTab,
     onTabSelect: (AppTab) -> Unit,
     onOpenPalette: () -> Unit,
+    onOpenAccount: () -> Unit,
     content: @Composable () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().background(DK.backgroundGradient)) {
@@ -54,10 +55,13 @@ fun AppShell(
             Box(Modifier.align(Alignment.Center)) {
                 BrandWordmark(height = 108.dp)
             }
-            PaletteIconButton(
-                onClick = onOpenPalette,
+            Row(
                 modifier = Modifier.align(Alignment.TopEnd).padding(top = 20.dp, end = 20.dp),
-            )
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                PaletteIconButton(onClick = onOpenPalette)
+                EllipsisIconButton(onClick = onOpenAccount)
+            }
         }
         TabRow(selectedTab = selectedTab, onTabSelect = onTabSelect)
         Spacer(Modifier.height(12.dp))
@@ -80,6 +84,32 @@ private fun PaletteIconButton(onClick: () -> Unit, modifier: Modifier = Modifier
         contentAlignment = Alignment.Center,
     ) {
         MagnifierIcon(tint = DK.textSecondary, modifier = Modifier.size(16.dp))
+    }
+}
+
+/** Top-right ellipsis glyph that opens the account/settings panel. */
+@Composable
+private fun EllipsisIconButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(34.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(DK.surface)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            "⋯",
+            style = TextStyle(
+                fontFamily = InterFamily,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = DK.textSecondary,
+            ),
+        )
     }
 }
 

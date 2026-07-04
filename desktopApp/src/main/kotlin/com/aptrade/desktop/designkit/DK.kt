@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
@@ -26,9 +27,16 @@ object DK {
     val textSecondary = Color(0xFF9C968A)
     val textTertiary = Color(0xFF615C51)
 
-    val goldDeep = Color(0xFFA9772A)
-    val gold = Color(0xFFD4A94E)
-    val goldLight = Color(0xFFF2DDA0)
+    /** The active brand accent — Compose snapshot state so a change recomposes every
+     *  reader of `gold`/`goldDeep`/`goldLight`/`goldGradient` with no call-site changes.
+     *  Defaults to Champagne Gold, whose ramp is pixel-identical to the former constants. */
+    val accent = mutableStateOf(AccentTheme.ChampagneGold)
+
+    // The gold ramp derives from the active accent. `gold` is the mid stop (the primary
+    // identity color), `goldDeep`/`goldLight` the shadow/highlight stops.
+    val goldDeep: Color get() = accent.value.deep
+    val gold: Color get() = accent.value.mid
+    val goldLight: Color get() = accent.value.light
     val silver = Color(0xFFD8D5CE)
 
     val up = Color(0xFF46C98A)
@@ -41,8 +49,9 @@ object DK {
         else -> textSecondary
     }
 
-    /** The logo's diagonal gold gradient (deep → mid → light, bottom-left → top-right). */
-    val goldGradient = Brush.linearGradient(listOf(goldDeep, gold, goldLight))
+    /** The logo's diagonal gold gradient (deep → mid → light, bottom-left → top-right).
+     *  A getter so it tracks the active accent alongside the individual gold stops. */
+    val goldGradient: Brush get() = Brush.linearGradient(listOf(goldDeep, gold, goldLight))
 
     val backgroundGradient = Brush.verticalGradient(listOf(bgTop, bgBottom))
 }
