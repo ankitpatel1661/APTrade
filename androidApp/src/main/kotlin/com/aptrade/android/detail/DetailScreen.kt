@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -16,15 +17,21 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aptrade.android.AppGraph
+import com.aptrade.android.portfolio.TradeSheet
+import com.aptrade.android.portfolio.TradeSheetInfo
 import com.aptrade.android.ui.ErrorPane
 import com.aptrade.android.ui.chart.CandleChart
 import com.aptrade.android.ui.chart.LineChart
 import com.aptrade.shared.domain.Timeframe
+import com.aptrade.shared.domain.TradeSide
 
 private val timeframeLabels = listOf(
     Timeframe.OneDay to "1D",
@@ -35,10 +42,20 @@ private val timeframeLabels = listOf(
 
 @Composable
 fun DetailScreen(symbol: String) {
+    val portfolio = AppGraph.portfolio
     val viewModel: DetailViewModel = viewModel(key = symbol) {
-        DetailViewModel(symbol, AppGraph.fetchProfile, AppGraph.fetchHistory, AppGraph.fetchCandles)
+        DetailViewModel(
+            symbol = symbol,
+            fetchProfile = AppGraph.fetchProfile,
+            fetchHistory = AppGraph.fetchHistory,
+            fetchCandles = AppGraph.fetchCandles,
+            buyAsset = portfolio.buyAsset,
+            sellAsset = portfolio.sellAsset,
+            nowEpochSeconds = { System.currentTimeMillis() / 1000 },
+        )
     }
     val state by viewModel.state.collectAsState()
+    var tradeSide by remember { mutableStateOf<TradeSide?>(null) }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -55,6 +72,12 @@ fun DetailScreen(symbol: String) {
             Text(it, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error)
         }
+        Spacer(Modifier.height(16.dp))
+
+        Button(
+            onClick = { tradeSide = TradeSide.Buy },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("BUY / SELL") }
         Spacer(Modifier.height(16.dp))
 
         Row {
@@ -94,5 +117,26 @@ fun DetailScreen(symbol: String) {
                     CandleChart(state.candles, Modifier.fillMaxSize())
             }
         }
+    }
+
+    tradeSide?.let { side ->
+        TradeSheet(
+            info = TradeSheetInfo(
+                symbol = state.symbol,
+                // Fall back to the symbol as the display name until the profile header resolves.
+                name = state.name ?: state.symbol,
+                priceText = null,
+                initialSide = side,
+            ),
+            tradeError = state.tradeError,
+            transactionCount = state.transactionCount,
+            onSubmit = { submittedSide, quantity ->
+                when (submittedSide) {
+                    TradeSide.Buy -> viewModel.buy(quantity)
+                    TradeSide.Sell -> viewModel.sell(quantity)
+                }
+            },
+            onDismiss = { tradeSide = null },
+        )
     }
 }

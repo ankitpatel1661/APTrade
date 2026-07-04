@@ -16,7 +16,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -25,8 +24,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -35,9 +32,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,7 +42,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleStartEffect
@@ -218,7 +212,12 @@ private fun PortfolioContent(
         // count when the sheet opens and dismiss once it grows — so the sheet stays put on a
         // failure to show the inline tradeError. Mirrors the desktop TradeDialog close semantics.
         TradeSheet(
-            target = target,
+            info = TradeSheetInfo(
+                symbol = target.row.symbol,
+                name = target.row.name,
+                priceText = target.row.priceText,
+                initialSide = target.side,
+            ),
             tradeError = state.tradeError,
             transactionCount = state.transactions.size,
             onSubmit = { side, quantity ->
@@ -489,81 +488,6 @@ private fun SideChip(label: String, isBuy: Boolean) {
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
         )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun TradeSheet(
-    target: TradeTarget,
-    tradeError: String?,
-    transactionCount: Int,
-    onSubmit: (TradeSide, String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val sheetState = rememberModalBottomSheetState()
-    var side by remember { mutableStateOf(target.side) }
-    var quantity by remember { mutableStateOf("") }
-    // Only surface the shared tradeError once the user has attempted a submit in THIS sheet.
-    var hasSubmitted by remember { mutableStateOf(false) }
-    // Snapshot the transaction count on open; dismiss once it grows (a successful trade).
-    // Effect-scoped like the desktop TradeDialog — never call callbacks during composition.
-    val countAtOpen = remember(target) { transactionCount }
-    LaunchedEffect(transactionCount) {
-        if (transactionCount > countAtOpen) onDismiss()
-    }
-
-    val validQuantity = quantity.trim().toDoubleOrNull()?.let { it > 0.0 } == true
-
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(
-            Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(target.row.symbol, style = MaterialTheme.typography.headlineSmall)
-                    Text(
-                        target.row.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                target.row.priceText?.let { AssistChip(onClick = {}, label = { Text(it) }) }
-            }
-
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                SegmentedButton(
-                    selected = side == TradeSide.Buy,
-                    onClick = { side = TradeSide.Buy },
-                    shape = SegmentedButtonDefaults.itemShape(0, 2),
-                ) { Text("BUY") }
-                SegmentedButton(
-                    selected = side == TradeSide.Sell,
-                    onClick = { side = TradeSide.Sell },
-                    shape = SegmentedButtonDefaults.itemShape(1, 2),
-                ) { Text("SELL") }
-            }
-
-            OutlinedTextField(
-                value = quantity,
-                onValueChange = { quantity = it },
-                label = { Text("Quantity") },
-                singleLine = true,
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            if (hasSubmitted && tradeError != null) {
-                Text(tradeError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            }
-
-            TextButton(
-                onClick = { hasSubmitted = true; onSubmit(side, quantity) },
-                enabled = validQuantity,
-                modifier = Modifier.align(Alignment.End),
-            ) { Text("Confirm") }
-        }
     }
 }
 

@@ -311,6 +311,40 @@ class PortfolioViewModelTest {
     }
 
     @Test
+    fun restartReloadsPortfolioSoTradeFromElsewhereAppears() = runTest(dispatcher.scheduler) {
+        // A trade made from the DetailScreen persists to the shared store while the Portfolio
+        // screen is STOPped (nav-to-detail). start() must RELOAD from the store when re-armed
+        // (return to Portfolio) so that position appears — this is the first-buy coherence pin.
+        val store = FakePortfolioStore().apply { loadImpl = { saved } } // empty -> starting()
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "300") } }
+        val vm = vm(store, repo)
+
+        vm.start()
+        runCurrent()
+        assertEquals(0, vm.state.value.holdings.size) // fresh portfolio, nothing held
+
+        vm.stop() // nav to detail
+
+        // Simulate the detail-made buy: 5 AAPL @ $300, cash reduced accordingly.
+        store.saveImpl(
+            Portfolio(
+                cash = Money.usd("98500"),
+                positions = listOf(
+                    Position(aapl, BigDecimal.parseString("5"), Money.usd("300"), Money.usd("0")),
+                ),
+            ),
+        )
+
+        vm.start() // return to Portfolio: re-arm must reload from disk
+        runCurrent()
+
+        assertEquals(1, vm.state.value.holdings.size)
+        assertEquals("AAPL", vm.state.value.holdings[0].symbol)
+        vm.stop()
+    }
+
+    @Test
     fun transactionDateTextExactEnUsAbsolute() = runTest(dispatcher.scheduler) {
         // A buy at a known epoch; dateText must be "MMM d, uuuu, h:mm a" in en_US at UTC.
         val store = FakePortfolioStore()
