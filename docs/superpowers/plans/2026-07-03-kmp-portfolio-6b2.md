@@ -842,3 +842,186 @@ Expected: shared **116**, android **13**, desktop **87**, Swift **193** (untouch
 - Type consistency: `TechnicalIndicators`/`BollingerBand`/`MacdPoint` (T1) consumed by T7; `RiskMetrics.rebase` (T2) consumed by T6; `PerformanceReport`/`PerformanceMetrics` (T3) consumed by T6; `formatMoney`/`signedMoney` (T4) consumed by T5/T6/T7/T8; `renderPortfolioPdf`/`exportFileName` (T5) consumed by T8; `MetricTexts`/`setBenchmark`/`performanceRebased`/`benchmarkRebased` (T6) consumed by T8.
 - Known unknowns delegated with guardrails, not placeholders: `PricePoint` field shape (T3 — mirror FetchPortfolioPerformance), PortfolioExport field names (T5 — read the file), candle-fetch reuse in Line mode (T7 — explicit no-second-data-path rule).
 - Counts: shared 90→100→111→116; desktop 75→78→82→87. Two tests replaced/updated in place (T3 vacuous upgrade, T6 assertion updates) — counts stated per task; implementers report measured numbers.
+
+---
+
+# AMENDMENT 2026-07-04 — human-gate feedback wave (Tasks 10–14)
+
+Authority: the 2026-07-04 human visual gate. USER DECISIONS: merge HELD, feedback lands on
+this branch; News excluded (stays 6c). Baselines at amendment time: shared 116 / android 13 /
+desktop 91 / Swift 193, branch head df99c5d. All Global Constraints of this plan remain
+binding (MONEY_MATH, amountText discipline, raw-vs-formatted contract, CancellationException
+first, Main confinement, Esc ownership, UI-composition-without-unit-tests waiver).
+
+macOS parity facts (explorer 2026-07-04, verified citations):
+- macOS has NO menu bar (`grep CommandGroup|CommandMenu|NSMenu` = zero). The "menu" is the
+  in-window account panel: ellipsis button → sheet; root rows: Profile, Account Settings,
+  Notifications, Appearance, Language, Security & Privacy, Export Portfolio Data,
+  Help & Support, About APTrade, Sign Out (RootView.swift:332-368).
+- Appearance page (RootView.swift:440-462): Theme section (Dark/Light) + Accent section.
+  AccentTheme (Sources/APTradeDomain/AccentTheme.swift:37-56), 5 cases, deep/mid/light ramps:
+  champagneGold "Champagne Gold"/"Default — gold on black" #A9772A/#D4A94E/#F2DDA0;
+  roseGold "Rose Gold"/"Warm copper blush" #8E4A3C/#CD846F/#EDC4B4;
+  sapphire "Sapphire"/"Deep cobalt blue" #1C3F73/#417FD4/#9CC2F1;
+  amethyst "Amethyst"/"Regal violet" #512D78/#8A5BC9/#C6A8ED;
+  platinum "Platinum"/"Cool brushed silver" #646B78/#A3AAB6/#DADFE7.
+  Row UI: 26pt circle, diagonal LinearGradient deep→mid→light bottomLeading→topTrailing,
+  name + tagline, gold checkmark when selected. Applied via ThemeManager: gold/goldDeep/
+  goldLight + gradient derive from selected accent; up/down green/red NEVER accent-tinted.
+  Persisted as ONE JSON blob (AppSettings) under a single key.
+- Scrubber is HOVER-driven (onContinuousHover; zero DragGesture in repo). Portfolio card =
+  ExpandedValueCard (ExpandableValueChart.swift): dashed [3,3] hairline RuleMark + point
+  marker at hovered index; tooltip pill = formatted value + date "month day hour:minute"
+  (no year); card HEADER shows running change vs span start "+$12.30 (+0.42%)" colored
+  up/down; hover end → crosshair/tooltip vanish, header snaps to latest.
+- Activity date (PortfolioView.swift:568): absolute month/day/YEAR + hour:minute (en_US
+  "Jul 4, 2026, 2:30 PM"), 11pt tertiary, under the symbol in the middle column.
+
+### Task 10: Shared — performance-curve all-priced gate + benchmark date alignment
+
+Files: shared/src/commonMain/kotlin/com/aptrade/shared/domain/PortfolioPerformance.kt,
+shared/src/commonMain/kotlin/com/aptrade/shared/application/FetchPerformanceReport.kt,
+matching test files.
+
+1. `performanceSeries` cliff fix: at leading union dates where any symbol present in
+   `sorted` has no `lastClose` yet, SKIP the date (emit nothing) — the curve starts at the
+   first date where EVERY symbol that has history is priced. Symbols with empty histories
+   remain excluded from `sorted` exactly as today (they must NOT blank the curve).
+   RECORDED DIVERGENCE from the Swift original (Swift silently drops unpriced symbols per
+   date, producing a cliff when mixed trading calendars join — the user rejected that
+   rendering). Update the file-header KDoc: name the divergence and that macOS adoption is
+   flagged to 6b.3. Implementation stays pure/allocation-light; do not change forward-fill
+   semantics after the gate opens.
+   Tests (shared): (a) mixed-calendar fixture — symbol A priced from t1, symbol B from t3
+   → series starts at t3, values from t3 include both; (b) the t3 value equals
+   cash + A.close(t3)*qtyA + B.close(t3)*qtyB exactly (BigDecimal); (c) single-symbol
+   series unchanged from today's behavior; (d) a position whose symbol has NO history at
+   all still leaves the remaining symbols' full curve intact (existing behavior pinned).
+2. `FetchPerformanceReport` benchmark alignment: benchmark history arrives as PricePoints;
+   currently mapped straight to `List<Double>` closes. Change: drop benchmark points whose
+   `epochSeconds` precede `points.first().epochSeconds` (portfolio curve start, post-gate)
+   BEFORE mapping to closes; when `points` is empty the existing short-circuit already
+   returns null benchmark — unchanged. beta/alpha keep their existing END-paired semantics
+   on the aligned closes. KDoc: one line naming the alignment and why (the curves must
+   describe the same window for the overlay + metrics).
+   Tests (shared): (e) benchmark points before the curve start are excluded from
+   benchmarkCloses (count + first-value assertion); (f) benchmark entirely inside the
+   window is untouched.
+   Counts: shared 116→122 expected (implementer reports measured).
+
+### Task 11: PortfolioViewModel — single chart path, scrubber state, activity dates
+
+File: desktopApp/src/main/kotlin/com/aptrade/desktop/portfolio/PortfolioViewModel.kt (+ test).
+
+1. DELETE the legacy P&L chart path: `loadPerformance()`, `performance`,
+   `isLoadingPerformance` (and their call sites in start/setSpan/reset). The performance
+   REPORT (already span-driven via setSpan → loadPerformanceReport) becomes the only chart
+   feed. `span.sinceInception`/`loadPerformance`-only helpers that lose their last caller
+   go too — grep-prove zero refs after.
+2. Scrubber state: the report path keeps, alongside `performanceRebased`, a parallel
+   `performancePoints: List<PerfPointUi>` where PerfPointUi(epochSeconds: Long,
+   valueText: String /* formatMoney(point.value.amountText) — pre-formatted, display-only */,
+   deltaText: String /* signedMoney vs first point + " (" + signed percent vs first + ")" e.g.
+   "+$12.30 (+0.42%)" */, isUp: Boolean, tooltipDateText: String). Percent = (v−v0)/v0*100
+   as Double (ratio — Double is sanctioned), 2 decimals. First point: delta
+   "+$0.00 (+0.00%)", isUp=true. Money delta via BigDecimal subtraction on amounts then
+   signedMoney — NO Double money math. tooltipDateText: en_US absolute "MMM d, h:mm a"
+   (NO year — chart-tooltip parity). All formatting in the VM/designkit, not composables.
+3. Activity dates: `TransactionRowUi` gains `dateText` = en_US absolute
+   "MMM d, uuuu, h:mm a" (WITH year — activity-row parity) from the transaction's
+   epochSeconds, system default zone. Wire from the domain Transaction (it carries the
+   epoch — verify actual field name in Trade.kt and use it).
+4. Tests: update compilation-affected tests; add (a) performancePoints deltaText/isUp for a
+   known 3-point fixture (exact strings), (b) dateText exact string for a fixed epoch+zone
+   (pin the formatter with an explicit ZoneId in the test seam if needed — deterministic,
+   no system-zone flake; an injectable zone parameter defaulting to system is acceptable),
+   (c) removal pinned: no state field named `performance` remains (compile-level, free).
+   Counts: desktop 91→~94 (measured).
+
+### Task 12: Portfolio tab — one performance chart with crosshair scrubber
+
+Files: desktopApp/src/main/kotlin/com/aptrade/desktop/portfolio/PortfolioPane.kt,
+PerformanceSection.kt (+ designkit only if a helper is genuinely shared). UI waiver applies.
+
+1. DELETE the P&L ChartBlock (260dp gold LineChart + its spinner + its MAX day-one message
+   block) from PortfolioPane. Grep-prove zero refs to the deleted composables.
+2. The Performance section becomes THE chart block, directly under the summary header:
+   header row = "PERFORMANCE" label + SpanBar (existing 5-span control, moved here) +
+   benchmark picker (SPY/QQQ/VTI, unchanged). The MAX day-one message relocates into this
+   section (same exact string, shown when span==Max && transactions non-empty &&
+   performancePoints.size < 2).
+3. Crosshair scrubber on the dual-line overlay chart (macOS ExpandedValueCard parity,
+   hover-driven): onPointerEvent Move → nearest index via the existing designkit
+   `crosshairIndex` helper; draw dashed (3,3) hairline vertical + small filled circle on
+   the PORTFOLIO polyline at the index; tooltip pill near the crosshair = valueText +
+   tooltipDateText (from PerfPointUi); a header readout right of "PERFORMANCE" shows
+   deltaText colored DK.up/DK.down (isUp) for the hovered index, snapping to the LAST
+   index on hover-exit (Exit → latest, exactly like the watchlist header card). Benchmark
+   polyline gets no marker (macOS single-series parity; the pill describes the portfolio).
+   Reuse the existing watchlist-header crosshair idiom — do not fork a second geometry
+   helper if the existing one fits.
+4. Keep: donut/legend/bars, section switcher, holdings, activity (Task 11's dateText now
+   renders under the symbol, 11sp tertiary — macOS row anatomy), export chooser, reset.
+   Live-run ≥60s: span switches + benchmark switches + hover storm produce zero exceptions.
+   Counts: desktop unchanged from Task 11 (measured).
+
+### Task 13: Account panel + Appearance accents (desktop settings)
+
+Files (new): desktopApp designkit AccentTheme.kt, infra FileSettingsStore.kt + DTO,
+ui/AccountPanel.kt; touched: DK.kt (accent-derived golds), Main.kt (ellipsis button +
+panel wiring + settings load/persist), AppGraph (store wiring). Tests for pure parts.
+
+1. `AccentTheme` (desktop designkit, NOT :shared — Swift already owns its own): 5 cases
+   with the exact deep/mid/light hexes + display name + tagline from the parity facts
+   above. Default champagneGold.
+2. DK dynamic accent: `DK.accent` becomes `mutableStateOf(AccentTheme.ChampagneGold)`;
+   `DK.gold`/`DK.goldDeep`/`DK.goldLight` (and any gold gradient) become getters deriving
+   from `DK.accent` (mid/deep/light respectively — verify current constant values equal
+   the champagneGold ramp so the default is pixel-identical; if today's constants differ,
+   STOP and report NEEDS_CONTEXT with the diff). Compose snapshot state makes every
+   existing reader recompose — no call-site changes. `DK.up`/`DK.down` (green/red) MUST
+   remain accent-independent (macOS rule).
+3. `FileSettingsStore`: settings.json in the existing ConfigDir (same resolveConfigDir),
+   ONE JSON blob (macOS single-blob parity) `{"accent":"champagneGold"}` (enum as .name,
+   room for future fields via a DTO with defaults), atomic temp+ATOMIC_MOVE write,
+   missing/corrupt/unknown-enum → defaults (whole-blob, matching FilePortfolioStore's
+   philosophy). Real-filesystem tests: round-trip, corrupt→default, unknown accent→default.
+4. Account panel: an ellipsis (⋯) button at the top-right of the app shell opens a
+   right-anchored panel overlay (DK surface, hairline border, scrim like PaletteOverlay;
+   Esc self-consumed via the TradeDialog onPreviewKeyEvent pattern — do not steal the
+   palette's Esc). Root list mirrors macOS rows in order: Profile, Account Settings,
+   Notifications, Appearance, Language, Security & Privacy, Export Portfolio Data,
+   Help & Support, About APTrade. Behavior: Appearance → accent page (this task); Export
+   Portfolio Data → opens the existing Export… chooser; About → logo + tagline page;
+   ALL OTHER rows render a shared "Not available on desktop yet" placeholder page
+   (RECORDED DIVERGENCE — macOS has functional pages; desktop adopts them later; no
+   Sign Out row, desktop has no auth). Back affordance within the panel.
+5. Appearance page: Accent section ONLY (RECORDED DIVERGENCE: no Dark/Light theme rows —
+   desktop DK is dark-only today; light theme is its own future increment). Rows: 26dp
+   gradient circle (deep→mid→light, bottomLeft→topRight), name + tagline, check indicator
+   on the selected row; click → DK.accent update + persist via FileSettingsStore
+   (fire-and-forget on the Main scope, CancellationException-first). Settings loaded once
+   at startup in Main.kt before first frame (or with champagneGold until load completes —
+   no flash of wrong accent on the default).
+6. Brand wordmark PNG stays gold regardless of accent (RECORDED DIVERGENCE — macOS
+   recolors logo pixels; desktop PNG recolor is out of scope).
+   Counts: desktop +~4 store/theme tests (measured). Live-run: switch accents, restart,
+   accent persists.
+
+### Task 14: Full regression + docs (amendment close-out)
+
+Same shape as Task 9 (it remains the reference): :shared grew again → reassemble
+xcframework (3 slices), swift test 193, iOS APTradeLite-Package ARCHS=arm64, gradle suites
+with --rerun-tasks XML-counted (expected: shared ~122, android 13, desktop per Tasks 11/13
+measured numbers). README: portfolio section now describes ONE span-driven performance
+chart with hover scrubber (drop the P&L-chart sentence), activity rows with dates, account
+panel + accent themes (5 ramps), and the recorded divergences (no Dark/Light on desktop
+yet; placeholder panel pages). No roadmap additions needed beyond keeping 6b.3/6b.4/6c/6d.
+Commit docs-only; regression is verification-only (suite failure = BLOCKED, no code fixes).
+
+- Amendment spec coverage: gate item 1 (one plot, span-driven) → T11+T12; item 2 (cliff)
+  → T10; item 3 (scrubber) → T11+T12; item 4 (account panel + appearance colors) → T13;
+  item 5 (activity dates) → T11+T12; item 6 (News) → EXCLUDED (6c).
+- Recorded divergences introduced by this amendment: all-priced gate (Swift cliff) — 6b.3
+  adoption; benchmark date alignment (verify Swift's own behavior during 6b.3); Appearance
+  without Dark/Light; placeholder panel pages; static wordmark color.
