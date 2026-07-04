@@ -196,15 +196,25 @@ runs `:desktopApp:test` and `:shared:jvmTest` on `windows-latest`, then packages
 artifact — the Windows build proof for this increment.
 
 A **Portfolio tab** brings paper trading to the desktop app on the same shared portfolio
-core as macOS: a summary header (value, day change, total return) with CSV/JSON export
-and a reset action; an expandable account-value chart across the `1D · 1W · 1M · 1Y · MAX`
-spans; a **Holdings / Allocation / Activity** switcher — holdings sorted by market value with
-per-row **BUY/SELL** and unrealized P&L, allocation as per-holding and by-asset-class
+core as macOS: a summary header (value, day change, total return) with formatted money
+throughout, a single **Export…** chooser (CSV / JSON / PDF), and a reset action; an
+expandable account-value chart across the `1D · 1W · 1M · 1Y · MAX` spans; a **Holdings /
+Allocation / Activity** switcher — holdings sorted by market value with per-row **BUY/SELL**
+and unrealized P&L, allocation as a donut chart plus per-holding and by-asset-class
 percentage bars, and an activity ledger of every buy/sell (symbol, quantity, price — no
-dates yet). Buying a symbol not yet held starts from the **BUY** button on its asset detail
-screen. The `PortfolioViewModel`, trade dialog, and file-backed `PortfolioStore` all live on
-the `:shared` Kotlin core, so the same domain math and persistence format will carry to the
-macOS app in a later increment.
+dates yet). A **Performance** section below the chart adds a segmented **SPY/QQQ/VTI**
+benchmark picker overlaying a rebased portfolio-vs-benchmark curve, and a 7-tile risk grid
+(Total Return, Annualized, Volatility, Max Drawdown, Sharpe, Beta, Alpha). Buying a
+symbol not yet held starts from the **BUY / SELL** button on its asset detail screen, which
+also gained **KEY STATS** (last, previous close, day change/%, symbol, type) and, when held,
+a **YOUR POSITION** card (shares, average cost, market value, unrealized P&L), plus the same
+six chart indicators as macOS — **SMA 20, EMA 12, VWAP, Bollinger Bands (20), RSI (14), and
+MACD (12·26·9)** — as overlays and dedicated RSI/MACD panes. The `PortfolioViewModel`, trade
+dialog, indicator math (`TechnicalIndicators`), and risk/performance calculations
+(`RiskMetrics`, `FetchPerformanceReport`) all live on the `:shared` Kotlin core alongside the
+file-backed `PortfolioStore`, so the same domain math and persistence format will carry to
+the macOS app in a later increment; only the PDF byte-rendering itself is a
+desktop-(JVM)-side adapter.
 
 ## Project Structure
 
@@ -228,13 +238,19 @@ APTrade Lite is the foundation. Planned toward the full platform:
 - Market-holiday calendar for the scheduler
 - Real authentication (Apple Sign In), biometric gating, and cloud sync (Supabase)
 - **Windows parity, continued** — the `:desktopApp` Compose app now covers Watchlist +
-  detail + palette (6a) and a Portfolio tab (6b.1). Still to come: **6b.2** performance/risk
-  intelligence on desktop, **6b.3** macOS adoption of the shared portfolio core, **6b.4** an
-  Android portfolio screen, then **6c** News tab and **6d** alerts, account panel, settings,
-  and light theme.
+  detail + palette (6a) and a Portfolio tab with detail-screen indicators, performance/risk
+  intelligence, and export (6b.1 + 6b.2). Still to come: **6b.3** macOS adoption of the
+  shared portfolio core, **6b.4** an Android portfolio screen, then **6c** News tab and
+  **6d** alerts, account panel, settings, and light theme.
 
-Recently shipped: a desktop **Portfolio tab** (`:desktopApp`, increment 6b.1) — paper
-trading, holdings with per-row buy/sell, allocation bars, an activity ledger, an
+Recently shipped: desktop **portfolio intelligence and fidelity** (`:desktopApp`, increment
+6b.2) — six chart indicators (SMA 20, EMA 12, VWAP, Bollinger Bands, RSI, MACD) as detail-
+screen overlays with dedicated RSI/MACD panes, KEY STATS and YOUR POSITION cards with a
+BUY/SELL action on the detail screen, an allocation donut chart, a Performance section with
+an SPY/QQQ/VTI benchmark picker and a 7-metric risk grid (Total Return, Annualized,
+Volatility, Max Drawdown, Sharpe, Beta, Alpha), a single Export… chooser (CSV/JSON/PDF), and
+formatted money throughout; a desktop **Portfolio tab** (`:desktopApp`, increment 6b.1) —
+paper trading, holdings with per-row buy/sell, allocation bars, an activity ledger, an
 account-value chart, and CSV/JSON export, on a new shared Kotlin portfolio core
 (`PortfolioStore`, buy/sell/reset/performance use cases) also consumed by a file-backed
 persistence adapter; a **Windows Compose Desktop app** (`:desktopApp`, increment 6a) with a live
