@@ -104,7 +104,7 @@ data class MetricTexts(
 private fun plainMetric(value: Double?): String =
     if (value == null) "—" else String.format(Locale.US, "%.2f", value)
 
-/** One point on the P&L chart scrubber, derived from the same [PerformanceReport]/`points`
+/** One point on the P&L chart scrubber, derived from the same `PerformanceReport`/`points`
  *  list that feeds `performanceRebased`. `valueText` and `deltaText` are PRE-FORMATTED,
  *  display-only strings (same contract as the rest of this file) — NEVER feed them into
  *  `splitPrice`/`SuperscriptPrice`/`Money.usd` or any other numeric parsing. */
