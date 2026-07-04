@@ -2,7 +2,6 @@ package com.aptrade.shared.domain
 
 import kotlin.math.abs
 import kotlin.test.Test
-import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 

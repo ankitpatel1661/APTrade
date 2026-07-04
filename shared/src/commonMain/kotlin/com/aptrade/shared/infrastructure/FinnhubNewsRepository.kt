@@ -29,7 +29,8 @@ class FinnhubNewsRepository internal constructor(
     private val nowEpochSeconds: () -> Long = { epochSecondsNow() },
 ) : NewsRepository, AutoCloseable {
 
-    // Production / Swift-harness entry point: builds the default CIO client.
+    // Production / Swift-harness entry point: builds the platform HTTP client via the
+    // defaultYahooHttpClient expect/actual (Darwin on Apple, CIO on the JVM).
     constructor(apiKey: String) : this(apiKey, defaultYahooHttpClient())
 
     override fun close() { client.close() }
