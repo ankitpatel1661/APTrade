@@ -234,7 +234,6 @@ logo/                       Brand assets
 
 APTrade Lite is the foundation. Planned toward the full platform:
 
-- **VWAP** indicator (requires adding volume to the OHLC pipeline)
 - Market-holiday calendar for the scheduler
 - Real authentication (Apple Sign In), biometric gating, and cloud sync (Supabase)
 - **Windows parity, continued** — the `:desktopApp` Compose app now covers Watchlist +
