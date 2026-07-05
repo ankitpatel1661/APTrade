@@ -185,11 +185,15 @@ fun main() = application {
     // wrote a fresh `AppSettings(accent = theme)`, silently resetting every notification flag
     // back to its default on the very next accent change. Both selectAccent and the
     // Notifications page's per-toggle callbacks route through this one function now.
+    //
+    // The actual load-merge-save sequence lives in the package-visible `persistSettings`
+    // function in AppGraph.kt (review fix for Task 5) so it's pinned by a test against a
+    // real `FileSettingsStore` — this local function is just the fire-and-forget/error-
+    // swallowing wrapper around it. No behavior change from the fully-inline version.
     fun persistSettings(mutate: (com.aptrade.desktop.infra.AppSettings) -> com.aptrade.desktop.infra.AppSettings) {
         appScope.launch {
             try {
-                val current = graph.settingsStore.load()
-                graph.settingsStore.save(mutate(current))
+                persistSettings(graph.settingsStore, mutate)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (_: Throwable) {

@@ -1,6 +1,7 @@
 package com.aptrade.desktop
 
 import androidx.compose.ui.window.TrayState
+import com.aptrade.desktop.infra.AppSettings
 import com.aptrade.desktop.infra.FileAlertStore
 import com.aptrade.desktop.infra.FileBookmarkStore
 import com.aptrade.desktop.infra.FileSchedulerStateStore
@@ -152,3 +153,25 @@ internal fun buildNotifyOrderFill(
             deliver(side, symbol, quantityText, amountFormatted)
         }
     }
+
+/**
+ * The settings load-merge-save seam (review fix for Task 5): reads the persisted
+ * [AppSettings] blob, applies [mutate], and writes the result back — so two independent
+ * mutators (accent selection, per-toggle notification settings) sharing one single-blob
+ * store never clobber each other's fields. Extracted as a standalone, package-visible
+ * suspend function (mirroring [buildNotifyOrderFill]'s placement/rationale) so a test can
+ * exercise the REAL load-merge-save sequence against a real [FileSettingsStore] (temp-file
+ * backed, no AWT/Compose dependency) rather than only the store's own load/save round-trip.
+ *
+ * No behavior change: this is the exact sequence `Main.kt`'s local `persistSettings`
+ * function used inline (load → mutate → save), which itself replaced an earlier bug where
+ * `selectAccent` wrote a fresh `AppSettings(accent = theme)`, silently resetting every
+ * notification flag to its default on every accent change.
+ */
+internal suspend fun persistSettings(
+    settingsStore: FileSettingsStore,
+    mutate: (AppSettings) -> AppSettings,
+) {
+    val current = settingsStore.load()
+    settingsStore.save(mutate(current))
+}
