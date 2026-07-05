@@ -19,10 +19,11 @@ stages:
 
 # ── Shared base for all jobs on the self-hosted Mac runner ──────────────────
 # Uses the local shell executor on the registered Mac runner.
-# No Docker image needed — tools are pre-installed on the host:
-#   - JDK 17 (Homebrew openjdk@17)
-#   - Android SDK at /Users/ap/Library/Android/sdk
-#   - Xcode 26 with DEVELOPER_DIR=/Applications/Xcode.app
+# No Docker image needed — tools are pre-installed on the host.
+# JAVA_HOME is set explicitly here because the shell executor uses bash,
+# not zsh, so ~/.zshrc is not sourced and JAVA_HOME would fall back to
+# the system default (Amazon Corretto 11). Setting it as a CI variable
+# ensures JDK 17 is used for all Gradle jobs.
 .mac-base:
   tags:
     - self-hosted-mac
@@ -30,6 +31,9 @@ stages:
     DEVELOPER_DIR: /Applications/Xcode.app
     ANDROID_HOME: /Users/ap/Library/Android/sdk
     ANDROID_SDK_ROOT: /Users/ap/Library/Android/sdk
+    # Explicit JDK 17 path — overrides system default (Corretto 11).
+    # The shell executor uses bash and does not source ~/.zshrc.
+    JAVA_HOME: /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
 
 # ── Shared base for Gradle jobs ─────────────────────────────────────────────────
 # Extends .mac-base and writes sdk.dir to local.properties so the Android
@@ -86,12 +90,9 @@ swift-test:
   extends: .mac-base
   stage: test
   needs:
-    # Depend on kmp-xcframework-test to ensure Shared.xcframework exists
-    # before swift build attempts to resolve the binaryTarget in Package.swift.
     - job: kmp-xcframework-test
       artifacts: true
   cache:
-    # Key on Package.resolved so the cache is invalidated when dependencies change.
     key:
       files:
         - Package.resolved
@@ -106,8 +107,7 @@ swift-test:
 
 # ── KMP: JVM unit tests ───────────────────────────────────────────────────────
 # Runs the Kotlin Multiplatform shared module's commonTest suite on the JVM
-# target. Uses the host Mac's JDK 17 — no Docker image needed.
-# Covers Money, Quote, FetchMarketQuotes, and YahooMarketDataRepository tests.
+# target. Uses the host Mac's JDK 17 via JAVA_HOME CI variable.
 kmp-jvm-test:
   extends: .gradle-base
   stage: test
@@ -120,10 +120,8 @@ kmp-jvm-test:
     - if: $CI_COMMIT_BRANCH
 
 # ── Desktop: JVM unit tests ───────────────────────────────────────────────────
-# Runs the Compose Desktop app's test suite on the JVM target. Covers the
-# ViewModel, store, design-kit math, and infrastructure tests
-# (FormattingTest, SmokeTest, ConfigDirTest, ValueCardMathTest,
-# FileWatchlistStoreTest). Uses the host Mac's JDK 17.
+# Runs the Compose Desktop app's test suite on the JVM target.
+# Uses the host Mac's JDK 17 via JAVA_HOME CI variable.
 desktop-jvm-test:
   extends: .gradle-base
   stage: test
@@ -137,11 +135,8 @@ desktop-jvm-test:
 
 # ── Android: debug unit tests ─────────────────────────────────────────────────
 # Runs the androidApp's debug unit tests (ViewModel and domain tests).
-# Uses the host Mac's Android SDK at /Users/ap/Library/Android/sdk.
-# No sdkmanager install needed — platforms;android-35 and build-tools;35.0.0
-# are already installed on the host.
-# allow_failure: true kept as safety net for the first run on the new runner.
-# Remove once confirmed green.
+# Uses the host Mac's Android SDK and JDK 17 via CI variables.
+# allow_failure: true kept as safety net for the first run.
 android-unit-test:
   extends: .gradle-base
   stage: test
@@ -159,9 +154,7 @@ android-unit-test:
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── KMP: assemble Shared.xcframework ─────────────────────────────────────────
-# Assembles the Shared.xcframework (iosArm64, iosSimulatorArm64, macosArm64)
-# from the Kotlin Multiplatform shared module. This artifact is consumed by the
-# Swift package via a binaryTarget in Package.swift.
+# Assembles the Shared.xcframework (iosArm64, iosSimulatorArm64, macosArm64).
 # Only runs on main — expensive and only needed for integration / release.
 # Artifact kept for 7 days for download from the pipeline UI.
 kmp-xcframework:
