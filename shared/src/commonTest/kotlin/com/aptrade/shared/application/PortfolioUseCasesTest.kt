@@ -219,6 +219,57 @@ class PortfolioUseCasesTest {
     }
 
     @Test
+    fun performanceResamplesToDailyForNonOneDayTimeframes() = runTest {
+        // OneWeek timeframe: several intraday points land in the same UTC day (100000 and
+        // 105000 both fall in day 100000/86400 == 1) plus one point the next day. Only the
+        // day's closing (max-epoch) value should survive per day once resampled.
+        var portfolio = Portfolio.starting().buying(aapl, BigDecimal.parseString("1"), Money.usd("100.00"), 1000L, "txn-1")
+        val store = InMemoryPortfolioStore().apply { stored = portfolio }
+        val repository = FakeMarketDataRepository(
+            historiesBySymbol = mapOf(
+                "AAPL" to listOf(
+                    PricePoint(100_000L, Money.usd("110.00")),
+                    PricePoint(105_000L, Money.usd("115.00")),
+                    PricePoint(190_000L, Money.usd("120.00")),
+                ),
+            ),
+        )
+
+        val result = FetchPortfolioPerformance(repository, store).execute(Timeframe.OneWeek)
+
+        assertEquals(2, result.size)
+        // Day 1 (100000/86400 == 1): last intraday point at 105000 (close 115.00) wins.
+        assertEquals(105_000L, result[0].epochSeconds)
+        assertEquals(Money.usd("100000").amount - BigDecimal.parseString("100.00") + BigDecimal.parseString("115.00"), result[0].value.amount)
+        // Day 2 (190000/86400 == 2): single point at 190000 (close 120.00).
+        assertEquals(190_000L, result[1].epochSeconds)
+        assertEquals(Money.usd("100000").amount - BigDecimal.parseString("100.00") + BigDecimal.parseString("120.00"), result[1].value.amount)
+    }
+
+    @Test
+    fun performanceLeavesIntradayGridUntouchedForOneDayTimeframe() = runTest {
+        // OneDay timeframe must NOT be resampled — the whole point of 1D is the intraday grid.
+        var portfolio = Portfolio.starting().buying(aapl, BigDecimal.parseString("1"), Money.usd("100.00"), 1000L, "txn-1")
+        val store = InMemoryPortfolioStore().apply { stored = portfolio }
+        val repository = FakeMarketDataRepository(
+            historiesBySymbol = mapOf(
+                "AAPL" to listOf(
+                    PricePoint(100_000L, Money.usd("110.00")),
+                    PricePoint(105_000L, Money.usd("115.00")),
+                    PricePoint(108_000L, Money.usd("118.00")),
+                ),
+            ),
+        )
+
+        val result = FetchPortfolioPerformance(repository, store).execute(Timeframe.OneDay)
+
+        assertEquals(3, result.size)
+        assertEquals(100_000L, result[0].epochSeconds)
+        assertEquals(105_000L, result[1].epochSeconds)
+        assertEquals(108_000L, result[2].epochSeconds)
+    }
+
+    @Test
     fun performanceSinceInceptionTrimsToFirstTransactionDay() = runTest {
         var portfolio = Portfolio.starting().buying(aapl, BigDecimal.parseString("1"), Money.usd("100.00"), 200_000L, "txn-1")
         val store = InMemoryPortfolioStore().apply { stored = portfolio }

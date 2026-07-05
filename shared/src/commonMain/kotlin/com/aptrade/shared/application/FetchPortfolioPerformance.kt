@@ -5,6 +5,7 @@ import com.aptrade.shared.domain.PortfolioPerformancePoint
 import com.aptrade.shared.domain.PricePoint
 import com.aptrade.shared.domain.Timeframe
 import com.aptrade.shared.domain.performanceSeries
+import com.aptrade.shared.domain.resampledDaily
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlin.coroutines.cancellation.CancellationException
@@ -46,6 +47,13 @@ class FetchPortfolioPerformance(
                 if (trimmed.isNotEmpty()) series = trimmed
             }
         }
+        // Resample to one point per UTC day for every timeframe except OneDay, which is
+        // meant to show the intraday grid. This kills the overnight/weekend forward-fill
+        // flats from performanceSeries' union-of-all-symbols-candles grid (see
+        // resampledDaily's KDoc) and — since FetchPerformanceReport's benchmark twin derives
+        // its curveDates from these same points — fixes the benchmark staircase too, for
+        // free, from this single insertion point.
+        if (timeframe != Timeframe.OneDay) series = series.resampledDaily()
         return series
     }
 }
