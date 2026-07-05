@@ -239,10 +239,10 @@ dedicated RSI/MACD panes. An **account panel** (⋯ button) offers Appearance �
 themes (Champagne Gold, Rose Gold, Sapphire, Amethyst, Platinum), each of which also
 retints the brand wordmark itself (gold pixels remapped onto the chosen accent's ramp by
 luminance, the same technique as macOS) — persisted to a `settings.json` in the OS config
-directory — and an About page; every other row (Profile, Notifications, Security &
-Privacy, etc.) is a shared "not available yet" placeholder.
-**Recorded divergences from macOS:** desktop Appearance has no Dark/Light toggle yet, and
-most account-panel pages beyond Appearance/Export/About are placeholders. The
+directory — and an About page (Notifications became a real page in increment 6d.1).
+**Profile, Account Settings, Security & Privacy, and Help & Support are now real pages**
+too (increment 6d.2); only Language still falls through to the shared "not available yet"
+placeholder. The
 `PortfolioViewModel`, trade dialog, indicator math (`TechnicalIndicators`), and risk
 metrics (`RiskMetrics`) all live on the `:shared` Kotlin core alongside the file-backed
 `PortfolioStore`, so the same domain math and persistence format will carry to the macOS
@@ -301,6 +301,38 @@ exists yet — which is **not** a desktop shortfall: the macOS app has the ident
 placeholder toggle with the same "no delivery pipeline yet" caveat. This increment does
 not touch the Android app; its shared-core alerts plumbing is unused there for now.
 
+A **light theme and four real account-panel pages** (`:desktopApp`, increment 6d.2) bring
+the desktop app's Appearance and account settings to macOS-level completeness. The
+Appearance page gains a **THEME** section — **Dark / Light** rows above the existing
+**ACCENT** picker — backed by nine mode-branching `DesignKit` colors (two background
+stops, surface, surface-high, hairline, three text tiers, and the silver wordmark tone)
+transcribed hex-for-hex from the macOS `Theme.swift` light palette, plus a
+light-mode wordmark remap (neutral pixels recolor to charcoal `#1E1C18` instead of staying
+neutral, while the champagne-gold ramp itself is unchanged in both modes — accent color is
+brand, never a mode signal). The switch is an **instant whole-tree recolor with no
+animation** (a recorded design decision, not a missing-polish gap), and `isDarkMode`
+persists to `settings.json` alongside the accent. **Security & Privacy**, **Profile**,
+**Account Settings**, and **Help & Support** replace their former placeholders — only
+**Language** remains one. Of Security & Privacy's four toggles (Biometric Login, Require
+Auth on Launch, Confirm Trades, Share Usage Analytics), only **Confirm Trades** is
+functional; the other three persist to `settings.json` but drive nothing yet — **HONEST
+PARITY** with macOS, whose own Security page has the identical three-toggle gap. Profile
+and Account Settings are decorative detail-field pages (fixed values, no editable state),
+and Help & Support's Resources/Contact rows are decorative link rows that just dismiss the
+panel — both mirroring macOS's own non-functional rows verbatim, not a desktop shortfall.
+Turning on **Confirm Trades** inserts an in-dialog confirmation step before a buy/sell
+submits (title, estimate line, and a Confirm/Cancel choice), gated on the toggle's value at
+the moment the trade dialog opened. **Recorded divergence from macOS:** the confirmation
+renders as an **in-dialog layer** inside the same trade sheet, not a separate native
+`confirmationDialog` sheet-of-a-sheet — Compose Desktop has no equivalent primitive — though
+the title/message/button strings and gating behavior match exactly. This increment also
+closes two concurrency gaps found during hardening: `BuyAsset`/`SellAsset` now share a
+single `Mutex` (previously each held its own, so a buy racing a sell could still lose an
+update even though buy-vs-buy and sell-vs-sell were already safe), and the desktop
+`persistSettings` load-merge-save sequence is now serialized under a `Mutex`, closing a
+lost-update window where two concurrent preference changes (e.g. an accent change and a
+notification toggle) could silently drop one write.
+
 ## Project Structure
 
 ```
@@ -325,12 +357,23 @@ APTrade Lite is the foundation. Planned toward the full platform:
   detail + palette (6a), a Portfolio tab with detail-screen indicators, performance/risk
   intelligence, and export (6b.1 + 6b.2), a News tab with per-symbol company news and
   bookmarks (6c), macOS adoption of the shared portfolio core's all-priced performance
-  gate (6b.3), an Android Portfolio screen on the shared portfolio core (6b.4), and alerts
-  & notifications (6d.1). **6d split in two:** 6d.1 (alerts & notifications) ships now.
-  Still to come: **6d.2** (account-panel settings pages and a light theme) and a
-  **desktop language switcher**, promoted to its own increment.
+  gate (6b.3), an Android Portfolio screen on the shared portfolio core (6b.4), alerts &
+  notifications (6d.1), and a light theme plus real account-panel settings pages (6d.2).
+  Still to come: a **desktop language switcher**, promoted to its own increment.
 
-Recently shipped: desktop **alerts & notifications** (increment 6d.1) — price alerts
+Recently shipped: a desktop **light theme and account-panel settings pages** (increment
+6d.2) — a THEME section (Dark/Light rows) on the Appearance page above the existing accent
+picker, backed by nine mode-branching `DesignKit` colors transcribed from macOS's
+`Theme.swift` and an instant, non-animated whole-tree recolor; a light-mode wordmark remap
+(neutral pixels to charcoal, accent ramp unchanged); real **Security & Privacy**,
+**Profile**, **Account Settings**, and **Help & Support** pages (Language remains the one
+placeholder), with only **Confirm Trades** functional among Security's four toggles
+(HONEST PARITY with macOS's identical gap) and an in-dialog trade-confirmation layer
+(a recorded mechanism divergence from macOS's native `confirmationDialog`); and two
+concurrency fixes — a single shared `Mutex` serializing `BuyAsset`/`SellAsset` (closing a
+buy-vs-sell lost-update race) and a `Mutex`-serialized `persistSettings` load-merge-save
+(closing a concurrent-preference-write lost-update race). Desktop **alerts &
+notifications** (increment 6d.1) — price alerts
 (price above / price below / percent daily move) on a new shared Kotlin alerts core
 (`PriceAlert`, `LoadAlerts`/`CreatePriceAlert`/`RemovePriceAlert`/`EvaluateAlerts`) and a
 `MarketActivityPlanner` driven by a statutory, US-DST-aware `MarketCalendar`; a watchlist
