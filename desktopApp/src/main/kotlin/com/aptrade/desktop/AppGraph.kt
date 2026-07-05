@@ -46,6 +46,8 @@ import com.aptrade.shared.domain.WatchlistEntry
 import com.aptrade.shared.infrastructure.FilePortfolioStore
 import com.aptrade.shared.infrastructure.FinnhubNewsRepository
 import com.aptrade.shared.infrastructure.YahooMarketDataRepository
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /** Composition root. A plain CLASS constructed exactly once in main() — deliberately
  *  NOT an `object` (increment-5 review: don't copy the Android singleton to desktop).
@@ -154,6 +156,17 @@ internal fun buildNotifyOrderFill(
         }
     }
 
+/** Serializes [persistSettings]'s load-merge-save (6d.2 Task 4 — closes the RMW
+ *  lost-update window recorded by 6d.1's final review): the settings blob is re-loaded
+ *  from the store *inside* the lock (never taken from a possibly-stale caller snapshot),
+ *  so two concurrent mutators (e.g. an accent change and a notification-toggle flip fired
+ *  in quick succession) serialize against the single-blob store instead of one clobbering
+ *  the other's write. A single file-level [Mutex] is correct here (rather than one per
+ *  call site) because `AppGraph.settingsStore` is itself a single process-wide instance
+ *  shared by every caller — same shape as [BuyAsset]/[SellAsset]'s per-instance mutex
+ *  guarding [PortfolioStore]'s RMW. */
+private val settingsMutex = Mutex()
+
 /**
  * The settings load-merge-save seam (review fix for Task 5): reads the persisted
  * [AppSettings] blob, applies [mutate], and writes the result back — so two independent
@@ -163,15 +176,17 @@ internal fun buildNotifyOrderFill(
  * exercise the REAL load-merge-save sequence against a real [FileSettingsStore] (temp-file
  * backed, no AWT/Compose dependency) rather than only the store's own load/save round-trip.
  *
- * No behavior change: this is the exact sequence `Main.kt`'s local `persistSettings`
- * function used inline (load → mutate → save), which itself replaced an earlier bug where
- * `selectAccent` wrote a fresh `AppSettings(accent = theme)`, silently resetting every
- * notification flag to its default on every accent change.
+ * The load->mutate->save sequence itself runs under [settingsMutex] (6d.2 Task 4): without
+ * it, two concurrent callers could both load the same pre-mutation blob and the second
+ * save would silently discard the first mutation. This is the exact sequence `Main.kt`'s
+ * local `persistSettings` function used inline (load → mutate → save), which itself
+ * replaced an earlier bug where `selectAccent` wrote a fresh `AppSettings(accent = theme)`,
+ * silently resetting every notification flag to its default on every accent change.
  */
 internal suspend fun persistSettings(
     settingsStore: FileSettingsStore,
     mutate: (AppSettings) -> AppSettings,
-) {
+) = settingsMutex.withLock {
     val current = settingsStore.load()
     settingsStore.save(mutate(current))
 }
