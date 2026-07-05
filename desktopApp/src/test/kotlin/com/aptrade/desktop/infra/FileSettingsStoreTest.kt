@@ -173,4 +173,73 @@ class FileSettingsStoreTest {
         assertEquals(false, loaded.priceAlerts)
         assertEquals(true, loaded.isDarkMode)
     }
+
+    // --- Security & privacy (increment 6d.2 Task 3) ---
+
+    @Test
+    fun `security and privacy defaults match macOS AppSettings`() = runTest {
+        val defaults = AppSettings()
+        assertEquals(true, defaults.biometricLogin)
+        assertEquals(true, defaults.requireAuthOnLaunch)
+        assertEquals(true, defaults.confirmTrades)
+        assertEquals(false, defaults.analyticsSharing)
+    }
+
+    @Test
+    fun `round-trips all four security and privacy fields set to non-default values`() = runTest {
+        val file = tempFile()
+        val store = FileSettingsStore(file)
+        val settings = AppSettings(
+            biometricLogin = false,
+            requireAuthOnLaunch = false,
+            confirmTrades = false,
+            analyticsSharing = true,
+        )
+        store.save(settings)
+        assertEquals(settings, store.load())
+    }
+
+    @Test
+    fun `old file without the four security keys loads fine with them defaulting per macOS`() = runTest {
+        // Back-compat pin (same family as the isDarkMode test above): a settings.json written
+        // before increment 6d.2 Task 3 has no biometricLogin/requireAuthOnLaunch/confirmTrades/
+        // analyticsSharing keys at all. Lenient decode must still succeed and fill in the new
+        // fields at their macOS-matching defaults rather than failing the whole-blob load.
+        val file = tempFile()
+        file.writeText("""{"accent":"Sapphire"}""")
+        val loaded = FileSettingsStore(file).load()
+        assertEquals(AccentTheme.Sapphire, loaded.accent)
+        assertEquals(true, loaded.biometricLogin)
+        assertEquals(true, loaded.requireAuthOnLaunch)
+        assertEquals(true, loaded.confirmTrades)
+        assertEquals(false, loaded.analyticsSharing)
+    }
+
+    @Test
+    fun `pre-6d2-2 file with isDarkMode but no security keys still loads with security defaults`() = runTest {
+        // A file written between Task 2 and Task 3 has accent + isDarkMode but predates the
+        // four security/privacy fields.
+        val file = tempFile()
+        file.writeText("""{"accent":"Platinum","isDarkMode":false}""")
+        val loaded = FileSettingsStore(file).load()
+        assertEquals(AccentTheme.Platinum, loaded.accent)
+        assertEquals(false, loaded.isDarkMode)
+        assertEquals(true, loaded.biometricLogin)
+        assertEquals(true, loaded.requireAuthOnLaunch)
+        assertEquals(true, loaded.confirmTrades)
+        assertEquals(false, loaded.analyticsSharing)
+    }
+
+    @Test
+    fun `missing security keys in an otherwise valid file fall back to defaults independently`() = runTest {
+        val file = tempFile()
+        file.writeText("""{"accent":"Platinum","confirmTrades":false}""")
+        val loaded = FileSettingsStore(file).load()
+        assertEquals(AccentTheme.Platinum, loaded.accent)
+        assertEquals(false, loaded.confirmTrades)
+        // Everything else absent from the file: defaults.
+        assertEquals(true, loaded.biometricLogin)
+        assertEquals(true, loaded.requireAuthOnLaunch)
+        assertEquals(false, loaded.analyticsSharing)
+    }
 }

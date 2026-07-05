@@ -474,11 +474,17 @@ private fun AppRoot(
             LaunchedEffect(target, portfolioState.transactions.size) {
                 if (portfolioState.transactions.size > txnCountAtOpen) onCloseTrade()
             }
+            // Snapshot at open, matching TradeSheet.swift:18 (`self.confirmTrades =
+            // CompositionRoot.loadSettings().confirmTrades`) — read once when the dialog
+            // opens, never re-read mid-dialog even if the user toggles the setting elsewhere
+            // (they can't, since this dialog is modal, but the snapshot semantics still apply).
+            val confirmTradesAtOpen = remember(target) { notificationSettings.confirmTrades }
             TradeDialog(
                 asset = target.asset,
                 initialSide = target.side,
                 priceText = target.priceText,
                 tradeError = portfolioState.tradeError,
+                confirmTrades = confirmTradesAtOpen,
                 onSubmit = { side, quantityText ->
                     when (side) {
                         TradeSide.Buy -> portfolioViewModel.buy(target.asset, quantityText)

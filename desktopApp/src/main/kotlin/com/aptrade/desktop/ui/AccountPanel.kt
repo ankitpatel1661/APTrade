@@ -56,7 +56,7 @@ import com.aptrade.desktop.infra.AppSettings
 
 /** The pages reachable inside the account panel. Root is the row list; the others are
  *  detail pages with a back affordance. */
-private enum class AccountPage { Root, Appearance, About, Notifications, Placeholder }
+private enum class AccountPage { Root, Appearance, About, Notifications, Security, Profile, AccountSettings, Help, Placeholder }
 
 /** Right-anchored settings overlay opened from the shell's ⋯ button. Full-window scrim
  *  (click closes, PaletteOverlay idiom), a 360dp panel pinned to the trailing edge with a
@@ -64,10 +64,12 @@ private enum class AccountPage { Root, Appearance, About, Notifications, Placeho
  *  (TradeDialog pattern) so it never reaches — and never steals — the window's palette Esc.
  *
  *  Row behavior mirrors the macOS account sheet: Appearance → accent page, Notifications →
- *  the real push/email toggle page (increment 6d.1), Export Portfolio Data →
- *  [onExportPortfolio], About → logo + tagline page; every other row renders a shared
- *  "Not available on desktop yet" placeholder (RECORDED DIVERGENCE — macOS has functional
- *  pages; desktop adopts them later. No Sign Out row: desktop has no auth). */
+ *  the real push/email toggle page (increment 6d.1), Security & Privacy / Profile / Account
+ *  Settings / Help & Support → their real pages (increment 6d.2 Task 3), Export Portfolio
+ *  Data → [onExportPortfolio], About → logo + tagline page; only Language still renders the
+ *  shared "Not available on desktop yet" placeholder (RECORDED DIVERGENCE — macOS has a
+ *  functional language switcher; desktop adopts it later. No Sign Out row: desktop has no
+ *  auth). */
 @Composable
 fun AccountPanel(
     accent: AccentTheme,
@@ -123,6 +125,10 @@ fun AccountPanel(
                     onAppearance = { page = AccountPage.Appearance },
                     onAbout = { page = AccountPage.About },
                     onNotifications = { page = AccountPage.Notifications },
+                    onSecurity = { page = AccountPage.Security },
+                    onProfile = { page = AccountPage.Profile },
+                    onAccountSettings = { page = AccountPage.AccountSettings },
+                    onHelp = { page = AccountPage.Help },
                     onExport = onExportPortfolio,
                     onPlaceholder = { title -> placeholderTitle = title; page = AccountPage.Placeholder },
                     onClose = onClose,
@@ -140,6 +146,15 @@ fun AccountPanel(
                     onUpdate = onUpdateNotificationSettings,
                     onBack = { page = AccountPage.Root },
                 )
+                AccountPage.Security -> SecurityPage(
+                    settings = notificationSettings,
+                    onUpdate = onUpdateNotificationSettings,
+                    onBack = { page = AccountPage.Root },
+                    onClose = onClose,
+                )
+                AccountPage.Profile -> ProfilePage(onBack = { page = AccountPage.Root })
+                AccountPage.AccountSettings -> AccountSettingsPage(onBack = { page = AccountPage.Root })
+                AccountPage.Help -> HelpPage(onBack = { page = AccountPage.Root }, onClose = onClose)
                 AccountPage.Placeholder -> PlaceholderPage(
                     title = placeholderTitle,
                     onBack = { page = AccountPage.Root },
@@ -153,8 +168,9 @@ fun AccountPanel(
 
 // MARK: - Root
 
-/** The account row list, in macOS order. Only Appearance / Export / About are functional;
- *  the rest fall through to the shared placeholder page. */
+/** The account row list, in macOS order. Every row but Language is functional as of
+ *  increment 6d.2 Task 3; Language still falls through to the shared placeholder page
+ *  (RECORDED DIVERGENCE — see the [AccountPanel] doc comment). */
 private enum class AccountRow(val label: String) {
     Profile("Profile"),
     AccountSettings("Account Settings"),
@@ -172,6 +188,10 @@ private fun RootList(
     onAppearance: () -> Unit,
     onAbout: () -> Unit,
     onNotifications: () -> Unit,
+    onSecurity: () -> Unit,
+    onProfile: () -> Unit,
+    onAccountSettings: () -> Unit,
+    onHelp: () -> Unit,
     onExport: () -> Unit,
     onPlaceholder: (String) -> Unit,
     onClose: () -> Unit,
@@ -184,6 +204,10 @@ private fun RootList(
                 AccountRow.Appearance -> onAppearance()
                 AccountRow.AboutAPTrade -> onAbout()
                 AccountRow.Notifications -> onNotifications()
+                AccountRow.SecurityPrivacy -> onSecurity()
+                AccountRow.Profile -> onProfile()
+                AccountRow.AccountSettings -> onAccountSettings()
+                AccountRow.HelpSupport -> onHelp()
                 AccountRow.ExportPortfolioData -> onExport()
                 else -> onPlaceholder(row.label)
             }
@@ -441,10 +465,199 @@ private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onCheck
     }
 }
 
+// MARK: - Security & Privacy
+
+/** Security & Privacy page — the Compose port of `Sources/APTradeApp/RootView.swift`'s
+ *  `securityPage` (lines 535-563). AUTHENTICATION and PRIVACY toggles persist through
+ *  [onUpdate] like the Notifications page; DATA is three decorative link rows.
+ *
+ *  HONEST PARITY (recorded): only [AppSettings.confirmTrades] is functional — it gates the
+ *  in-dialog trade confirmation layer in [com.aptrade.desktop.portfolio.TradeDialog].
+ *  [AppSettings.biometricLogin], [AppSettings.requireAuthOnLaunch], and
+ *  [AppSettings.analyticsSharing] persist but drive nothing yet, same as macOS: this is a
+ *  simulated paper-trading app with no real biometric/auth/analytics pipeline. */
+@Composable
+private fun SecurityPage(
+    settings: AppSettings,
+    onUpdate: ((AppSettings) -> AppSettings) -> Unit,
+    onBack: () -> Unit,
+    onClose: () -> Unit,
+) {
+    PanelHeader(title = "Security & Privacy", onLeading = onBack, leadingGlyph = "‹")
+    Spacer(Modifier.height(16.dp))
+    SectionLabel("AUTHENTICATION")
+    Spacer(Modifier.height(8.dp))
+    ToggleRow(
+        title = "Biometric Login",
+        subtitle = "Unlock with Touch ID / Face ID",
+        checked = settings.biometricLogin,
+        onCheckedChange = { checked -> onUpdate { it.copy(biometricLogin = checked) } },
+    )
+    ToggleRow(
+        title = "Require Auth on Launch",
+        subtitle = "Ask every time the app opens",
+        checked = settings.requireAuthOnLaunch,
+        onCheckedChange = { checked -> onUpdate { it.copy(requireAuthOnLaunch = checked) } },
+    )
+    ToggleRow(
+        title = "Confirm Trades",
+        subtitle = "Re-authenticate before buy / sell",
+        checked = settings.confirmTrades,
+        onCheckedChange = { checked -> onUpdate { it.copy(confirmTrades = checked) } },
+    )
+    Spacer(Modifier.height(10.dp))
+    SectionLabel("PRIVACY")
+    Spacer(Modifier.height(8.dp))
+    ToggleRow(
+        title = "Share Usage Analytics",
+        subtitle = "Anonymous diagnostics to improve APTrade",
+        checked = settings.analyticsSharing,
+        onCheckedChange = { checked -> onUpdate { it.copy(analyticsSharing = checked) } },
+    )
+    Spacer(Modifier.height(10.dp))
+    SectionLabel("DATA")
+    Spacer(Modifier.height(8.dp))
+    LinkRow(title = "Change Password", onClick = onClose)
+    LinkRow(title = "Manage Devices", value = "2 active", onClick = onClose)
+    LinkRow(title = "Clear Local Cache", onClick = onClose)
+}
+
+// MARK: - Profile
+
+/** Profile page — the Compose port of `Sources/APTradeApp/RootView.swift`'s `profilePage`
+ *  (lines 373-390). Three decorative detail rows; no persisted state (macOS has none here
+ *  either — this simulated account has fixed identity fields). */
+@Composable
+private fun ProfilePage(onBack: () -> Unit) {
+    PanelHeader(title = "Profile", onLeading = onBack, leadingGlyph = "‹")
+    Spacer(Modifier.height(16.dp))
+    DetailField(label = "Name", value = "Ankit Patel")
+    Spacer(Modifier.height(14.dp))
+    DetailField(label = "Date of Birth", value = "January 1, 1995")
+    Spacer(Modifier.height(14.dp))
+    DetailField(label = "Email", value = "ankitpatel.svnit@gmail.com")
+}
+
+// MARK: - Account Settings
+
+/** Account Settings page — the Compose port of `Sources/APTradeApp/RootView.swift`'s
+ *  `accountSettingsPage` (lines 392-411). Five decorative detail rows, including the static
+ *  "Enabled — Touch ID" biometric row: macOS displays static text here too, NOT bound to the
+ *  Security page's Biometric Login toggle (verified against `RootView.swift:403`, which reads
+ *  `tr(.enabledTouchID)` — a fixed L10n string, not `settingsVM.settings.biometricLogin`). */
+@Composable
+private fun AccountSettingsPage(onBack: () -> Unit) {
+    PanelHeader(title = "Account Settings", onLeading = onBack, leadingGlyph = "‹")
+    Spacer(Modifier.height(16.dp))
+    DetailField(label = "Trading Mode", value = "Simulated · Paper Trading")
+    Spacer(Modifier.height(14.dp))
+    DetailField(label = "Starting Balance", value = "$100,000.00")
+    Spacer(Modifier.height(14.dp))
+    DetailField(label = "Display Currency", value = "USD ($)")
+    Spacer(Modifier.height(14.dp))
+    DetailField(label = "Default Tab", value = "Watchlist")
+    Spacer(Modifier.height(14.dp))
+    DetailField(label = "Biometric Login", value = "Enabled — Touch ID")
+}
+
+// MARK: - Help & Support
+
+/** Help & Support page — the Compose port of `Sources/APTradeApp/RootView.swift`'s
+ *  `helpPage` (lines 565-583). RESOURCES and CONTACT are decorative link rows (close-only,
+ *  same as macOS's `linkRow`, which just dismisses the sheet — no actual navigation target
+ *  exists in either app). */
+@Composable
+private fun HelpPage(onBack: () -> Unit, onClose: () -> Unit) {
+    PanelHeader(title = "Help & Support", onLeading = onBack, leadingGlyph = "‹")
+    Spacer(Modifier.height(16.dp))
+    SectionLabel("RESOURCES")
+    Spacer(Modifier.height(8.dp))
+    // macOS renders tr(.faq) = "Frequently Asked Questions" in English (L10n.swift:71) —
+    // the full phrase, not the "FAQ" shorthand the task brief used.
+    LinkRow(title = "Frequently Asked Questions", onClick = onClose)
+    LinkRow(title = "User Guide", onClick = onClose)
+    LinkRow(title = "Keyboard Shortcuts", onClick = onClose)
+    Spacer(Modifier.height(10.dp))
+    SectionLabel("CONTACT")
+    Spacer(Modifier.height(8.dp))
+    LinkRow(title = "Email Support", value = "support@aptrade.app", onClick = onClose)
+    LinkRow(title = "Report a Problem", onClick = onClose)
+}
+
+// MARK: - Shared detail/link rows
+
+/** The Compose port of `RootView.swift`'s `detailField`: an uppercase tertiary label over a
+ *  primary-color value, used by Profile and Account Settings. */
+@Composable
+private fun DetailField(label: String, value: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            label.uppercase(),
+            style = TextStyle(
+                fontFamily = InterFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                color = DK.textTertiary, letterSpacing = 1.2.sp,
+            ),
+        )
+        Text(
+            value,
+            style = TextStyle(
+                fontFamily = InterFamily, fontSize = 14.sp,
+                fontWeight = FontWeight.Medium, color = DK.textPrimary,
+            ),
+        )
+    }
+}
+
+/** The Compose port of `RootView.swift`'s `linkRow`: a title, an optional trailing value, and
+ *  a chevron. macOS's `linkRow` always just calls `close()` regardless of which row was
+ *  tapped — none of these rows have a real destination in the simulated app — so [onClick] is
+ *  always the panel's close callback at the call site. */
+@Composable
+private fun LinkRow(title: String, value: String? = null, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onClick() }
+            .padding(vertical = 11.dp, horizontal = 4.dp),
+    ) {
+        Text(
+            title,
+            style = TextStyle(
+                fontFamily = InterFamily, fontSize = 13.sp,
+                fontWeight = FontWeight.Medium, color = DK.textPrimary,
+            ),
+            modifier = Modifier.weight(1f),
+        )
+        if (value != null) {
+            Text(
+                value,
+                style = TextStyle(
+                    fontFamily = InterFamily, fontSize = 12.sp,
+                    fontWeight = FontWeight.Normal, color = DK.textTertiary,
+                    fontFeatureSettings = "tnum",
+                ),
+            )
+            Spacer(Modifier.width(8.dp))
+        }
+        Text(
+            "›",
+            style = TextStyle(
+                fontFamily = InterFamily, fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold, color = DK.textTertiary,
+            ),
+        )
+    }
+}
+
 // MARK: - Placeholder
 
-/** RECORDED DIVERGENCE: macOS has functional pages for these rows; desktop adopts them in a
- *  later increment. Until then every non-functional row lands here. */
+/** RECORDED DIVERGENCE: macOS has a functional Language page; desktop adopts it in a later
+ *  increment. Until then the Language row lands here. */
 @Composable
 private fun PlaceholderPage(title: String, onBack: () -> Unit) {
     PanelHeader(title = title, onLeading = onBack, leadingGlyph = "‹")

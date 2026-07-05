@@ -24,7 +24,15 @@ import kotlin.io.path.readText
  *
  *  [isDarkMode] (increment 6d.2) defaults to true — dark is the shipped identity, and an
  *  old settings file written before this field existed must still load dark rather than
- *  flash into an unrequested light mode. */
+ *  flash into an unrequested light mode.
+ *
+ *  Security/privacy fields (increment 6d.2 Task 3) mirror macOS `AppSettings` exactly:
+ *  [biometricLogin], [requireAuthOnLaunch], and [confirmTrades] default to true (matching
+ *  the Swift `AppSettings`'s security posture), [analyticsSharing] defaults to false. HONEST
+ *  PARITY (recorded): only [confirmTrades] is functional on desktop — it gates the
+ *  in-dialog trade confirmation layer (see `TradeConfirm.kt` / `TradeDialog.kt`).
+ *  [biometricLogin], [requireAuthOnLaunch], and [analyticsSharing] persist but drive nothing
+ *  yet, same as macOS's SecurityPage rows for those three toggles are simulated-app-only. */
 data class AppSettings(
     val accent: AccentTheme = AccentTheme.ChampagneGold,
     val priceAlerts: Boolean = true,
@@ -33,6 +41,10 @@ data class AppSettings(
     val newsDigest: Boolean = true,
     val emailNotifications: Boolean = false,
     val isDarkMode: Boolean = true,
+    val biometricLogin: Boolean = true,
+    val requireAuthOnLaunch: Boolean = true,
+    val confirmTrades: Boolean = true,
+    val analyticsSharing: Boolean = false,
 )
 
 /** JSON-file settings, a single blob (macOS single-blob parity).
@@ -55,6 +67,10 @@ class FileSettingsStore(private val file: Path) {
         val newsDigest: Boolean = true,
         val emailNotifications: Boolean = false,
         val isDarkMode: Boolean = true,
+        val biometricLogin: Boolean = true,
+        val requireAuthOnLaunch: Boolean = true,
+        val confirmTrades: Boolean = true,
+        val analyticsSharing: Boolean = false,
     )
 
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
@@ -75,6 +91,10 @@ class FileSettingsStore(private val file: Path) {
                 newsDigest = dto.newsDigest,
                 emailNotifications = dto.emailNotifications,
                 isDarkMode = dto.isDarkMode,
+                biometricLogin = dto.biometricLogin,
+                requireAuthOnLaunch = dto.requireAuthOnLaunch,
+                confirmTrades = dto.confirmTrades,
+                analyticsSharing = dto.analyticsSharing,
             )
         } catch (e: SerializationException) {
             AppSettings()
@@ -93,6 +113,10 @@ class FileSettingsStore(private val file: Path) {
             newsDigest = settings.newsDigest,
             emailNotifications = settings.emailNotifications,
             isDarkMode = settings.isDarkMode,
+            biometricLogin = settings.biometricLogin,
+            requireAuthOnLaunch = settings.requireAuthOnLaunch,
+            confirmTrades = settings.confirmTrades,
+            analyticsSharing = settings.analyticsSharing,
         )
         val text = json.encodeToString(SettingsDTO.serializer(), dto)
         val temp = Files.createTempFile(file.parent, "settings", ".tmp")

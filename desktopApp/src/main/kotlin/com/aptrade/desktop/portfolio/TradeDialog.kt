@@ -58,14 +58,28 @@ import com.aptrade.shared.domain.TradeSide
  *  string via [Money.usd] purely to feed that helper. Confirm delegates to `onSubmit` and the
  *  dialog closes on success (signalled by `tradeError` clearing and the caller dismissing).
  *
+ *  [confirmTrades] is a snapshot taken once by the caller when the dialog opens (Main.kt
+ *  reads `notificationSettings.confirmTrades` into a `remember(target)`), matching
+ *  `TradeSheet.swift:12-18`'s `let confirmTrades: Bool` snapshot-at-init — this composable
+ *  never re-reads the live setting mid-dialog. [attemptSubmit] (`TradeConfirm.kt`) gates
+ *  whether Buy/Sell shows the in-dialog confirm layer first or calls `onSubmit` immediately.
+ *
+ *  RECORDED MECHANISM DIVERGENCE: macOS presents the confirmation via a native
+ *  `.confirmationDialog` (a sheet-of-a-sheet). Compose Desktop has no equivalent, so
+ *  `showConfirm` swaps the panel's body for an in-panel confirm layer with the same
+ *  title/message/button semantics (`TradeSheet.swift:42-47`).
+ *
  *  Esc is consumed here on the panel's own preview-key handler so it never reaches the
- *  window's Esc-priority chain — see the ownership note in Main.kt. */
+ *  window's Esc-priority chain — see the ownership note in Main.kt. Esc ownership within
+ *  this dialog is layered: while the confirm layer is showing, Esc dismisses ONLY the confirm
+ *  layer (back to the form); a second Esc is needed to dismiss the whole dialog. */
 @Composable
 fun TradeDialog(
     asset: Asset,
     initialSide: TradeSide,
     priceText: String?,
     tradeError: String?,
+    confirmTrades: Boolean,
     onSubmit: (side: TradeSide, quantityText: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -74,13 +88,26 @@ fun TradeDialog(
     // The VM's tradeError is shared and may be stale from a prior dialog; only surface it once
     // the user has actually attempted a submit in THIS dialog instance.
     var hasSubmitted by remember { mutableStateOf(false) }
+    // The in-dialog confirm layer (RECORDED MECHANISM DIVERGENCE, see doc comment above).
+    var showConfirm by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
 
     val form = TradeFormState(side, priceText, quantityText)
     val price: Money? = priceText?.let { Money.usd(it) }
     val estimateRaw = form.estimateText(price)
     val canSubmit = form.canSubmit()
-    val submit = { hasSubmitted = true; onSubmit(side, quantityText) }
+    val performSubmit = { hasSubmitted = true; onSubmit(side, quantityText) }
+    // TradeSheet.swift:60-66 attemptSubmit: flag on → show the confirm layer; flag off →
+    // submit immediately. Gating logic itself lives in the pure, tested attemptSubmit().
+    val attemptSubmit = {
+        when (attemptSubmit(confirmTrades)) {
+            SubmitAction.ShowConfirm -> showConfirm = true
+            SubmitAction.SubmitDirectly -> performSubmit()
+        }
+    }
+    // splitPrice-formatted display string, reused by both the estimate row and the confirm
+    // layer's message so the two never disagree on formatting.
+    val estimateDisplay = estimateRaw?.let { splitPrice(it).let { p -> "$" + p.whole + "." + p.fraction } } ?: "—"
 
     Box(
         Modifier
@@ -100,9 +127,14 @@ fun TradeDialog(
                 .background(DK.surface)
                 .border(1.dp, DK.hairline, RoundedCornerShape(14.dp))
                 // Consume Esc before the window's preview handler; also eat scrim clicks.
+                // Esc ownership is layered here: the confirm layer (if showing) claims Esc
+                // first and only closes itself, returning to the form — a second Esc is
+                // needed to close the whole dialog. This extends the existing Esc-ownership
+                // chain (AccountPanel, PaletteOverlay) one level deeper.
                 .onPreviewKeyEvent { event ->
                     if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
-                        onDismiss(); true
+                        if (showConfirm) showConfirm = false else onDismiss()
+                        true
                     } else {
                         false
                     }
@@ -115,49 +147,132 @@ fun TradeDialog(
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            Header(asset = asset, priceText = priceText)
-            SideToggle(
-                side = side,
-                onSelect = {
-                    if (it != side) {
-                        side = it
-                        quantityText = ""
-                    }
-                },
-            )
-            QuantityField(
-                value = quantityText,
-                onValueChange = { quantityText = it },
-                focusRequester = focusRequester,
-                onSubmit = { if (canSubmit) submit() },
-            )
-            EstimateRow(side = side, estimateRaw = estimateRaw)
-            if (hasSubmitted && tradeError != null) {
+            if (showConfirm) {
+                ConfirmLayer(
+                    side = side,
+                    quantityText = quantityText,
+                    symbol = asset.symbol,
+                    estimateDisplay = estimateDisplay,
+                    onConfirm = { showConfirm = false; performSubmit() },
+                    onCancel = { showConfirm = false },
+                )
+            } else {
+                Header(asset = asset, priceText = priceText)
+                SideToggle(
+                    side = side,
+                    onSelect = {
+                        if (it != side) {
+                            side = it
+                            quantityText = ""
+                        }
+                    },
+                )
+                QuantityField(
+                    value = quantityText,
+                    onValueChange = { quantityText = it },
+                    focusRequester = focusRequester,
+                    onSubmit = { if (canSubmit) attemptSubmit() },
+                )
+                EstimateRow(side = side, estimateRaw = estimateRaw)
+                if (hasSubmitted && tradeError != null) {
+                    Text(
+                        tradeError,
+                        style = TextStyle(
+                            fontFamily = InterFamily, fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium, color = DK.down,
+                        ),
+                    )
+                }
                 Text(
-                    tradeError,
+                    "Simulated paper trading",
                     style = TextStyle(
-                        fontFamily = InterFamily, fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium, color = DK.down,
+                        fontFamily = InterFamily, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                        color = DK.textTertiary, letterSpacing = 0.6.sp,
                     ),
                 )
+                Actions(
+                    side = side,
+                    canSubmit = canSubmit,
+                    onCancel = onDismiss,
+                    onConfirm = attemptSubmit,
+                )
             }
-            Text(
-                "Simulated paper trading",
-                style = TextStyle(
-                    fontFamily = InterFamily, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
-                    color = DK.textTertiary, letterSpacing = 0.6.sp,
-                ),
-            )
-            Actions(
-                side = side,
-                canSubmit = canSubmit,
-                onCancel = onDismiss,
-                onConfirm = submit,
-            )
         }
     }
 
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
+}
+
+/** The in-dialog confirm layer (RECORDED MECHANISM DIVERGENCE — see [TradeDialog]'s doc
+ *  comment). Title/message text come from the pure, tested `TradeConfirm.kt` builders, which
+ *  mirror `TradeSheet.swift:42-47`'s `.confirmationDialog` title/message/buttons exactly. */
+@Composable
+private fun ConfirmLayer(
+    side: TradeSide,
+    quantityText: String,
+    symbol: String,
+    estimateDisplay: String,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Text(
+        confirmTitle(side, quantityText, symbol),
+        style = TextStyle(
+            fontFamily = InterFamily, fontSize = 18.sp,
+            fontWeight = FontWeight.SemiBold, color = DK.textPrimary,
+        ),
+    )
+    Text(
+        confirmMessage(side, estimateDisplay),
+        style = TextStyle(
+            fontFamily = InterFamily, fontSize = 13.sp,
+            fontWeight = FontWeight.Medium, color = DK.textSecondary,
+        ),
+    )
+    Spacer(Modifier.height(4.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(50))
+                .background(DK.surface)
+                .border(1.dp, DK.hairline, RoundedCornerShape(50))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { onCancel() }
+                .padding(vertical = 12.dp),
+        ) {
+            Text(
+                "Cancel",
+                style = TextStyle(
+                    fontFamily = InterFamily, fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold, color = DK.textSecondary,
+                ),
+            )
+        }
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(50))
+                .background(Brush.linearGradient(listOf(DK.goldDeep, DK.gold, DK.goldLight)))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { onConfirm() }
+                .padding(vertical = 12.dp),
+        ) {
+            Text(
+                confirmActionLabel(side),
+                style = TextStyle(
+                    fontFamily = InterFamily, fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold, color = DK.bgBottom,
+                ),
+            )
+        }
+    }
 }
 
 @Composable
