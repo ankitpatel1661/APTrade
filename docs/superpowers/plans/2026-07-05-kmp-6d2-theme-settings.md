@@ -54,7 +54,9 @@ first; then desktop designkit/DK.kt, BrandTint.kt, Components.kt (BrandWordmark)
    branching on isDark.value, EXACT light values (dark values stay byte-identical):
    bgTop #F8F6F2, bgBottom #F1EEE7, surface #EAE6DE, surfaceHi #DFD9CD,
    hairline = Color.Black.copy(alpha = 0.09f) (dark stays White 0.07f),
-   textPrimary #1E1C18, textSecondary #605A4F, textTertiary #8E8779, silver #564F47.
+   textPrimary #1E1C18, textSecondary #605A4F, textTertiary #8E8779, silver #565148
+   (CORRECTED from an earlier #564F47 explorer mis-conversion — Theme.swift:110's
+   components 0.337/0.318/0.282 × 255 = 86/81/72; the Swift components govern).
    up/down and the accent ramp UNCHANGED (mode-independent — scope decision).
 2. dkColorScheme(): light branch via lightColorScheme(...) mirroring the existing dark
    mapping field-for-field; APTradeDesktopTheme reads DK.isDark so the whole tree
