@@ -276,6 +276,31 @@ equivalent; and relative-time labels ("N minutes/hours/days ago", falling back t
 absolute `MMM d` date past 7 days) are a custom fixed English-only formatter, since the JDK
 has no equivalent to Foundation's locale-aware `RelativeDateTimeFormatter` that macOS uses.
 
+**Alerts & notifications** bring price alerts and scheduled market notifications to the
+desktop app (`:desktopApp`, increment 6d.1), on a new shared Kotlin alerts core
+(`PriceAlert`/`AlertCondition`, `LoadAlerts`/`CreatePriceAlert`/`RemovePriceAlert`/
+`EvaluateAlerts`) plus a `MarketActivityPlanner` driven by a statutory, US-DST-aware
+`MarketCalendar`. Each watchlist row grows an alert **bell** — gold-filled with a count
+when the symbol has active alerts, tertiary-outline otherwise — opening a
+**PriceAlertSheet** (macOS-parity strings and layout) to set a _price above_, _price
+below_, or _percent daily move_ condition, or review/remove existing ones. Alerts are
+evaluated on the same 15-second watchlist poll that refreshes quotes; completed buys/sells
+raise a settings-gated order-fill notification; and a separate 60-second
+market-activity coordinator delivers market open/close notifications plus a daily digest
+of the watchlist's top-3 movers by absolute change. A real **Notifications** page in the
+account panel replaces the old placeholder: **Price Alerts**, **Order Fills**, **Market
+Open & Close**, and **Daily News Digest** toggles under PUSH NOTIFICATIONS, plus an
+**Email Notifications** toggle, all persisted through the same settings store.
+**Recorded divergences from macOS:** notification *delivery* goes through Compose
+Desktop's `TrayState`/tray-icon API rather than `UNUserNotificationCenter` — Compose
+Multiplatform for Desktop has no cross-platform notification-center equivalent, so this is
+a deliberate, scoped substitution of transport only; every notification title/body string
+is transcribed verbatim from the macOS source. **Email Notifications** is
+persisted-but-unwired — toggling it saves the preference but no email delivery pipeline
+exists yet — which is **not** a desktop shortfall: the macOS app has the identical
+placeholder toggle with the same "no delivery pipeline yet" caveat. This increment does
+not touch the Android app; its shared-core alerts plumbing is unused there for now.
+
 ## Project Structure
 
 ```
@@ -300,10 +325,24 @@ APTrade Lite is the foundation. Planned toward the full platform:
   detail + palette (6a), a Portfolio tab with detail-screen indicators, performance/risk
   intelligence, and export (6b.1 + 6b.2), a News tab with per-symbol company news and
   bookmarks (6c), macOS adoption of the shared portfolio core's all-priced performance
-  gate (6b.3), and an Android Portfolio screen on the shared portfolio core (6b.4). Still to
-  come: **6d** alerts, account panel, settings, and light theme.
+  gate (6b.3), an Android Portfolio screen on the shared portfolio core (6b.4), and alerts
+  & notifications (6d.1). **6d split in two:** 6d.1 (alerts & notifications) ships now.
+  Still to come: **6d.2** (account-panel settings pages and a light theme) and a
+  **desktop language switcher**, promoted to its own increment.
 
-Recently shipped: an Android **Portfolio screen** (increment 6b.4) — paper trading on the
+Recently shipped: desktop **alerts & notifications** (increment 6d.1) — price alerts
+(price above / price below / percent daily move) on a new shared Kotlin alerts core
+(`PriceAlert`, `LoadAlerts`/`CreatePriceAlert`/`RemovePriceAlert`/`EvaluateAlerts`) and a
+`MarketActivityPlanner` driven by a statutory, US-DST-aware `MarketCalendar`; a watchlist
+row alert bell and `PriceAlertSheet` matching the macOS anatomy; alert evaluation folded
+into the existing 15-second watchlist poll; settings-gated order-fill notifications; a
+60-second market-activity coordinator for open/close and a top-3-movers daily digest; and
+a real Notifications settings page (push toggles + email, persisted through the same
+settings store). Notification delivery goes through Compose Desktop's tray-icon API
+rather than `UNUserNotificationCenter` (no cross-platform equivalent exists), and Email
+Notifications is persisted-but-unwired — both recorded divergences, the latter matching
+macOS's identical placeholder. Not yet adopted on Android. An Android **Portfolio screen**
+(increment 6b.4) — paper trading on the
 shared Kotlin portfolio core, reached from the quotes top-bar list icon: a summary header
 (value, day-change pill, cash/holdings/unrealized/realized) from a $100,000 start, a
 span-driven Performance chart (1D · 1W · 1M · 1Y · MAX) with an SPY/QQQ/VTI benchmark twin,
