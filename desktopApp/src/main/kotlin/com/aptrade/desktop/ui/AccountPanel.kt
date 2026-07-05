@@ -48,19 +48,22 @@ import androidx.compose.ui.unit.sp
 import com.aptrade.desktop.designkit.AccentTheme
 import com.aptrade.desktop.designkit.BrandWordmark
 import com.aptrade.desktop.designkit.DK
+import com.aptrade.desktop.designkit.DKSwitch
 import com.aptrade.desktop.designkit.InterFamily
+import com.aptrade.desktop.infra.AppSettings
 
 /** The pages reachable inside the account panel. Root is the row list; the others are
  *  detail pages with a back affordance. */
-private enum class AccountPage { Root, Appearance, About, Placeholder }
+private enum class AccountPage { Root, Appearance, About, Notifications, Placeholder }
 
 /** Right-anchored settings overlay opened from the shell's ⋯ button. Full-window scrim
  *  (click closes, PaletteOverlay idiom), a 360dp panel pinned to the trailing edge with a
  *  DK surface + hairline border. Esc is self-consumed on the panel's own onPreviewKeyEvent
  *  (TradeDialog pattern) so it never reaches — and never steals — the window's palette Esc.
  *
- *  Row behavior mirrors the macOS account sheet: Appearance → accent page, Export Portfolio
- *  Data → [onExportPortfolio], About → logo + tagline page; every other row renders a shared
+ *  Row behavior mirrors the macOS account sheet: Appearance → accent page, Notifications →
+ *  the real push/email toggle page (increment 6d.1), Export Portfolio Data →
+ *  [onExportPortfolio], About → logo + tagline page; every other row renders a shared
  *  "Not available on desktop yet" placeholder (RECORDED DIVERGENCE — macOS has functional
  *  pages; desktop adopts them later. No Sign Out row: desktop has no auth). */
 @Composable
@@ -69,6 +72,8 @@ fun AccountPanel(
     onSelectAccent: (AccentTheme) -> Unit,
     onExportPortfolio: () -> Unit,
     onClose: () -> Unit,
+    notificationSettings: AppSettings,
+    onUpdateNotificationSettings: ((AppSettings) -> AppSettings) -> Unit,
 ) {
     var page by remember { mutableStateOf(AccountPage.Root) }
     var placeholderTitle by remember { mutableStateOf("") }
@@ -113,6 +118,7 @@ fun AccountPanel(
                 AccountPage.Root -> RootList(
                     onAppearance = { page = AccountPage.Appearance },
                     onAbout = { page = AccountPage.About },
+                    onNotifications = { page = AccountPage.Notifications },
                     onExport = onExportPortfolio,
                     onPlaceholder = { title -> placeholderTitle = title; page = AccountPage.Placeholder },
                     onClose = onClose,
@@ -123,6 +129,11 @@ fun AccountPanel(
                     onBack = { page = AccountPage.Root },
                 )
                 AccountPage.About -> AboutPage(onBack = { page = AccountPage.Root })
+                AccountPage.Notifications -> NotificationsPage(
+                    settings = notificationSettings,
+                    onUpdate = onUpdateNotificationSettings,
+                    onBack = { page = AccountPage.Root },
+                )
                 AccountPage.Placeholder -> PlaceholderPage(
                     title = placeholderTitle,
                     onBack = { page = AccountPage.Root },
@@ -154,6 +165,7 @@ private enum class AccountRow(val label: String) {
 private fun RootList(
     onAppearance: () -> Unit,
     onAbout: () -> Unit,
+    onNotifications: () -> Unit,
     onExport: () -> Unit,
     onPlaceholder: (String) -> Unit,
     onClose: () -> Unit,
@@ -165,6 +177,7 @@ private fun RootList(
             when (row) {
                 AccountRow.Appearance -> onAppearance()
                 AccountRow.AboutAPTrade -> onAbout()
+                AccountRow.Notifications -> onNotifications()
                 AccountRow.ExportPortfolioData -> onExport()
                 else -> onPlaceholder(row.label)
             }
@@ -268,6 +281,84 @@ private fun AboutPage(onBack: () -> Unit) {
                 fontWeight = FontWeight.Medium, color = DK.textSecondary,
             ),
         )
+    }
+}
+
+// MARK: - Notifications
+
+/** PUSH NOTIFICATIONS / EMAIL toggle page — the Compose port of
+ *  `Sources/APTradeApp/RootView.swift`'s `notificationsPage`. Every toggle persists on
+ *  change via [onUpdate] (increment 6d.1's `AppSettings` fields); [AppSettings
+ *  .emailNotifications] is persisted-but-unwired, same macOS-parity note as the Swift
+ *  source ("Send a copy to ankitpatel.svnit@gmail.com" — no delivery pipeline exists yet). */
+@Composable
+private fun NotificationsPage(
+    settings: AppSettings,
+    onUpdate: ((AppSettings) -> AppSettings) -> Unit,
+    onBack: () -> Unit,
+) {
+    PanelHeader(title = "Notifications", onLeading = onBack, leadingGlyph = "‹")
+    Spacer(Modifier.height(16.dp))
+    SectionLabel("PUSH NOTIFICATIONS")
+    Spacer(Modifier.height(8.dp))
+    ToggleRow(
+        title = "Price Alerts",
+        subtitle = "When a watchlist alert is triggered",
+        checked = settings.priceAlerts,
+        onCheckedChange = { checked -> onUpdate { it.copy(priceAlerts = checked) } },
+    )
+    ToggleRow(
+        title = "Order Fills",
+        subtitle = "Buy and sell confirmations",
+        checked = settings.orderFills,
+        onCheckedChange = { checked -> onUpdate { it.copy(orderFills = checked) } },
+    )
+    ToggleRow(
+        title = "Market Open & Close",
+        subtitle = "Daily session reminders",
+        checked = settings.marketOpenClose,
+        onCheckedChange = { checked -> onUpdate { it.copy(marketOpenClose = checked) } },
+    )
+    ToggleRow(
+        title = "Daily News Digest",
+        subtitle = "Top stories for your holdings",
+        checked = settings.newsDigest,
+        onCheckedChange = { checked -> onUpdate { it.copy(newsDigest = checked) } },
+    )
+    Spacer(Modifier.height(10.dp))
+    SectionLabel("EMAIL")
+    Spacer(Modifier.height(8.dp))
+    ToggleRow(
+        title = "Email Notifications",
+        subtitle = "Send a copy to ankitpatel.svnit@gmail.com",
+        checked = settings.emailNotifications,
+        onCheckedChange = { checked -> onUpdate { it.copy(emailNotifications = checked) } },
+    )
+}
+
+@Composable
+private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                title,
+                style = TextStyle(
+                    fontFamily = InterFamily, fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium, color = DK.textPrimary,
+                ),
+            )
+            Text(
+                subtitle,
+                style = TextStyle(
+                    fontFamily = InterFamily, fontSize = 11.sp,
+                    fontWeight = FontWeight.Normal, color = DK.textTertiary,
+                ),
+            )
+        }
+        DKSwitch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 

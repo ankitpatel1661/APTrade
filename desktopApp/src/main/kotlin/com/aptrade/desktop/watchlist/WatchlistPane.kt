@@ -17,8 +17,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.TooltipArea
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
@@ -76,6 +79,7 @@ fun WatchlistPane(
     onSelect: (String) -> Unit,
     onAdd: (WatchlistEntry) -> Unit,
     onRemove: (String) -> Unit,
+    onSetAlert: (String) -> Unit,
     suggestQuery: String,
     suggestResults: List<Asset>,
     onSuggestQueryChange: (String) -> Unit,
@@ -150,6 +154,7 @@ fun WatchlistPane(
             onSelect = onSelect,
             onAdd = onAdd,
             onRemove = onRemove,
+            onSetAlert = onSetAlert,
             suggestQuery = suggestQuery,
             suggestResults = suggestResults,
             onSuggestQueryChange = onSuggestQueryChange,
@@ -165,6 +170,7 @@ private fun MasterPane(
     onSelect: (String) -> Unit,
     onAdd: (WatchlistEntry) -> Unit,
     onRemove: (String) -> Unit,
+    onSetAlert: (String) -> Unit,
     suggestQuery: String,
     suggestResults: List<Asset>,
     onSuggestQueryChange: (String) -> Unit,
@@ -205,6 +211,7 @@ private fun MasterPane(
                             selected = row.symbol == state.selectedSymbol,
                             onClick = { onSelect(row.symbol) },
                             onRemove = { onRemove(row.symbol) },
+                            onSetAlert = { onSetAlert(row.symbol) },
                         )
                     }
                 }
@@ -336,7 +343,9 @@ private fun SuggestionRow(asset: Asset, onClick: () -> Unit) {
 }
 
 /** A single watchlist row: name over symbol, sparkline, price over change pill.
- *  Hover reveals a ✕ remove button and a `DK.surfaceHi` background. */
+ *  Hover reveals a ✕ remove button and a `DK.surfaceHi` background. The alert bell (macOS
+ *  anatomy: `Sources/APTradeApp/WatchlistView.swift`'s `alertButton`) sits between the
+ *  sparkline and the price column, visible on hover OR whenever `alertCount > 0`. */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun WatchlistRow(
@@ -344,6 +353,7 @@ private fun WatchlistRow(
     selected: Boolean,
     onClick: () -> Unit,
     onRemove: () -> Unit,
+    onSetAlert: () -> Unit,
 ) {
     var hovered by remember { mutableStateOf(false) }
     val background = when {
@@ -392,6 +402,10 @@ private fun WatchlistRow(
             color = DK.changeColor(row.changePercent),
             modifier = Modifier.size(width = 72.dp, height = 32.dp),
         )
+        if (hovered || row.alertCount > 0) {
+            Spacer(Modifier.width(10.dp))
+            AlertBell(alertCount = row.alertCount, onClick = onSetAlert)
+        }
         Spacer(Modifier.width(14.dp))
         Column(horizontalAlignment = Alignment.End) {
             if (row.amountText != null) {
@@ -432,6 +446,63 @@ private fun WatchlistRow(
                     ),
                 )
             }
+        }
+    }
+}
+
+/** The row's alert-bell affordance: gold filled when `alertCount > 0`, tertiary outline
+ *  otherwise — the macOS anatomy (`WatchlistView.swift`'s `alertButton`: `bell.fill`/gold
+ *  vs `bell`/tertiary). The tooltip text is a verbatim transcription of the macOS `.help(...)`
+ *  strings (L10n.swift's `.activeAlertsFormat` / `.setAPriceAlert`). */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun AlertBell(alertCount: Int, onClick: () -> Unit) {
+    val tooltipText = if (alertCount > 0) {
+        "$alertCount active alert(s)"
+    } else {
+        "Set a price alert"
+    }
+    TooltipArea(
+        tooltip = {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(DK.surfaceHi)
+                    .border(1.dp, DK.hairline, RoundedCornerShape(6.dp))
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
+            ) {
+                Text(
+                    tooltipText,
+                    style = TextStyle(
+                        fontFamily = InterFamily, fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium, color = DK.textPrimary,
+                    ),
+                )
+            }
+        },
+    ) {
+        Box(
+            modifier = Modifier
+                .size(24.dp)
+                .clip(CircleShape)
+                .background(DK.surfaceHi)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { onClick() },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                // No distinct outline-bell glyph is used here (unlike SF Symbols' bell/
+                // bell.fill pair) — the gold-vs-tertiary color swap below carries the same
+                // filled/outline distinction the macOS anatomy conveys.
+                "🔔",
+                style = TextStyle(
+                    fontFamily = InterFamily,
+                    fontSize = 12.sp,
+                    color = if (alertCount > 0) DK.gold else DK.textTertiary,
+                ),
+            )
         }
     }
 }

@@ -232,3 +232,36 @@ fun PulseBar(advancers: Int, decliners: Int, modifier: Modifier = Modifier) {
         Box(Modifier.weight((total - advancers).toFloat().coerceAtLeast(0.0001f)).fillMaxHeight().background(DK.down))
     }
 }
+
+/** Small pill-shaped on/off switch matching the gold-on-black theme — the Compose desktop
+ *  equivalent of macOS's `Toggle(...).tint(Theme.gold)` (RootView's notifications rows).
+ *  No `material3.Switch` is used here: that component pulls Material's own motion/shape
+ *  defaults that don't match DK's flat, hairline-bordered idiom, and every other control in
+ *  this design system (KindToggle, side toggles) is a hand-rolled capsule already — this
+ *  follows that same precedent rather than fighting Material's theming for one control. */
+@Composable
+fun DKSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    val trackColor = if (checked) DK.gold else DK.surfaceHi
+    val thumbAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
+    Box(
+        modifier = Modifier
+            .width(36.dp)
+            .height(20.dp)
+            .clip(RoundedCornerShape(50))
+            .background(trackColor.copy(alpha = if (checked) 0.9f else 1f))
+            .border(1.dp, DK.hairline, RoundedCornerShape(50))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onCheckedChange(!checked) }
+            .padding(2.dp),
+        contentAlignment = thumbAlignment,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(14.dp)
+                .clip(CircleShape)
+                .background(if (checked) DK.bgBottom else DK.textSecondary),
+        )
+    }
+}

@@ -2,14 +2,19 @@ package com.aptrade.desktop.watchlist
 
 import com.aptrade.desktop.ui.userMessage
 import com.aptrade.shared.application.AddToWatchlist
+import com.aptrade.shared.application.CreatePriceAlert
 import com.aptrade.shared.application.EvaluateAlerts
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchWatchlist
+import com.aptrade.shared.application.LoadAlerts
 import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.RemoveFromWatchlist
+import com.aptrade.shared.application.RemovePriceAlert
+import com.aptrade.shared.domain.AlertCondition
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.Money
+import com.aptrade.shared.domain.PriceAlert
 import com.aptrade.shared.domain.Quote
 import com.aptrade.shared.domain.Timeframe
 import com.aptrade.shared.domain.WatchlistEntry
@@ -30,6 +35,9 @@ data class WatchRow(
     val amountText: String?,      // exact decimal string; null until first quote lands
     val changePercent: Double?,
     val spark: List<Double> = emptyList(),
+    /** Untriggered-alert count for this symbol — drives the row bell's filled/outline state
+     *  and its tooltip. Zero when no alerts exist (or all are triggered). */
+    val alertCount: Int = 0,
 )
 
 data class WatchlistUiState(
@@ -69,9 +77,13 @@ class WatchlistViewModel(
     private val addToWatchlist: AddToWatchlist,
     private val removeFromWatchlist: RemoveFromWatchlist,
     private val evaluateAlerts: EvaluateAlerts,
+    private val loadAlerts: LoadAlerts,
+    private val createPriceAlert: CreatePriceAlert,
+    private val removePriceAlert: RemovePriceAlert,
     private val scope: CoroutineScope,
     private val tickMillis: Long = 15_000,
     private val sparkEveryTicks: Int = 4,
+    private val nowEpochSeconds: () -> Long = { System.currentTimeMillis() / 1000 },
 ) {
     private val _state = MutableStateFlow(WatchlistUiState())
     val state: StateFlow<WatchlistUiState> = _state
@@ -80,6 +92,10 @@ class WatchlistViewModel(
     private var quotes: Map<String, Pair<String, Double>> = emptyMap()  // symbol -> (amountText, change%)
     private var sparks: Map<String, List<Double>> = emptyMap()
     private var alertCounts: Map<String, Int> = emptyMap()
+    // The full persisted alert list, kept for the sheet's existing-alerts panel — alertCounts
+    // (above) is derived from EvaluateAlerts' per-tick pass and only tracks untriggered
+    // counts, not the full per-symbol history the sheet needs to render/delete from.
+    private var alerts: List<PriceAlert> = emptyList()
     private var pollJob: Job? = null
 
     fun start() {
@@ -152,9 +168,24 @@ class WatchlistViewModel(
      *  map at its last-good value, so alerts still evaluate against last-good prices
      *  rather than going blind for a tick). A failure here (persistence or the notifier)
      *  must never break the poll: CancellationException rethrows, everything else keeps
-     *  the last-good `alertCounts`. */
+     *  the last-good `alertCounts`/`alerts`.
+     *
+     *  When `quotes` is empty (no watchlist entries yet, or the very first tick before a
+     *  quote lands) this still loads the persisted alert list via [loadAlerts] — the sheet
+     *  needs `alerts` populated (for its existing-alerts panel) even before any evaluation
+     *  has run; only the untriggered-count derivation needs live quotes. */
     private suspend fun refreshAlerts() {
-        if (quotes.isEmpty()) return
+        if (quotes.isEmpty()) {
+            try {
+                alerts = loadAlerts.execute()
+                alertCounts = alerts.filter { !it.isTriggered }.groupingBy { it.symbol }.eachCount()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                // keep last-good alerts/alertCounts
+            }
+            return
+        }
         try {
             // EvaluateAlerts only reads `price`/`changePercent` (PriceAlert.isMet) — this
             // map's `quotes` cache doesn't retain `previousClose`, so it's set equal to
@@ -163,13 +194,50 @@ class WatchlistViewModel(
                 val price = Money.usd(pair.first)
                 Quote(symbol = symbol, price = price, previousClose = price, changePercent = pair.second)
             }
-            val alerts = evaluateAlerts.execute(quoteMap)
-            alertCounts = alerts.filter { !it.isTriggered }.groupingBy { it.symbol }.eachCount()
+            val evaluated = evaluateAlerts.execute(quoteMap)
+            alerts = evaluated
+            alertCounts = evaluated.filter { !it.isTriggered }.groupingBy { it.symbol }.eachCount()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
             // Alert evaluation is additive to the poll — never surface its failure as a
             // watchlist error banner; keep the last-good counts for this tick.
+        }
+    }
+
+    /** Alerts for one symbol, most-recently-created first — for the sheet's
+     *  existing-alerts panel. Symbols with none simply return empty. */
+    fun alertsFor(symbol: String): List<PriceAlert> =
+        alerts.filter { it.symbol == symbol }.sortedByDescending { it.createdAtEpochSeconds }
+
+    /** Creates a new alert via the shared use case, then reloads the alert list/counts on
+     *  this same VM so the sheet's existing-alerts panel and the row bell both update
+     *  immediately (the `reloadAlerts()` path Task 4 wired in). */
+    fun createAlert(symbol: String, condition: AlertCondition) {
+        scope.launch {
+            try {
+                createPriceAlert.execute(symbol, condition, nowEpochSeconds())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                // Persist failure: the sheet simply won't show the new alert; nothing else
+                // in the app depends on this succeeding.
+            }
+            reloadAlerts()
+        }
+    }
+
+    /** Removes an alert by id via the shared use case, then reloads. */
+    fun deleteAlert(id: String) {
+        scope.launch {
+            try {
+                removePriceAlert.execute(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                // keep the alert around in the UI on a failed delete; user can retry
+            }
+            reloadAlerts()
         }
     }
 
@@ -205,7 +273,15 @@ class WatchlistViewModel(
         val current = _state.value
         val rows = entries.filter { it.kind == current.kind }.map { e ->
             val q = quotes[e.symbol]
-            WatchRow(e.symbol, e.name, e.kind, q?.first, q?.second, sparks[e.symbol] ?: emptyList())
+            WatchRow(
+                symbol = e.symbol,
+                name = e.name,
+                kind = e.kind,
+                amountText = q?.first,
+                changePercent = q?.second,
+                spark = sparks[e.symbol] ?: emptyList(),
+                alertCount = alertCounts[e.symbol] ?: 0,
+            )
         }
         val changes = entries.mapNotNull { quotes[it.symbol]?.second }
         _state.update {

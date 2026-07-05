@@ -4,12 +4,15 @@ import com.aptrade.desktop.FakeMarketDataRepository
 import com.aptrade.shared.application.AddToWatchlist
 import com.aptrade.shared.application.AlertNotifier
 import com.aptrade.shared.application.AlertStore
+import com.aptrade.shared.application.CreatePriceAlert
 import com.aptrade.shared.application.EvaluateAlerts
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchWatchlist
+import com.aptrade.shared.application.LoadAlerts
 import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.RemoveFromWatchlist
+import com.aptrade.shared.application.RemovePriceAlert
 import com.aptrade.shared.application.WatchlistStore
 import com.aptrade.shared.domain.AlertCondition
 import com.aptrade.shared.domain.AssetKind
@@ -82,6 +85,9 @@ private fun vm(
     addToWatchlist = AddToWatchlist(store),
     removeFromWatchlist = RemoveFromWatchlist(store),
     evaluateAlerts = EvaluateAlerts(alertStore, alertNotifier, isNotifyEnabled),
+    loadAlerts = LoadAlerts(alertStore),
+    createPriceAlert = CreatePriceAlert(alertStore),
+    removePriceAlert = RemovePriceAlert(alertStore),
     scope = scope,
 )
 
@@ -394,5 +400,76 @@ class WatchlistViewModelTest {
         // (Money.amountText drops trailing zeros — known shared-core debt, see `quote()` above.)
         assertEquals("210", vm.state.value.rows.single().amountText)
         assertNull(vm.state.value.error)
+    }
+
+    // --- Sheet-facing alert CRUD (increment 6d.1 Task 5) ----------------------------
+
+    @Test
+    fun alertsForReturnsOnlyThatSymbolMostRecentFirst() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "210.00", 1.0) } }
+        val alertStore = FakeAlertStore(
+            initial = listOf(
+                PriceAlert(symbol = "AAPL", condition = AlertCondition.PriceAbove(Money.usd("100")), createdAtEpochSeconds = 1L),
+                PriceAlert(symbol = "SPY", condition = AlertCondition.PriceAbove(Money.usd("400")), createdAtEpochSeconds = 2L),
+                PriceAlert(symbol = "AAPL", condition = AlertCondition.PriceBelow(Money.usd("50")), createdAtEpochSeconds = 3L),
+            ),
+        )
+        val vm = vm(repo, InMemoryStore(), backgroundScope, alertStore = alertStore)
+        vm.start(); runCurrent()
+
+        val aaplAlerts = vm.alertsFor("AAPL")
+        assertEquals(2, aaplAlerts.size)
+        assertEquals(3L, aaplAlerts[0].createdAtEpochSeconds)   // most recent first
+        assertEquals(1L, aaplAlerts[1].createdAtEpochSeconds)
+    }
+
+    @Test
+    fun alertsForIsEmptyWhenNoQuotesHaveLandedYet() = runTest {
+        // Regression guard: refreshAlerts' quotes.isEmpty() branch must still populate
+        // `alerts` via loadAlerts so the sheet has data before the first tick's quotes land.
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { throw QuoteError.Network("down") }
+        val alertStore = FakeAlertStore(
+            initial = listOf(
+                PriceAlert(symbol = "AAPL", condition = AlertCondition.PriceAbove(Money.usd("100")), createdAtEpochSeconds = 1L),
+            ),
+        )
+        val vm = vm(repo, InMemoryStore(), backgroundScope, alertStore = alertStore)
+        vm.start(); runCurrent()
+
+        assertEquals(1, vm.alertsFor("AAPL").size)
+    }
+
+    @Test
+    fun createAlertPersistsAndRefreshesCounts() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "210.00", 1.0) } }
+        val alertStore = FakeAlertStore()
+        val vm = vm(repo, InMemoryStore(), backgroundScope, alertStore = alertStore)
+        vm.start(); runCurrent()
+
+        vm.createAlert("AAPL", AlertCondition.PriceAbove(Money.usd("500.00"))); runCurrent()
+
+        assertEquals(1, alertStore.stored.size)
+        assertEquals(1, vm.alertsFor("AAPL").size)
+        assertEquals(1, vm.state.value.alertCounts["AAPL"])   // reloadAlerts kept the bell fresh
+    }
+
+    @Test
+    fun deleteAlertRemovesAndRefreshesCounts() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "210.00", 1.0) } }
+        val alert = PriceAlert(symbol = "AAPL", condition = AlertCondition.PriceAbove(Money.usd("500.00")), createdAtEpochSeconds = 0L)
+        val alertStore = FakeAlertStore(initial = listOf(alert))
+        val vm = vm(repo, InMemoryStore(), backgroundScope, alertStore = alertStore)
+        vm.start(); runCurrent()
+        assertEquals(1, vm.alertsFor("AAPL").size)
+
+        vm.deleteAlert(alert.id); runCurrent()
+
+        assertTrue(alertStore.stored.isEmpty())
+        assertTrue(vm.alertsFor("AAPL").isEmpty())
+        assertEquals(0, vm.state.value.alertCounts["AAPL"] ?: 0)
     }
 }

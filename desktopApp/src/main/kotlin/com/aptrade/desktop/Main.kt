@@ -42,6 +42,7 @@ import com.aptrade.desktop.ui.AccountPanel
 import com.aptrade.desktop.ui.AppShell
 import com.aptrade.desktop.ui.AppTab
 import com.aptrade.desktop.ui.assetKindFromLabel
+import com.aptrade.desktop.watchlist.PriceAlertSheet
 import com.aptrade.desktop.watchlist.WatchlistPane
 import com.aptrade.desktop.watchlist.WatchlistViewModel
 import com.aptrade.shared.domain.Asset
@@ -83,6 +84,9 @@ fun main() = application {
             addToWatchlist = graph.addToWatchlist,
             removeFromWatchlist = graph.removeFromWatchlist,
             evaluateAlerts = graph.evaluateAlerts,
+            loadAlerts = graph.loadAlerts,
+            createPriceAlert = graph.createPriceAlert,
+            removePriceAlert = graph.removePriceAlert,
             scope = appScope,
         )
     }
@@ -147,15 +151,27 @@ fun main() = application {
     // to the Portfolio tab AND has PortfolioPane auto-open the export chooser (the pane consumes
     // and clears it). Hoisted here so the account panel and the pane share one signal.
     val pendingExport = remember { mutableStateOf(false) }
+    // The open price-alert sheet's target symbol, hoisted like tradeTarget so it overlays the
+    // whole window. The sheet self-consumes Esc on its own panel (TradeDialog pattern).
+    var alertTarget by remember { mutableStateOf<Asset?>(null) }
+    // Push/email notification toggles (increment 6d.1's Notifications page), hoisted here so
+    // both AccountPanel and the load-at-startup effect below share the one in-memory copy.
+    // Starts at AppSettings() defaults and is overwritten once the startup load resolves —
+    // same "no flash of the wrong value" reasoning as DK.accent below (the defaults ARE
+    // AppSettings()'s defaults, so there's nothing to flash).
+    var notificationSettings by remember { mutableStateOf(com.aptrade.desktop.infra.AppSettings()) }
     val windowState = rememberWindowState(width = 1280.dp, height = 800.dp)
 
-    // Load persisted settings once at startup. DK.accent stays Champagne Gold until this
-    // resolves — pixel-identical to the default, so no flash of the wrong accent. Applying the
+    // Load persisted settings once at startup. DK.accent stays Champagne Gold and
+    // notificationSettings stays at AppSettings() defaults until this resolves — both are
+    // pixel/value-identical to the defaults, so no flash of the wrong state. Applying the
     // loaded accent flips DK.accent, which recomposes every gold reader. CancellationException
     // must propagate so scope teardown isn't swallowed.
     LaunchedEffect(Unit) {
         try {
-            DK.accent.value = graph.settingsStore.load().accent
+            val loaded = graph.settingsStore.load()
+            DK.accent.value = loaded.accent
+            notificationSettings = loaded
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (_: Throwable) {
@@ -164,19 +180,33 @@ fun main() = application {
         }
     }
 
-    // Fire-and-forget accent change: flip the live accent, then persist on the Main scope.
-    fun selectAccent(theme: com.aptrade.desktop.designkit.AccentTheme) {
-        DK.accent.value = theme
+    // Fire-and-forget settings persist: load-merge-save so concurrent fields (accent vs. the
+    // notification flags) never clobber each other — replaces an earlier version that always
+    // wrote a fresh `AppSettings(accent = theme)`, silently resetting every notification flag
+    // back to its default on the very next accent change. Both selectAccent and the
+    // Notifications page's per-toggle callbacks route through this one function now.
+    fun persistSettings(mutate: (com.aptrade.desktop.infra.AppSettings) -> com.aptrade.desktop.infra.AppSettings) {
         appScope.launch {
             try {
-                graph.settingsStore.save(com.aptrade.desktop.infra.AppSettings(accent = theme))
+                val current = graph.settingsStore.load()
+                graph.settingsStore.save(mutate(current))
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (_: Throwable) {
-                // A failed persist leaves the in-memory accent applied; it just won't survive a
+                // A failed persist leaves the in-memory state applied; it just won't survive a
                 // restart. Not worth interrupting the user with an error for a cosmetic write.
             }
         }
+    }
+
+    fun selectAccent(theme: com.aptrade.desktop.designkit.AccentTheme) {
+        DK.accent.value = theme
+        persistSettings { it.copy(accent = theme) }
+    }
+
+    fun updateNotificationSettings(mutate: (com.aptrade.desktop.infra.AppSettings) -> com.aptrade.desktop.infra.AppSettings) {
+        notificationSettings = mutate(notificationSettings)
+        persistSettings(mutate)
     }
 
     fun closePalette() {
@@ -241,6 +271,11 @@ fun main() = application {
                     pendingExport = pendingExport,
                     accent = DK.accent.value,
                     onSelectAccent = { theme -> selectAccent(theme) },
+                    alertTarget = alertTarget,
+                    onOpenAlert = { asset -> alertTarget = asset },
+                    onCloseAlert = { alertTarget = null },
+                    notificationSettings = notificationSettings,
+                    onUpdateNotificationSettings = { mutate -> updateNotificationSettings(mutate) },
                 )
             }
         }
@@ -273,6 +308,11 @@ private fun AppRoot(
     pendingExport: androidx.compose.runtime.MutableState<Boolean>,
     accent: com.aptrade.desktop.designkit.AccentTheme,
     onSelectAccent: (com.aptrade.desktop.designkit.AccentTheme) -> Unit,
+    alertTarget: Asset?,
+    onOpenAlert: (Asset) -> Unit,
+    onCloseAlert: () -> Unit,
+    notificationSettings: com.aptrade.desktop.infra.AppSettings,
+    onUpdateNotificationSettings: ((com.aptrade.desktop.infra.AppSettings) -> com.aptrade.desktop.infra.AppSettings) -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(AppTab.Watchlist) }
     val watchState by watchlistViewModel.state.collectAsState()
@@ -321,6 +361,14 @@ private fun AppRoot(
                             },
                             onAdd = watchlistViewModel::onAdd,
                             onRemove = watchlistViewModel::onRemove,
+                            onSetAlert = { symbol ->
+                                // Watchlist rows only (macOS parity: no detail-screen alert
+                                // entry) — resolve the row's name/kind into the Asset the
+                                // sheet's header needs.
+                                watchState.rows.firstOrNull { it.symbol == symbol }?.let { row ->
+                                    onOpenAlert(Asset(symbol = row.symbol, name = row.name, kind = row.kind))
+                                }
+                            },
                             suggestQuery = addFieldState.query,
                             suggestResults = addFieldState.results,
                             onSuggestQueryChange = addFieldViewModel::onQueryChange,
@@ -392,6 +440,8 @@ private fun AppRoot(
                     onCloseAccount()
                 },
                 onClose = onCloseAccount,
+                notificationSettings = notificationSettings,
+                onUpdateNotificationSettings = onUpdateNotificationSettings,
             )
         }
 
@@ -417,6 +467,20 @@ private fun AppRoot(
                     }
                 },
                 onDismiss = onCloseTrade,
+            )
+        }
+
+        // The price-alert sheet overlays everything like the trade dialog, and likewise
+        // consumes Esc on its own panel before the window-level chain sees it. Live price
+        // text comes from the watchlist row (same source TradeTarget uses for its estimate).
+        alertTarget?.let { asset ->
+            PriceAlertSheet(
+                asset = asset,
+                currentPriceText = watchState.rows.firstOrNull { it.symbol == asset.symbol }?.amountText,
+                existing = watchlistViewModel.alertsFor(asset.symbol),
+                onCreate = { condition -> watchlistViewModel.createAlert(asset.symbol, condition) },
+                onDelete = { id -> watchlistViewModel.deleteAlert(id) },
+                onDismiss = onCloseAlert,
             )
         }
     }
