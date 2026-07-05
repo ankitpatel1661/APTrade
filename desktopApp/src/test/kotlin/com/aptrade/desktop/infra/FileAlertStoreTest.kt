@@ -75,13 +75,17 @@ class FileAlertStoreTest {
     fun `one unknown condition type corrupts the entire load, not just that row`() = runTest {
         // Mirrors FilePortfolioStore's anti-row-skip rationale: an alert list is a single
         // user-owned blob, so an unmappable entry means the file is untrusted as a whole,
-        // rather than silently dropping just the unrecognized alert.
+        // rather than silently dropping just the unrecognized alert. Both rows here are
+        // structurally valid (real nested `condition: {type, threshold/magnitude}` shape,
+        // matching AlertDTO/ConditionDTO/MoneyDTO exactly) so decoding succeeds and it's
+        // genuinely the `else -> return@withContext emptyList()` unknown-type mapping
+        // branch — not a MissingFieldException from a malformed shape — that is exercised.
         val file = tempFile()
         file.writeText(
             """
             {"alerts":[
-              {"id":"alert-1","symbol":"AAPL","conditionType":"PriceAbove","threshold":"200.00","magnitude":null,"createdAtEpochSeconds":1700000000,"isTriggered":false},
-              {"id":"alert-2","symbol":"TSLA","conditionType":"VolumeSpike","threshold":null,"magnitude":null,"createdAtEpochSeconds":1700000100,"isTriggered":false}
+              {"id":"alert-1","symbol":"AAPL","condition":{"type":"PriceAbove","threshold":{"amount":"200.00","currency":"USD"}},"createdAtEpochSeconds":1700000000,"isTriggered":false},
+              {"id":"alert-2","symbol":"TSLA","condition":{"type":"VolumeSpike"},"createdAtEpochSeconds":1700000100,"isTriggered":false}
             ]}
             """.trimIndent(),
         )

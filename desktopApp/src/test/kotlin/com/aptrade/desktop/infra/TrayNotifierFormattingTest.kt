@@ -95,7 +95,7 @@ class TrayNotifierFormattingTest {
     @Test
     fun `order fill body upper-cases the symbol`() {
         assertEquals(
-            "Bought 1 btc-usd".uppercase().let { "Bought 1 BTC-USD for $50,000.00" },
+            "Bought 1 BTC-USD for $50,000.00",
             formatOrderFillBody(TradeSide.Buy, "btc-usd", "1", "$50,000.00"),
         )
     }
