@@ -115,11 +115,14 @@ class AppGraph(
     // (Sources/APTradeApplication/SettingsUseCases.swift): read `settings.orderFills`
     // once per call, and only deliver when it's on. Handed to PortfolioViewModel as a
     // plain suspend closure (Task 4) since :shared has no OrderFillNotifier port.
+    //
+    // The gate itself is extracted into `buildNotifyOrderFill` (below) so it can be
+    // pinned by a test against a real `FileSettingsStore` without needing a real
+    // `TrayNotifier`/`TrayState` (AWT) — review fix for Task 4's one ungated-in-tests
+    // seam.
     val notifyOrderFill: suspend (TradeSide, String, String, String) -> Unit =
-        { side, symbol, quantityText, amountFormatted ->
-            if (settingsStore.load().orderFills) {
-                trayNotifier.notifyFill(side, symbol, quantityText, amountFormatted)
-            }
+        buildNotifyOrderFill(settingsStore) { side, symbol, quantityText, amountFormatted ->
+            trayNotifier.notifyFill(side, symbol, quantityText, amountFormatted)
         }
 
     // Only the production Yahoo repository and (when configured) the Finnhub news
@@ -130,3 +133,22 @@ class AppGraph(
         (newsRepository as? AutoCloseable)?.close()
     }
 }
+
+/**
+ * Builds the settings-gated order-fill closure: reads `settingsStore.load().orderFills`
+ * once per call and only invokes [deliver] when it's on. Extracted as a standalone,
+ * package-visible function (rather than inlined in [AppGraph]'s constructor) so a test
+ * can construct the REAL gate against a real [FileSettingsStore] (a temp-file store, no
+ * AWT dependency) with a recording `deliver` fake, and pin `orderFills = true`/`false`
+ * both ways — see `AppGraphNotifyOrderFillTest`. No behavior change from the inline form
+ * this replaces.
+ */
+internal fun buildNotifyOrderFill(
+    settingsStore: FileSettingsStore,
+    deliver: suspend (TradeSide, String, String, String) -> Unit,
+): suspend (TradeSide, String, String, String) -> Unit =
+    { side, symbol, quantityText, amountFormatted ->
+        if (settingsStore.load().orderFills) {
+            deliver(side, symbol, quantityText, amountFormatted)
+        }
+    }
