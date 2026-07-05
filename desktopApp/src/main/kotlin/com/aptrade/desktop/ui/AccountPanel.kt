@@ -50,6 +50,8 @@ import com.aptrade.desktop.designkit.BrandWordmark
 import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.designkit.DKSwitch
 import com.aptrade.desktop.designkit.InterFamily
+import com.aptrade.desktop.designkit.MoonIcon
+import com.aptrade.desktop.designkit.SunIcon
 import com.aptrade.desktop.infra.AppSettings
 
 /** The pages reachable inside the account panel. Root is the row list; the others are
@@ -70,6 +72,8 @@ private enum class AccountPage { Root, Appearance, About, Notifications, Placeho
 fun AccountPanel(
     accent: AccentTheme,
     onSelectAccent: (AccentTheme) -> Unit,
+    isDarkMode: Boolean,
+    onSelectTheme: (Boolean) -> Unit,
     onExportPortfolio: () -> Unit,
     onClose: () -> Unit,
     notificationSettings: AppSettings,
@@ -126,6 +130,8 @@ fun AccountPanel(
                 AccountPage.Appearance -> AppearancePage(
                     accent = accent,
                     onSelectAccent = onSelectAccent,
+                    isDarkMode = isDarkMode,
+                    onSelectTheme = onSelectTheme,
                     onBack = { page = AccountPage.Root },
                 )
                 AccountPage.About -> AboutPage(onBack = { page = AccountPage.Root })
@@ -191,10 +197,31 @@ private fun RootList(
 private fun AppearancePage(
     accent: AccentTheme,
     onSelectAccent: (AccentTheme) -> Unit,
+    isDarkMode: Boolean,
+    onSelectTheme: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     PanelHeader(title = "Appearance", onLeading = onBack, leadingGlyph = "‹")
     Spacer(Modifier.height(16.dp))
+    SectionLabel("THEME")
+    Spacer(Modifier.height(8.dp))
+    // ThemeManager.toggle() semantics (macOS RootView.swift appearancePage): tapping the
+    // row that's already selected is a no-op — only the non-current row's tap fires.
+    ThemeRow(
+        icon = { tint -> MoonIcon(tint = tint, modifier = Modifier.size(15.dp)) },
+        title = "Dark",
+        subtitle = "Default — gold on black",
+        selected = isDarkMode,
+        onClick = { if (!isDarkMode) onSelectTheme(true) },
+    )
+    ThemeRow(
+        icon = { tint -> SunIcon(tint = tint, modifier = Modifier.size(15.dp)) },
+        title = "Light",
+        subtitle = "Charcoal on warm white",
+        selected = !isDarkMode,
+        onClick = { if (isDarkMode) onSelectTheme(false) },
+    )
+    Spacer(Modifier.height(10.dp))
     SectionLabel("ACCENT")
     Spacer(Modifier.height(8.dp))
     for (option in AccentTheme.entries) {
@@ -203,6 +230,58 @@ private fun AppearancePage(
             selected = option == accent,
             onClick = { onSelectAccent(option) },
         )
+    }
+}
+
+@Composable
+private fun ThemeRow(
+    icon: @Composable (tint: Color) -> Unit,
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onClick() }
+            .padding(vertical = 10.dp, horizontal = 4.dp),
+    ) {
+        // 26dp leading glyph slot, matching AccentRow's 26dp leading circle.
+        Box(Modifier.size(26.dp), contentAlignment = Alignment.Center) {
+            icon(DK.gold)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                title,
+                style = TextStyle(
+                    fontFamily = InterFamily, fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold, color = DK.textPrimary,
+                ),
+            )
+            Text(
+                subtitle,
+                style = TextStyle(
+                    fontFamily = InterFamily, fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium, color = DK.textSecondary,
+                ),
+            )
+        }
+        if (selected) {
+            Text(
+                "✓",
+                style = TextStyle(
+                    fontFamily = InterFamily, fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold, color = DK.gold,
+                ),
+            )
+        }
     }
 }
 

@@ -21,6 +21,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -68,6 +69,59 @@ fun MagnifierIcon(tint: Color = DK.textSecondary, modifier: Modifier = Modifier.
             strokeWidth = stroke,
             cap = androidx.compose.ui.graphics.StrokeCap.Round,
         )
+    }
+}
+
+/** A hand-drawn crescent-moon glyph — SF Symbol "moon.fill" stand-in for the Appearance
+ *  page's Dark theme row (same Canvas-drawn-icon approach as [MagnifierIcon], no
+ *  material-icons dependency). Two overlapping filled circles, the second offset and
+ *  cleared with the background-blend trick (destination-out) to carve the crescent. */
+@Composable
+fun MoonIcon(tint: Color = DK.textPrimary, modifier: Modifier = Modifier.size(16.dp)) {
+    androidx.compose.foundation.Canvas(modifier) {
+        val r = size.minDimension * 0.42f
+        val center = androidx.compose.ui.geometry.Offset(size.width * 0.5f, size.height * 0.5f)
+        drawIntoCanvas { canvas ->
+            val layerBounds = androidx.compose.ui.geometry.Rect(
+                left = 0f, top = 0f, right = size.width, bottom = size.height,
+            )
+            canvas.saveLayer(layerBounds, androidx.compose.ui.graphics.Paint())
+            drawCircle(color = tint, radius = r, center = center)
+            drawCircle(
+                color = tint,
+                radius = r,
+                center = center + androidx.compose.ui.geometry.Offset(r * 0.62f, -r * 0.32f),
+                blendMode = androidx.compose.ui.graphics.BlendMode.DstOut,
+            )
+            canvas.restore()
+        }
+    }
+}
+
+/** A hand-drawn sun glyph — SF Symbol "sun.max.fill" stand-in for the Appearance page's
+ *  Light theme row (same Canvas-drawn-icon approach as [MagnifierIcon]). A filled disc
+ *  with eight short radial rays. */
+@Composable
+fun SunIcon(tint: Color = DK.textPrimary, modifier: Modifier = Modifier.size(16.dp)) {
+    androidx.compose.foundation.Canvas(modifier) {
+        val center = androidx.compose.ui.geometry.Offset(size.width * 0.5f, size.height * 0.5f)
+        val coreR = size.minDimension * 0.24f
+        val rayInner = coreR * 1.35f
+        val rayOuter = size.minDimension * 0.48f
+        val stroke = 1.4.dp.toPx()
+        drawCircle(color = tint, radius = coreR, center = center)
+        for (i in 0 until 8) {
+            val angle = (Math.PI / 4.0) * i
+            val cos = kotlin.math.cos(angle).toFloat()
+            val sin = kotlin.math.sin(angle).toFloat()
+            drawLine(
+                color = tint,
+                start = center + androidx.compose.ui.geometry.Offset(rayInner * cos, rayInner * sin),
+                end = center + androidx.compose.ui.geometry.Offset(rayOuter * cos, rayOuter * sin),
+                strokeWidth = stroke,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+            )
+        }
     }
 }
 

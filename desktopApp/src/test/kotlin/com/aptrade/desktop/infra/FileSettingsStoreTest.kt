@@ -123,4 +123,54 @@ class FileSettingsStoreTest {
         assertEquals(true, loaded.newsDigest)
         assertEquals(false, loaded.emailNotifications)
     }
+
+    // --- Theme (increment 6d.2) ---
+
+    @Test
+    fun `isDarkMode defaults to true`() = runTest {
+        assertEquals(true, AppSettings().isDarkMode)
+    }
+
+    @Test
+    fun `round-trips isDarkMode true`() = runTest {
+        val file = tempFile()
+        val store = FileSettingsStore(file)
+        store.save(AppSettings(isDarkMode = true))
+        assertEquals(true, store.load().isDarkMode)
+    }
+
+    @Test
+    fun `round-trips isDarkMode false`() = runTest {
+        val file = tempFile()
+        val store = FileSettingsStore(file)
+        store.save(AppSettings(isDarkMode = false))
+        assertEquals(false, store.load().isDarkMode)
+    }
+
+    @Test
+    fun `old file without isDarkMode loads fine with isDarkMode defaulting to true`() = runTest {
+        // Back-compat pin (same family as 6d.1's accent-only test): a settings.json written
+        // before increment 6d.2 has no "isDarkMode" key at all. Lenient decode must still
+        // succeed and default the new flag to true (dark — the shipped identity) rather than
+        // failing the whole-blob load.
+        val file = tempFile()
+        file.writeText("""{"accent":"Sapphire"}""")
+        val loaded = FileSettingsStore(file).load()
+        assertEquals(AccentTheme.Sapphire, loaded.accent)
+        assertEquals(true, loaded.isDarkMode)
+    }
+
+    @Test
+    fun `old notification-era file without isDarkMode still loads with isDarkMode defaulting to true`() = runTest {
+        // A 6d.1 file has accent + all five notification flags but predates isDarkMode.
+        val file = tempFile()
+        file.writeText(
+            """{"accent":"Platinum","priceAlerts":false,"orderFills":true,""" +
+                """"marketOpenClose":true,"newsDigest":false,"emailNotifications":true}""",
+        )
+        val loaded = FileSettingsStore(file).load()
+        assertEquals(AccentTheme.Platinum, loaded.accent)
+        assertEquals(false, loaded.priceAlerts)
+        assertEquals(true, loaded.isDarkMode)
+    }
 }

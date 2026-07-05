@@ -20,7 +20,11 @@ import kotlin.io.path.readText
  *  price alerts and order fills on by default, market open/close off (noisy for most
  *  users), the daily digest on, and email notifications off. [emailNotifications] is
  *  persisted-but-unwired by design — same as macOS, where no email delivery pipeline
- *  exists yet; the toggle exists for settings-screen parity only. */
+ *  exists yet; the toggle exists for settings-screen parity only.
+ *
+ *  [isDarkMode] (increment 6d.2) defaults to true — dark is the shipped identity, and an
+ *  old settings file written before this field existed must still load dark rather than
+ *  flash into an unrequested light mode. */
 data class AppSettings(
     val accent: AccentTheme = AccentTheme.ChampagneGold,
     val priceAlerts: Boolean = true,
@@ -28,6 +32,7 @@ data class AppSettings(
     val marketOpenClose: Boolean = false,
     val newsDigest: Boolean = true,
     val emailNotifications: Boolean = false,
+    val isDarkMode: Boolean = true,
 )
 
 /** JSON-file settings, a single blob (macOS single-blob parity).
@@ -49,6 +54,7 @@ class FileSettingsStore(private val file: Path) {
         val marketOpenClose: Boolean = false,
         val newsDigest: Boolean = true,
         val emailNotifications: Boolean = false,
+        val isDarkMode: Boolean = true,
     )
 
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
@@ -68,6 +74,7 @@ class FileSettingsStore(private val file: Path) {
                 marketOpenClose = dto.marketOpenClose,
                 newsDigest = dto.newsDigest,
                 emailNotifications = dto.emailNotifications,
+                isDarkMode = dto.isDarkMode,
             )
         } catch (e: SerializationException) {
             AppSettings()
@@ -85,6 +92,7 @@ class FileSettingsStore(private val file: Path) {
             marketOpenClose = settings.marketOpenClose,
             newsDigest = settings.newsDigest,
             emailNotifications = settings.emailNotifications,
+            isDarkMode = settings.isDarkMode,
         )
         val text = json.encodeToString(SettingsDTO.serializer(), dto)
         val temp = Files.createTempFile(file.parent, "settings", ".tmp")

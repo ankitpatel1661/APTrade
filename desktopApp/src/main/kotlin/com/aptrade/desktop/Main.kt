@@ -162,21 +162,23 @@ fun main() = application {
     var notificationSettings by remember { mutableStateOf(com.aptrade.desktop.infra.AppSettings()) }
     val windowState = rememberWindowState(width = 1280.dp, height = 800.dp)
 
-    // Load persisted settings once at startup. DK.accent stays Champagne Gold and
-    // notificationSettings stays at AppSettings() defaults until this resolves — both are
-    // pixel/value-identical to the defaults, so no flash of the wrong state. Applying the
-    // loaded accent flips DK.accent, which recomposes every gold reader. CancellationException
-    // must propagate so scope teardown isn't swallowed.
+    // Load persisted settings once at startup. DK.accent stays Champagne Gold, DK.isDark stays
+    // true, and notificationSettings stays at AppSettings() defaults until this resolves — all
+    // three are pixel/value-identical to the defaults, so no flash of the wrong state. Applying
+    // the loaded accent/isDarkMode flips DK.accent/DK.isDark, which recomposes every gold/mode
+    // reader (an instant colorScheme swap — no animation, recorded decision).
+    // CancellationException must propagate so scope teardown isn't swallowed.
     LaunchedEffect(Unit) {
         try {
             val loaded = graph.settingsStore.load()
             DK.accent.value = loaded.accent
+            DK.isDark.value = loaded.isDarkMode
             notificationSettings = loaded
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (_: Throwable) {
             // Corrupt/unreadable settings already fall back to defaults inside the store; any
-            // other unexpected failure keeps the default accent rather than crashing startup.
+            // other unexpected failure keeps the default accent/theme rather than crashing startup.
         }
     }
 
@@ -206,6 +208,13 @@ fun main() = application {
     fun selectAccent(theme: com.aptrade.desktop.designkit.AccentTheme) {
         DK.accent.value = theme
         persistSettings { it.copy(accent = theme) }
+    }
+
+    // Mirrors selectAccent exactly: flip the live DK state first (instant colorScheme swap,
+    // no animation — recorded decision) then persist through the same load-merge-save seam.
+    fun selectTheme(isDarkMode: Boolean) {
+        DK.isDark.value = isDarkMode
+        persistSettings { it.copy(isDarkMode = isDarkMode) }
     }
 
     fun updateNotificationSettings(mutate: (com.aptrade.desktop.infra.AppSettings) -> com.aptrade.desktop.infra.AppSettings) {
@@ -275,6 +284,8 @@ fun main() = application {
                     pendingExport = pendingExport,
                     accent = DK.accent.value,
                     onSelectAccent = { theme -> selectAccent(theme) },
+                    isDarkMode = DK.isDark.value,
+                    onSelectTheme = { dark -> selectTheme(dark) },
                     alertTarget = alertTarget,
                     onOpenAlert = { asset -> alertTarget = asset },
                     onCloseAlert = { alertTarget = null },
@@ -312,6 +323,8 @@ private fun AppRoot(
     pendingExport: androidx.compose.runtime.MutableState<Boolean>,
     accent: com.aptrade.desktop.designkit.AccentTheme,
     onSelectAccent: (com.aptrade.desktop.designkit.AccentTheme) -> Unit,
+    isDarkMode: Boolean,
+    onSelectTheme: (Boolean) -> Unit,
     alertTarget: Asset?,
     onOpenAlert: (Asset) -> Unit,
     onCloseAlert: () -> Unit,
@@ -438,6 +451,8 @@ private fun AppRoot(
             AccountPanel(
                 accent = accent,
                 onSelectAccent = onSelectAccent,
+                isDarkMode = isDarkMode,
+                onSelectTheme = onSelectTheme,
                 onExportPortfolio = {
                     selectedTab = AppTab.Portfolio
                     pendingExport.value = true
