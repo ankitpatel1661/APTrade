@@ -65,4 +65,62 @@ class FileSettingsStoreTest {
         file.writeText("{}")
         assertEquals(AccentTheme.ChampagneGold, FileSettingsStore(file).load().accent)
     }
+
+    // --- Notification flags (increment 6d.1) ---
+
+    @Test
+    fun `defaults match macOS notification defaults`() = runTest {
+        val defaults = AppSettings()
+        assertEquals(true, defaults.priceAlerts)
+        assertEquals(true, defaults.orderFills)
+        assertEquals(false, defaults.marketOpenClose)
+        assertEquals(true, defaults.newsDigest)
+        assertEquals(false, defaults.emailNotifications)
+    }
+
+    @Test
+    fun `old accent-only file loads fine with the new notification defaults`() = runTest {
+        // Back-compat pin: a settings.json written before increment 6d.1 has only the
+        // "accent" key. Lenient decode must still succeed and fill in the new flags'
+        // defaults rather than failing the whole-blob load.
+        val file = tempFile()
+        file.writeText("""{"accent":"Sapphire"}""")
+        val loaded = FileSettingsStore(file).load()
+        assertEquals(AccentTheme.Sapphire, loaded.accent)
+        assertEquals(true, loaded.priceAlerts)
+        assertEquals(true, loaded.orderFills)
+        assertEquals(false, loaded.marketOpenClose)
+        assertEquals(true, loaded.newsDigest)
+        assertEquals(false, loaded.emailNotifications)
+    }
+
+    @Test
+    fun `round-trips all notification flags set to non-default values`() = runTest {
+        val file = tempFile()
+        val store = FileSettingsStore(file)
+        val settings = AppSettings(
+            accent = AccentTheme.ChampagneGold,
+            priceAlerts = false,
+            orderFills = false,
+            marketOpenClose = true,
+            newsDigest = false,
+            emailNotifications = true,
+        )
+        store.save(settings)
+        assertEquals(settings, store.load())
+    }
+
+    @Test
+    fun `missing notification keys in an otherwise valid file fall back to defaults`() = runTest {
+        val file = tempFile()
+        file.writeText("""{"accent":"Platinum","priceAlerts":false}""")
+        val loaded = FileSettingsStore(file).load()
+        assertEquals(AccentTheme.Platinum, loaded.accent)
+        assertEquals(false, loaded.priceAlerts)
+        // Everything else absent from the file: defaults.
+        assertEquals(true, loaded.orderFills)
+        assertEquals(false, loaded.marketOpenClose)
+        assertEquals(true, loaded.newsDigest)
+        assertEquals(false, loaded.emailNotifications)
+    }
 }

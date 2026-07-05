@@ -18,7 +18,9 @@ import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
@@ -55,6 +57,20 @@ import java.awt.Dimension
 fun main() = application {
     // ONE AppGraph — one Ktor client — for the whole process.
     val graph = remember { AppGraph() }
+
+    // RECORDED DIVERGENCE (increment 6d.1, macOS parity gap): macOS delivers alert/
+    // order-fill/market notifications via UNUserNotificationCenter — no equivalent
+    // cross-platform notification-center API exists in Compose Multiplatform for
+    // Desktop. The portable primitive is TrayState.sendNotification, which requires a
+    // Tray composable (carrying the app icon) mounted in this ApplicationScope. This
+    // Tray joins graph.trayState — the same instance TrayNotifier posts to — so a
+    // sendNotification call from anywhere in the app surfaces as a real OS tray
+    // notification. See TrayNotifier.kt for the full rationale.
+    Tray(
+        icon = painterResource("brand/AppLogo.png"),
+        state = graph.trayState,
+        tooltip = "APTrade",
+    )
 
     // A single Main-confined scope owns the polling watchlist + palette search VMs;
     // it lives as long as the app process, so cancel it when the window closes.

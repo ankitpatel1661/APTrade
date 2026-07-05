@@ -13,21 +13,42 @@ import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 
-/** The app's persisted preferences, framework-free. One value today (the brand accent);
- *  the DTO carries defaults so future fields can be added without breaking old files. */
+/** The app's persisted preferences, framework-free. The DTO carries defaults so future
+ *  fields can be added without breaking old files.
+ *
+ *  Notification flags (increment 6d.1) mirror macOS's `AppSettings` defaults exactly:
+ *  price alerts and order fills on by default, market open/close off (noisy for most
+ *  users), the daily digest on, and email notifications off. [emailNotifications] is
+ *  persisted-but-unwired by design — same as macOS, where no email delivery pipeline
+ *  exists yet; the toggle exists for settings-screen parity only. */
 data class AppSettings(
     val accent: AccentTheme = AccentTheme.ChampagneGold,
+    val priceAlerts: Boolean = true,
+    val orderFills: Boolean = true,
+    val marketOpenClose: Boolean = false,
+    val newsDigest: Boolean = true,
+    val emailNotifications: Boolean = false,
 )
 
-/** JSON-file settings, a single blob `{"accent":"ChampagneGold"}` (macOS single-blob parity).
+/** JSON-file settings, a single blob (macOS single-blob parity).
  *  Mirrors FilePortfolioStore's philosophy: writes are atomic (temp file + ATOMIC_MOVE, so a
  *  crash mid-save can never leave a half-written file); a missing, corrupt, or unknown-enum
- *  file loads the whole-blob defaults rather than a partial merge. */
+ *  file loads the whole-blob defaults rather than a partial merge. Individual notification
+ *  flags decode leniently (each key defaults independently), so a pre-6d.1 file containing
+ *  only `{"accent":...}` still loads successfully with the new flags at their defaults —
+ *  this is the one place field-level lenient decode is intentional, since the boolean flags
+ *  are independent user preferences rather than a structurally-interdependent blob (unlike
+ *  the accent enum, which still triggers whole-blob fallback on an unknown name). */
 class FileSettingsStore(private val file: Path) {
 
     @Serializable
     private data class SettingsDTO(
         val accent: String = AccentTheme.ChampagneGold.name,
+        val priceAlerts: Boolean = true,
+        val orderFills: Boolean = true,
+        val marketOpenClose: Boolean = false,
+        val newsDigest: Boolean = true,
+        val emailNotifications: Boolean = false,
     )
 
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
@@ -40,7 +61,14 @@ class FileSettingsStore(private val file: Path) {
             // can't map means the file is untrusted, so fall back rather than partially apply).
             val accent = AccentTheme.entries.firstOrNull { it.name == dto.accent }
                 ?: return@withContext AppSettings()
-            AppSettings(accent = accent)
+            AppSettings(
+                accent = accent,
+                priceAlerts = dto.priceAlerts,
+                orderFills = dto.orderFills,
+                marketOpenClose = dto.marketOpenClose,
+                newsDigest = dto.newsDigest,
+                emailNotifications = dto.emailNotifications,
+            )
         } catch (e: SerializationException) {
             AppSettings()
         } catch (e: IllegalArgumentException) {
@@ -50,7 +78,14 @@ class FileSettingsStore(private val file: Path) {
 
     suspend fun save(settings: AppSettings) = withContext(Dispatchers.IO) {
         file.parent?.createDirectories()
-        val dto = SettingsDTO(accent = settings.accent.name)
+        val dto = SettingsDTO(
+            accent = settings.accent.name,
+            priceAlerts = settings.priceAlerts,
+            orderFills = settings.orderFills,
+            marketOpenClose = settings.marketOpenClose,
+            newsDigest = settings.newsDigest,
+            emailNotifications = settings.emailNotifications,
+        )
         val text = json.encodeToString(SettingsDTO.serializer(), dto)
         val temp = Files.createTempFile(file.parent, "settings", ".tmp")
         Files.writeString(temp, text)

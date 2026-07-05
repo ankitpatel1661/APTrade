@@ -1,13 +1,20 @@
 package com.aptrade.desktop
 
+import androidx.compose.ui.window.TrayState
+import com.aptrade.desktop.infra.FileAlertStore
 import com.aptrade.desktop.infra.FileBookmarkStore
+import com.aptrade.desktop.infra.FileSchedulerStateStore
 import com.aptrade.desktop.infra.FileSettingsStore
 import com.aptrade.desktop.infra.FileWatchlistStore
 import com.aptrade.desktop.infra.FinnhubKeyConfig
+import com.aptrade.desktop.infra.TrayNotifier
 import com.aptrade.desktop.infra.resolveConfigDir
 import com.aptrade.shared.application.AddToWatchlist
+import com.aptrade.shared.application.AlertStore
 import com.aptrade.shared.application.BookmarkStore
 import com.aptrade.shared.application.BuyAsset
+import com.aptrade.shared.application.CreatePriceAlert
+import com.aptrade.shared.application.EvaluateAlerts
 import com.aptrade.shared.application.FetchCandles
 import com.aptrade.shared.application.FetchCompanyNews
 import com.aptrade.shared.application.FetchHistory
@@ -19,12 +26,16 @@ import com.aptrade.shared.application.FetchPortfolioPerformance
 import com.aptrade.shared.application.FetchProfile
 import com.aptrade.shared.application.FetchSearch
 import com.aptrade.shared.application.FetchWatchlist
+import com.aptrade.shared.application.LoadAlerts
 import com.aptrade.shared.application.LoadBookmarks
+import com.aptrade.shared.application.MarketActivityPlanner
 import com.aptrade.shared.application.MarketDataRepository
 import com.aptrade.shared.application.NewsRepository
 import com.aptrade.shared.application.PortfolioStore
 import com.aptrade.shared.application.RemoveFromWatchlist
+import com.aptrade.shared.application.RemovePriceAlert
 import com.aptrade.shared.application.ResetPortfolio
+import com.aptrade.shared.application.SchedulerStateStore
 import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.application.ToggleBookmark
 import com.aptrade.shared.application.WatchlistStore
@@ -43,6 +54,14 @@ class AppGraph(
     portfolioStore: PortfolioStore = FilePortfolioStore(resolveConfigDir().resolve("portfolio.json")),
     val settingsStore: FileSettingsStore = FileSettingsStore(resolveConfigDir().resolve("settings.json")),
     val bookmarkStore: BookmarkStore = FileBookmarkStore(resolveConfigDir().resolve("bookmarks.json")),
+    alertStore: AlertStore = FileAlertStore(resolveConfigDir().resolve("alerts.json")),
+    val schedulerStateStore: SchedulerStateStore = FileSchedulerStateStore(resolveConfigDir().resolve("schedulerState.json")),
+    // Constructed once here (not via rememberTrayState() in Main.kt) so the SAME instance
+    // backs both the Tray composable (which renders the OS tray icon) and TrayNotifier
+    // (which posts to it) — one tray, one notifier, one process, matching every other
+    // "exactly one X per process" seam in this graph. TrayState's constructor is a plain
+    // no-arg Kotlin constructor (not Composable-scoped), so this is safe outside Compose.
+    val trayState: TrayState = TrayState(),
     finnhubApiKey: String? = FinnhubKeyConfig().finnhubApiKey(),
 ) {
     val fetchMarketQuotes = FetchMarketQuotes(repository)
@@ -77,6 +96,22 @@ class AppGraph(
     val toggleBookmark = ToggleBookmark(bookmarkStore)
     val fetchMarketNews = newsRepository?.let { FetchMarketNews(it) }
     val fetchCompanyNews = newsRepository?.let { FetchCompanyNews(it) }
+
+    // Alerts & notifications (increment 6d.1). The notifier seam: TrayNotifier delivers
+    // via the shared `trayState`, which the Tray composable in Main.kt also mounts. Wiring
+    // EvaluateAlerts into a polling ViewModel and MarketActivityPlanner into a scheduler
+    // loop is increment 6d.1 Task 4's job — this graph only assembles the pieces so Task 4
+    // has them ready to consume.
+    val trayNotifier = TrayNotifier(trayState)
+    val loadAlerts = LoadAlerts(alertStore)
+    val createPriceAlert = CreatePriceAlert(alertStore)
+    val removePriceAlert = RemovePriceAlert(alertStore)
+    val evaluateAlerts = EvaluateAlerts(
+        store = alertStore,
+        notifier = trayNotifier,
+        isNotifyEnabled = { settingsStore.load().priceAlerts },
+    )
+    val marketActivityPlanner = MarketActivityPlanner()
 
     // Only the production Yahoo repository and (when configured) the Finnhub news
     // repository own closeable Ktor clients; test doubles passed via the constructor
