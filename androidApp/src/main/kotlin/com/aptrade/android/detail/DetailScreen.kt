@@ -49,6 +49,7 @@ fun DetailScreen(symbol: String) {
             fetchProfile = AppGraph.fetchProfile,
             fetchHistory = AppGraph.fetchHistory,
             fetchCandles = AppGraph.fetchCandles,
+            fetchMarketQuotes = AppGraph.fetchMarketQuotes,
             buyAsset = portfolio.buyAsset,
             sellAsset = portfolio.sellAsset,
             nowEpochSeconds = { System.currentTimeMillis() / 1000 },
@@ -76,6 +77,10 @@ fun DetailScreen(symbol: String) {
 
         Button(
             onClick = { tradeSide = TradeSide.Buy },
+            // Gated on profileResolved (not kindLabel != null): a profile ERROR still resolves
+            // and allows the Stock-fallback trade path; only the in-flight window is blocked,
+            // so a crypto/ETF asset can never fire tradeAsset() before its real kind is known.
+            enabled = state.profileResolved,
             modifier = Modifier.fillMaxWidth(),
         ) { Text("BUY / SELL") }
         Spacer(Modifier.height(16.dp))
@@ -125,7 +130,7 @@ fun DetailScreen(symbol: String) {
                 symbol = state.symbol,
                 // Fall back to the symbol as the display name until the profile header resolves.
                 name = state.name ?: state.symbol,
-                priceText = null,
+                priceText = state.priceText,
                 initialSide = side,
             ),
             tradeError = state.tradeError,

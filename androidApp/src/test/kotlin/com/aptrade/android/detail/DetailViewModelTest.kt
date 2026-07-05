@@ -5,6 +5,7 @@ import com.aptrade.android.FakePortfolioStore
 import com.aptrade.shared.application.BuyAsset
 import com.aptrade.shared.application.FetchCandles
 import com.aptrade.shared.application.FetchHistory
+import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchProfile
 import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.SellAsset
@@ -48,6 +49,7 @@ class DetailViewModelTest {
         fetchProfile = FetchProfile(repo),
         fetchHistory = FetchHistory(repo),
         fetchCandles = FetchCandles(repo),
+        fetchMarketQuotes = FetchMarketQuotes(repo),
         buyAsset = BuyAsset(repo, store, Mutex()),
         sellAsset = SellAsset(repo, store, Mutex()),
         nowEpochSeconds = now,
@@ -214,5 +216,83 @@ class DetailViewModelTest {
 
         assertEquals("Enter a valid quantity.", viewModel.state.value.tradeError)
         assertEquals(0, store.saveCallCount) // never reached the store-mediated use case
+    }
+
+    // --- Task 5: kind-gate + quote pass-through -----------------------------------------------
+
+    @Test
+    fun cryptoKindIsResolvedBeforeTradeSoBuyNeverMisclassifiesAsStock() = runTest(dispatcher.scheduler) {
+        val repo = FakeMarketDataRepository()
+        repo.profileImpl = { Asset(it, "Bitcoin", AssetKind.Crypto) }
+        repo.quotesImpl = { listOf(Quote("BTC-USD", Money.usd("60000"), Money.usd("60000"), 0.0)) }
+        val store = FakePortfolioStore()
+        val viewModel = vm(repo, symbol = "BTC-USD", store = store)
+
+        // Profile hasn't resolved yet: the gate must hold.
+        assertEquals(false, viewModel.state.value.profileResolved)
+
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(true, viewModel.state.value.profileResolved)
+        assertEquals("Crypto", viewModel.state.value.kindLabel)
+
+        viewModel.buy("0.1")
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val position = store.saved!!.positions.first()
+        assertEquals(AssetKind.Crypto, position.asset.kind) // NOT Stock
+    }
+
+    @Test
+    fun profileResolvedGateIsFalseUntilProfileSucceeds() = runTest(dispatcher.scheduler) {
+        val repo = FakeMarketDataRepository()
+        repo.profileImpl = { Asset(it, "Apple Inc.", AssetKind.Stock) }
+        val viewModel = vm(repo)
+
+        assertEquals(false, viewModel.state.value.profileResolved)
+
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(true, viewModel.state.value.profileResolved)
+    }
+
+    @Test
+    fun profileResolvedGateIsTrueAfterProfileErrorToo() = runTest(dispatcher.scheduler) {
+        val repo = FakeMarketDataRepository()
+        repo.profileImpl = { throw QuoteError.NotFound }
+        val viewModel = vm(repo)
+
+        assertEquals(false, viewModel.state.value.profileResolved)
+
+        dispatcher.scheduler.advanceUntilIdle()
+
+        // Resolved (error path) — the gate opens, and the Stock fallback now applies.
+        assertEquals(true, viewModel.state.value.profileResolved)
+        assertNotNull(viewModel.state.value.profileError)
+    }
+
+    @Test
+    fun priceTextIsPopulatedFromTheLiveQuote() = runTest(dispatcher.scheduler) {
+        val repo = FakeMarketDataRepository()
+        repo.profileImpl = { Asset(it, "Apple Inc.", AssetKind.Stock) }
+        repo.quotesImpl = { listOf(Quote("AAPL", Money.usd("187.50"), Money.usd("185.00"), 1.35)) }
+        val viewModel = vm(repo)
+
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("$187.50", viewModel.state.value.priceText)
+    }
+
+    @Test
+    fun quoteFailureLeavesTradingAliveWithNullPriceText() = runTest(dispatcher.scheduler) {
+        val repo = FakeMarketDataRepository()
+        repo.profileImpl = { Asset(it, "Apple Inc.", AssetKind.Stock) }
+        repo.quotesImpl = { throw QuoteError.Network("timeout") }
+        val viewModel = vm(repo)
+
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertNull(viewModel.state.value.priceText)
+        assertEquals(true, viewModel.state.value.profileResolved) // gate still opens normally
     }
 }

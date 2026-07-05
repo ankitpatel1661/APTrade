@@ -3,10 +3,12 @@ package com.aptrade.android.detail
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aptrade.android.ui.label
+import com.aptrade.android.ui.money
 import com.aptrade.android.ui.userMessage
 import com.aptrade.shared.application.BuyAsset
 import com.aptrade.shared.application.FetchCandles
 import com.aptrade.shared.application.FetchHistory
+import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchProfile
 import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.SellAsset
@@ -31,6 +33,14 @@ data class DetailUiState(
     val name: String? = null,
     val kindLabel: String? = null,
     val profileError: String? = null,
+    /** True once the profile request has RESOLVED — success or error, doesn't matter which.
+     *  Gates the BUY/SELL entry point so a trade can never fire while [kindLabel] is still
+     *  unset (the window in which a crypto/ETF asset would be misclassified as Stock). */
+    val profileResolved: Boolean = false,
+    /** Pre-formatted live price for the TradeSheet's AssistChip (≡ portfolio holding row's
+     *  `priceText`, via [com.aptrade.android.ui.money] over `Quote.price.amountText`). Fetched
+     *  in its own isolated coroutine; stays null on failure — this NEVER gates trading. */
+    val priceText: String? = null,
     val timeframe: Timeframe = Timeframe.OneDay,
     val mode: ChartMode = ChartMode.Line,
     val lineValues: List<Double> = emptyList(),
@@ -68,6 +78,7 @@ class DetailViewModel(
     private val fetchProfile: FetchProfile,
     private val fetchHistory: FetchHistory,
     private val fetchCandles: FetchCandles,
+    private val fetchMarketQuotes: FetchMarketQuotes,
     private val buyAsset: BuyAsset,
     private val sellAsset: SellAsset,
     private val nowEpochSeconds: () -> Long,
@@ -81,11 +92,27 @@ class DetailViewModel(
         viewModelScope.launch {
             try {
                 val asset = fetchProfile.execute(symbol)
-                _state.update { it.copy(name = asset.name, kindLabel = asset.kind.label()) }
+                _state.update {
+                    it.copy(name = asset.name, kindLabel = asset.kind.label(), profileResolved = true)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: QuoteError) {
-                _state.update { it.copy(profileError = e.userMessage()) }
+                _state.update { it.copy(profileError = e.userMessage(), profileResolved = true) }
+            }
+        }
+        // Isolated from the profile/chart coroutines: a quote failure must never disable
+        // trading, so it is swallowed silently here (macOS parity) — priceText simply stays null.
+        viewModelScope.launch {
+            try {
+                val quote = fetchMarketQuotes.execute(listOf(symbol)).firstOrNull { it.symbol == symbol }
+                if (quote != null) {
+                    _state.update { it.copy(priceText = money(quote.price.amountText)) }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: QuoteError) {
+                // Silent: priceText stays null, trading remains available.
             }
         }
         loadChart()
@@ -104,8 +131,10 @@ class DetailViewModel(
     fun retryChart() = loadChart()
 
     /** The [Asset] to buy: this screen's [symbol] plus the name/kind loaded by the profile fetch.
-     *  Falls back to `Asset(symbol, symbol, Stock)` ONLY when the profile hasn't resolved (name
-     *  genuinely absent — e.g. a profile error) so a BUY is never blocked on the header load. */
+     *  Falls back to `Asset(symbol, symbol, Stock)` ONLY when the profile resolved with an ERROR
+     *  (kindLabel genuinely absent) — the UI gates BUY/SELL entry on [DetailUiState.profileResolved]
+     *  so this is never reached while the profile fetch is still in flight; a successfully-loaded
+     *  crypto or ETF asset is therefore never misclassified as Stock. */
     private fun tradeAsset(): Asset {
         val s = _state.value
         val kind = when (s.kindLabel) {
