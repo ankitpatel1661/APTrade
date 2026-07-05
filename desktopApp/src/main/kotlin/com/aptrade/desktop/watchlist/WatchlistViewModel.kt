@@ -2,12 +2,15 @@ package com.aptrade.desktop.watchlist
 
 import com.aptrade.desktop.ui.userMessage
 import com.aptrade.shared.application.AddToWatchlist
+import com.aptrade.shared.application.EvaluateAlerts
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchWatchlist
 import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.RemoveFromWatchlist
 import com.aptrade.shared.domain.AssetKind
+import com.aptrade.shared.domain.Money
+import com.aptrade.shared.domain.Quote
 import com.aptrade.shared.domain.Timeframe
 import com.aptrade.shared.domain.WatchlistEntry
 import kotlinx.coroutines.CancellationException
@@ -40,11 +43,23 @@ data class WatchlistUiState(
     val error: String? = null,
     val averageChange: Double? = null,        // mean change% across all entries; null when no quotes
     val averageSpark: List<Double> = emptyList(),  // per-index mean of percent-normalized row sparks
+    /** Untriggered-alert count per symbol, for the row bells. Symbols with no alerts (or
+     *  only triggered ones) are simply absent — callers should default to 0. */
+    val alertCounts: Map<String, Int> = emptyMap(),
 )
 
 /** Owns the watchlist + 15s polling loop (quotes every tick, sparklines every
  *  `sparkEveryTicks`-th — the macOS cadence). Poll failures keep the last good
  *  rows and surface a banner; sparkline failures are silently tolerated.
+ *
+ *  Every tick additionally runs [evaluateAlerts] over the freshly-fetched quotes — macOS
+ *  parity (Sources/APTradeApp/WatchlistViewModel.swift's `refresh(showIndicator:)`):
+ *  inline, every call, with no market-hours gate. A notifier failure inside
+ *  `EvaluateAlerts.execute` would otherwise propagate to this poll loop, so it is
+ *  isolated the same way `refreshQuotes`/`refreshSparks` isolate repository failures:
+ *  CancellationException rethrown, everything else swallowed (the row's alert badge
+ *  simply keeps its last-good count for that tick).
+ *
  *  `scope` MUST be single-thread-confined (Dispatchers.Main on desktop): the internal
  *  entries/quotes/sparks vars rely on that confinement instead of locks. */
 class WatchlistViewModel(
@@ -53,6 +68,7 @@ class WatchlistViewModel(
     private val fetchWatchlist: FetchWatchlist,
     private val addToWatchlist: AddToWatchlist,
     private val removeFromWatchlist: RemoveFromWatchlist,
+    private val evaluateAlerts: EvaluateAlerts,
     private val scope: CoroutineScope,
     private val tickMillis: Long = 15_000,
     private val sparkEveryTicks: Int = 4,
@@ -63,6 +79,7 @@ class WatchlistViewModel(
     private var entries: List<WatchlistEntry> = emptyList()
     private var quotes: Map<String, Pair<String, Double>> = emptyMap()  // symbol -> (amountText, change%)
     private var sparks: Map<String, List<Double>> = emptyMap()
+    private var alertCounts: Map<String, Int> = emptyMap()
     private var pollJob: Job? = null
 
     fun start() {
@@ -73,6 +90,7 @@ class WatchlistViewModel(
             while (isActive) {
                 refreshQuotes()
                 if (tick % sparkEveryTicks == 0) refreshSparks()
+                refreshAlerts()
                 publish(loading = false)
                 tick++
                 delay(tickMillis)
@@ -81,7 +99,14 @@ class WatchlistViewModel(
     }
 
     fun refresh() {
-        scope.launch { refreshQuotes(); refreshSparks(); publish(loading = false) }
+        scope.launch { refreshQuotes(); refreshSparks(); refreshAlerts(); publish(loading = false) }
+    }
+
+    /** Reloads the untriggered-alert counts without touching quotes/sparks — for the
+     *  create/remove alert sheet to call after it mutates the alert list, so row bells
+     *  update immediately rather than waiting for the next poll tick. */
+    fun reloadAlerts() {
+        scope.launch { refreshAlerts(); publish(loading = _state.value.isLoading) }
     }
 
     fun onKindSelect(kind: AssetKind) {
@@ -119,6 +144,32 @@ class WatchlistViewModel(
             throw e
         } catch (e: QuoteError) {
             _state.update { it.copy(error = e.userMessage()) }   // keep last-good quotes
+        }
+    }
+
+    /** Runs [EvaluateAlerts] against this tick's freshly-fetched quotes (whatever
+     *  `refreshQuotes` last populated `quotes` with — a poll failure already left that
+     *  map at its last-good value, so alerts still evaluate against last-good prices
+     *  rather than going blind for a tick). A failure here (persistence or the notifier)
+     *  must never break the poll: CancellationException rethrows, everything else keeps
+     *  the last-good `alertCounts`. */
+    private suspend fun refreshAlerts() {
+        if (quotes.isEmpty()) return
+        try {
+            // EvaluateAlerts only reads `price`/`changePercent` (PriceAlert.isMet) — this
+            // map's `quotes` cache doesn't retain `previousClose`, so it's set equal to
+            // `price` here; it is inert for every current AlertCondition variant.
+            val quoteMap = quotes.mapValues { (symbol, pair) ->
+                val price = Money.usd(pair.first)
+                Quote(symbol = symbol, price = price, previousClose = price, changePercent = pair.second)
+            }
+            val alerts = evaluateAlerts.execute(quoteMap)
+            alertCounts = alerts.filter { !it.isTriggered }.groupingBy { it.symbol }.eachCount()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            // Alert evaluation is additive to the poll — never surface its failure as a
+            // watchlist error banner; keep the last-good counts for this tick.
         }
     }
 
@@ -166,6 +217,7 @@ class WatchlistViewModel(
                 decliners = changes.count { c -> c < 0 },
                 averageChange = changes.takeIf { c -> c.isNotEmpty() }?.average(),
                 averageSpark = averageSpark(),
+                alertCounts = alertCounts,
             )
         }
     }

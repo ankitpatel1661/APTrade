@@ -48,6 +48,7 @@ private fun vm(
     scope: kotlinx.coroutines.CoroutineScope,
     nowEpochSeconds: () -> Long = { 0L },
     zoneId: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+    notifyOrderFill: suspend (TradeSide, String, String, String) -> Unit = { _, _, _, _ -> },
 ) = PortfolioViewModel(
     fetchPortfolio = FetchPortfolio(store),
     fetchMarketQuotes = FetchMarketQuotes(repo),
@@ -58,6 +59,7 @@ private fun vm(
     scope = scope,
     nowEpochSeconds = nowEpochSeconds,
     zoneId = zoneId,
+    notifyOrderFill = notifyOrderFill,
 )
 
 class PortfolioViewModelTest {
@@ -588,4 +590,92 @@ class PortfolioViewModelTest {
         // Equal length by Task-1 alignment.
         assertEquals(s.performanceValues.size, s.benchmarkTwinValues!!.size)
     }
+
+    // --- Order-fill notifications (increment 6d.1 Task 4) ---------------------------
+
+    @Test
+    fun successfulBuyFiresOrderFillNotification() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
+        val store = InMemoryPortfolioStore()
+        val notified = mutableListOf<Quadruple>()
+        val vm = vm(repo, store, backgroundScope, nowEpochSeconds = { 1_000L }, notifyOrderFill = { side, symbol, qty, amount ->
+            notified += Quadruple(side, symbol, qty, amount)
+        })
+        vm.start(); runCurrent()
+
+        vm.buy(aapl, "10"); runCurrent()
+
+        assertEquals(1, notified.size)
+        assertEquals(TradeSide.Buy, notified.single().side)
+        assertEquals("AAPL", notified.single().symbol)
+        assertEquals("10", notified.single().quantityText)
+        assertEquals("$1,000.00", notified.single().amountFormatted)
+    }
+
+    @Test
+    fun successfulSellFiresOrderFillNotification() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
+        val seeded = Portfolio(
+            cash = Money.usd("99000"),
+            positions = listOf(Position(aapl, BigDecimal.parseString("10"), Money.usd("100.00"), Money.usd("0"))),
+            transactions = listOf(
+                Transaction("txn-1", "AAPL", TradeSide.Buy, BigDecimal.parseString("10"), Money.usd("100.00"), 500L),
+            ),
+        )
+        val store = InMemoryPortfolioStore(seeded)
+        val notified = mutableListOf<Quadruple>()
+        val vm = vm(repo, store, backgroundScope, nowEpochSeconds = { 1_000L }, notifyOrderFill = { side, symbol, qty, amount ->
+            notified += Quadruple(side, symbol, qty, amount)
+        })
+        vm.start(); runCurrent()
+
+        vm.sell("AAPL", "4"); runCurrent()
+
+        assertEquals(1, notified.size)
+        assertEquals(TradeSide.Sell, notified.single().side)
+        assertEquals("AAPL", notified.single().symbol)
+        assertEquals("4", notified.single().quantityText)
+        assertEquals("$400.00", notified.single().amountFormatted)
+    }
+
+    @Test
+    fun failedBuyNeverFiresOrderFillNotification() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "1000000.00") } }
+        val store = InMemoryPortfolioStore()
+        var notifyCount = 0
+        val vm = vm(repo, store, backgroundScope, notifyOrderFill = { _, _, _, _ -> notifyCount++ })
+        vm.start(); runCurrent()
+
+        vm.buy(aapl, "10"); runCurrent()
+
+        assertEquals(0, notifyCount)
+    }
+
+    @Test
+    fun tradeNeverFailsWhenNotifierThrows() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
+        val store = InMemoryPortfolioStore()
+        val vm = vm(repo, store, backgroundScope, nowEpochSeconds = { 1_000L }, notifyOrderFill = { _, _, _, _ ->
+            throw RuntimeException("tray unavailable")
+        })
+        vm.start(); runCurrent()
+
+        vm.buy(aapl, "10"); runCurrent()
+
+        val s = vm.state.value
+        assertNull(s.tradeError)
+        assertEquals(listOf("AAPL"), s.holdings.map { it.symbol })
+        assertNotNull(store.stored)
+    }
+
+    private data class Quadruple(
+        val side: TradeSide,
+        val symbol: String,
+        val quantityText: String,
+        val amountFormatted: String,
+    )
 }

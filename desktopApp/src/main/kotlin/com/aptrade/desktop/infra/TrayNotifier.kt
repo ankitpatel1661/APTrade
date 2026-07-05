@@ -67,18 +67,43 @@ class TrayNotifier(private val trayState: TrayState) : AlertNotifier {
         )
     }
 
+    /**
+     * Delivers an order-fill notification for a just-completed trade.
+     *
+     * The pre-formatted [quantityText]/[amountFormatted] String params (rather than the
+     * domain `Quantity`/`Money` types) are a deliberate boundary shape, confirmed by Task
+     * 4's real call site (`PortfolioViewModel.notifyFillSafely`): no shared port dictates
+     * this signature (there is no `OrderFillNotifier` in :shared), and formatting
+     * (`Quantity.toStringExpanded`, `formatMoney`) happens in the pure formatters/
+     * ViewModel layer, not here — this class only renders the already-formatted strings
+     * into a `Notification`. Kept as-is; the shape works cleanly at the real call site.
+     */
     suspend fun notifyFill(side: TradeSide, symbol: String, quantityText: String, amountFormatted: String) {
         trayState.sendNotification(
             Notification(formatOrderFillTitle(), formatOrderFillBody(side, symbol, quantityText, amountFormatted)),
         )
     }
 
+    /**
+     * Delivers a market open/close notification.
+     *
+     * Called from [com.aptrade.desktop.DesktopMarketActivityCoordinator] once per
+     * open/close transition (Task 4) — a plain `Boolean`, since `MarketStatus` is a
+     * :shared domain enum the coordinator already unwraps via `ScheduledNotification`.
+     */
     suspend fun notifyMarketStatus(opened: Boolean) {
         trayState.sendNotification(
             Notification(formatMarketStatusTitle(opened), formatMarketStatusBody(opened)),
         )
     }
 
+    /**
+     * Delivers the daily digest notification.
+     *
+     * [summary] is pre-built plain text (Task 4:
+     * `DesktopMarketActivityCoordinator.digestSummary()` — top-3 watchlist movers by
+     * `abs(changePercent)`); this class performs no further formatting on it.
+     */
     suspend fun notifyDigest(summary: String) {
         trayState.sendNotification(Notification(formatDigestTitle(), summary))
     }

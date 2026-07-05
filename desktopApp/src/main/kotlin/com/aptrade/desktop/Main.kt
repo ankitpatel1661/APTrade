@@ -82,6 +82,7 @@ fun main() = application {
             fetchWatchlist = graph.fetchWatchlist,
             addToWatchlist = graph.addToWatchlist,
             removeFromWatchlist = graph.removeFromWatchlist,
+            evaluateAlerts = graph.evaluateAlerts,
             scope = appScope,
         )
     }
@@ -93,6 +94,23 @@ fun main() = application {
             sellAsset = graph.sellAsset,
             resetPortfolio = graph.resetPortfolio,
             fetchPerformanceReport = graph.fetchPerformanceReport,
+            scope = appScope,
+            nowEpochSeconds = { System.currentTimeMillis() / 1000 },
+            notifyOrderFill = graph.notifyOrderFill,
+        )
+    }
+    // Time-based notifications (market open/close + daily digest), 60s cadence — a
+    // second Main-confined coroutine sharing the same lifetime as appScope (dies with
+    // the same onDispose below). See DesktopMarketActivityCoordinator for the tick logic.
+    val marketActivityCoordinator = remember {
+        DesktopMarketActivityCoordinator(
+            planner = graph.marketActivityPlanner,
+            stateStore = graph.schedulerStateStore,
+            loadSettings = { graph.settingsStore.load() },
+            notifyMarketStatus = { opened -> graph.trayNotifier.notifyMarketStatus(opened) },
+            notifyDigest = { summary -> graph.trayNotifier.notifyDigest(summary) },
+            fetchWatchlist = graph.fetchWatchlist,
+            fetchMarketQuotes = graph.fetchMarketQuotes,
             scope = appScope,
             nowEpochSeconds = { System.currentTimeMillis() / 1000 },
         )
@@ -196,6 +214,7 @@ fun main() = application {
             window.minimumSize = Dimension(1000, 680)
             watchlistViewModel.start()
             portfolioViewModel.start()
+            marketActivityCoordinator.start()
         }
         DisposableEffect(Unit) { onDispose { appScope.cancel(); graph.close() } }
 

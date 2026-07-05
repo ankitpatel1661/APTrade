@@ -2,14 +2,19 @@ package com.aptrade.desktop.watchlist
 
 import com.aptrade.desktop.FakeMarketDataRepository
 import com.aptrade.shared.application.AddToWatchlist
+import com.aptrade.shared.application.AlertNotifier
+import com.aptrade.shared.application.AlertStore
+import com.aptrade.shared.application.EvaluateAlerts
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchWatchlist
 import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.RemoveFromWatchlist
 import com.aptrade.shared.application.WatchlistStore
+import com.aptrade.shared.domain.AlertCondition
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.Money
+import com.aptrade.shared.domain.PriceAlert
 import com.aptrade.shared.domain.PricePoint
 import com.aptrade.shared.domain.Quote
 import com.aptrade.shared.domain.WatchlistEntry
@@ -26,6 +31,24 @@ private class InMemoryStore : WatchlistStore {
     var stored: List<WatchlistEntry> = emptyList()
     override suspend fun load() = stored
     override suspend fun save(entries: List<WatchlistEntry>) { stored = entries }
+}
+
+private class FakeAlertStore(initial: List<PriceAlert> = emptyList()) : AlertStore {
+    var stored: List<PriceAlert> = initial
+    var saveCallCount = 0
+        private set
+    override suspend fun load(): List<PriceAlert> = stored
+    override suspend fun save(alerts: List<PriceAlert>) {
+        stored = alerts
+        saveCallCount += 1
+    }
+}
+
+private class FakeAlertNotifier : AlertNotifier {
+    val notified = mutableListOf<Pair<PriceAlert, Quote>>()
+    override suspend fun notify(alert: PriceAlert, quote: Quote) {
+        notified += alert to quote
+    }
 }
 
 private val defaults = listOf(
@@ -49,12 +72,16 @@ private fun vm(
     repo: FakeMarketDataRepository,
     store: InMemoryStore,
     scope: kotlinx.coroutines.CoroutineScope,
+    alertStore: AlertStore = FakeAlertStore(),
+    alertNotifier: AlertNotifier = FakeAlertNotifier(),
+    isNotifyEnabled: suspend () -> Boolean = { true },
 ) = WatchlistViewModel(
     fetchMarketQuotes = FetchMarketQuotes(repo),
     fetchHistory = FetchHistory(repo),
     fetchWatchlist = FetchWatchlist(store, defaults),
     addToWatchlist = AddToWatchlist(store),
     removeFromWatchlist = RemoveFromWatchlist(store),
+    evaluateAlerts = EvaluateAlerts(alertStore, alertNotifier, isNotifyEnabled),
     scope = scope,
 )
 
@@ -256,5 +283,116 @@ class WatchlistViewModelTest {
         val vm = vm(repo, InMemoryStore(), backgroundScope)
         vm.start(); runCurrent()
         assertEquals(emptyList(), vm.state.value.averageSpark)
+    }
+
+    // --- Alert evaluation (increment 6d.1 Task 4) -----------------------------------
+
+    @Test
+    fun pollTickEvaluatesAlertsAndExposesUntriggeredCounts() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "210.00", 1.0) } }
+        // Condition NOT met by 210.00 (price above 500) -> stays untriggered, counted.
+        val alert = PriceAlert(symbol = "AAPL", condition = AlertCondition.PriceAbove(Money.usd("500.00")), createdAtEpochSeconds = 0L)
+        val alertStore = FakeAlertStore(initial = listOf(alert))
+        val notifier = FakeAlertNotifier()
+        val vm = vm(repo, InMemoryStore(), backgroundScope, alertStore = alertStore, alertNotifier = notifier)
+        vm.start(); runCurrent()
+
+        // Proves the tick actually ran EvaluateAlerts (not just loaded the raw list):
+        // the untriggered count is populated from the evaluated result.
+        assertEquals(1, vm.state.value.alertCounts["AAPL"])
+        assertTrue(notifier.notified.isEmpty())
+    }
+
+    @Test
+    fun triggeredAlertNotifiesOnceNotAgainNextTick() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "210.00", 1.0) } }
+        // Condition IS met by 210.00 (price below 500) -> triggers and notifies on tick 1.
+        val alert = PriceAlert(symbol = "AAPL", condition = AlertCondition.PriceBelow(Money.usd("500.00")), createdAtEpochSeconds = 0L)
+        val alertStore = FakeAlertStore(initial = listOf(alert))
+        val notifier = FakeAlertNotifier()
+        val vm = vm(repo, InMemoryStore(), backgroundScope, alertStore = alertStore, alertNotifier = notifier)
+        vm.start(); runCurrent()
+        assertEquals(1, notifier.notified.size)
+        assertEquals(0, vm.state.value.alertCounts["AAPL"] ?: 0)  // now triggered -> not counted
+
+        advanceTimeBy(15_001); runCurrent()
+        assertEquals(1, notifier.notified.size)  // not re-notified next tick
+    }
+
+    @Test
+    fun manualRefreshAlsoEvaluatesAlerts() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "210.00", 1.0) } }
+        val alertStore = FakeAlertStore()
+        val notifier = FakeAlertNotifier()
+        val vm = vm(repo, InMemoryStore(), backgroundScope, alertStore = alertStore, alertNotifier = notifier)
+        vm.start(); runCurrent()
+        assertTrue(notifier.notified.isEmpty())   // no alerts registered yet
+
+        // An alert created after start (e.g. via the sheet) is picked up by the next
+        // manual refresh — not just the next poll tick.
+        alertStore.stored = listOf(
+            PriceAlert(symbol = "SPY", condition = AlertCondition.PriceBelow(Money.usd("500.00")), createdAtEpochSeconds = 0L),
+        )
+        vm.refresh(); runCurrent()
+        assertEquals(1, notifier.notified.size)
+    }
+
+    @Test
+    fun alertNotificationSuppressedWhenNotifyDisabledButStillTriggers() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "210.00", 1.0) } }
+        val alert = PriceAlert(symbol = "AAPL", condition = AlertCondition.PriceBelow(Money.usd("500.00")), createdAtEpochSeconds = 0L)
+        val alertStore = FakeAlertStore(initial = listOf(alert))
+        val notifier = FakeAlertNotifier()
+        val vm = vm(repo, InMemoryStore(), backgroundScope, alertStore = alertStore, alertNotifier = notifier, isNotifyEnabled = { false })
+        vm.start(); runCurrent()
+        assertTrue(notifier.notified.isEmpty())              // no outward push
+        assertEquals(0, vm.state.value.alertCounts["AAPL"] ?: 0)  // still marked triggered in-app
+        assertTrue(alertStore.stored.single().isTriggered)
+    }
+
+    @Test
+    fun reloadAlertsRefreshesCountsWithoutRefetchingQuotes() = runTest {
+        val repo = FakeMarketDataRepository()
+        var quoteCalls = 0
+        repo.quotesImpl = { symbols -> quoteCalls++; symbols.map { quote(it, "210.00", 1.0) } }
+        val alertStore = FakeAlertStore()
+        val vm = vm(repo, InMemoryStore(), backgroundScope, alertStore = alertStore)
+        vm.start(); runCurrent()
+        val callsAfterStart = quoteCalls
+
+        alertStore.stored = listOf(
+            // NOT met by 210.00 -> stays untriggered, counted (proves reloadAlerts ran).
+            PriceAlert(symbol = "AAPL", condition = AlertCondition.PriceAbove(Money.usd("500.00")), createdAtEpochSeconds = 0L),
+        )
+        vm.reloadAlerts(); runCurrent()
+
+        assertEquals(callsAfterStart, quoteCalls)   // no additional quote fetch
+        assertEquals(1, vm.state.value.alertCounts["AAPL"])
+    }
+
+    @Test
+    fun alertEvaluationFailureNeverBreaksThePoll() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "210.00", 1.0) } }
+        val alertStore = FakeAlertStore()
+        val throwingNotifier = object : AlertNotifier {
+            override suspend fun notify(alert: PriceAlert, quote: Quote) {
+                throw RuntimeException("tray unavailable")
+            }
+        }
+        alertStore.stored = listOf(
+            PriceAlert(symbol = "AAPL", condition = AlertCondition.PriceBelow(Money.usd("500.00")), createdAtEpochSeconds = 0L),
+        )
+        val vm = vm(repo, InMemoryStore(), backgroundScope, alertStore = alertStore, alertNotifier = throwingNotifier)
+        vm.start(); runCurrent()
+
+        // The poll must still publish fresh quotes/rows despite the notifier throwing.
+        // (Money.amountText drops trailing zeros — known shared-core debt, see `quote()` above.)
+        assertEquals("210", vm.state.value.rows.single().amountText)
+        assertNull(vm.state.value.error)
     }
 }

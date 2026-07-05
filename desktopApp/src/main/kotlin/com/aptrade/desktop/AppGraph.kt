@@ -40,6 +40,7 @@ import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.application.ToggleBookmark
 import com.aptrade.shared.application.WatchlistStore
 import com.aptrade.shared.domain.AssetKind
+import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.domain.WatchlistEntry
 import com.aptrade.shared.infrastructure.FilePortfolioStore
 import com.aptrade.shared.infrastructure.FinnhubNewsRepository
@@ -98,10 +99,7 @@ class AppGraph(
     val fetchCompanyNews = newsRepository?.let { FetchCompanyNews(it) }
 
     // Alerts & notifications (increment 6d.1). The notifier seam: TrayNotifier delivers
-    // via the shared `trayState`, which the Tray composable in Main.kt also mounts. Wiring
-    // EvaluateAlerts into a polling ViewModel and MarketActivityPlanner into a scheduler
-    // loop is increment 6d.1 Task 4's job — this graph only assembles the pieces so Task 4
-    // has them ready to consume.
+    // via the shared `trayState`, which the Tray composable in Main.kt also mounts.
     val trayNotifier = TrayNotifier(trayState)
     val loadAlerts = LoadAlerts(alertStore)
     val createPriceAlert = CreatePriceAlert(alertStore)
@@ -112,6 +110,17 @@ class AppGraph(
         isNotifyEnabled = { settingsStore.load().priceAlerts },
     )
     val marketActivityPlanner = MarketActivityPlanner()
+
+    // Settings-gated order-fill delivery — mirrors macOS's `NotifyOrderFillUseCase`
+    // (Sources/APTradeApplication/SettingsUseCases.swift): read `settings.orderFills`
+    // once per call, and only deliver when it's on. Handed to PortfolioViewModel as a
+    // plain suspend closure (Task 4) since :shared has no OrderFillNotifier port.
+    val notifyOrderFill: suspend (TradeSide, String, String, String) -> Unit =
+        { side, symbol, quantityText, amountFormatted ->
+            if (settingsStore.load().orderFills) {
+                trayNotifier.notifyFill(side, symbol, quantityText, amountFormatted)
+            }
+        }
 
     // Only the production Yahoo repository and (when configured) the Finnhub news
     // repository own closeable Ktor clients; test doubles passed via the constructor
