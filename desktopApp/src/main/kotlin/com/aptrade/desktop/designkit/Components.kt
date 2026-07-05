@@ -72,26 +72,32 @@ fun MagnifierIcon(tint: Color = DK.textSecondary, modifier: Modifier = Modifier.
 }
 
 /**
- * The full "AP Trade" lockup — champagne original for the default accent, otherwise the gold
- * pixels are recolored onto the active accent's ramp (macOS `recoloredBrandImage` port).
+ * The full "AP Trade" lockup — champagne original for the default accent in dark mode, otherwise
+ * recolored per accent and mode (macOS `recoloredBrandImage` port): gold pixels onto the active
+ * accent's ramp, neutral silver pixels darkened to charcoal in light mode.
  *
- * champagneGold takes the zero-cost `painterResource` passthrough (pixel-identical shipped artwork).
- * Any other accent decodes + remaps off the UI thread ([tintedWordmark]); until that async tint
- * lands the champagne original shows as the placeholder — a brief beat of default, never a blank gap.
- * The accent is read from snapshot state inside composition, so switching accents retints live.
+ * Only champagneGold + dark takes the zero-cost `painterResource` passthrough (pixel-identical
+ * shipped artwork). Every other (accent, mode) combination decodes + remaps off the UI thread
+ * ([tintedWordmark]); until that async tint lands the champagne original shows as the placeholder
+ * — a brief beat of default, never a blank gap. Accent and mode are read from snapshot state
+ * inside composition and key the producer, so switching either retints live.
  */
 @Composable
 fun BrandWordmark(height: Dp) {
     val accent = DK.accent.value
+    val isDark = DK.isDark.value
     val tinted: ImageBitmap? by produceState<ImageBitmap?>(
-        initialValue = BrandTintCache.get(accent),
+        initialValue = BrandTintCache.get(accent, isDark),
         key1 = accent,
+        key2 = isDark,
     ) {
-        value = tintedWordmark(accent)
+        value = tintedWordmark(accent, isDark)
     }
 
+    // tintedWordmark is null exactly when the shipped artwork applies (champagne + dark) or a
+    // decode failed — both fall back to the untinted painterResource.
     val bitmap = tinted
-    if (accent != AccentTheme.ChampagneGold && bitmap != null) {
+    if (bitmap != null) {
         Image(
             bitmap = bitmap,
             contentDescription = "APTrade",

@@ -10,18 +10,20 @@ import org.jetbrains.skia.ColorType
 import org.jetbrains.skia.Image as SkiaImage
 
 /**
- * Accent-tinted brand wordmark — the desktop port of macOS `DesignKit.recoloredBrandImage`
- * (Sources/APTradeApp/DesignKit.swift:95-162).
+ * Accent- and mode-tinted brand wordmark — the desktop port of macOS
+ * `DesignKit.recoloredBrandImage` (Sources/APTradeApp/DesignKit.swift:95-151).
  *
- * The shipped `brand/AppWordmark.png` is champagne gold on transparent. Each *gold* pixel is
- * remapped onto the active accent's three-stop ramp by luminance, preserving the original
- * gradient's light-to-dark shape in the new hue; *neutral* (silver/white) pixels are left
- * untouched (the desktop is dark-only, so the macOS `isDark == true` branch applies); the
- * champagne default passes through whole-image with no decode at all (pixel-identical, zero cost).
+ * The shipped `brand/AppWordmark.png` is champagne gold + silver on transparent, drawn for dark
+ * backgrounds. Each *gold* pixel is remapped onto the active accent's three-stop ramp by
+ * luminance, preserving the original gradient's light-to-dark shape in the new hue — identically
+ * in both modes. *Neutral* (silver/white) pixels are mode-dependent: kept in dark mode, darkened
+ * to charcoal ([BRAND_CHARCOAL], the light textPrimary) in light mode so they read on the ivory
+ * ground. Only the champagne + dark combination passes through whole-image with no decode at all
+ * (pixel-identical to the shipped artwork, zero cost).
  *
- * The pure classification/ramp helpers are `internal` and unit-tested without images; the
- * decode-and-remap path is verified empirically against the real resource so the Skia channel
- * order (see [tintedWordmark]) is proven, not assumed.
+ * The pure classification/ramp/policy helpers ([isNeutralPixel], [tintPixel], …) are `internal`
+ * and unit-tested without images; the decode-and-remap path is verified empirically against the
+ * real resource so the Skia channel order (see [tintedWordmark]) is proven, not assumed.
  */
 
 /** Champagne source-gold luminance span (deep #A9772A … light #F2DDA0). Gold pixels are placed
@@ -31,6 +33,10 @@ private const val HI_LUM = 0.86
 
 /** Channel spread below which a pixel reads as neutral silver/white rather than gold: r − b < 40/255. */
 private const val NEUTRAL_THRESHOLD = 40.0 / 255.0
+
+/** Light-mode target for neutral pixels: charcoal RGB(30, 28, 24)/255 = #1E1C18 — the light-mode
+ *  textPrimary, matching macOS `recoloredBrandImage`'s `charcoal` (DesignKit.swift:118). */
+internal val BRAND_CHARCOAL = Triple(30.0 / 255.0, 28.0 / 255.0, 24.0 / 255.0)
 
 /**
  * A pixel (straight-alpha, channels in 0..1) is *neutral* — silver/white, not brand gold — when its
@@ -75,19 +81,42 @@ private fun androidx.compose.ui.graphics.Color.toRgb(): Triple<Double, Double, D
     Triple(red.toDouble(), green.toDouble(), blue.toDouble())
 
 /**
- * Process-lifetime cache of decoded, accent-tinted wordmarks, keyed by [AccentTheme] (≤5 entries).
+ * The per-pixel brand policy — the pure core of macOS `recoloredBrandImage`'s pixel loop
+ * (DesignKit.swift:129-139). Takes a straight-alpha pixel in 0..1 and returns its replacement
+ * RGB, or `null` when the pixel is left byte-identical:
+ *  - neutral + dark → `null` (the shipped silver is drawn for dark grounds);
+ *  - neutral + light → [BRAND_CHARCOAL] (silver would vanish on ivory);
+ *  - gold + champagne → `null` in both modes (the default brand artwork stays untouched);
+ *  - gold + other accent → sampled from the accent's ramp by luminance, mode-independent.
+ */
+internal fun tintPixel(
+    r: Double,
+    g: Double,
+    b: Double,
+    accent: AccentTheme,
+    isDark: Boolean,
+): Triple<Double, Double, Double>? = when {
+    isNeutralPixel(r, g, b) -> if (isDark) null else BRAND_CHARCOAL
+    accent == AccentTheme.ChampagneGold -> null
+    else -> sampleRamp(accent, goldT(luminance(r, g, b)))
+}
+
+/**
+ * Process-lifetime cache of decoded, tinted wordmarks, keyed by (accent, isDark) — the same
+ * "accent-isDark" key macOS `BrandImage` uses (DesignKit.swift:81); ≤10 entries.
  * `synchronized` because the decode runs on a background dispatcher while composition reads.
- * champagneGold is never stored here — it takes the no-decode passthrough path in `BrandWordmark`.
+ * champagneGold + dark is never stored here — it takes the no-decode passthrough path in
+ * `BrandWordmark`; champagne + light IS cached (its neutrals are remapped to charcoal).
  */
 internal object BrandTintCache {
-    private val entries = HashMap<AccentTheme, ImageBitmap>()
+    private val entries = HashMap<Pair<AccentTheme, Boolean>, ImageBitmap>()
 
     @Synchronized
-    fun get(accent: AccentTheme): ImageBitmap? = entries[accent]
+    fun get(accent: AccentTheme, isDark: Boolean): ImageBitmap? = entries[accent to isDark]
 
     @Synchronized
-    fun put(accent: AccentTheme, bitmap: ImageBitmap) {
-        entries[accent] = bitmap
+    fun put(accent: AccentTheme, isDark: Boolean, bitmap: ImageBitmap) {
+        entries[accent to isDark] = bitmap
     }
 
     @Synchronized
@@ -98,17 +127,20 @@ internal object BrandTintCache {
 internal const val WORDMARK_RESOURCE = "brand/AppWordmark.png"
 
 /**
- * Decodes [WORDMARK_RESOURCE] and remaps its gold pixels onto [accent]'s ramp, returning a tinted
- * [ImageBitmap]; `null` on any decode failure. Cached per accent for the process lifetime.
+ * Decodes [WORDMARK_RESOURCE] and remaps its pixels per [tintPixel] for the given accent and
+ * mode, returning a tinted [ImageBitmap]; `null` on any decode failure. Cached per
+ * (accent, isDark) for the process lifetime.
  *
  * The Skia N32 buffer is **premultiplied** and its channel order is platform-dependent
  * ([ColorType.RGBA_8888] vs [ColorType.BGRA_8888]); this reads `bitmap.imageInfo.colorInfo.colorType`
  * and picks the red/blue byte offsets accordingly, so the `r − b` gold classification is never
  * inverted by a channel swap. Runs on [Dispatchers.IO] — decoding + a full pixel pass is off-UI work.
  */
-internal suspend fun tintedWordmark(accent: AccentTheme): ImageBitmap? {
-    if (accent == AccentTheme.ChampagneGold) return null // passthrough — caller uses painterResource
-    BrandTintCache.get(accent)?.let { return it }
+internal suspend fun tintedWordmark(accent: AccentTheme, isDark: Boolean): ImageBitmap? {
+    // Champagne + dark is the shipped artwork exactly — passthrough, caller uses painterResource.
+    // (In light mode even champagne must decode: its silver neutrals darken to charcoal.)
+    if (accent == AccentTheme.ChampagneGold && isDark) return null
+    BrandTintCache.get(accent, isDark)?.let { return it }
 
     return try {
         withContext(Dispatchers.IO) {
@@ -118,9 +150,9 @@ internal suspend fun tintedWordmark(accent: AccentTheme): ImageBitmap? {
                 allocN32Pixels(skiaImage.width, skiaImage.height)
                 skiaImage.readPixels(this)
             }
-            remapGoldPixels(skiaBitmap, accent)
+            remapBrandPixels(skiaBitmap, accent, isDark)
             val bitmap = skiaBitmap.asComposeImageBitmap()
-            BrandTintCache.put(accent, bitmap)
+            BrandTintCache.put(accent, isDark, bitmap)
             bitmap
         }
     } catch (e: CancellationException) {
@@ -136,12 +168,13 @@ private fun loadWordmarkBytes(): ByteArray? =
         ?.use { it.readBytes() }
 
 /**
- * In-place remap of a decoded N32 [bitmap]: each gold pixel → [accent]'s ramp by luminance; neutral
- * and fully-transparent pixels are left byte-identical. Reads/writes the raw premultiplied buffer,
- * un-premultiplying before classification and re-premultiplying on write, respecting the platform
- * channel order.
+ * In-place remap of a decoded N32 [bitmap] per [tintPixel]: gold → [accent]'s ramp by luminance
+ * (champagne gold untouched), neutrals → charcoal in light mode / untouched in dark mode;
+ * fully-transparent pixels are always left byte-identical. Reads/writes the raw premultiplied
+ * buffer, un-premultiplying before classification and re-premultiplying on write, respecting
+ * the platform channel order.
  */
-private fun remapGoldPixels(bitmap: SkiaBitmap, accent: AccentTheme) {
+private fun remapBrandPixels(bitmap: SkiaBitmap, accent: AccentTheme, isDark: Boolean) {
     val info = bitmap.imageInfo
     val pixels = bitmap.readPixels() ?: return
 
@@ -164,9 +197,10 @@ private fun remapGoldPixels(bitmap: SkiaBitmap, accent: AccentTheme) {
         val g = (pixels[i + gOff].toInt() and 0xFF) / 255.0 / af
         val b = (pixels[i + bOff].toInt() and 0xFF) / 255.0 / af
 
-        if (isNeutralPixel(r, g, b)) { i += 4; continue } // silver/white — kept (dark-only)
+        val out = tintPixel(r, g, b, accent, isDark)
+        if (out == null) { i += 4; continue } // untouched: neutral-in-dark or champagne gold
 
-        val (or, og, ob) = sampleRamp(accent, goldT(luminance(r, g, b)))
+        val (or, og, ob) = out
         pixels[i + rOff] = ((or.coerceIn(0.0, 1.0) * af * 255.0)).toInt().toByte()
         pixels[i + gOff] = ((og.coerceIn(0.0, 1.0) * af * 255.0)).toInt().toByte()
         pixels[i + bOff] = ((ob.coerceIn(0.0, 1.0) * af * 255.0)).toInt().toByte()

@@ -88,6 +88,40 @@ class BrandTintTest {
         assertEquals(0.114, luminance(0.0, 0.0, 1.0), eps)
     }
 
+    // --- tintPixel: the per-pixel brand policy (macOS recoloredBrandImage:120-139 core) ---
+    // Same fixture pixels, both modes: neutrals pass through in dark and remap to charcoal
+    // in light; gold handling is identical in both modes.
+
+    private val neutralFixture = Triple(0.8, 0.8, 0.8)   // silver: r == b, spread 0
+    private val goldFixture = Triple(0.66, 0.5, 0.31)    // gold: r − b = 0.35 ≥ threshold
+
+    @Test fun tintPixelKeepsNeutralInDarkMode() {
+        val (r, g, b) = neutralFixture
+        assertEquals(null, tintPixel(r, g, b, AccentTheme.Sapphire, isDark = true))
+        assertEquals(null, tintPixel(r, g, b, AccentTheme.ChampagneGold, isDark = true))
+    }
+
+    @Test fun tintPixelRemapsNeutralToCharcoalInLightMode() {
+        // Charcoal = light-mode textPrimary #1E1C18 = RGB(30, 28, 24)/255 (DesignKit.swift:118).
+        val charcoal = Triple(30.0 / 255.0, 28.0 / 255.0, 24.0 / 255.0)
+        val (r, g, b) = neutralFixture
+        assertRgb(charcoal, tintPixel(r, g, b, AccentTheme.Sapphire, isDark = false)!!)
+        // The neutral→charcoal remap applies regardless of accent — champagne included.
+        assertRgb(charcoal, tintPixel(r, g, b, AccentTheme.ChampagneGold, isDark = false)!!)
+    }
+
+    @Test fun tintPixelGoldHandlingIsModeIndependent() {
+        val (r, g, b) = goldFixture
+        // Non-default accent: the same gold pixel samples the same ramp point in both modes.
+        val dark = tintPixel(r, g, b, AccentTheme.Sapphire, isDark = true)!!
+        val light = tintPixel(r, g, b, AccentTheme.Sapphire, isDark = false)!!
+        assertRgb(dark, light)
+        assertRgb(sampleRamp(AccentTheme.Sapphire, goldT(luminance(r, g, b))), dark)
+        // Champagne default: gold pixels pass through untouched in both modes.
+        assertEquals(null, tintPixel(r, g, b, AccentTheme.ChampagneGold, isDark = true))
+        assertEquals(null, tintPixel(r, g, b, AccentTheme.ChampagneGold, isDark = false))
+    }
+
     // --- Empirical resource-pixel test: proves the Skia channel order is handled correctly. ---
     // A wrong B/R swap would misclassify gold as neutral (r−b would invert), so the sapphire
     // remap would leave the gold region unchanged and this test would fail.
@@ -134,10 +168,37 @@ class BrandTintTest {
         return -1
     }
 
-    /** Hand-rolls the exact production remap (un-premultiply → classify → sample ramp →
-     *  re-premultiply, respecting channel order) into a fresh copy of [original]. This is the
-     *  reference the production output is byte-compared against. */
-    private fun handRolledRemap(bitmap: SkiaBitmap, original: ByteArray, accent: AccentTheme): ByteArray {
+    /** Index of the first non-transparent, neutral (silver/white) pixel, or -1 — the silver
+     *  "Trade" wordmark / P-stroke region that light mode must darken to charcoal. */
+    private fun firstNeutralOpaqueIndex(bitmap: SkiaBitmap, px: ByteArray): Int {
+        val rgba = bitmap.imageInfo.colorInfo.colorType == org.jetbrains.skia.ColorType.RGBA_8888
+        val rOff = if (rgba) 0 else 2
+        val bOff = if (rgba) 2 else 0
+        var i = 0
+        while (i < px.size) {
+            val a = px[i + 3].toInt() and 0xFF
+            if (a != 0) {
+                val af = a / 255.0
+                val r = (px[i + rOff].toInt() and 0xFF) / 255.0 / af
+                val g = (px[i + 1].toInt() and 0xFF) / 255.0 / af
+                val b = (px[i + bOff].toInt() and 0xFF) / 255.0 / af
+                if (isNeutralPixel(r, g, b)) return i
+            }
+            i += 4
+        }
+        return -1
+    }
+
+    /** Hand-rolls the exact production remap (un-premultiply → classify → charcoal/ramp →
+     *  re-premultiply, respecting channel order) into a fresh copy of [original]. Written
+     *  independently of `tintPixel` so it stays a genuine reference the production output is
+     *  byte-compared against — mirrors macOS recoloredBrandImage's branch structure. */
+    private fun handRolledRemap(
+        bitmap: SkiaBitmap,
+        original: ByteArray,
+        accent: AccentTheme,
+        isDark: Boolean,
+    ): ByteArray {
         val mutated = original.copyOf()
         val rgba = bitmap.imageInfo.colorInfo.colorType == org.jetbrains.skia.ColorType.RGBA_8888
         val rOff = if (rgba) 0 else 2
@@ -150,11 +211,17 @@ class BrandTintTest {
                 val r = (mutated[i + rOff].toInt() and 0xFF) / 255.0 / af
                 val g = (mutated[i + 1].toInt() and 0xFF) / 255.0 / af
                 val b = (mutated[i + bOff].toInt() and 0xFF) / 255.0 / af
-                if (!isNeutralPixel(r, g, b)) {
-                    val (or, og, ob) = sampleRamp(accent, goldT(luminance(r, g, b)))
-                    mutated[i + rOff] = (or.coerceIn(0.0, 1.0) * af * 255.0).toInt().toByte()
-                    mutated[i + 1] = (og.coerceIn(0.0, 1.0) * af * 255.0).toInt().toByte()
-                    mutated[i + bOff] = (ob.coerceIn(0.0, 1.0) * af * 255.0).toInt().toByte()
+                val out: Triple<Double, Double, Double>? = if (isNeutralPixel(r, g, b)) {
+                    if (isDark) null else Triple(30.0 / 255.0, 28.0 / 255.0, 24.0 / 255.0)
+                } else if (accent == AccentTheme.ChampagneGold) {
+                    null
+                } else {
+                    sampleRamp(accent, goldT(luminance(r, g, b)))
+                }
+                if (out != null) {
+                    mutated[i + rOff] = (out.first.coerceIn(0.0, 1.0) * af * 255.0).toInt().toByte()
+                    mutated[i + 1] = (out.second.coerceIn(0.0, 1.0) * af * 255.0).toInt().toByte()
+                    mutated[i + bOff] = (out.third.coerceIn(0.0, 1.0) * af * 255.0).toInt().toByte()
                 }
             }
             i += 4
@@ -178,7 +245,7 @@ class BrandTintTest {
         assertTrue(goldIdx >= 0, "need a gold pixel to test the remap")
         val transIdx = firstTransparentIndex(original)
 
-        val tinted = tintedWordmark(AccentTheme.Sapphire)
+        val tinted = tintedWordmark(AccentTheme.Sapphire, isDark = true)
         assertNotNull(tinted, "sapphire wordmark should decode")
 
         // Re-decode via the same path the impl used and remap by hand to compare bytes.
@@ -186,7 +253,7 @@ class BrandTintTest {
         val rgba = b2.imageInfo.colorInfo.colorType == org.jetbrains.skia.ColorType.RGBA_8888
         val rOff = if (rgba) 0 else 2
         val bOff = if (rgba) 2 else 0
-        val mutated = handRolledRemap(b2, decoded, AccentTheme.Sapphire)
+        val mutated = handRolledRemap(b2, decoded, AccentTheme.Sapphire, isDark = true)
 
         // (a) the gold region's bytes actually changed under sapphire
         assertFalse(
@@ -214,9 +281,9 @@ class BrandTintTest {
         // expected bytes, not just that "some gold pixel changed".
         BrandTintCache.clear()
         val (refBitmap, decoded) = decodeWordmarkPixels()
-        val expected = handRolledRemap(refBitmap, decoded, AccentTheme.Sapphire)
+        val expected = handRolledRemap(refBitmap, decoded, AccentTheme.Sapphire, isDark = true)
 
-        val tinted = tintedWordmark(AccentTheme.Sapphire)
+        val tinted = tintedWordmark(AccentTheme.Sapphire, isDark = true)
         assertNotNull(tinted, "sapphire wordmark should decode")
 
         val producedBytes = tinted.asSkiaBitmap().readPixels()!!
@@ -227,20 +294,57 @@ class BrandTintTest {
         )
     }
 
-    @Test fun champagnePassthroughDoesNotDecodeAndReturnsNull() = runBlocking {
-        // (b) champagne is the passthrough path: no decode, cache never populated.
+    @Test fun champagneLightProductionOutputMatchesHandRolledRemap() = runBlocking {
+        // Light mode has no passthrough, even for champagne: the silver neutrals must darken
+        // to charcoal or they vanish on the ivory ground. Byte-compare production against the
+        // independent reference remap, and prove the remap actually changed something.
         BrandTintCache.clear()
-        assertEquals(null, tintedWordmark(AccentTheme.ChampagneGold))
-        assertEquals(null, BrandTintCache.get(AccentTheme.ChampagneGold))
+        val (refBitmap, decoded) = decodeWordmarkPixels()
+        assertTrue(
+            firstNeutralOpaqueIndex(refBitmap, decoded) >= 0,
+            "expected the wordmark to contain neutral silver pixels",
+        )
+        val expected = handRolledRemap(refBitmap, decoded, AccentTheme.ChampagneGold, isDark = false)
+        assertFalse(
+            expected.contentEquals(decoded),
+            "the light-mode remap must change the neutral silver pixels",
+        )
+
+        val tinted = tintedWordmark(AccentTheme.ChampagneGold, isDark = false)
+        assertNotNull(tinted, "champagne light-mode wordmark should decode")
+        assertTrue(
+            expected.contentEquals(tinted.asSkiaBitmap().readPixels()!!),
+            "champagne light-mode output must equal the hand-rolled reference byte-for-byte",
+        )
+    }
+
+    @Test fun champagnePassthroughDoesNotDecodeAndReturnsNullInDarkMode() = runBlocking {
+        // (b) champagne + dark is the passthrough path: no decode, cache never populated.
+        BrandTintCache.clear()
+        assertEquals(null, tintedWordmark(AccentTheme.ChampagneGold, isDark = true))
+        assertEquals(null, BrandTintCache.get(AccentTheme.ChampagneGold, isDark = true))
     }
 
     @Test fun tintedWordmarkIsCachedPerAccent() = runBlocking {
         BrandTintCache.clear()
-        assertEquals(null, BrandTintCache.get(AccentTheme.Amethyst))
-        val first = tintedWordmark(AccentTheme.Amethyst)
+        assertEquals(null, BrandTintCache.get(AccentTheme.Amethyst, isDark = true))
+        val first = tintedWordmark(AccentTheme.Amethyst, isDark = true)
         assertNotNull(first)
-        assertTrue(first === BrandTintCache.get(AccentTheme.Amethyst))
+        assertTrue(first === BrandTintCache.get(AccentTheme.Amethyst, isDark = true))
         // second call returns the identical cached instance
-        assertTrue(first === tintedWordmark(AccentTheme.Amethyst))
+        assertTrue(first === tintedWordmark(AccentTheme.Amethyst, isDark = true))
+    }
+
+    @Test fun tintCacheIsKeyedByAccentAndMode() = runBlocking {
+        // "accent-isDark" key, matching macOS BrandImage (DesignKit.swift:81): the same accent
+        // in different modes yields distinct cached bitmaps.
+        BrandTintCache.clear()
+        val dark = tintedWordmark(AccentTheme.Sapphire, isDark = true)
+        val light = tintedWordmark(AccentTheme.Sapphire, isDark = false)
+        assertNotNull(dark)
+        assertNotNull(light)
+        assertFalse(dark === light, "dark and light tints must be distinct cache entries")
+        assertTrue(dark === BrandTintCache.get(AccentTheme.Sapphire, isDark = true))
+        assertTrue(light === BrandTintCache.get(AccentTheme.Sapphire, isDark = false))
     }
 }
