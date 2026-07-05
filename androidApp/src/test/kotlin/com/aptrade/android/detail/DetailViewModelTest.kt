@@ -16,6 +16,7 @@ import com.aptrade.shared.domain.PricePoint
 import com.aptrade.shared.domain.Quote
 import com.aptrade.shared.domain.Timeframe
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -47,8 +48,8 @@ class DetailViewModelTest {
         fetchProfile = FetchProfile(repo),
         fetchHistory = FetchHistory(repo),
         fetchCandles = FetchCandles(repo),
-        buyAsset = BuyAsset(repo, store),
-        sellAsset = SellAsset(repo, store),
+        buyAsset = BuyAsset(repo, store, Mutex()),
+        sellAsset = SellAsset(repo, store, Mutex()),
         nowEpochSeconds = now,
     )
 

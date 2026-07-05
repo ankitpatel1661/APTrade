@@ -21,6 +21,7 @@ import com.aptrade.shared.domain.Timeframe
 import com.aptrade.shared.domain.Transaction
 import com.aptrade.shared.domain.TradeSide
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -52,8 +53,8 @@ private fun vm(
 ) = PortfolioViewModel(
     fetchPortfolio = FetchPortfolio(store),
     fetchMarketQuotes = FetchMarketQuotes(repo),
-    buyAsset = BuyAsset(repo, store),
-    sellAsset = SellAsset(repo, store),
+    buyAsset = BuyAsset(repo, store, Mutex()),
+    sellAsset = SellAsset(repo, store, Mutex()),
     resetPortfolio = ResetPortfolio(store),
     fetchPerformanceReport = FetchPerformanceReport(repo, FetchPortfolioPerformance(repo, store)),
     scope = scope,

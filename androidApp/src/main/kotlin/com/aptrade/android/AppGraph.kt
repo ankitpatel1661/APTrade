@@ -15,6 +15,7 @@ import com.aptrade.shared.application.ResetPortfolio
 import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.infrastructure.FilePortfolioStore
 import com.aptrade.shared.infrastructure.YahooMarketDataRepository
+import kotlinx.coroutines.sync.Mutex
 import java.io.File
 
 /**
@@ -67,8 +68,15 @@ class PortfolioGraph(
     portfolioStore: PortfolioStore,
 ) {
     val fetchPortfolio = FetchPortfolio(portfolioStore)
-    val buyAsset = BuyAsset(repository, portfolioStore)
-    val sellAsset = SellAsset(repository, portfolioStore)
+
+    // ONE shared Mutex, handed to BOTH use cases below: BuyAsset and SellAsset each perform
+    // a load->validate->save RMW against this SAME portfolioStore, so only a mutex shared
+    // between the two serializes a concurrent buy against a concurrent sell (two separate
+    // `Mutex()` instances would only serialize buy-vs-buy and sell-vs-sell). See the KDoc on
+    // BuyAsset/SellAsset's `portfolioMutex` parameter.
+    private val portfolioMutex = Mutex()
+    val buyAsset = BuyAsset(repository, portfolioStore, portfolioMutex)
+    val sellAsset = SellAsset(repository, portfolioStore, portfolioMutex)
     val resetPortfolio = ResetPortfolio(portfolioStore)
     val fetchPortfolioPerformance = FetchPortfolioPerformance(repository, portfolioStore)
     val fetchPerformanceReport = FetchPerformanceReport(repository, fetchPortfolioPerformance)

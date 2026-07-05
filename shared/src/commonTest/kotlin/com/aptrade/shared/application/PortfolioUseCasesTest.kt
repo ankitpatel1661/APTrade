@@ -12,6 +12,7 @@ import com.aptrade.shared.domain.TradeError
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -33,18 +34,18 @@ private class InMemoryPortfolioStore : PortfolioStore {
 /** A [PortfolioStore] whose FIRST [save] call suspends on [firstSaveGate] until the test
  *  releases it, so a test can force two coroutines to interleave: the first caller's [save]
  *  suspends *after* it has already re-loaded the pre-mutation [stored] snapshot inside
- *  BuyAsset/SellAsset's `mutex.withLock` block, while a second caller attempts to enter the
- *  same lock. Without the mutex, the second caller's [load] would race in and observe the
- *  same stale snapshot, producing a lost update once both saves land. With the mutex, the
- *  second caller blocks on lock acquisition until the first's [save] (and its `withLock`
- *  block) completes, so it re-loads the FIRST write before applying its own mutation.
- *  Every [save] after the first proceeds immediately (subsequent calls are what the test
- *  wants to observe running unimpeded once the first releases the lock).
+ *  BuyAsset/SellAsset's `portfolioMutex.withLock` block, while a second caller attempts to
+ *  enter the same lock. Without a lock SHARED by both use cases, the second caller's [load]
+ *  would race in and observe the same stale snapshot, producing a lost update once both saves
+ *  land. With one shared mutex, the second caller blocks on lock acquisition until the first's
+ *  [save] (and its `withLock` block) completes, so it re-loads the FIRST write before applying
+ *  its own mutation. Every [save] after the first proceeds immediately (subsequent calls are
+ *  what the test wants to observe running unimpeded once the first releases the lock).
  *
- *  Gating is keyed by CALL ORDER (`callIndex`), not "count of saves that have completed" —
- *  that distinction matters when two use case instances with SEPARATE mutexes (e.g. one
- *  BuyAsset + one SellAsset sharing this store) both reach `save()` concurrently: the second
- *  arrival must proceed immediately even though no save has completed yet. */
+ *  Gating is keyed by CALL ORDER (`callIndex`), not "count of saves that have completed" — this
+ *  matters for any test where a second `save()` could plausibly be reached without the first
+ *  one having completed yet, so the second arrival's gate check must not depend on how many
+ *  saves have *finished*. */
 private class GatedPortfolioStore : PortfolioStore {
     var stored: Portfolio? = null
     var saveCount = 0
@@ -109,7 +110,7 @@ class PortfolioUseCasesTest {
         val repository = FakeMarketDataRepository(
             quotesBySymbol = mapOf("AAPL" to Quote("AAPL", Money.usd("150.00"), Money.usd("148.00"), 1.5)),
         )
-        val result = BuyAsset(repository, store).execute(aapl, BigDecimal.parseString("10"), 5000L)
+        val result = BuyAsset(repository, store, Mutex()).execute(aapl, BigDecimal.parseString("10"), 5000L)
 
         assertEquals(Money.usd("100000").amount - BigDecimal.parseString("1500.00"), result.cash.amount)
         val position = result.positionFor("AAPL")
@@ -128,7 +129,7 @@ class PortfolioUseCasesTest {
             quotesBySymbol = mapOf("AAPL" to Quote("AAPL", Money.usd("1000000.00"), Money.usd("999000.00"), 0.1)),
         )
         assertFailsWith<TradeError.InsufficientFunds> {
-            BuyAsset(repository, store).execute(aapl, BigDecimal.parseString("10"), 5000L)
+            BuyAsset(repository, store, Mutex()).execute(aapl, BigDecimal.parseString("10"), 5000L)
         }
         assertEquals(0, store.saveCount)
     }
@@ -138,7 +139,7 @@ class PortfolioUseCasesTest {
         val store = InMemoryPortfolioStore()
         val repository = FakeMarketDataRepository(quotesError = QuoteError.RateLimited)
         assertFailsWith<QuoteError.RateLimited> {
-            BuyAsset(repository, store).execute(aapl, BigDecimal.parseString("10"), 5000L)
+            BuyAsset(repository, store, Mutex()).execute(aapl, BigDecimal.parseString("10"), 5000L)
         }
         assertEquals(0, store.saveCount)
     }
@@ -150,7 +151,7 @@ class PortfolioUseCasesTest {
         val repository = FakeMarketDataRepository(
             quotesBySymbol = mapOf("AAPL" to Quote("AAPL", Money.usd("150.00"), Money.usd("148.00"), 1.5)),
         )
-        val result = SellAsset(repository, store).execute("AAPL", BigDecimal.parseString("4"), 6000L)
+        val result = SellAsset(repository, store, Mutex()).execute("AAPL", BigDecimal.parseString("4"), 6000L)
 
         assertEquals(BigDecimal.parseString("6"), result.positionFor("AAPL")?.quantity)
         assertEquals(2, result.transactions.size)
@@ -159,7 +160,7 @@ class PortfolioUseCasesTest {
         assertEquals(1, store.saveCount)
 
         assertFailsWith<TradeError.InsufficientShares> {
-            SellAsset(repository, store).execute("AAPL", BigDecimal.parseString("100"), 7000L)
+            SellAsset(repository, store, Mutex()).execute("AAPL", BigDecimal.parseString("100"), 7000L)
         }
         assertEquals(1, store.saveCount) // the failed oversell did not persist
     }
@@ -237,8 +238,10 @@ class PortfolioUseCasesTest {
         assertEquals(86_400L * 3, result.first().epochSeconds)
     }
 
-    // --- Concurrency (6d.2 Task 4): BuyAsset/SellAsset serialize their store RMW under a
-    // private Mutex so two racing trades against ONE shared instance never lose an update. ---
+    // --- Concurrency (6d.2 Task 4, hardened by the shared-mutex fix): BuyAsset/SellAsset
+    // serialize their store RMW under a Mutex SHARED between both use cases (constructor-
+    // injected `portfolioMutex`), so racing trades — buy-vs-buy, sell-vs-sell, and buy-vs-sell —
+    // against the same PortfolioStore never lose an update. ---
 
     @Test
     fun twoRacingBuysThroughOneInstanceBothLandNoLostUpdate() = runTest {
@@ -246,7 +249,7 @@ class PortfolioUseCasesTest {
         val repository = FakeMarketDataRepository(
             quotesBySymbol = mapOf("AAPL" to Quote("AAPL", Money.usd("100.00"), Money.usd("99.00"), 1.0)),
         )
-        val buyAsset = BuyAsset(repository, store) // ONE shared instance, as AppGraph wires it
+        val buyAsset = BuyAsset(repository, store, Mutex()) // ONE shared instance, as AppGraph wires it
 
         // First buy: quote fetch completes synchronously, enters the mutex, loads the (empty)
         // starting portfolio, then hangs inside store.save() on firstSaveGate — still holding
@@ -282,7 +285,7 @@ class PortfolioUseCasesTest {
         val repository = FakeMarketDataRepository(
             quotesBySymbol = mapOf("AAPL" to Quote("AAPL", Money.usd("100.00"), Money.usd("99.00"), 1.0)),
         )
-        val sellAsset = SellAsset(repository, store) // ONE shared instance, as AppGraph wires it
+        val sellAsset = SellAsset(repository, store, Mutex()) // ONE shared instance, as AppGraph wires it
 
         // First sell (3 shares): quote fetch completes, enters the mutex, loads the 10-share
         // snapshot, then hangs inside store.save() on firstSaveGate — still holding the mutex.
@@ -310,49 +313,59 @@ class PortfolioUseCasesTest {
     }
 
     @Test
-    fun racingBuyAndSellOnSeparateInstancesSharingOneStoreIsAKnownResidualGapNotThisTasksScope() = runTest {
-        // IMPORTANT SCOPE NOTE (flagged for final-review triage): the task brief specifies
-        // "BuyAsset and SellAsset EACH gain a private Mutex" — mirroring ToggleBookmark's
-        // shape of one mutex per use case. That closes the lost-update race for two
-        // concurrent calls through the SAME use-case instance (see the two tests above), which
-        // is the documented, in-scope fix. It does NOT close the race between a buy and a sell
-        // in flight at the same time, because BuyAsset and SellAsset hold TWO SEPARATE mutex
-        // instances even though they share one PortfolioStore — so a buy's load->mutate->save
-        // is not serialized against a concurrent sell's load->mutate->save.
+    fun racingBuyAndSellSharingOneMutexBothLandNoLostUpdate() = runTest {
+        // This test used to PIN a documented residual gap: BuyAsset and SellAsset each held
+        // their OWN private Mutex, so a buy and a sell in flight at the same time were not
+        // serialized against each other and could clobber one another's write (see git history
+        // for the prior version of this test, which asserted quantity == 15 — the LOST update).
         //
-        // This test PINS that residual gap (rather than silently asserting it away): it shows
-        // a buy that loaded its snapshot before a concurrent sell committed can still overwrite
-        // the sell's write, losing the sell's mutation. If a future task closes this gap (e.g.
-        // one shared mutex per PortfolioStore instance, injected into both use cases), this
-        // test's expected quantity should change from 15 (lost update) to 12 (both survive).
+        // The user decided to close that gap by having BuyAsset and SellAsset share ONE Mutex
+        // instance (constructor-injected `portfolioMutex`), exactly as AppGraph/PortfolioGraph
+        // now wire them. This test proves the fix: it forces the same interleaving as before
+        // (buy loads its snapshot and hangs inside save() while a sell is launched concurrently)
+        // and asserts BOTH mutations survive.
+        //
+        // How we know this test fails WITHOUT the fix: this is the exact interleaving the
+        // pre-fix version of this test exercised and pinned as lossy (15, not 12). With two
+        // separate `Mutex()` instances the sell would run uncontended while the buy still held
+        // its own lock, save first, and then the buy's later save would overwrite it. Only
+        // because both use cases now block on the SAME Mutex does the sell queue BEHIND the
+        // buy (rather than racing past it) and re-load the buy's already-persisted write before
+        // computing its own mutation — so this assertion (12, not 15) is a genuine regression
+        // guard for the shared-mutex fix, not a tautology.
         val store = GatedPortfolioStore()
         store.stored = Portfolio.starting().buying(aapl, BigDecimal.parseString("10"), Money.usd("100.00"), 500L, "txn-seed")
         val repository = FakeMarketDataRepository(
             quotesBySymbol = mapOf("AAPL" to Quote("AAPL", Money.usd("100.00"), Money.usd("99.00"), 1.0)),
         )
-        val buyAsset = BuyAsset(repository, store)
-        val sellAsset = SellAsset(repository, store)
+        val sharedMutex = Mutex()
+        val buyAsset = BuyAsset(repository, store, sharedMutex)
+        val sellAsset = SellAsset(repository, store, sharedMutex)
 
-        // The buy loads the 10-share snapshot and computes updated=15 BEFORE hanging inside
-        // save() on the gate; the sell then runs uncontended (separate mutex) and persists 7.
+        // The buy loads the 10-share snapshot, computes updated=15, then hangs inside save()
+        // on the gate — still holding the shared mutex the whole time.
         val buyJob = launch { buyAsset.execute(aapl, BigDecimal.parseString("5"), 1000L) }
         runCurrent() // buy has loaded 10 shares, computed 15, now hangs inside save()
 
+        // The sell attempts to enter the SAME mutex the buy still holds. It cannot proceed to
+        // load() until the buy's save() (and its withLock block) completes.
         val sellJob = launch { sellAsset.execute("AAPL", BigDecimal.parseString("3"), 2000L) }
-        runCurrent() // sell runs its own (separate) mutex uncontended and completes: 10-3=7
+        runCurrent() // sell is parked waiting on the shared mutex; it cannot have loaded yet
 
-        assertEquals(1, store.saveCount) // only the sell has saved so far
-        assertEquals(BigDecimal.parseString("7"), store.stored?.positionFor("AAPL")?.quantity)
+        assertEquals(0, store.saveCount) // neither save has completed yet — the sell is blocked
+        assertEquals(BigDecimal.parseString("10"), store.stored?.positionFor("AAPL")?.quantity) // unchanged
 
-        store.firstSaveGate.complete(Unit) // release the buy's save
+        store.firstSaveGate.complete(Unit) // release the buy's save; mutex releases after withLock returns
         runCurrent()
         buyJob.join()
         sellJob.join()
 
-        // The buy's save() writes the value it computed BEFORE the sell ran (10+5=15), clobbering
-        // the sell's already-persisted 7-share write — the sell's -3 mutation is LOST. This is
-        // the accepted, documented residual gap (cross-use-case races), not a regression.
+        // Both the buy and the sell landed: 10 + 5 - 3 = 12 shares, not 15 (the buy's lost
+        // update) or 7 (the sell's lost update). The sell re-loaded the buy's persisted 15
+        // AFTER the shared mutex released it, so its -3 mutation applies on top instead of
+        // being clobbered.
         assertEquals(2, store.saveCount)
-        assertEquals(BigDecimal.parseString("15"), store.stored?.positionFor("AAPL")?.quantity)
+        assertEquals(BigDecimal.parseString("12"), store.stored?.positionFor("AAPL")?.quantity)
+        assertEquals(3, store.stored?.transactions?.size) // seed + buy + sell
     }
 }

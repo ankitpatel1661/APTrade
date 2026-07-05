@@ -85,8 +85,14 @@ class AppGraph(
     val removeFromWatchlist = RemoveFromWatchlist(store)
 
     val fetchPortfolio = FetchPortfolio(portfolioStore)
-    val buyAsset = BuyAsset(repository, portfolioStore)
-    val sellAsset = SellAsset(repository, portfolioStore)
+    // ONE shared Mutex, handed to BOTH use cases below: BuyAsset and SellAsset each perform
+    // a load->validate->save RMW against this SAME portfolioStore, so only a mutex shared
+    // between the two serializes a concurrent buy against a concurrent sell (two separate
+    // `Mutex()` instances would only serialize buy-vs-buy and sell-vs-sell). See the KDoc on
+    // BuyAsset/SellAsset's `portfolioMutex` parameter.
+    val portfolioMutex = Mutex()
+    val buyAsset = BuyAsset(repository, portfolioStore, portfolioMutex)
+    val sellAsset = SellAsset(repository, portfolioStore, portfolioMutex)
     val resetPortfolio = ResetPortfolio(portfolioStore)
     val fetchPortfolioPerformance = FetchPortfolioPerformance(repository, portfolioStore)
     val fetchPerformanceReport = FetchPerformanceReport(repository, fetchPortfolioPerformance)
@@ -163,8 +169,8 @@ internal fun buildNotifyOrderFill(
  *  in quick succession) serialize against the single-blob store instead of one clobbering
  *  the other's write. A single file-level [Mutex] is correct here (rather than one per
  *  call site) because `AppGraph.settingsStore` is itself a single process-wide instance
- *  shared by every caller — same shape as [BuyAsset]/[SellAsset]'s per-instance mutex
- *  guarding [PortfolioStore]'s RMW. */
+ *  shared by every caller — same shape as the single shared `portfolioMutex` this file
+ *  hands to both [BuyAsset] and [SellAsset] to guard [PortfolioStore]'s RMW. */
 private val settingsMutex = Mutex()
 
 /**

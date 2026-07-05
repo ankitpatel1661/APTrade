@@ -18,6 +18,7 @@ import com.aptrade.shared.domain.PricePoint
 import com.aptrade.shared.domain.Quote
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
@@ -67,8 +68,8 @@ class PortfolioViewModelTest {
         return PortfolioViewModel(
             fetchPortfolio = FetchPortfolio(store),
             fetchMarketQuotes = FetchMarketQuotes(repo),
-            buyAsset = BuyAsset(repo, store),
-            sellAsset = SellAsset(repo, store),
+            buyAsset = BuyAsset(repo, store, Mutex()),
+            sellAsset = SellAsset(repo, store, Mutex()),
             resetPortfolio = ResetPortfolio(store),
             fetchPerformanceReport = FetchPerformanceReport(repo, perf),
             nowEpochSeconds = now,
