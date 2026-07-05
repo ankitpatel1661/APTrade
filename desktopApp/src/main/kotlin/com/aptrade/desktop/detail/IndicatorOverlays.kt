@@ -85,8 +85,13 @@ fun computeIndicators(candles: List<ChartCandle>, selection: Set<Indicator>): In
     )
 }
 
-/** Price chart (line drawn from candle closes) with the enabled overlays. The y-domain pads
- *  the close extremes 12% and widens to include Bollinger extremes when BB is on, matching the
+/** Price chart (line drawn from candle closes) with the enabled overlays. [candles] and
+ *  [series] span the FULL lookback+visible series (indicators are computed over the whole
+ *  thing so their warm-up prefix is fully formed by [visibleStartIndex]); only the visible
+ *  slice (`candles.drop(visibleStartIndex)`) is actually drawn — x maps every index i to
+ *  `(i - visibleStartIndex) * stepX`, so lookback-only points (i < visibleStartIndex) fall
+ *  off-canvas to the left and are naturally clipped. The y-domain pads the VISIBLE close
+ *  extremes 12% and widens to include VISIBLE Bollinger extremes when BB is on, matching the
  *  macOS chart's domain logic. All series share one index → x space so overlays align. */
 @Composable
 fun PriceChartWithOverlays(
@@ -95,14 +100,16 @@ fun PriceChartWithOverlays(
     selection: Set<Indicator>,
     lineColor: Color,
     modifier: Modifier = Modifier,
+    visibleStartIndex: Int = 0,
 ) {
     Canvas(modifier) {
-        if (candles.size < 2) return@Canvas
-        val closes = candles.map { it.close }
-        var lo = closes.min()
-        var hi = closes.max()
+        val visibleCount = candles.size - visibleStartIndex
+        if (visibleCount < 2) return@Canvas
+        val visibleCloses = candles.subList(visibleStartIndex, candles.size).map { it.close }
+        var lo = visibleCloses.min()
+        var hi = visibleCloses.max()
         if (selection.contains(Indicator.Bollinger)) {
-            series.bollinger.forEach { band ->
+            series.bollinger.drop(visibleStartIndex).forEach { band ->
                 if (band != null) { lo = minOf(lo, band.lower); hi = maxOf(hi, band.upper) }
             }
         }
@@ -111,21 +118,23 @@ fun PriceChartWithOverlays(
         val domainLo = lo - padding
         val domainHi = hi + padding
         val span = (domainHi - domainLo).takeIf { it > 0.0 } ?: 1.0
-        val stepX = size.width / (candles.size - 1)
-        fun x(i: Int) = i * stepX
+        val stepX = size.width / (visibleCount - 1)
+        fun x(i: Int) = (i - visibleStartIndex) * stepX
         fun y(v: Double) = size.height - ((v - domainLo) / span * size.height).toFloat()
 
         // Bollinger fill sits BEHIND the price line and band edges.
         drawBollingerFillIfOn(series, selection, ::x, ::y)
 
-        // Price line (from candle closes).
+        // Price line (from candle closes) — only the visible slice.
         val pricePath = Path()
-        candles.forEachIndexed { i, c ->
-            if (i == 0) pricePath.moveTo(x(i), y(c.close)) else pricePath.lineTo(x(i), y(c.close))
+        for (i in visibleStartIndex until candles.size) {
+            val c = candles[i]
+            if (i == visibleStartIndex) pricePath.moveTo(x(i), y(c.close)) else pricePath.lineTo(x(i), y(c.close))
         }
         drawPath(pricePath, lineColor, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
 
-        // Overlay polylines — each skips the null seed prefix.
+        // Overlay polylines (full series; lookback prefix draws off-canvas and is clipped) —
+        // each also skips the null warm-up prefix (drawSeries).
         drawOverlaySeries(series, selection, ::x, ::y)
     }
 }
@@ -142,28 +151,34 @@ fun CandleChartWithOverlays(
     series: IndicatorSeries,
     selection: Set<Indicator>,
     modifier: Modifier = Modifier,
+    visibleStartIndex: Int = 0,
 ) {
     Canvas(modifier) {
-        if (candles.size < 2) return@Canvas
-        var lo = candles.minOf { it.low }
-        var hi = candles.maxOf { it.high }
+        val visibleCount = candles.size - visibleStartIndex
+        if (visibleCount < 2) return@Canvas
+        val visibleCandles = candles.subList(visibleStartIndex, candles.size)
+        var lo = visibleCandles.minOf { it.low }
+        var hi = visibleCandles.maxOf { it.high }
         if (selection.contains(Indicator.Bollinger)) {
-            series.bollinger.forEach { band ->
+            series.bollinger.drop(visibleStartIndex).forEach { band ->
                 if (band != null) { lo = minOf(lo, band.lower); hi = maxOf(hi, band.upper) }
             }
         }
         val span = (hi - lo).takeIf { it > 0.0 } ?: 1.0
-        val slot = size.width / candles.size
+        val slot = size.width / visibleCount
         val bodyWidth = (slot * 0.6f).coerceAtLeast(1f)
         // Candle i center — the shared x for both wicks/bodies and every overlay point.
-        fun x(i: Int) = i * slot + slot / 2f
+        // Lookback-only indices (i < visibleStartIndex) map to negative x and are clipped.
+        fun x(i: Int) = (i - visibleStartIndex) * slot + slot / 2f
         fun y(v: Double) = size.height - ((v - lo) / span * size.height).toFloat()
 
         // Bollinger fill behind the candles and overlay edges.
         drawBollingerFillIfOn(series, selection, ::x, ::y)
 
-        // Candlesticks (same wick/body drawing as CandleChart, on the extended domain).
-        candles.forEachIndexed { i, c ->
+        // Candlesticks (same wick/body drawing as CandleChart, on the extended domain) — only
+        // the visible slice.
+        for (i in visibleStartIndex until candles.size) {
+            val c = candles[i]
             val cx = x(i)
             val color = if (c.close >= c.open) DK.up else DK.down
             drawLine(color, Offset(cx, y(c.high)), Offset(cx, y(c.low)), 1.dp.toPx())
@@ -171,7 +186,8 @@ fun CandleChartWithOverlays(
             drawRect(color, Offset(cx - bodyWidth / 2f, top), Size(bodyWidth, (bottom - top).coerceAtLeast(1f)))
         }
 
-        // Overlay polylines on top, aligned to candle centers.
+        // Overlay polylines on top, aligned to candle centers (full series; lookback prefix
+        // draws off-canvas and is clipped).
         drawOverlaySeries(series, selection, ::x, ::y)
     }
 }
@@ -272,9 +288,11 @@ private fun DrawScope.drawBollingerFill(
 }
 
 /** RSI sub-pane: 90dp, y-domain 0..100, dashed 30/70 guides with Oversold/Overbought labels,
- *  the RSI polyline in its color. No x-axis. */
+ *  the RSI polyline in its color. No x-axis. [series.rsi] spans the full lookback+visible
+ *  series; only the visible slice (from [visibleStartIndex]) is drawn, sharing the same
+ *  index → x mapping as the price/candle charts above it. */
 @Composable
-fun RsiPane(series: IndicatorSeries, modifier: Modifier = Modifier) {
+fun RsiPane(series: IndicatorSeries, modifier: Modifier = Modifier, visibleStartIndex: Int = 0) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             "RSI 14",
@@ -287,9 +305,10 @@ fun RsiPane(series: IndicatorSeries, modifier: Modifier = Modifier) {
                 fun y(v: Double) = size.height - (v / 100.0 * size.height).toFloat()
                 drawLine(DK.hairline, Offset(0f, y(70.0)), Offset(size.width, y(70.0)), 1.dp.toPx(), pathEffect = dash)
                 drawLine(DK.hairline, Offset(0f, y(30.0)), Offset(size.width, y(30.0)), 1.dp.toPx(), pathEffect = dash)
-                if (series.rsi.size >= 2) {
-                    val stepX = size.width / (series.rsi.size - 1)
-                    drawSeries(series.rsi, Indicator.Rsi.color, 1.5.dp.toPx(), { it * stepX }, ::y)
+                val visibleCount = series.rsi.size - visibleStartIndex
+                if (visibleCount >= 2) {
+                    val stepX = size.width / (visibleCount - 1)
+                    drawSeries(series.rsi, Indicator.Rsi.color, 1.5.dp.toPx(), { (it - visibleStartIndex) * stepX }, ::y)
                 }
             }
             Text(
@@ -309,9 +328,11 @@ fun RsiPane(series: IndicatorSeries, modifier: Modifier = Modifier) {
 }
 
 /** MACD sub-pane: 100dp, zero-centered histogram bars (up/down at 0.5 alpha), MACD + signal
- *  lines, a small dot legend. No x-axis. */
+ *  lines, a small dot legend. No x-axis. [series.macd] spans the full lookback+visible
+ *  series; only the visible slice (from [visibleStartIndex]) is drawn/scaled, sharing the
+ *  same index → x mapping as the price/candle charts above it. */
 @Composable
-fun MacdPane(series: IndicatorSeries, modifier: Modifier = Modifier) {
+fun MacdPane(series: IndicatorSeries, modifier: Modifier = Modifier, visibleStartIndex: Int = 0) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
@@ -325,34 +346,42 @@ fun MacdPane(series: IndicatorSeries, modifier: Modifier = Modifier) {
         Box(Modifier.fillMaxWidth().height(100.dp)) {
             Canvas(Modifier.fillMaxSize()) {
                 val points = series.macd
-                if (points.size < 2) return@Canvas
+                val visibleCount = points.size - visibleStartIndex
+                if (visibleCount < 2) return@Canvas
+                val visiblePoints = points.subList(visibleStartIndex, points.size)
                 val macdVals = points.map { it?.macd }
                 val signalVals = points.map { it?.signal }
                 val histVals = points.map { it?.histogram }
-                // Shared y-domain across macd line, signal line, and histogram (zero-centered).
+                val visibleMacd = visiblePoints.map { it?.macd }
+                val visibleSignal = visiblePoints.map { it?.signal }
+                val visibleHist = visiblePoints.map { it?.histogram }
+                // Shared y-domain across macd line, signal line, and histogram (zero-centered),
+                // computed over the VISIBLE slice only so the scale matches what's shown.
                 var lo = 0.0
                 var hi = 0.0
-                (macdVals + signalVals + histVals).forEach { v -> if (v != null) { lo = minOf(lo, v); hi = maxOf(hi, v) } }
+                (visibleMacd + visibleSignal + visibleHist).forEach { v -> if (v != null) { lo = minOf(lo, v); hi = maxOf(hi, v) } }
                 if (hi <= lo) { hi = 1.0; lo = -1.0 }
                 val pad = (hi - lo) * 0.1
                 val domainLo = lo - pad
                 val domainHi = hi + pad
                 val vspan = (domainHi - domainLo).takeIf { it > 0.0 } ?: 1.0
-                val stepX = size.width / (points.size - 1)
+                val stepX = size.width / (visibleCount - 1)
+                fun x(i: Int) = (i - visibleStartIndex) * stepX
                 fun y(v: Double) = size.height - ((v - domainLo) / vspan * size.height).toFloat()
                 val zeroY = y(0.0)
                 val barW = (stepX * 0.6f).coerceAtLeast(1f)
-                histVals.forEachIndexed { i, v ->
+                for (i in visibleStartIndex until points.size) {
+                    val v = histVals[i]
                     if (v != null) {
-                        val cx = i * stepX
+                        val cx = x(i)
                         val top = if (v >= 0) y(v) else zeroY
                         val h = kotlin.math.abs(y(v) - zeroY).coerceAtLeast(1f)
                         val color = (if (v >= 0) DK.up else DK.down).copy(alpha = 0.5f)
                         drawRect(color, Offset(cx - barW / 2f, top), Size(barW, h))
                     }
                 }
-                drawSeries(macdVals, Indicator.Macd.color, 1.5.dp.toPx(), { it * stepX }, ::y)
-                drawSeries(signalVals, MacdSignalColor, 1.5.dp.toPx(), { it * stepX }, ::y)
+                drawSeries(macdVals, Indicator.Macd.color, 1.5.dp.toPx(), ::x, ::y)
+                drawSeries(signalVals, MacdSignalColor, 1.5.dp.toPx(), ::x, ::y)
             }
         }
     }

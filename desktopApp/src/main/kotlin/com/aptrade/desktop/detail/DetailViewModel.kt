@@ -3,7 +3,7 @@ package com.aptrade.desktop.detail
 import com.aptrade.desktop.designkit.ChartCandle
 import com.aptrade.desktop.designkit.kindLabel
 import com.aptrade.desktop.ui.userMessage
-import com.aptrade.shared.application.FetchCandles
+import com.aptrade.shared.application.FetchChartWindow
 import com.aptrade.shared.application.FetchCompanyNews
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketQuotes
@@ -34,7 +34,15 @@ data class DetailUiState(
     val timeframe: Timeframe = Timeframe.OneDay,
     val mode: ChartMode = ChartMode.Line,
     val lineValues: List<Double> = emptyList(),
+    /** FULL candle series: lookback warm-up bars followed by the visible window
+     *  (see [visibleStartIndex]). Indicators are computed over this entire list so their
+     *  warm-up prefix (SMA/BB ~20 bars, MACD ~26 bars) is consumed by the lookback bars
+     *  rather than eating into the visible chart. */
     val candles: List<ChartCandle> = emptyList(),
+    /** Index into [candles] where the plain visible window begins — `candles.drop(
+     *  visibleStartIndex)` is exactly what a non-indicator chart should render. 0 when there
+     *  aren't enough lookback bars ahead of the window (the full list IS the visible list). */
+    val visibleStartIndex: Int = 0,
     /** True while any indicator chip is toggled on. Drives the candle fetch in Line mode
      *  (indicators need OHLCV even when the price chart is drawn from line history). */
     val indicatorsActive: Boolean = false,
@@ -60,7 +68,7 @@ class DetailViewModel(
     private val fetchProfile: FetchProfile,
     private val fetchMarketQuotes: FetchMarketQuotes,
     private val fetchHistory: FetchHistory,
-    private val fetchCandles: FetchCandles,
+    private val fetchChartWindow: FetchChartWindow,
     private val scope: CoroutineScope,
     /** Null when no news key is configured — surfaces as [DetailUiState.newsKeyMissing] and
      *  the company-news section stays empty. */
@@ -189,19 +197,24 @@ class DetailViewModel(
                 } else {
                     _state.value.lineValues
                 }
-                val candles = if (shouldFetchCandles) {
-                    fetchCandles.execute(symbol, timeframe).map { c ->
-                        ChartCandle(
-                            c.open.amount.doubleValue(false), c.high.amount.doubleValue(false),
-                            c.low.amount.doubleValue(false), c.close.amount.doubleValue(false),
-                            c.volume,
-                        )
-                    }.also { candlesTimeframe = timeframe }
+                val chartWindow = if (shouldFetchCandles) {
+                    fetchChartWindow.execute(symbol, timeframe).also { candlesTimeframe = timeframe }
                 } else {
-                    _state.value.candles
+                    null
                 }
+                val candles = chartWindow?.candles?.map { c ->
+                    ChartCandle(
+                        c.open.amount.doubleValue(false), c.high.amount.doubleValue(false),
+                        c.low.amount.doubleValue(false), c.close.amount.doubleValue(false),
+                        c.volume,
+                    )
+                } ?: _state.value.candles
+                val visibleStartIndex = chartWindow?.visibleStartIndex ?: _state.value.visibleStartIndex
                 _state.update {
-                    it.copy(isLoadingChart = false, lineValues = lineValues, candles = candles)
+                    it.copy(
+                        isLoadingChart = false, lineValues = lineValues,
+                        candles = candles, visibleStartIndex = visibleStartIndex,
+                    )
                 }
             } catch (e: CancellationException) {
                 throw e

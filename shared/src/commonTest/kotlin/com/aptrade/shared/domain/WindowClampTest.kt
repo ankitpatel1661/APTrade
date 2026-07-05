@@ -1,4 +1,4 @@
-package com.aptrade.shared.infrastructure
+package com.aptrade.shared.domain
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

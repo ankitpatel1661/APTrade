@@ -27,4 +27,14 @@ enum class Timeframe {
             OneMonth -> 30L * 24 * 3600
             OneYear -> 365L * 24 * 3600
         }
+
+    /** Bar spacing in seconds, matching [yahooInterval] exactly (5m / 60m / 1d / 1d). Used to
+     *  size the indicator warm-up lookback pad in [com.aptrade.shared.application.FetchChartWindow]. */
+    val intervalSeconds: Long
+        get() = when (this) {
+            OneDay -> 300L
+            OneWeek -> 3600L
+            OneMonth -> 86_400L
+            OneYear -> 86_400L
+        }
 }

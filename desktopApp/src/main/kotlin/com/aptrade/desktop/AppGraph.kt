@@ -17,6 +17,7 @@ import com.aptrade.shared.application.BuyAsset
 import com.aptrade.shared.application.CreatePriceAlert
 import com.aptrade.shared.application.EvaluateAlerts
 import com.aptrade.shared.application.FetchCandles
+import com.aptrade.shared.application.FetchChartWindow
 import com.aptrade.shared.application.FetchCompanyNews
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketNews
@@ -73,6 +74,7 @@ class AppGraph(
     val fetchProfile = FetchProfile(repository)
     val fetchHistory = FetchHistory(repository)
     val fetchCandles = FetchCandles(repository)
+    val fetchChartWindow = FetchChartWindow(repository)
 
     val defaultEntries = listOf(
         WatchlistEntry("AAPL", "Apple Inc.", AssetKind.Stock),

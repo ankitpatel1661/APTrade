@@ -83,7 +83,7 @@ fun DetailScreen(
             fetchProfile = graph.fetchProfile,
             fetchMarketQuotes = graph.fetchMarketQuotes,
             fetchHistory = graph.fetchHistory,
-            fetchCandles = graph.fetchCandles,
+            fetchChartWindow = graph.fetchChartWindow,
             scope = scope,
             fetchCompanyNews = graph.fetchCompanyNews,
             loadBookmarks = graph.loadBookmarks,
@@ -216,6 +216,7 @@ private fun DetailContent(
                         candles = state.candles,
                         series = series,
                         selection = selection,
+                        visibleStartIndex = state.visibleStartIndex,
                         modifier = Modifier.fillMaxSize(),
                     )
                 selection.any { it.isOverlay } && state.candles.size >= 2 ->
@@ -224,21 +225,27 @@ private fun DetailContent(
                         series = series,
                         selection = selection,
                         lineColor = DK.changeColor(state.changePercent),
+                        visibleStartIndex = state.visibleStartIndex,
                         modifier = Modifier.fillMaxSize(),
                     )
                 state.mode == ChartMode.Line ->
                     LineChart(values = state.lineValues, modifier = Modifier.fillMaxSize(), color = DK.gold)
                 else ->
-                    CandleChart(candles = state.candles, modifier = Modifier.fillMaxSize())
+                    // No overlays: CandleChart has no lookback/visible split, so it only ever
+                    // renders the plain visible slice (matching FetchCandles' own contract).
+                    CandleChart(
+                        candles = state.candles.drop(state.visibleStartIndex),
+                        modifier = Modifier.fillMaxSize(),
+                    )
             }
         }
         if (selection.contains(Indicator.Rsi) && state.candles.size >= 2) {
             Spacer(Modifier.height(16.dp))
-            RsiPane(series = series)
+            RsiPane(series = series, visibleStartIndex = state.visibleStartIndex)
         }
         if (selection.contains(Indicator.Macd) && state.candles.size >= 2) {
             Spacer(Modifier.height(16.dp))
-            MacdPane(series = series)
+            MacdPane(series = series, visibleStartIndex = state.visibleStartIndex)
         }
         Spacer(Modifier.height(24.dp))
         KeyStatsCard(state)

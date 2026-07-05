@@ -1,4 +1,4 @@
-package com.aptrade.shared.infrastructure
+package com.aptrade.shared.domain
 
 /**
  * Trims [items] to the exact rolling window of [windowDurationSeconds], anchored to the

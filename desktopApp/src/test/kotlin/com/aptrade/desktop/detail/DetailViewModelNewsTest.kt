@@ -2,7 +2,7 @@ package com.aptrade.desktop.detail
 
 import com.aptrade.desktop.FakeMarketDataRepository
 import com.aptrade.shared.application.BookmarkStore
-import com.aptrade.shared.application.FetchCandles
+import com.aptrade.shared.application.FetchChartWindow
 import com.aptrade.shared.application.FetchCompanyNews
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketQuotes
@@ -65,7 +65,7 @@ private fun vm(
     fetchProfile = FetchProfile(repo),
     fetchMarketQuotes = FetchMarketQuotes(repo),
     fetchHistory = FetchHistory(repo),
-    fetchCandles = FetchCandles(repo),
+    fetchChartWindow = FetchChartWindow(repo),
     scope = scope,
     fetchCompanyNews = news?.let { FetchCompanyNews(it) },
     loadBookmarks = LoadBookmarks(store),

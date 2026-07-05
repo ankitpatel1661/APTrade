@@ -81,6 +81,29 @@ class YahooMarketDataRepositoryTest {
         assertTrue(ex is QuoteError.RateLimited)
     }
 
+    // Moved-clamp counterpart: `candles()` now returns the RAW mapped bars, UNCLAMPED — the
+    // window clamp lives in FetchCandles (application layer) so FetchChartWindow can instead
+    // clamp to a wider (window + lookback pad) window. A bar far outside OneDay's
+    // windowDurationSeconds must still come back here; only the use-case layer trims it.
+    @Test
+    fun returnsCandlesUnclamped() = runTest {
+        val body = """
+            {"chart":{"result":[{"meta":{"symbol":"AAPL","currency":"USD"},
+            "timestamp":[1000,500000,600000],
+            "indicators":{"quote":[{"open":[100.00,101.00,102.00],
+            "high":[100.00,101.00,102.00],"low":[100.00,101.00,102.00],
+            "close":[100.00,101.00,102.00],"volume":[10,20,30]}]}}]}}
+        """.trimIndent()
+        val repo = YahooMarketDataRepository(clientReturning(HttpStatusCode.OK, body))
+
+        val candles = repo.candles("AAPL", Timeframe.OneDay)
+
+        // All 3 bars survive despite the first being ~599000s before the newest (far outside
+        // OneDay's 86400s window) — proving the repository itself no longer clamps.
+        assertEquals(3, candles.size)
+        assertEquals(1000L, candles.first().epochSeconds)
+    }
+
     @Test
     fun returnsProfileFromMeta() = runTest {
         val body = """

@@ -7,6 +7,7 @@ import com.aptrade.shared.domain.Candle
 import com.aptrade.shared.domain.PricePoint
 import com.aptrade.shared.domain.Quote
 import com.aptrade.shared.domain.Timeframe
+import com.aptrade.shared.domain.clampToWindow
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
@@ -40,10 +41,15 @@ class YahooMarketDataRepository internal constructor(
         return clampToWindow(points, timeframe.windowDurationSeconds) { it.epochSeconds }
     }
 
+    // RAW mapped candles — deliberately UNCLAMPED. The wide `yahooRange` fetch over-covers
+    // the visible window (e.g. a 1W chart pulls a full month of hourly bars) so that
+    // consumers needing indicator warm-up (SMA/BB/MACD) have lookback bars to compute over.
+    // Window clamping now happens in the application layer: FetchCandles clamps to the
+    // plain visible window (byte-preserving prior behavior for its consumers), while
+    // FetchChartWindow clamps to window + lookback pad. See FetchCandles / FetchChartWindow.
     override suspend fun candles(symbol: String, timeframe: Timeframe): List<Candle> {
         val response = fetchChart(symbol, timeframe.yahooRange, timeframe.yahooInterval)
-        val candles = YahooQuoteMapper.candles(response)
-        return clampToWindow(candles, timeframe.windowDurationSeconds) { it.epochSeconds }
+        return YahooQuoteMapper.candles(response)
     }
 
     override suspend fun profile(symbol: String): Asset =
