@@ -29,6 +29,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.aptrade.desktop.l10n.L10n
+import com.aptrade.desktop.l10n.tr
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.Timeframe
 
@@ -39,6 +41,20 @@ fun timeframeLabel(tf: Timeframe): String = when (tf) {
 
 fun kindLabel(kind: AssetKind): String = when (kind) {
     AssetKind.Stock -> "Stock"; AssetKind.Etf -> "ETF"; AssetKind.Crypto -> "Crypto"
+}
+
+/** The uppercased kind chip text (watchlist rows, palette/suggestion rows) — L10n
+ *  `.stockChip`/`.etfChip`/`.cryptoChip`, matching `CommandPaletteView.swift`/
+ *  `WatchlistView.swift`'s `chipLabel`. Distinct from [kindLabel]: that plain-word helper
+ *  also feeds non-Compose call sites (e.g. `DetailViewModel`'s cached `kindLabel` state) that
+ *  are out of scope for this retrofit wave, so it stays untranslated here; this composable
+ *  function is read live at render time by the two watchlist/palette call sites that need the
+ *  chip's own translated, pre-uppercased string (DE "AKTIE" is not "STOCK".uppercase()). */
+@Composable
+fun chipLabel(kind: AssetKind): String = when (kind) {
+    AssetKind.Stock -> tr(L10n.Key.StockChip)
+    AssetKind.Etf -> tr(L10n.Key.EtfChip)
+    AssetKind.Crypto -> tr(L10n.Key.CryptoChip)
 }
 
 private fun numericStyle(size: TextUnit, weight: FontWeight, color: Color) = TextStyle(
@@ -183,7 +199,7 @@ fun LiveBadge() {
             .padding(horizontal = 8.dp, vertical = 4.dp),
     ) {
         Box(Modifier.size(6.dp).alpha(pulse).background(DK.gold, CircleShape))
-        Text("LIVE", style = TextStyle(fontFamily = InterFamily, fontSize = 10.sp,
+        Text(tr(L10n.Key.LiveBadge), style = TextStyle(fontFamily = InterFamily, fontSize = 10.sp,
             fontWeight = FontWeight.Bold, color = DK.gold, letterSpacing = 1.6.sp))
     }
 }
@@ -241,7 +257,11 @@ fun KindToggle(selection: AssetKind, counts: Map<AssetKind, Int>, onSelect: (Ass
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 Text(
-                    when (kind) { AssetKind.Stock -> "Stocks"; AssetKind.Etf -> "ETFs"; AssetKind.Crypto -> "Crypto" },
+                    when (kind) {
+                        AssetKind.Stock -> tr(L10n.Key.StocksLabel)
+                        AssetKind.Etf -> tr(L10n.Key.EtfsLabel)
+                        AssetKind.Crypto -> tr(L10n.Key.CryptoLabel)
+                    },
                     style = TextStyle(fontFamily = InterFamily, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                         color = if (selected) DK.textPrimary else DK.textSecondary),
                 )

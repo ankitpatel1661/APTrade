@@ -51,11 +51,23 @@ import com.aptrade.desktop.designkit.LiveBadge
 import com.aptrade.desktop.designkit.StatTile
 import com.aptrade.desktop.designkit.SuperscriptPrice
 import com.aptrade.desktop.designkit.formatPercent
+import com.aptrade.desktop.l10n.L10n
+import com.aptrade.desktop.l10n.tr
+import com.aptrade.desktop.l10n.trf
 import com.aptrade.shared.domain.AllocationSlice
 
 /** The three content sections beneath the summary and chart. */
-private enum class PortfolioSection(val label: String) {
-    Holdings("Holdings"), Allocation("Allocation"), Activity("Activity")
+private enum class PortfolioSection {
+    Holdings, Allocation, Activity
+}
+
+/** [PortfolioSection]'s display label. A plain function (not an enum property) because it
+ *  must call [tr], which reads the active language live — see [com.aptrade.desktop.ui.AppTab]'s
+ *  `title()` for the same pattern and rationale. */
+private fun PortfolioSection.label(): String = when (this) {
+    PortfolioSection.Holdings -> tr(L10n.Key.HoldingsSection)
+    PortfolioSection.Allocation -> tr(L10n.Key.AllocationSection)
+    PortfolioSection.Activity -> tr(L10n.Key.ActivitySection)
 }
 
 /** Portfolio tab: the Compose port of `Sources/APTradeApp/PortfolioView.swift`. A full-width
@@ -157,7 +169,7 @@ private fun SummaryHeader(
         Row(verticalAlignment = Alignment.Top) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
                 Text(
-                    "TOTAL VALUE",
+                    tr(L10n.Key.TotalValue),
                     style = TextStyle(
                         fontFamily = InterFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold,
                         color = DK.textSecondary, letterSpacing = 1.8.sp,
@@ -183,7 +195,7 @@ private fun SummaryHeader(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 if (state.holdings.isNotEmpty()) LiveBadge()
                 Box {
-                    TextButton("Export…", DK.textSecondary) { exportOpen = true }
+                    TextButton(tr(L10n.Key.ExportEllipsis), DK.textSecondary) { exportOpen = true }
                     if (exportOpen) {
                         ExportChooser(
                             onDismiss = { exportOpen = false },
@@ -193,19 +205,19 @@ private fun SummaryHeader(
                         )
                     }
                 }
-                TextButton("Reset portfolio…", DK.textTertiary, onReset)
+                TextButton(tr(L10n.Key.ResetPortfolioEllipsis), DK.textTertiary, onReset)
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-            StatTile(label = "Cash", value = state.cashText ?: "—")
-            StatTile(label = "Holdings", value = state.holdingsValueText ?: "—")
+            StatTile(label = tr(L10n.Key.CashLabel), value = state.cashText ?: "—")
+            StatTile(label = tr(L10n.Key.HoldingsSection), value = state.holdingsValueText ?: "—")
             StatTile(
-                label = "Unrealized P&L",
+                label = tr(L10n.Key.UnrealizedPnL),
                 value = state.unrealizedText ?: "—",
                 valueColor = signColor(state.unrealizedPositive),
             )
             StatTile(
-                label = "Realized P&L",
+                label = tr(L10n.Key.RealizedPnL),
                 value = state.realizedText ?: "—",
                 valueColor = signColor(state.realizedPositive),
             )
@@ -326,7 +338,7 @@ private fun SectionSwitcher(
                     .padding(horizontal = 14.dp, vertical = 6.dp),
             ) {
                 Text(
-                    option.label,
+                    option.label(),
                     style = TextStyle(
                         fontFamily = InterFamily, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                         color = if (isSelected) DK.textPrimary else DK.textSecondary,
@@ -394,8 +406,8 @@ private fun HoldingRow(
         run {
             val actionColor = DK.gold.copy(alpha = if (hovered) 1f else 0.35f)
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                TextButton("BUY", actionColor) { onTrade(row.symbol, com.aptrade.shared.domain.TradeSide.Buy) }
-                TextButton("SELL", actionColor) { onTrade(row.symbol, com.aptrade.shared.domain.TradeSide.Sell) }
+                TextButton(tr(L10n.Key.BuyChip), actionColor) { onTrade(row.symbol, com.aptrade.shared.domain.TradeSide.Buy) }
+                TextButton(tr(L10n.Key.SellChip), actionColor) { onTrade(row.symbol, com.aptrade.shared.domain.TradeSide.Sell) }
             }
             Spacer(Modifier.width(16.dp))
         }
@@ -421,14 +433,14 @@ private fun AllocationView(state: PortfolioUiState) {
         Spacer(Modifier.height(20.dp))
         AllocationDonutRow(state)
         Spacer(Modifier.height(24.dp))
-        AllocationGroupHeader("BY HOLDING")
+        AllocationGroupHeader(tr(L10n.Key.ByHolding))
         Spacer(Modifier.height(12.dp))
         for (slice in state.allocationByHolding) {
             AllocationBar(label = slice.label, fraction = slice.fraction, fillColor = null)
             Spacer(Modifier.height(14.dp))
         }
         Spacer(Modifier.height(10.dp))
-        AllocationGroupHeader("BY CLASS")
+        AllocationGroupHeader(tr(L10n.Key.ByClass))
         Spacer(Modifier.height(12.dp))
         for (slice in state.allocationByKind) {
             AllocationBar(label = slice.label, fraction = slice.fraction, fillColor = kindColor(slice.id))
@@ -453,7 +465,7 @@ private fun AllocationDonutRow(state: PortfolioUiState) {
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Text(
-                    "HOLDINGS",
+                    tr(L10n.Key.HoldingsLabel),
                     style = TextStyle(
                         fontFamily = InterFamily, fontSize = 8.sp, fontWeight = FontWeight.Bold,
                         color = DK.textTertiary, letterSpacing = 1.2.sp,
@@ -563,7 +575,7 @@ private fun ActivityView(state: PortfolioUiState) {
     if (state.transactions.isEmpty()) {
         Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
             Text(
-                "No transactions yet.",
+                tr(L10n.Key.NoTransactionsYet),
                 style = TextStyle(
                     fontFamily = InterFamily, fontSize = 13.sp,
                     fontWeight = FontWeight.Medium, color = DK.textSecondary,
@@ -631,9 +643,13 @@ private fun TransactionRow(txn: TransactionRowUi) {
 
 @Composable
 private fun EmptyState() {
+    // Single-line layout kept as-is (behavior/layout unchanged this retrofit); the two source
+    // sentences are the macOS-equivalent Keys (`.noHoldingsYet` + `.noHoldingsHint` — see
+    // `PortfolioView.swift`'s two-Text `emptyState`), joined the way this pane already joined
+    // its old, divergent wording.
     Box(Modifier.fillMaxWidth().height(320.dp).padding(40.dp), contentAlignment = Alignment.Center) {
         Text(
-            "No holdings yet — open an asset and hit Buy.",
+            "${tr(L10n.Key.NoHoldingsYet)} — ${tr(L10n.Key.NoHoldingsHint)}",
             style = TextStyle(
                 fontFamily = InterFamily, fontSize = 14.sp,
                 fontWeight = FontWeight.Medium, color = DK.textTertiary,
@@ -673,7 +689,7 @@ private fun ResetConfirmDialog(onConfirm: () -> Unit, onCancel: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             Text(
-                "Start over with $100,000?",
+                trf(L10n.Key.StartOverWithFormat, "$100,000"),
                 style = TextStyle(
                     fontFamily = InterFamily, fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold, color = DK.textPrimary,
@@ -689,7 +705,7 @@ private fun ResetConfirmDialog(onConfirm: () -> Unit, onCancel: () -> Unit) {
                         .padding(vertical = 12.dp),
                 ) {
                     Text(
-                        "Cancel",
+                        tr(L10n.Key.Cancel),
                         style = TextStyle(
                             fontFamily = InterFamily, fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold, color = DK.textSecondary,
@@ -705,7 +721,11 @@ private fun ResetConfirmDialog(onConfirm: () -> Unit, onCancel: () -> Unit) {
                         .padding(vertical = 12.dp),
                 ) {
                     Text(
-                        "Confirm",
+                        // macOS's equivalent reset control (PortfolioView.swift:72) is the
+                        // confirmationDialog's destructive button labeled `.reset` ("Reset") —
+                        // this panel's "Confirm" action is that same control, just rendered on
+                        // Compose Desktop's in-panel dialog instead of a native sheet.
+                        tr(L10n.Key.Reset),
                         style = TextStyle(
                             fontFamily = InterFamily, fontSize = 14.sp,
                             fontWeight = FontWeight.Bold, color = DK.down,

@@ -12,14 +12,19 @@ import kotlin.test.assertTrue
  * back to [L10n.Key.english] exactly when a translation is missing or blank.
  *
  * The Swift catalog (`Sources/APTradeApp/L10n.swift`) has exactly 205 `Key` cases with a
- * `table` row for all four languages each — this test pins that same count on the Kotlin
- * side so the transcription can't silently drop or duplicate a key.
+ * `table` row for all four languages each — this test pinned that same count on the Kotlin
+ * side so the transcription couldn't silently drop or duplicate a key. Task 6 (6e wave 1 —
+ * navigation/watchlist/portfolio retrofit) added 6 desktop-only Keys with no macOS counterpart
+ * (`StartOverWithFormat`, `ExportEllipsis`, `ResetPortfolioEllipsis`, `ByClass`,
+ * `TrackingStartsTodayMessage`, `NoPerformanceDataYet` — see the task report for why each has
+ * no existing Key), bringing the total to 211; the count below tracks the Kotlin-only total
+ * going forward, not the Swift source count.
  */
 class L10nCatalogTest {
 
     @Test
-    fun `catalog has exactly 205 keys, matching the macOS L10n Key enum`() {
-        assertEquals(205, L10n.Key.entries.size)
+    fun `catalog has exactly 211 keys (205 macOS-transcribed + 6 desktop-only from Task 6)`() {
+        assertEquals(211, L10n.Key.entries.size)
     }
 
     @Test

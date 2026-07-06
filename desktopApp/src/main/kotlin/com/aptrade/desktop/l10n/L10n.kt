@@ -146,6 +146,18 @@ object L10n {
         BuyChip(english = "BUY"),
         SellChip(english = "SELL"),
 
+        // Desktop-only additions (6e Task 6 — no macOS Key: this pane/control has no direct
+        // SwiftUI counterpart, or diverges from it, per the file-level doc comments where each
+        // is used).
+        StartOverWithFormat(english = "Start over with %@?"),
+        ExportEllipsis(english = "Export…"),
+        ResetPortfolioEllipsis(english = "Reset portfolio…"),
+        ByClass(english = "BY CLASS"),
+        TrackingStartsTodayMessage(
+            english = "Tracking starts today — performance appears after your first market day.",
+        ),
+        NoPerformanceDataYet(english = "No performance data yet."),
+
         // Performance metrics
         TotalReturn(english = "Total Return"),
         AnnualizedReturn(english = "Annualized"),
@@ -395,6 +407,13 @@ object L10n {
             Key.BuyChip to "KAUF",
             Key.SellChip to "VERKAUF",
 
+            Key.StartOverWithFormat to "Neu beginnen mit %@?",
+            Key.ExportEllipsis to "Exportieren…",
+            Key.ResetPortfolioEllipsis to "Portfolio zurücksetzen…",
+            Key.ByClass to "NACH KLASSE",
+            Key.TrackingStartsTodayMessage to "Die Aufzeichnung beginnt heute — die Wertentwicklung erscheint nach Ihrem ersten Handelstag.",
+            Key.NoPerformanceDataYet to "Noch keine Performance-Daten.",
+
             Key.TotalReturn to "Gesamtrendite",
             Key.AnnualizedReturn to "Annualisiert",
             Key.Volatility to "Volatilität",
@@ -623,6 +642,13 @@ object L10n {
             Key.BuyChip to "ACQUISTO",
             Key.SellChip to "VENDITA",
 
+            Key.StartOverWithFormat to "Ricominciare con %@?",
+            Key.ExportEllipsis to "Esporta…",
+            Key.ResetPortfolioEllipsis to "Reimposta portafoglio…",
+            Key.ByClass to "PER CLASSE",
+            Key.TrackingStartsTodayMessage to "Il monitoraggio inizia oggi — il rendimento apparirà dopo il tuo primo giorno di mercato.",
+            Key.NoPerformanceDataYet to "Ancora nessun dato di rendimento.",
+
             Key.TotalReturn to "Rendimento totale",
             Key.AnnualizedReturn to "Annualizzato",
             Key.Volatility to "Volatilità",
@@ -850,6 +876,13 @@ object L10n {
             Key.NoHoldingsHint to "Abre un activo y toca Comprar para iniciar una posición simulada.",
             Key.BuyChip to "COMPRA",
             Key.SellChip to "VENTA",
+
+            Key.StartOverWithFormat to "¿Empezar de nuevo con %@?",
+            Key.ExportEllipsis to "Exportar…",
+            Key.ResetPortfolioEllipsis to "Restablecer cartera…",
+            Key.ByClass to "POR CLASE",
+            Key.TrackingStartsTodayMessage to "El seguimiento comienza hoy — el rendimiento aparecerá después de tu primer día de mercado.",
+            Key.NoPerformanceDataYet to "Aún no hay datos de rendimiento.",
 
             Key.TotalReturn to "Rentabilidad total",
             Key.AnnualizedReturn to "Anualizado",

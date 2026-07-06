@@ -45,7 +45,9 @@ import androidx.compose.ui.unit.sp
 import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.designkit.InterFamily
 import com.aptrade.desktop.designkit.MagnifierIcon
-import com.aptrade.desktop.designkit.kindLabel
+import com.aptrade.desktop.designkit.chipLabel
+import com.aptrade.desktop.l10n.L10n
+import com.aptrade.desktop.l10n.tr
 import com.aptrade.shared.domain.Asset
 import androidx.compose.runtime.collectAsState
 
@@ -100,7 +102,7 @@ fun PaletteOverlay(
                 Box(Modifier.weight(1f)) {
                     if (state.query.isEmpty()) {
                         Text(
-                            "Search stocks, ETFs, crypto",
+                            tr(L10n.Key.SearchAssetsPlaceholder),
                             style = TextStyle(
                                 fontFamily = InterFamily,
                                 fontSize = 16.sp,
@@ -162,7 +164,7 @@ fun PaletteOverlay(
                 }
                 state.query.isNotBlank() && !state.isSearching -> {
                     Text(
-                        "No matches",
+                        tr(L10n.Key.NoMatches),
                         style = TextStyle(
                             fontFamily = InterFamily,
                             fontSize = 13.sp,
@@ -217,7 +219,7 @@ private fun PaletteRow(asset: Asset, selected: Boolean, onClick: () -> Unit) {
             )
         }
         Text(
-            kindLabel(asset.kind).uppercase(),
+            chipLabel(asset.kind),
             style = TextStyle(
                 fontFamily = InterFamily,
                 fontSize = 10.sp,

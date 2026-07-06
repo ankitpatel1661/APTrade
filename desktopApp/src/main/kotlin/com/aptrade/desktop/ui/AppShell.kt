@@ -31,12 +31,23 @@ import com.aptrade.desktop.designkit.BrandWordmark
 import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.designkit.InterFamily
 import com.aptrade.desktop.designkit.MagnifierIcon
+import com.aptrade.desktop.l10n.L10n
+import com.aptrade.desktop.l10n.tr
 
 /** The three top-level destinations. Only Watchlist is live this increment. */
-enum class AppTab(val title: String) {
-    Watchlist("Watchlist"),
-    Portfolio("Portfolio"),
-    News("News"),
+enum class AppTab {
+    Watchlist,
+    Portfolio,
+    News,
+}
+
+/** [AppTab]'s display label. A plain function (not an enum property) because it must call
+ *  [tr], which reads the active language — an enum constructor runs once at class-init and
+ *  would freeze the label at whatever language was active on first touch. */
+private fun AppTab.title(): String = when (this) {
+    AppTab.Watchlist -> tr(L10n.Key.Watchlist)
+    AppTab.Portfolio -> tr(L10n.Key.Portfolio)
+    AppTab.News -> tr(L10n.Key.News)
 }
 
 /** Full-window chrome: vertical gradient, centered wordmark with a palette icon
@@ -134,7 +145,7 @@ private fun TabRow(selectedTab: AppTab, onTabSelect: (AppTab) -> Unit) {
                     .padding(horizontal = 18.dp),
             ) {
                 Text(
-                    tab.title,
+                    tab.title(),
                     style = TextStyle(
                         fontFamily = InterFamily,
                         fontSize = 13.sp,

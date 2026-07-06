@@ -57,8 +57,12 @@ import com.aptrade.desktop.designkit.PulseBar
 import com.aptrade.desktop.designkit.Sparkline
 import com.aptrade.desktop.designkit.SuperscriptPrice
 import com.aptrade.desktop.designkit.ExpandedValueCard
+import com.aptrade.desktop.designkit.chipLabel
 import com.aptrade.desktop.designkit.formatPercent
 import com.aptrade.desktop.designkit.kindLabel
+import com.aptrade.desktop.l10n.L10n
+import com.aptrade.desktop.l10n.tr
+import com.aptrade.desktop.l10n.trf
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.WatchlistEntry
 import androidx.compose.animation.AnimatedVisibility
@@ -105,7 +109,7 @@ fun WatchlistPane(
                 )
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    "Avg day change",
+                    tr(L10n.Key.AvgDayChange),
                     style = TextStyle(
                         fontFamily = InterFamily,
                         fontSize = 13.sp,
@@ -135,7 +139,7 @@ fun WatchlistPane(
             ) {
                 Box(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
                     ExpandedValueCard(
-                        title = "Avg day change",
+                        title = tr(L10n.Key.AvgDayChangeTitle),
                         values = state.averageSpark,
                         onClose = { chartExpanded = false },
                     )
@@ -244,7 +248,7 @@ private fun AddField(
             Box(Modifier.weight(1f)) {
                 if (query.isEmpty()) {
                     Text(
-                        "Add a symbol",
+                        tr(L10n.Key.SearchTickerPlaceholder),
                         style = TextStyle(
                             fontFamily = InterFamily,
                             fontSize = 14.sp,
@@ -330,7 +334,7 @@ private fun SuggestionRow(asset: Asset, onClick: () -> Unit) {
             )
         }
         Text(
-            kindLabel(asset.kind).uppercase(),
+            chipLabel(asset.kind),
             style = TextStyle(
                 fontFamily = InterFamily,
                 fontSize = 10.sp,
@@ -458,9 +462,9 @@ private fun WatchlistRow(
 @Composable
 private fun AlertBell(alertCount: Int, onClick: () -> Unit) {
     val tooltipText = if (alertCount > 0) {
-        "$alertCount active alert(s)"
+        trf(L10n.Key.ActiveAlertsFormat, alertCount)
     } else {
-        "Set a price alert"
+        tr(L10n.Key.SetAPriceAlert)
     }
     TooltipArea(
         tooltip = {

@@ -43,6 +43,8 @@ import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.designkit.InterFamily
 import com.aptrade.desktop.designkit.StatTile
 import com.aptrade.desktop.designkit.crosshairIndex
+import com.aptrade.desktop.l10n.L10n
+import com.aptrade.desktop.l10n.tr
 
 /** The Portfolio tab's chart-and-analytics surface — the Compose port of
  *  `Sources/APTradeApp/PerformanceSection.swift`, promoted (Task 12) to be THE performance
@@ -77,7 +79,11 @@ fun PerformanceSection(
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "PERFORMANCE",
+                // Small-caps section-label styling (letterSpacing 1.8sp, same idiom as
+                // SummaryHeader's "TOTAL VALUE") applied over the catalog's title-case
+                // `.performanceSection` string (macOS uses the same Key, title-case, as a
+                // section-switcher tab label — PortfolioView.swift:15).
+                tr(L10n.Key.PerformanceSection).uppercase(),
                 style = TextStyle(
                     fontFamily = InterFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold,
                     color = DK.textSecondary, letterSpacing = 1.8.sp,
@@ -207,21 +213,21 @@ private fun OverlayChart(
     Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
         when {
             maxDayOne -> Text(
-                "Tracking starts today — performance appears after your first market day.",
+                tr(L10n.Key.TrackingStartsTodayMessage),
                 style = TextStyle(
                     fontFamily = InterFamily, fontSize = 13.sp,
                     fontWeight = FontWeight.Medium, color = DK.textTertiary,
                 ),
             )
             portfolio.size < 2 -> Text(
-                "No performance data yet.",
+                tr(L10n.Key.NoPerformanceDataYet),
                 style = TextStyle(
                     fontFamily = InterFamily, fontSize = 13.sp,
                     fontWeight = FontWeight.Medium, color = DK.textTertiary,
                 ),
             )
             benchmark == null -> Text(
-                "Benchmark unavailable",
+                tr(L10n.Key.BenchmarkUnavailable),
                 style = TextStyle(
                     fontFamily = InterFamily, fontSize = 12.sp,
                     fontWeight = FontWeight.Medium, color = DK.textTertiary,
@@ -339,7 +345,7 @@ private fun CrosshairTooltip(
 @Composable
 private fun ChartLegend(benchmarkSymbol: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-        LegendEntry(color = DK.gold, dashed = false, label = "Portfolio")
+        LegendEntry(color = DK.gold, dashed = false, label = tr(L10n.Key.Portfolio))
         LegendEntry(color = DK.silver, dashed = true, label = benchmarkSymbol)
     }
 }
@@ -369,13 +375,13 @@ private fun LegendEntry(color: Color, dashed: Boolean, label: String) {
 @Composable
 private fun MetricGrid(metrics: MetricTexts?) {
     val tiles = listOf(
-        "Total Return" to (metrics?.totalReturn ?: "—"),
-        "Annualized" to (metrics?.annualizedReturn ?: "—"),
-        "Volatility" to (metrics?.volatility ?: "—"),
-        "Max Drawdown" to (metrics?.maxDrawdown ?: "—"),
-        "Sharpe" to (metrics?.sharpe ?: "—"),
-        "Beta" to (metrics?.beta ?: "—"),
-        "Alpha" to (metrics?.alpha ?: "—"),
+        tr(L10n.Key.TotalReturn) to (metrics?.totalReturn ?: "—"),
+        tr(L10n.Key.AnnualizedReturn) to (metrics?.annualizedReturn ?: "—"),
+        tr(L10n.Key.Volatility) to (metrics?.volatility ?: "—"),
+        tr(L10n.Key.MaxDrawdown) to (metrics?.maxDrawdown ?: "—"),
+        tr(L10n.Key.Sharpe) to (metrics?.sharpe ?: "—"),
+        tr(L10n.Key.Beta) to (metrics?.beta ?: "—"),
+        tr(L10n.Key.Alpha) to (metrics?.alpha ?: "—"),
     )
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
         tiles.chunked(4).forEach { rowTiles ->

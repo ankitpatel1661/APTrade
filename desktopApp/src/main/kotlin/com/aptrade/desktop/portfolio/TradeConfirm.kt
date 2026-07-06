@@ -1,5 +1,8 @@
 package com.aptrade.desktop.portfolio
 
+import com.aptrade.desktop.l10n.L10n
+import com.aptrade.desktop.l10n.tr
+import com.aptrade.desktop.l10n.trf
 import com.aptrade.shared.domain.TradeSide
 
 /** Pure port of `Sources/APTradeApp/TradeSheet.swift`'s `attemptSubmit`/confirm-string
@@ -28,8 +31,8 @@ fun attemptSubmit(confirmTrades: Boolean): SubmitAction =
  *  `.confirmBuyTitleFormat` / `.confirmSellTitleFormat`, with the quantity text then the
  *  uppercased symbol substituted into the two placeholders in that order. */
 fun confirmTitle(side: TradeSide, quantityText: String, symbol: String): String {
-    val format = if (side == TradeSide.Buy) "Buy %s %s?" else "Sell %s %s?"
-    return format.format(quantityText, symbol.uppercase())
+    val key = if (side == TradeSide.Buy) L10n.Key.ConfirmBuyTitleFormat else L10n.Key.ConfirmSellTitleFormat
+    return trf(key, quantityText, symbol.uppercase())
 }
 
 /** [TradeSheet.swift:55-58] `confirmMessage`: `"%@: %@"` — L10n `.confirmEstimateFormat`,
@@ -37,11 +40,11 @@ fun confirmTitle(side: TradeSide, quantityText: String, symbol: String): String 
  *  (`.estimatedCost` / `.estimatedProceeds`) and the dialog's own formatted estimate
  *  string (or the em dash placeholder when no estimate is available). */
 fun confirmMessage(side: TradeSide, estimateDisplay: String): String {
-    val label = if (side == TradeSide.Buy) "Estimated cost" else "Estimated proceeds"
-    return "%s: %s".format(label, estimateDisplay)
+    val label = tr(if (side == TradeSide.Buy) L10n.Key.EstimatedCost else L10n.Key.EstimatedProceeds)
+    return trf(L10n.Key.ConfirmEstimateFormat, label, estimateDisplay)
 }
 
 /** [TradeSheet.swift:43] the confirm layer's action-button label — `.confirmBuy` /
  *  `.confirmSell` ("Confirm Buy" / "Confirm Sell"), independent of the title format. */
 fun confirmActionLabel(side: TradeSide): String =
-    if (side == TradeSide.Buy) "Confirm Buy" else "Confirm Sell"
+    tr(if (side == TradeSide.Buy) L10n.Key.ConfirmBuy else L10n.Key.ConfirmSell)

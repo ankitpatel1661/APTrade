@@ -45,6 +45,8 @@ import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.designkit.InterFamily
 import com.aptrade.desktop.designkit.SuperscriptPrice
 import com.aptrade.desktop.designkit.splitPrice
+import com.aptrade.desktop.l10n.L10n
+import com.aptrade.desktop.l10n.tr
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.TradeSide
@@ -184,7 +186,7 @@ fun TradeDialog(
                     )
                 }
                 Text(
-                    "Simulated paper trading",
+                    tr(L10n.Key.SimulatedPaperTradingFooter),
                     style = TextStyle(
                         fontFamily = InterFamily, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
                         color = DK.textTertiary, letterSpacing = 0.6.sp,
@@ -245,7 +247,7 @@ private fun ConfirmLayer(
                 .padding(vertical = 12.dp),
         ) {
             Text(
-                "Cancel",
+                tr(L10n.Key.Cancel),
                 style = TextStyle(
                     fontFamily = InterFamily, fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold, color = DK.textSecondary,
@@ -296,7 +298,7 @@ private fun Header(asset: Asset, priceText: String?) {
         if (priceText != null) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "Market price",
+                    tr(L10n.Key.MarketPrice),
                     style = TextStyle(
                         fontFamily = InterFamily, fontSize = 12.sp,
                         fontWeight = FontWeight.Medium, color = DK.textSecondary,
@@ -338,7 +340,7 @@ private fun SideToggle(side: TradeSide, onSelect: (TradeSide) -> Unit) {
                     .padding(vertical = 8.dp),
             ) {
                 Text(
-                    if (option == TradeSide.Buy) "Buy" else "Sell",
+                    tr(if (option == TradeSide.Buy) L10n.Key.Buy else L10n.Key.Sell),
                     style = TextStyle(
                         fontFamily = InterFamily, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                         color = if (selected) DK.textPrimary else DK.textSecondary,
@@ -366,7 +368,7 @@ private fun QuantityField(
             .padding(16.dp),
     ) {
         Text(
-            "QUANTITY",
+            tr(L10n.Key.QuantityLabel),
             style = TextStyle(
                 fontFamily = InterFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold,
                 color = DK.textTertiary, letterSpacing = 1.sp,
@@ -417,7 +419,7 @@ private fun EstimateRow(side: TradeSide, estimateRaw: String?) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            if (side == TradeSide.Buy) "Estimated cost" else "Estimated proceeds",
+            tr(if (side == TradeSide.Buy) L10n.Key.EstimatedCost else L10n.Key.EstimatedProceeds),
             style = TextStyle(
                 fontFamily = InterFamily, fontSize = 13.sp,
                 fontWeight = FontWeight.Medium, color = DK.textSecondary,
@@ -458,7 +460,7 @@ private fun Actions(
                 .padding(vertical = 12.dp),
         ) {
             Text(
-                "Cancel",
+                tr(L10n.Key.Cancel),
                 style = TextStyle(
                     fontFamily = InterFamily, fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold, color = DK.textSecondary,
@@ -483,7 +485,7 @@ private fun Actions(
                 .padding(vertical = 12.dp),
         ) {
             Text(
-                if (side == TradeSide.Buy) "Buy" else "Sell",
+                tr(if (side == TradeSide.Buy) L10n.Key.Buy else L10n.Key.Sell),
                 style = TextStyle(
                     fontFamily = InterFamily, fontSize = 14.sp, fontWeight = FontWeight.Bold,
                     color = if (canSubmit) DK.bgBottom else DK.textTertiary,
