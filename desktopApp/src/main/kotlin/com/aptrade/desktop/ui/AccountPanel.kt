@@ -174,17 +174,22 @@ fun AccountPanel(
 
 /** The account row list, in macOS order. Every row is functional as of increment 6e Task 5
  *  (Language is the last one to gain a real destination — see the [AccountPanel] doc
- *  comment). */
-private enum class AccountRow(val label: String) {
-    Profile("Profile"),
-    AccountSettings("Account Settings"),
-    Notifications("Notifications"),
-    Appearance("Appearance"),
-    Language("Language"),
-    SecurityPrivacy("Security & Privacy"),
-    ExportPortfolioData("Export Portfolio Data"),
-    HelpSupport("Help & Support"),
-    AboutAPTrade("About APTrade"),
+ *  comment). Labels resolve via [tr] at render time (a `val ... get() =`, not a constructor
+ *  literal) so they recompose on language change, matching [com.aptrade.desktop.detail
+ *  .IndicatorOverlays]'s `Indicator.label` pattern from Wave 2. */
+private enum class AccountRow(private val key: L10n.Key) {
+    Profile(L10n.Key.Profile),
+    AccountSettings(L10n.Key.AccountSettings),
+    Notifications(L10n.Key.Notifications),
+    Appearance(L10n.Key.Appearance),
+    Language(L10n.Key.Language),
+    SecurityPrivacy(L10n.Key.SecurityAndPrivacy),
+    ExportPortfolioData(L10n.Key.ExportPortfolioData),
+    HelpSupport(L10n.Key.HelpAndSupport),
+    AboutAPTrade(L10n.Key.AboutAPTrade),
+    ;
+
+    val label: String get() = tr(key)
 }
 
 @Composable
@@ -200,7 +205,7 @@ private fun RootList(
     onExport: () -> Unit,
     onClose: () -> Unit,
 ) {
-    PanelHeader(title = "Account", onLeading = onClose, leadingGlyph = "✕")
+    PanelHeader(title = tr(L10n.Key.Account), onLeading = onClose, leadingGlyph = "✕")
     Spacer(Modifier.height(12.dp))
     for (row in AccountRow.entries) {
         NavRow(label = row.label) {
@@ -229,28 +234,28 @@ private fun AppearancePage(
     onSelectTheme: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
-    PanelHeader(title = "Appearance", onLeading = onBack, leadingGlyph = "‹")
+    PanelHeader(title = tr(L10n.Key.Appearance), onLeading = onBack, leadingGlyph = "‹")
     Spacer(Modifier.height(16.dp))
-    SectionLabel("THEME")
+    SectionLabel(tr(L10n.Key.Theme))
     Spacer(Modifier.height(8.dp))
     // ThemeManager.toggle() semantics (macOS RootView.swift appearancePage): tapping the
     // row that's already selected is a no-op — only the non-current row's tap fires.
     ThemeRow(
         icon = { tint -> MoonIcon(tint = tint, modifier = Modifier.size(15.dp)) },
-        title = "Dark",
-        subtitle = "Default — gold on black",
+        title = tr(L10n.Key.Dark),
+        subtitle = tr(L10n.Key.DarkSubtitle),
         selected = isDarkMode,
         onClick = { if (!isDarkMode) onSelectTheme(true) },
     )
     ThemeRow(
         icon = { tint -> SunIcon(tint = tint, modifier = Modifier.size(15.dp)) },
-        title = "Light",
-        subtitle = "Charcoal on warm white",
+        title = tr(L10n.Key.Light),
+        subtitle = tr(L10n.Key.LightSubtitle),
         selected = !isDarkMode,
         onClick = { if (isDarkMode) onSelectTheme(false) },
     )
     Spacer(Modifier.height(10.dp))
-    SectionLabel("ACCENT")
+    SectionLabel(tr(L10n.Key.Accent))
     Spacer(Modifier.height(8.dp))
     for (option in AccentTheme.entries) {
         AccentRow(
@@ -431,7 +436,9 @@ private fun LanguageRow(option: AppLanguage, selected: Boolean, onClick: () -> U
 
 @Composable
 private fun AboutPage(onBack: () -> Unit) {
-    PanelHeader(title = "About", onLeading = onBack, leadingGlyph = "‹")
+    // macOS's aboutPage header is tr(.aboutAPTrade) = "About APTrade" (RootView.swift:587),
+    // not a generic "About" — matching it here (visible-text parity fix).
+    PanelHeader(title = tr(L10n.Key.AboutAPTrade), onLeading = onBack, leadingGlyph = "‹")
     Spacer(Modifier.height(40.dp))
     Column(
         Modifier.fillMaxWidth(),
@@ -439,6 +446,9 @@ private fun AboutPage(onBack: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         BrandWordmark(height = 96.dp)
+        // Desktop-specific tagline, NOT macOS's tr(.taglineShort) ("Premium investing for
+        // macOS" — wrong platform name here) — an intentional divergence, left literal, same
+        // as documented in prior waves for platform-specific copy.
         Text(
             "Premium native investing for desktop.",
             style = TextStyle(
@@ -462,40 +472,42 @@ private fun NotificationsPage(
     onUpdate: ((AppSettings) -> AppSettings) -> Unit,
     onBack: () -> Unit,
 ) {
-    PanelHeader(title = "Notifications", onLeading = onBack, leadingGlyph = "‹")
+    PanelHeader(title = tr(L10n.Key.Notifications), onLeading = onBack, leadingGlyph = "‹")
     Spacer(Modifier.height(16.dp))
-    SectionLabel("PUSH NOTIFICATIONS")
+    SectionLabel(tr(L10n.Key.PushNotifications))
     Spacer(Modifier.height(8.dp))
     ToggleRow(
-        title = "Price Alerts",
-        subtitle = "When a watchlist alert is triggered",
+        title = tr(L10n.Key.PriceAlerts),
+        subtitle = tr(L10n.Key.PriceAlertsSubtitle),
         checked = settings.priceAlerts,
         onCheckedChange = { checked -> onUpdate { it.copy(priceAlerts = checked) } },
     )
     ToggleRow(
-        title = "Order Fills",
-        subtitle = "Buy and sell confirmations",
+        title = tr(L10n.Key.OrderFills),
+        subtitle = tr(L10n.Key.OrderFillsSubtitle),
         checked = settings.orderFills,
         onCheckedChange = { checked -> onUpdate { it.copy(orderFills = checked) } },
     )
     ToggleRow(
-        title = "Market Open & Close",
-        subtitle = "Daily session reminders",
+        title = tr(L10n.Key.MarketOpenAndClose),
+        subtitle = tr(L10n.Key.MarketOpenAndCloseSubtitle),
         checked = settings.marketOpenClose,
         onCheckedChange = { checked -> onUpdate { it.copy(marketOpenClose = checked) } },
     )
     ToggleRow(
-        title = "Daily News Digest",
-        subtitle = "Top stories for your holdings",
+        title = tr(L10n.Key.DailyNewsDigest),
+        subtitle = tr(L10n.Key.DailyNewsDigestSubtitle),
         checked = settings.newsDigest,
         onCheckedChange = { checked -> onUpdate { it.copy(newsDigest = checked) } },
     )
     Spacer(Modifier.height(10.dp))
-    SectionLabel("EMAIL")
+    // macOS reuses tr(.email) ("Email") for this section label too (RootView.swift:426) —
+    // not a dedicated EMAIL-section Key. Mirrored here rather than adding a duplicate Key.
+    SectionLabel(tr(L10n.Key.Email))
     Spacer(Modifier.height(8.dp))
     ToggleRow(
-        title = "Email Notifications",
-        subtitle = "Send a copy to ankitpatel.svnit@gmail.com",
+        title = tr(L10n.Key.EmailNotifications),
+        subtitle = tr(L10n.Key.EmailNotificationsSubtitle),
         checked = settings.emailNotifications,
         onCheckedChange = { checked -> onUpdate { it.copy(emailNotifications = checked) } },
     )
@@ -545,43 +557,45 @@ private fun SecurityPage(
     onBack: () -> Unit,
     onClose: () -> Unit,
 ) {
-    PanelHeader(title = "Security & Privacy", onLeading = onBack, leadingGlyph = "‹")
+    PanelHeader(title = tr(L10n.Key.SecurityAndPrivacy), onLeading = onBack, leadingGlyph = "‹")
     Spacer(Modifier.height(16.dp))
-    SectionLabel("AUTHENTICATION")
+    SectionLabel(tr(L10n.Key.Authentication))
     Spacer(Modifier.height(8.dp))
     ToggleRow(
-        title = "Biometric Login",
-        subtitle = "Unlock with Touch ID / Face ID",
+        title = tr(L10n.Key.BiometricLogin),
+        subtitle = tr(L10n.Key.BiometricLoginSubtitle),
         checked = settings.biometricLogin,
         onCheckedChange = { checked -> onUpdate { it.copy(biometricLogin = checked) } },
     )
     ToggleRow(
-        title = "Require Auth on Launch",
-        subtitle = "Ask every time the app opens",
+        title = tr(L10n.Key.RequireAuthOnLaunch),
+        subtitle = tr(L10n.Key.RequireAuthOnLaunchSubtitle),
         checked = settings.requireAuthOnLaunch,
         onCheckedChange = { checked -> onUpdate { it.copy(requireAuthOnLaunch = checked) } },
     )
     ToggleRow(
-        title = "Confirm Trades",
-        subtitle = "Re-authenticate before buy / sell",
+        title = tr(L10n.Key.ConfirmTrades),
+        subtitle = tr(L10n.Key.ConfirmTradesSubtitle),
         checked = settings.confirmTrades,
         onCheckedChange = { checked -> onUpdate { it.copy(confirmTrades = checked) } },
     )
     Spacer(Modifier.height(10.dp))
-    SectionLabel("PRIVACY")
+    SectionLabel(tr(L10n.Key.Privacy))
     Spacer(Modifier.height(8.dp))
     ToggleRow(
-        title = "Share Usage Analytics",
-        subtitle = "Anonymous diagnostics to improve APTrade",
+        title = tr(L10n.Key.ShareUsageAnalytics),
+        subtitle = tr(L10n.Key.ShareUsageAnalyticsSubtitle),
         checked = settings.analyticsSharing,
         onCheckedChange = { checked -> onUpdate { it.copy(analyticsSharing = checked) } },
     )
     Spacer(Modifier.height(10.dp))
-    SectionLabel("DATA")
+    SectionLabel(tr(L10n.Key.DataSection))
     Spacer(Modifier.height(8.dp))
-    LinkRow(title = "Change Password", onClick = onClose)
-    LinkRow(title = "Manage Devices", value = "2 active", onClick = onClose)
-    LinkRow(title = "Clear Local Cache", onClick = onClose)
+    LinkRow(title = tr(L10n.Key.ChangePassword), onClick = onClose)
+    // "2 active" is literal on macOS too (RootView.swift:555 passes it as a raw value: —
+    // no L10n Key exists for it there either).
+    LinkRow(title = tr(L10n.Key.ManageDevices), value = "2 active", onClick = onClose)
+    LinkRow(title = tr(L10n.Key.ClearLocalCache), onClick = onClose)
 }
 
 // MARK: - Profile
@@ -591,13 +605,16 @@ private fun SecurityPage(
  *  either — this simulated account has fixed identity fields). */
 @Composable
 private fun ProfilePage(onBack: () -> Unit) {
-    PanelHeader(title = "Profile", onLeading = onBack, leadingGlyph = "‹")
+    // Values (name/DOB/email) are fixed simulated-identity display data, left literal — macOS
+    // does the same (RootView.swift:378-380 passes raw string literals as detailField's
+    // value: argument, only the labels route through tr()).
+    PanelHeader(title = tr(L10n.Key.Profile), onLeading = onBack, leadingGlyph = "‹")
     Spacer(Modifier.height(16.dp))
-    DetailField(label = "Name", value = "Ankit Patel")
+    DetailField(label = tr(L10n.Key.Name), value = "Ankit Patel")
     Spacer(Modifier.height(14.dp))
-    DetailField(label = "Date of Birth", value = "January 1, 1995")
+    DetailField(label = tr(L10n.Key.DateOfBirth), value = "January 1, 1995")
     Spacer(Modifier.height(14.dp))
-    DetailField(label = "Email", value = "ankitpatel.svnit@gmail.com")
+    DetailField(label = tr(L10n.Key.Email), value = "ankitpatel.svnit@gmail.com")
 }
 
 // MARK: - Account Settings
@@ -609,17 +626,22 @@ private fun ProfilePage(onBack: () -> Unit) {
  *  `tr(.enabledTouchID)` — a fixed L10n string, not `settingsVM.settings.biometricLogin`). */
 @Composable
 private fun AccountSettingsPage(onBack: () -> Unit) {
-    PanelHeader(title = "Account Settings", onLeading = onBack, leadingGlyph = "‹")
+    // Trading Mode / Default Tab / Biometric Login VALUES route through tr() too, matching
+    // macOS exactly (RootView.swift:398-403: tr(.simulatedPaperTrading), tr(.watchlist),
+    // tr(.enabledTouchID)) — these are keyed display strings, not free-form personal data.
+    // Starting Balance and Display Currency values stay literal, same as macOS
+    // (RootView.swift:399-400 pass raw "$100,000.00" / "USD ($)" literals).
+    PanelHeader(title = tr(L10n.Key.AccountSettings), onLeading = onBack, leadingGlyph = "‹")
     Spacer(Modifier.height(16.dp))
-    DetailField(label = "Trading Mode", value = "Simulated · Paper Trading")
+    DetailField(label = tr(L10n.Key.TradingMode), value = tr(L10n.Key.SimulatedPaperTrading))
     Spacer(Modifier.height(14.dp))
-    DetailField(label = "Starting Balance", value = "$100,000.00")
+    DetailField(label = tr(L10n.Key.StartingBalance), value = "$100,000.00")
     Spacer(Modifier.height(14.dp))
-    DetailField(label = "Display Currency", value = "USD ($)")
+    DetailField(label = tr(L10n.Key.DisplayCurrency), value = "USD ($)")
     Spacer(Modifier.height(14.dp))
-    DetailField(label = "Default Tab", value = "Watchlist")
+    DetailField(label = tr(L10n.Key.DefaultTab), value = tr(L10n.Key.Watchlist))
     Spacer(Modifier.height(14.dp))
-    DetailField(label = "Biometric Login", value = "Enabled — Touch ID")
+    DetailField(label = tr(L10n.Key.BiometricLogin), value = tr(L10n.Key.EnabledTouchID))
 }
 
 // MARK: - Help & Support
@@ -630,20 +652,22 @@ private fun AccountSettingsPage(onBack: () -> Unit) {
  *  exists in either app). */
 @Composable
 private fun HelpPage(onBack: () -> Unit, onClose: () -> Unit) {
-    PanelHeader(title = "Help & Support", onLeading = onBack, leadingGlyph = "‹")
+    PanelHeader(title = tr(L10n.Key.HelpAndSupport), onLeading = onBack, leadingGlyph = "‹")
     Spacer(Modifier.height(16.dp))
-    SectionLabel("RESOURCES")
+    SectionLabel(tr(L10n.Key.Resources))
     Spacer(Modifier.height(8.dp))
     // macOS renders tr(.faq) = "Frequently Asked Questions" in English (L10n.swift:71) —
     // the full phrase, not the "FAQ" shorthand the task brief used.
-    LinkRow(title = "Frequently Asked Questions", onClick = onClose)
-    LinkRow(title = "User Guide", onClick = onClose)
-    LinkRow(title = "Keyboard Shortcuts", onClick = onClose)
+    LinkRow(title = tr(L10n.Key.Faq), onClick = onClose)
+    LinkRow(title = tr(L10n.Key.UserGuide), onClick = onClose)
+    LinkRow(title = tr(L10n.Key.KeyboardShortcuts), onClick = onClose)
     Spacer(Modifier.height(10.dp))
-    SectionLabel("CONTACT")
+    SectionLabel(tr(L10n.Key.Contact))
     Spacer(Modifier.height(8.dp))
-    LinkRow(title = "Email Support", value = "support@aptrade.app", onClick = onClose)
-    LinkRow(title = "Report a Problem", onClick = onClose)
+    // "support@aptrade.app" is literal on macOS too (RootView.swift:576's linkRow value:) —
+    // an email address as data, not prose.
+    LinkRow(title = tr(L10n.Key.EmailSupport), value = "support@aptrade.app", onClick = onClose)
+    LinkRow(title = tr(L10n.Key.ReportAProblem), onClick = onClose)
 }
 
 // MARK: - Shared detail/link rows
@@ -750,10 +774,14 @@ private fun PanelHeader(title: String, onLeading: () -> Unit, leadingGlyph: Stri
     }
 }
 
+/** Uppercases [text] like macOS's `RootView.swift` `sectionLabel(_:)` (`text.uppercased()`) —
+ *  callers pass the plain [tr]-resolved string, not a pre-uppercased literal, so translated
+ *  section labels uppercase correctly too (not just the English ALL-CAPS literals this
+ *  replaced). */
 @Composable
 private fun SectionLabel(text: String) {
     Text(
-        text,
+        text.uppercase(),
         style = TextStyle(
             fontFamily = InterFamily, fontSize = 10.sp,
             fontWeight = FontWeight.SemiBold, color = DK.textTertiary, letterSpacing = 1.sp,
