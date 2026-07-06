@@ -1,6 +1,7 @@
 package com.aptrade.desktop.infra
 
 import com.aptrade.desktop.designkit.AccentTheme
+import com.aptrade.desktop.l10n.AppLanguage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
@@ -32,7 +33,11 @@ import kotlin.io.path.readText
  *  PARITY (recorded): only [confirmTrades] is functional on desktop — it gates the
  *  in-dialog trade confirmation layer (see `TradeConfirm.kt` / `TradeDialog.kt`).
  *  [biometricLogin], [requireAuthOnLaunch], and [analyticsSharing] persist but drive nothing
- *  yet, same as macOS's SecurityPage rows for those three toggles are simulated-app-only. */
+ *  yet, same as macOS's SecurityPage rows for those three toggles are simulated-app-only.
+ *
+ *  [language] (increment 6e Task 5) defaults to [AppLanguage.English] — the shipped default;
+ *  an old settings file written before this field existed must still load English rather than
+ *  an unrequested language. */
 data class AppSettings(
     val accent: AccentTheme = AccentTheme.ChampagneGold,
     val priceAlerts: Boolean = true,
@@ -45,6 +50,7 @@ data class AppSettings(
     val requireAuthOnLaunch: Boolean = true,
     val confirmTrades: Boolean = true,
     val analyticsSharing: Boolean = false,
+    val language: AppLanguage = AppLanguage.English,
 )
 
 /** JSON-file settings, a single blob (macOS single-blob parity).
@@ -71,6 +77,7 @@ class FileSettingsStore(private val file: Path) {
         val requireAuthOnLaunch: Boolean = true,
         val confirmTrades: Boolean = true,
         val analyticsSharing: Boolean = false,
+        val language: String = AppLanguage.English.code,
     )
 
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
@@ -95,6 +102,11 @@ class FileSettingsStore(private val file: Path) {
                 requireAuthOnLaunch = dto.requireAuthOnLaunch,
                 confirmTrades = dto.confirmTrades,
                 analyticsSharing = dto.analyticsSharing,
+                // Unlike accent, an unmappable language code doesn't fail the whole blob — it's
+                // an independent user preference (same family as the notification/security
+                // flags), so a bad or missing code just falls back to English on its own.
+                language = AppLanguage.entries.firstOrNull { it.code == dto.language }
+                    ?: AppLanguage.English,
             )
         } catch (e: SerializationException) {
             AppSettings()
@@ -117,6 +129,7 @@ class FileSettingsStore(private val file: Path) {
             requireAuthOnLaunch = settings.requireAuthOnLaunch,
             confirmTrades = settings.confirmTrades,
             analyticsSharing = settings.analyticsSharing,
+            language = settings.language.code,
         )
         val text = json.encodeToString(SettingsDTO.serializer(), dto)
         val temp = Files.createTempFile(file.parent, "settings", ".tmp")

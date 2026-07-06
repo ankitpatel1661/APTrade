@@ -53,36 +53,39 @@ import com.aptrade.desktop.designkit.InterFamily
 import com.aptrade.desktop.designkit.MoonIcon
 import com.aptrade.desktop.designkit.SunIcon
 import com.aptrade.desktop.infra.AppSettings
+import com.aptrade.desktop.l10n.AppLanguage
+import com.aptrade.desktop.l10n.L10n
+import com.aptrade.desktop.l10n.tr
 
 /** The pages reachable inside the account panel. Root is the row list; the others are
  *  detail pages with a back affordance. */
-private enum class AccountPage { Root, Appearance, About, Notifications, Security, Profile, AccountSettings, Help, Placeholder }
+private enum class AccountPage { Root, Appearance, Language, About, Notifications, Security, Profile, AccountSettings, Help }
 
 /** Right-anchored settings overlay opened from the shell's ⋯ button. Full-window scrim
  *  (click closes, PaletteOverlay idiom), a 360dp panel pinned to the trailing edge with a
  *  DK surface + hairline border. Esc is self-consumed on the panel's own onPreviewKeyEvent
  *  (TradeDialog pattern) so it never reaches — and never steals — the window's palette Esc.
  *
- *  Row behavior mirrors the macOS account sheet: Appearance → accent page, Notifications →
- *  the real push/email toggle page (increment 6d.1), Security & Privacy / Profile / Account
- *  Settings / Help & Support → their real pages (increment 6d.2 Task 3), Export Portfolio
- *  Data → [onExportPortfolio], About → logo + tagline page; only Language still renders the
- *  shared "Not available on desktop yet" placeholder (RECORDED DIVERGENCE — macOS has a
- *  functional language switcher; desktop adopts it later. No Sign Out row: desktop has no
- *  auth). */
+ *  Row behavior mirrors the macOS account sheet: Appearance → accent page, Language → the
+ *  real language picker (increment 6e Task 5), Notifications → the real push/email toggle
+ *  page (increment 6d.1), Security & Privacy / Profile / Account Settings / Help & Support →
+ *  their real pages (increment 6d.2 Task 3), Export Portfolio Data → [onExportPortfolio],
+ *  About → logo + tagline page. Every row is now functional — no page still falls through to
+ *  a placeholder. No Sign Out row: desktop has no auth. */
 @Composable
 fun AccountPanel(
     accent: AccentTheme,
     onSelectAccent: (AccentTheme) -> Unit,
     isDarkMode: Boolean,
     onSelectTheme: (Boolean) -> Unit,
+    language: AppLanguage,
+    onSelectLanguage: (AppLanguage) -> Unit,
     onExportPortfolio: () -> Unit,
     onClose: () -> Unit,
     notificationSettings: AppSettings,
     onUpdateNotificationSettings: ((AppSettings) -> AppSettings) -> Unit,
 ) {
     var page by remember { mutableStateOf(AccountPage.Root) }
-    var placeholderTitle by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
 
     Box(
@@ -123,6 +126,7 @@ fun AccountPanel(
             when (page) {
                 AccountPage.Root -> RootList(
                     onAppearance = { page = AccountPage.Appearance },
+                    onLanguage = { page = AccountPage.Language },
                     onAbout = { page = AccountPage.About },
                     onNotifications = { page = AccountPage.Notifications },
                     onSecurity = { page = AccountPage.Security },
@@ -130,7 +134,6 @@ fun AccountPanel(
                     onAccountSettings = { page = AccountPage.AccountSettings },
                     onHelp = { page = AccountPage.Help },
                     onExport = onExportPortfolio,
-                    onPlaceholder = { title -> placeholderTitle = title; page = AccountPage.Placeholder },
                     onClose = onClose,
                 )
                 AccountPage.Appearance -> AppearancePage(
@@ -138,6 +141,11 @@ fun AccountPanel(
                     onSelectAccent = onSelectAccent,
                     isDarkMode = isDarkMode,
                     onSelectTheme = onSelectTheme,
+                    onBack = { page = AccountPage.Root },
+                )
+                AccountPage.Language -> LanguagePage(
+                    language = language,
+                    onSelectLanguage = onSelectLanguage,
                     onBack = { page = AccountPage.Root },
                 )
                 AccountPage.About -> AboutPage(onBack = { page = AccountPage.Root })
@@ -155,10 +163,6 @@ fun AccountPanel(
                 AccountPage.Profile -> ProfilePage(onBack = { page = AccountPage.Root })
                 AccountPage.AccountSettings -> AccountSettingsPage(onBack = { page = AccountPage.Root })
                 AccountPage.Help -> HelpPage(onBack = { page = AccountPage.Root }, onClose = onClose)
-                AccountPage.Placeholder -> PlaceholderPage(
-                    title = placeholderTitle,
-                    onBack = { page = AccountPage.Root },
-                )
             }
         }
     }
@@ -168,9 +172,9 @@ fun AccountPanel(
 
 // MARK: - Root
 
-/** The account row list, in macOS order. Every row but Language is functional as of
- *  increment 6d.2 Task 3; Language still falls through to the shared placeholder page
- *  (RECORDED DIVERGENCE — see the [AccountPanel] doc comment). */
+/** The account row list, in macOS order. Every row is functional as of increment 6e Task 5
+ *  (Language is the last one to gain a real destination — see the [AccountPanel] doc
+ *  comment). */
 private enum class AccountRow(val label: String) {
     Profile("Profile"),
     AccountSettings("Account Settings"),
@@ -186,6 +190,7 @@ private enum class AccountRow(val label: String) {
 @Composable
 private fun RootList(
     onAppearance: () -> Unit,
+    onLanguage: () -> Unit,
     onAbout: () -> Unit,
     onNotifications: () -> Unit,
     onSecurity: () -> Unit,
@@ -193,7 +198,6 @@ private fun RootList(
     onAccountSettings: () -> Unit,
     onHelp: () -> Unit,
     onExport: () -> Unit,
-    onPlaceholder: (String) -> Unit,
     onClose: () -> Unit,
 ) {
     PanelHeader(title = "Account", onLeading = onClose, leadingGlyph = "✕")
@@ -202,6 +206,7 @@ private fun RootList(
         NavRow(label = row.label) {
             when (row) {
                 AccountRow.Appearance -> onAppearance()
+                AccountRow.Language -> onLanguage()
                 AccountRow.AboutAPTrade -> onAbout()
                 AccountRow.Notifications -> onNotifications()
                 AccountRow.SecurityPrivacy -> onSecurity()
@@ -209,7 +214,6 @@ private fun RootList(
                 AccountRow.AccountSettings -> onAccountSettings()
                 AccountRow.HelpSupport -> onHelp()
                 AccountRow.ExportPortfolioData -> onExport()
-                else -> onPlaceholder(row.label)
             }
         }
     }
@@ -353,6 +357,64 @@ private fun AccentRow(option: AccentTheme, selected: Boolean, onClick: () -> Uni
                 ),
             )
         }
+        if (selected) {
+            Text(
+                "✓",
+                style = TextStyle(
+                    fontFamily = InterFamily, fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold, color = DK.gold,
+                ),
+            )
+        }
+    }
+}
+
+// MARK: - Language
+
+/** Language picker (increment 6e Task 5) — replaces the earlier "Not available on desktop
+ *  yet" placeholder. Anatomy mirrors [AppearancePage]'s THEME rows exactly: a single-column
+ *  list of the four [AppLanguage] entries, each showing its endonym [AppLanguage.displayName],
+ *  a checkmark on the selected row, tap-to-select (a no-op re-tap on the already-selected row,
+ *  same as [ThemeRow]'s toggle semantics). Selecting flips [LocalizationManager.current]
+ *  immediately (every `tr()` reader recomposes) and persists through the one settings seam. */
+@Composable
+private fun LanguagePage(
+    language: AppLanguage,
+    onSelectLanguage: (AppLanguage) -> Unit,
+    onBack: () -> Unit,
+) {
+    PanelHeader(title = tr(L10n.Key.Language), onLeading = onBack, leadingGlyph = "‹")
+    Spacer(Modifier.height(16.dp))
+    for (option in AppLanguage.entries) {
+        LanguageRow(
+            option = option,
+            selected = option == language,
+            onClick = { if (option != language) onSelectLanguage(option) },
+        )
+    }
+}
+
+@Composable
+private fun LanguageRow(option: AppLanguage, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onClick() }
+            .padding(vertical = 10.dp, horizontal = 4.dp),
+    ) {
+        Text(
+            option.displayName,
+            style = TextStyle(
+                fontFamily = InterFamily, fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold, color = DK.textPrimary,
+            ),
+            modifier = Modifier.weight(1f),
+        )
         if (selected) {
             Text(
                 "✓",
@@ -649,25 +711,6 @@ private fun LinkRow(title: String, value: String? = null, onClick: () -> Unit) {
             style = TextStyle(
                 fontFamily = InterFamily, fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold, color = DK.textTertiary,
-            ),
-        )
-    }
-}
-
-// MARK: - Placeholder
-
-/** RECORDED DIVERGENCE: macOS has a functional Language page; desktop adopts it in a later
- *  increment. Until then the Language row lands here. */
-@Composable
-private fun PlaceholderPage(title: String, onBack: () -> Unit) {
-    PanelHeader(title = title, onLeading = onBack, leadingGlyph = "‹")
-    Spacer(Modifier.height(60.dp))
-    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        Text(
-            "Not available on desktop yet",
-            style = TextStyle(
-                fontFamily = InterFamily, fontSize = 14.sp,
-                fontWeight = FontWeight.Medium, color = DK.textTertiary,
             ),
         )
     }

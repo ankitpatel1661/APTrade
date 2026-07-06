@@ -38,6 +38,8 @@ import com.aptrade.desktop.infra.saveTextFile
 import com.aptrade.desktop.search.PaletteOverlay
 import com.aptrade.desktop.search.SearchViewModel
 import com.aptrade.desktop.designkit.DK
+import com.aptrade.desktop.l10n.AppLanguage
+import com.aptrade.desktop.l10n.LocalizationManager
 import com.aptrade.desktop.ui.AccountPanel
 import com.aptrade.desktop.ui.AppShell
 import com.aptrade.desktop.ui.AppTab
@@ -163,16 +165,19 @@ fun main() = application {
     val windowState = rememberWindowState(width = 1280.dp, height = 800.dp)
 
     // Load persisted settings once at startup. DK.accent stays Champagne Gold, DK.isDark stays
-    // true, and notificationSettings stays at AppSettings() defaults until this resolves — all
-    // three are pixel/value-identical to the defaults, so no flash of the wrong state. Applying
-    // the loaded accent/isDarkMode flips DK.accent/DK.isDark, which recomposes every gold/mode
-    // reader (an instant colorScheme swap — no animation, recorded decision).
+    // true, LocalizationManager.current stays English, and notificationSettings stays at
+    // AppSettings() defaults until this resolves — all pixel/value-identical to the defaults,
+    // so no flash of the wrong state. Applying the loaded accent/isDarkMode flips DK.accent/
+    // DK.isDark, which recomposes every gold/mode reader (an instant colorScheme swap — no
+    // animation, recorded decision); applying the loaded language likewise flips
+    // LocalizationManager.current, recomposing every tr() reader.
     // CancellationException must propagate so scope teardown isn't swallowed.
     LaunchedEffect(Unit) {
         try {
             val loaded = graph.settingsStore.load()
             DK.accent.value = loaded.accent
             DK.isDark.value = loaded.isDarkMode
+            LocalizationManager.current.value = loaded.language
             notificationSettings = loaded
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -215,6 +220,14 @@ fun main() = application {
     fun selectTheme(isDarkMode: Boolean) {
         DK.isDark.value = isDarkMode
         persistSettings { it.copy(isDarkMode = isDarkMode) }
+    }
+
+    // Mirrors selectTheme exactly: flip the live LocalizationManager state first (every tr()
+    // reader recomposes immediately, same "no flash, no animation" reasoning as accent/theme)
+    // then persist through the same load-merge-save seam — no second persistence path.
+    fun selectLanguage(lang: AppLanguage) {
+        LocalizationManager.current.value = lang
+        persistSettings { it.copy(language = lang) }
     }
 
     fun updateNotificationSettings(mutate: (com.aptrade.desktop.infra.AppSettings) -> com.aptrade.desktop.infra.AppSettings) {
@@ -286,6 +299,8 @@ fun main() = application {
                     onSelectAccent = { theme -> selectAccent(theme) },
                     isDarkMode = DK.isDark.value,
                     onSelectTheme = { dark -> selectTheme(dark) },
+                    language = LocalizationManager.current.value,
+                    onSelectLanguage = { lang -> selectLanguage(lang) },
                     alertTarget = alertTarget,
                     onOpenAlert = { asset -> alertTarget = asset },
                     onCloseAlert = { alertTarget = null },
@@ -325,6 +340,8 @@ private fun AppRoot(
     onSelectAccent: (com.aptrade.desktop.designkit.AccentTheme) -> Unit,
     isDarkMode: Boolean,
     onSelectTheme: (Boolean) -> Unit,
+    language: AppLanguage,
+    onSelectLanguage: (AppLanguage) -> Unit,
     alertTarget: Asset?,
     onOpenAlert: (Asset) -> Unit,
     onCloseAlert: () -> Unit,
@@ -453,6 +470,8 @@ private fun AppRoot(
                 onSelectAccent = onSelectAccent,
                 isDarkMode = isDarkMode,
                 onSelectTheme = onSelectTheme,
+                language = language,
+                onSelectLanguage = onSelectLanguage,
                 onExportPortfolio = {
                     selectedTab = AppTab.Portfolio
                     pendingExport.value = true

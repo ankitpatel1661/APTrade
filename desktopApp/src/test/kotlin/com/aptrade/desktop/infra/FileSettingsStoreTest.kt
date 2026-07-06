@@ -1,6 +1,7 @@
 package com.aptrade.desktop.infra
 
 import com.aptrade.desktop.designkit.AccentTheme
+import com.aptrade.desktop.l10n.AppLanguage
 import kotlinx.coroutines.test.runTest
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.exists
@@ -241,5 +242,65 @@ class FileSettingsStoreTest {
         assertEquals(true, loaded.biometricLogin)
         assertEquals(true, loaded.requireAuthOnLaunch)
         assertEquals(false, loaded.analyticsSharing)
+    }
+
+    // --- Language (increment 6e Task 5) ---
+
+    @Test
+    fun `language defaults to English`() = runTest {
+        assertEquals(AppLanguage.English, AppSettings().language)
+    }
+
+    @Test
+    fun `round-trips each language by its code`() = runTest {
+        for (language in AppLanguage.entries) {
+            val file = tempFile()
+            val store = FileSettingsStore(file)
+            store.save(AppSettings(language = language))
+            assertEquals(language, store.load().language)
+        }
+    }
+
+    @Test
+    fun `persists the language as its code`() = runTest {
+        val file = tempFile()
+        FileSettingsStore(file).save(AppSettings(language = AppLanguage.German))
+        assertTrue(file.readText().contains("\"de\""))
+    }
+
+    @Test
+    fun `unknown language code loads defaults to English`() = runTest {
+        val file = tempFile()
+        file.writeText("""{"accent":"Platinum","language":"xx"}""")
+        val loaded = FileSettingsStore(file).load()
+        // A language code we can't map is lenient (independent field), unlike the whole-blob
+        // accent fallback: the rest of the file is still trusted.
+        assertEquals(AccentTheme.Platinum, loaded.accent)
+        assertEquals(AppLanguage.English, loaded.language)
+    }
+
+    @Test
+    fun `old file without language key loads fine with language defaulting to English`() = runTest {
+        // Back-compat pin (same family as isDarkMode/security tests above): a settings.json
+        // written before increment 6e Task 5 has no "language" key at all. Lenient decode must
+        // still succeed and default the new field to English rather than failing the whole-blob
+        // load — real keyless-JSON fixture, no "language" key present anywhere.
+        val file = tempFile()
+        file.writeText("""{"accent":"Sapphire","isDarkMode":false,"confirmTrades":false}""")
+        val loaded = FileSettingsStore(file).load()
+        assertEquals(AccentTheme.Sapphire, loaded.accent)
+        assertEquals(false, loaded.isDarkMode)
+        assertEquals(false, loaded.confirmTrades)
+        assertEquals(AppLanguage.English, loaded.language)
+    }
+
+    @Test
+    fun `missing language key in an otherwise valid file falls back to English independently`() = runTest {
+        val file = tempFile()
+        file.writeText("""{"accent":"Platinum","priceAlerts":false}""")
+        val loaded = FileSettingsStore(file).load()
+        assertEquals(AccentTheme.Platinum, loaded.accent)
+        assertEquals(false, loaded.priceAlerts)
+        assertEquals(AppLanguage.English, loaded.language)
     }
 }
