@@ -20,3 +20,23 @@ object LocalizationManager {
  * makes every composable that calls `tr()` recompose when the language changes.
  */
 fun tr(key: L10n.Key): String = L10n.string(key, LocalizationManager.current.value)
+
+/**
+ * Formats [key]'s resolved string against [args], translating the Swift-style placeholders
+ * transcribed verbatim into the catalog (`%@` for a string arg, `%lld` for an integer) into
+ * `java.util.Formatter` equivalents (`%s`, `%d`) before delegating to [String.format].
+ *
+ * [java.util.Locale.ROOT] is MANDATORY here, not cosmetic: `String.format` without an explicit
+ * locale uses the JVM default locale, and a DE/IT/ES default would reformat `%.2f`-style
+ * decimals with a comma instead of a period (`1,25` instead of `1.25`), corrupting numbers
+ * that are supposed to stay locale-invariant (prices, percentages) even while the surrounding
+ * prose is translated. Locale.ROOT pins the formatting conventions regardless of which
+ * [AppLanguage] is active — this is a JVM-only desktopApp file, not commonMain, so
+ * `java.util.Locale`/`String.format` are safe to use directly.
+ */
+fun trf(key: L10n.Key, vararg args: Any?): String {
+    val template = tr(key)
+        .replace("%@", "%s")
+        .replace("%lld", "%d")
+    return String.format(java.util.Locale.ROOT, template, *args)
+}
