@@ -17,14 +17,17 @@ import kotlin.test.assertTrue
  * navigation/watchlist/portfolio retrofit) added 6 desktop-only Keys with no macOS counterpart
  * (`StartOverWithFormat`, `ExportEllipsis`, `ResetPortfolioEllipsis`, `ByClass`,
  * `TrackingStartsTodayMessage`, `NoPerformanceDataYet` — see the task report for why each has
- * no existing Key), bringing the total to 211; the count below tracks the Kotlin-only total
+ * no existing Key), bringing the total to 211. Task 7 (6e wave 2 — detail/news/alerts
+ * retrofit) added 6 more desktop-only Keys (`Back`, `Retry`, `ChartStyleLine`,
+ * `BuySellButton`, `Overbought`, `Oversold` — see that task's report for why each has no
+ * existing Key), bringing the total to 217; the count below tracks the Kotlin-only total
  * going forward, not the Swift source count.
  */
 class L10nCatalogTest {
 
     @Test
-    fun `catalog has exactly 211 keys (205 macOS-transcribed + 6 desktop-only from Task 6)`() {
-        assertEquals(211, L10n.Key.entries.size)
+    fun `catalog has exactly 217 keys (205 macOS-transcribed + 12 desktop-only from Tasks 6-7)`() {
+        assertEquals(217, L10n.Key.entries.size)
     }
 
     @Test

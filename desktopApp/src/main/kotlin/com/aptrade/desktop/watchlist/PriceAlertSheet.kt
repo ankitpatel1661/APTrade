@@ -44,6 +44,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.designkit.InterFamily
+import com.aptrade.desktop.l10n.L10n
+import com.aptrade.desktop.l10n.tr
+import com.aptrade.desktop.l10n.trf
 import com.aptrade.shared.domain.AlertCondition
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.PriceAlert
@@ -122,7 +125,7 @@ fun PriceAlertSheet(
             ) {
                 if (currentPriceText != null) {
                     Text(
-                        "Current price: $$currentPriceText",
+                        trf(L10n.Key.CurrentPriceFormat, "$$currentPriceText"),
                         style = TextStyle(
                             fontFamily = InterFamily, fontSize = 12.sp,
                             color = DK.textSecondary,
@@ -134,14 +137,14 @@ fun PriceAlertSheet(
 
                 when (kind) {
                     AlertKind.Above, AlertKind.Below -> LabeledField(
-                        label = "Target price ($)",
+                        label = tr(L10n.Key.TargetPriceLabel),
                         value = priceText,
                         onValueChange = { priceText = it },
                         focusRequester = focusRequester,
                         onSubmit = { if (canAdd) addAlert() },
                     )
                     AlertKind.Percent -> LabeledField(
-                        label = "Daily move (%)",
+                        label = tr(L10n.Key.DailyMoveLabel),
                         value = percentText,
                         onValueChange = { percentText = it },
                         focusRequester = focusRequester,
@@ -222,7 +225,7 @@ private fun ExistingAlerts(existing: List<PriceAlert>, onDelete: (String) -> Uni
                     style = TextStyle(fontSize = 12.sp),
                 )
                 Text(
-                    alert.condition.summary,
+                    alertSummary(alert.condition),
                     style = TextStyle(
                         fontFamily = InterFamily, fontSize = 13.sp,
                         color = if (alert.isTriggered) DK.textTertiary else DK.textPrimary,
@@ -294,9 +297,21 @@ private fun KindSegmented(selected: AlertKind, onSelect: (AlertKind) -> Unit) {
 /** Segmented-control label per kind — exact strings from `PriceAlertSheet.swift`'s
  *  `Kind`/`kindLabel` (L10n.priceAboveKind/.priceBelowKind/.percentMoveKind). */
 private fun kindLabel(kind: AlertKind): String = when (kind) {
-    AlertKind.Above -> "Price above"
-    AlertKind.Below -> "Price below"
-    AlertKind.Percent -> "% move"
+    AlertKind.Above -> tr(L10n.Key.PriceAboveKind)
+    AlertKind.Below -> tr(L10n.Key.PriceBelowKind)
+    AlertKind.Percent -> tr(L10n.Key.PercentMoveKind)
+}
+
+/** Localized existing-alert row text, computed HERE rather than via
+ *  `AlertCondition.summary` (the `:shared` commonMain getter is deliberately English-only —
+ *  see its doc comment — and out of scope for this desktop-only retrofit). Mirrors the exact
+ *  shape of `AlertCondition.summary` (`Money.formatted` for the threshold, `abs(magnitude)`
+ *  for the percent figure) against the catalog's pre-provisioned
+ *  `priceAboveSummaryFormat`/`priceBelowSummaryFormat`/`percentMoveSummaryFormat` Keys. */
+private fun alertSummary(condition: AlertCondition): String = when (condition) {
+    is AlertCondition.PriceAbove -> trf(L10n.Key.PriceAboveSummaryFormat, condition.threshold.formatted)
+    is AlertCondition.PriceBelow -> trf(L10n.Key.PriceBelowSummaryFormat, condition.threshold.formatted)
+    is AlertCondition.PercentChange -> trf(L10n.Key.PercentMoveSummaryFormat, kotlin.math.abs(condition.magnitude))
 }
 
 @Composable
@@ -368,7 +383,7 @@ private fun AddAlertButton(enabled: Boolean, onClick: () -> Unit) {
             .padding(vertical = 10.dp),
     ) {
         Text(
-            "Add Alert",
+            tr(L10n.Key.AddAlert),
             style = TextStyle(
                 fontFamily = InterFamily, fontSize = 14.sp, fontWeight = FontWeight.Bold,
                 color = if (enabled) DK.bgBottom else DK.textTertiary,

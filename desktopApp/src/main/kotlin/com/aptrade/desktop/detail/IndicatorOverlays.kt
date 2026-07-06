@@ -31,17 +31,31 @@ import androidx.compose.material3.Text
 import com.aptrade.desktop.designkit.ChartCandle
 import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.designkit.InterFamily
+import com.aptrade.desktop.l10n.L10n
+import com.aptrade.desktop.l10n.tr
+import com.aptrade.desktop.l10n.trf
 import com.aptrade.shared.domain.TechnicalIndicators
 
 /** The six chart indicators. Overlays draw on the price chart; RSI/MACD get their own pane.
- *  Chip labels and colors are macOS-parity (AssetDetailView.swift). */
-enum class Indicator(val label: String, val color: Color, val isOverlay: Boolean) {
-    Sma("SMA 20", DK.gold, true),
-    Ema("EMA 12", Color(0.30f, 0.74f, 0.86f), true),
-    Vwap("VWAP", DK.silver, true),
-    Bollinger("BB 20", Color(0.38f, 0.56f, 0.95f), true),
-    Rsi("RSI 14", Color(0.65f, 0.49f, 0.92f), false),
-    Macd("MACD 12·26·9", Color(0.90f, 0.58f, 0.26f), false);
+ *  Chip labels and colors are macOS-parity (AssetDetailView.swift). Labels resolve via
+ *  [tr] against macOS's `indicatorSMA`/`indicatorEMA`/`indicatorVWAP`/`indicatorBollinger`/
+ *  `indicatorRSI` Keys — L10n.swift keeps these IDENTICAL across all four languages (they're
+ *  technical abbreviations, not prose), so [tr] always resolves to the same English text
+ *  shown here, but routes through the catalog for parity/consistency with the rest of the
+ *  detail screen. `Indicator.label` is a `val` (not `val` computed via a function), so it's
+ *  read once at enum-init time — see [Indicator.currentLabel] for the live-recomposing form
+ *  used by the chip UI. */
+enum class Indicator(val key: L10n.Key, val color: Color, val isOverlay: Boolean) {
+    Sma(L10n.Key.IndicatorSMA, DK.gold, true),
+    Ema(L10n.Key.IndicatorEMA, Color(0.30f, 0.74f, 0.86f), true),
+    Vwap(L10n.Key.IndicatorVWAP, DK.silver, true),
+    Bollinger(L10n.Key.IndicatorBollinger, Color(0.38f, 0.56f, 0.95f), true),
+    Rsi(L10n.Key.IndicatorRSI, Color(0.65f, 0.49f, 0.92f), false),
+    Macd(L10n.Key.MacdParamsLabel, Color(0.90f, 0.58f, 0.26f), false);
+
+    /** Resolves [key] against the active language (recomposes with it, unlike a cached
+     *  `val label` would). */
+    val label: String get() = tr(key)
 }
 
 /** MACD signal line — pink, distinct from the amber MACD line (macOS parity). */
@@ -295,7 +309,7 @@ private fun DrawScope.drawBollingerFill(
 fun RsiPane(series: IndicatorSeries, modifier: Modifier = Modifier, visibleStartIndex: Int = 0) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
-            "RSI 14",
+            trf(L10n.Key.RsiPeriodFormat, RsiPeriod),
             style = TextStyle(fontFamily = InterFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold,
                 color = DK.textTertiary, letterSpacing = 1.2.sp),
         )
@@ -312,13 +326,13 @@ fun RsiPane(series: IndicatorSeries, modifier: Modifier = Modifier, visibleStart
                 }
             }
             Text(
-                "Overbought",
+                tr(L10n.Key.Overbought),
                 style = TextStyle(fontFamily = InterFamily, fontSize = 9.sp, fontWeight = FontWeight.Medium,
                     color = DK.textTertiary),
                 modifier = Modifier.align(Alignment.TopStart),
             )
             Text(
-                "Oversold",
+                tr(L10n.Key.Oversold),
                 style = TextStyle(fontFamily = InterFamily, fontSize = 9.sp, fontWeight = FontWeight.Medium,
                     color = DK.textTertiary),
                 modifier = Modifier.align(Alignment.BottomStart),
@@ -336,12 +350,12 @@ fun MacdPane(series: IndicatorSeries, modifier: Modifier = Modifier, visibleStar
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
-                "MACD 12·26·9",
+                tr(L10n.Key.MacdParamsLabel),
                 style = TextStyle(fontFamily = InterFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold,
                     color = DK.textTertiary, letterSpacing = 1.2.sp),
             )
-            LegendDot(Indicator.Macd.color, "MACD")
-            LegendDot(MacdSignalColor, "Signal")
+            LegendDot(Indicator.Macd.color, tr(L10n.Key.IndicatorMACD))
+            LegendDot(MacdSignalColor, tr(L10n.Key.SignalLegend))
         }
         Box(Modifier.fillMaxWidth().height(100.dp)) {
             Canvas(Modifier.fillMaxSize()) {

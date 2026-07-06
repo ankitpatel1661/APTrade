@@ -52,6 +52,8 @@ import com.aptrade.desktop.designkit.formatMoney
 import com.aptrade.desktop.designkit.formatPercent
 import com.aptrade.desktop.designkit.signedMoney
 import com.aptrade.desktop.infra.openUrlInBrowser
+import com.aptrade.desktop.l10n.L10n
+import com.aptrade.desktop.l10n.tr
 import com.aptrade.desktop.news.ArticleRow
 import com.aptrade.desktop.portfolio.HoldingRowUi
 import com.aptrade.desktop.ui.assetKindFromLabel
@@ -99,7 +101,7 @@ fun DetailScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "‹  Back",
+                "‹  " + tr(L10n.Key.Back),
                 style = TextStyle(
                     fontFamily = InterFamily,
                     fontSize = 18.sp,
@@ -267,7 +269,7 @@ private fun NewsSection(state: DetailUiState, onToggleBookmark: (com.aptrade.sha
     if (articles.isEmpty() && !state.newsLoading) return
 
     Spacer(Modifier.height(24.dp))
-    CardHeader("News")
+    CardHeader(tr(L10n.Key.News))
     Spacer(Modifier.height(8.dp))
     if (articles.isEmpty()) {
         // Loading with nothing yet: a bare, centered spinner (no heading duplication).
@@ -310,7 +312,7 @@ private fun TradeButton(onClick: () -> Unit) {
             .padding(horizontal = 20.dp, vertical = 8.dp),
     ) {
         Text(
-            "BUY / SELL",
+            tr(L10n.Key.BuySellButton),
             style = TextStyle(
                 fontFamily = InterFamily,
                 fontSize = 12.sp,
@@ -395,7 +397,7 @@ private fun ModeToggle(mode: ChartMode, onModeChange: (ChartMode) -> Unit) {
                 ) { onModeChange(m) },
             ) {
                 Text(
-                    if (m == ChartMode.Line) "Line" else "Candles",
+                    if (m == ChartMode.Line) tr(L10n.Key.ChartStyleLine) else tr(L10n.Key.ChartStyleCandles),
                     style = TextStyle(
                         fontFamily = InterFamily,
                         fontSize = 12.sp,
@@ -429,7 +431,7 @@ private fun ChartError(message: String, onRetry: () -> Unit) {
             ),
         )
         Text(
-            "Retry",
+            tr(L10n.Key.Retry),
             style = TextStyle(
                 fontFamily = InterFamily,
                 fontSize = 13.sp,
@@ -499,19 +501,19 @@ private fun KeyStatsCard(state: DetailUiState) {
     val dayChange = if (last != null && prevClose != null) {
         signedMoney((BigDecimal(last) - BigDecimal(prevClose)).toPlainString())
     } else "—"
-    StatCard(title = "KEY STATS") {
+    StatCard(title = tr(L10n.Key.KeyStats)) {
         Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
             StatRow(
-                leftLabel = "Last", leftValue = last?.let { formatMoney(it) } ?: "—",
-                rightLabel = "Previous close", rightValue = prevClose?.let { formatMoney(it) } ?: "—",
+                leftLabel = tr(L10n.Key.StatLast), leftValue = last?.let { formatMoney(it) } ?: "—",
+                rightLabel = tr(L10n.Key.StatPreviousClose), rightValue = prevClose?.let { formatMoney(it) } ?: "—",
             )
             StatRow(
-                leftLabel = "Day change", leftValue = dayChange, leftColor = changeColor,
-                rightLabel = "Day change %", rightValue = formatPercent(state.changePercent), rightColor = changeColor,
+                leftLabel = tr(L10n.Key.StatDayChange), leftValue = dayChange, leftColor = changeColor,
+                rightLabel = tr(L10n.Key.StatDayChangePercent), rightValue = formatPercent(state.changePercent), rightColor = changeColor,
             )
             StatRow(
-                leftLabel = "Symbol", leftValue = state.symbol,
-                rightLabel = "Type", rightValue = state.kindLabel ?: "—",
+                leftLabel = tr(L10n.Key.StatSymbol), leftValue = state.symbol,
+                rightLabel = tr(L10n.Key.StatType), rightValue = state.kindLabel ?: "—",
             )
         }
     }
@@ -527,15 +529,15 @@ private fun PositionCard(row: HoldingRowUi) {
         false -> DK.down
         null -> DK.textPrimary
     }
-    StatCard(title = "YOUR POSITION") {
+    StatCard(title = tr(L10n.Key.YourPosition)) {
         Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
             StatRow(
-                leftLabel = "Shares", leftValue = row.quantityText,
-                rightLabel = "Average cost", rightValue = row.averageCostText,
+                leftLabel = tr(L10n.Key.StatShares), leftValue = row.quantityText,
+                rightLabel = tr(L10n.Key.StatAverageCost), rightValue = row.averageCostText,
             )
             StatRow(
-                leftLabel = "Market value", leftValue = formatMoney(row.marketValueText),
-                rightLabel = "Unrealized P&L", rightValue = row.unrealizedText, rightColor = pnlColor,
+                leftLabel = tr(L10n.Key.StatMarketValue), leftValue = formatMoney(row.marketValueText),
+                rightLabel = tr(L10n.Key.UnrealizedPnL), rightValue = row.unrealizedText, rightColor = pnlColor,
             )
         }
     }

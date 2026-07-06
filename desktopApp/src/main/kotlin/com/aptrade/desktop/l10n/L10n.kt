@@ -219,6 +219,20 @@ object L10n {
         Buy(english = "Buy"),
         Sell(english = "Sell"),
 
+        // Desktop-only additions (6e Task 7 — no macOS Key: the detail screen's back bar,
+        // chart-error retry action, Line chart-mode label (macOS's equivalent concept is
+        // "Area", a different rendering, not a literal match), the combined BUY/SELL pill
+        // (macOS ships separate Buy/Sell buttons), and the RSI pane's Overbought/Oversold
+        // labels — on macOS these are Swift Charts `RuleMark` value identifiers, never
+        // rendered as visible text (`AssetDetailView.swift`'s `rsiPane`); desktop's Canvas-
+        // based RSI pane draws them as actual on-screen `Text`, so they need real Keys here).
+        Back(english = "Back"),
+        Retry(english = "Retry"),
+        ChartStyleLine(english = "Line"),
+        BuySellButton(english = "BUY / SELL"),
+        Overbought(english = "Overbought"),
+        Oversold(english = "Oversold"),
+
         // Trade
         ConfirmBuy(english = "Confirm Buy"),
         ConfirmSell(english = "Confirm Sell"),
@@ -469,6 +483,13 @@ object L10n {
             Key.Buy to "Kaufen",
             Key.Sell to "Verkaufen",
 
+            Key.Back to "Zurück",
+            Key.Retry to "Erneut versuchen",
+            Key.ChartStyleLine to "Linie",
+            Key.BuySellButton to "KAUFEN / VERKAUFEN",
+            Key.Overbought to "Überkauft",
+            Key.Oversold to "Überverkauft",
+
             Key.ConfirmBuy to "Kauf bestätigen",
             Key.ConfirmSell to "Verkauf bestätigen",
             Key.ConfirmBuyTitleFormat to "%@ %@ kaufen?",
@@ -704,6 +725,13 @@ object L10n {
             Key.Buy to "Compra",
             Key.Sell to "Vendi",
 
+            Key.Back to "Indietro",
+            Key.Retry to "Riprova",
+            Key.ChartStyleLine to "Linea",
+            Key.BuySellButton to "COMPRA / VENDI",
+            Key.Overbought to "Ipercomprato",
+            Key.Oversold to "Ipervenduto",
+
             Key.ConfirmBuy to "Conferma acquisto",
             Key.ConfirmSell to "Conferma vendita",
             Key.ConfirmBuyTitleFormat to "Acquistare %@ %@?",
@@ -938,6 +966,13 @@ object L10n {
             Key.AssetKindStock to "Acción",
             Key.Buy to "Comprar",
             Key.Sell to "Vender",
+
+            Key.Back to "Atrás",
+            Key.Retry to "Reintentar",
+            Key.ChartStyleLine to "Línea",
+            Key.BuySellButton to "COMPRAR / VENDER",
+            Key.Overbought to "Sobrecompra",
+            Key.Oversold to "Sobreventa",
 
             Key.ConfirmBuy to "Confirmar compra",
             Key.ConfirmSell to "Confirmar venta",

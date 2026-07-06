@@ -39,6 +39,8 @@ import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.designkit.InterFamily
 import com.aptrade.desktop.designkit.MagnifierIcon
 import com.aptrade.desktop.infra.openUrlInBrowser
+import com.aptrade.desktop.l10n.L10n
+import com.aptrade.desktop.l10n.tr
 import com.aptrade.shared.domain.NewsCategory
 
 /** News tab: a category pill row (General · Crypto · Merger) with a trailing Saved toggle,
@@ -124,7 +126,7 @@ private fun PillRow(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (c in NewsCategory.entries) {
                 CategoryPill(
-                    label = c.displayName,
+                    label = categoryLabel(c),
                     selected = !showingSaved && c == category,
                     onClick = {
                         // Selecting a category leaves the Saved view.
@@ -137,6 +139,17 @@ private fun PillRow(
         Spacer(Modifier.weight(1f))
         SavedToggle(active = showingSaved, onClick = { onSetShowingSaved(!showingSaved) })
     }
+}
+
+/** Maps a [NewsCategory] to its localized pill text — mirrors `NewsView.swift`'s
+ *  `categoryTitle(_:)` (`.general` → `newsGeneral`, `.crypto` → `cryptoLabel`, `.merger` →
+ *  `newsMerger`). `NewsCategory.displayName` itself lives in `:shared` (commonMain) and stays
+ *  English-only per the desktop-only retrofit scope, so the mapping happens here instead of
+ *  editing the shared enum. */
+private fun categoryLabel(category: NewsCategory): String = when (category) {
+    NewsCategory.General -> tr(L10n.Key.NewsGeneral)
+    NewsCategory.Crypto -> tr(L10n.Key.CryptoLabel)
+    NewsCategory.Merger -> tr(L10n.Key.NewsMerger)
 }
 
 @Composable
@@ -194,7 +207,7 @@ private fun SavedToggle(active: Boolean, onClick: () -> Unit) {
             else drawPath(path, color = tint, style = Stroke(width = 1.3.dp.toPx()))
         }
         Text(
-            "Saved",
+            tr(L10n.Key.Saved),
             style = TextStyle(
                 fontFamily = InterFamily,
                 fontSize = 12.sp,
@@ -223,7 +236,7 @@ private fun FilterField(query: String, onQueryChange: (String) -> Unit) {
         Box(Modifier.weight(1f)) {
             if (query.isEmpty()) {
                 Text(
-                    "Filter headlines",
+                    tr(L10n.Key.FilterHeadlinesPlaceholder),
                     style = TextStyle(
                         fontFamily = InterFamily,
                         fontSize = 14.sp,
@@ -259,7 +272,7 @@ private fun EmptyState(showingSaved: Boolean, onRefresh: () -> Unit, modifier: M
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            if (showingSaved) "No saved articles" else "No headlines right now",
+            if (showingSaved) tr(L10n.Key.NoSavedArticles) else tr(L10n.Key.NoHeadlinesRightNow),
             style = TextStyle(
                 fontFamily = InterFamily,
                 fontSize = 14.sp,
@@ -269,7 +282,7 @@ private fun EmptyState(showingSaved: Boolean, onRefresh: () -> Unit, modifier: M
         )
         if (!showingSaved) {
             Text(
-                "Refresh",
+                tr(L10n.Key.Refresh),
                 style = TextStyle(
                     fontFamily = InterFamily,
                     fontSize = 13.sp,
@@ -299,7 +312,7 @@ private fun NoKeyState() {
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
-                "Connect a news source",
+                tr(L10n.Key.ConnectNewsSource),
                 style = TextStyle(
                     fontFamily = InterFamily,
                     fontSize = 17.sp,
@@ -308,7 +321,7 @@ private fun NoKeyState() {
                 ),
             )
             Text(
-                "Add a Finnhub API key to ~/.config/aptrade/config.json (field \"finnhubAPIKey\") and relaunch.",
+                tr(L10n.Key.FinnhubKeyInstructions),
                 style = TextStyle(
                     fontFamily = InterFamily,
                     fontSize = 13.sp,
