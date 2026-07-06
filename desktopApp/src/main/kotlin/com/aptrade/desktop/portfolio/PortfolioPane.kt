@@ -388,10 +388,14 @@ private fun HoldingRow(
                 ),
             )
         }
-        if (hovered) {
+        // RECORDED DIVERGENCE (6e): macOS hover-reveals these BUY/SELL actions entirely on
+        // hover. Desktop keeps them always in the layout (so the price column never shifts)
+        // and instead fades them in via alpha, per user report that they were invisible.
+        run {
+            val actionColor = DK.gold.copy(alpha = if (hovered) 1f else 0.35f)
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                TextButton("BUY", DK.gold) { onTrade(row.symbol, com.aptrade.shared.domain.TradeSide.Buy) }
-                TextButton("SELL", DK.gold) { onTrade(row.symbol, com.aptrade.shared.domain.TradeSide.Sell) }
+                TextButton("BUY", actionColor) { onTrade(row.symbol, com.aptrade.shared.domain.TradeSide.Buy) }
+                TextButton("SELL", actionColor) { onTrade(row.symbol, com.aptrade.shared.domain.TradeSide.Sell) }
             }
             Spacer(Modifier.width(16.dp))
         }
