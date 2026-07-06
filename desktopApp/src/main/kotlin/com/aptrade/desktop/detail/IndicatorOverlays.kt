@@ -42,9 +42,9 @@ import com.aptrade.shared.domain.TechnicalIndicators
  *  `indicatorRSI` Keys — L10n.swift keeps these IDENTICAL across all four languages (they're
  *  technical abbreviations, not prose), so [tr] always resolves to the same English text
  *  shown here, but routes through the catalog for parity/consistency with the rest of the
- *  detail screen. `Indicator.label` is a `val` (not `val` computed via a function), so it's
- *  read once at enum-init time — see [Indicator.currentLabel] for the live-recomposing form
- *  used by the chip UI. */
+ *  detail screen. `Indicator.label` is a reactive `get()` (see below) that re-resolves
+ *  [tr] on every read, so chip UI recomposes correctly when the active language changes —
+ *  it is never cached or frozen at enum-init time. */
 enum class Indicator(val key: L10n.Key, val color: Color, val isOverlay: Boolean) {
     Sma(L10n.Key.IndicatorSMA, DK.gold, true),
     Ema(L10n.Key.IndicatorEMA, Color(0.30f, 0.74f, 0.86f), true),

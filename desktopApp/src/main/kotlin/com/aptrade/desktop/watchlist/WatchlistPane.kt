@@ -59,7 +59,6 @@ import com.aptrade.desktop.designkit.SuperscriptPrice
 import com.aptrade.desktop.designkit.ExpandedValueCard
 import com.aptrade.desktop.designkit.chipLabel
 import com.aptrade.desktop.designkit.formatPercent
-import com.aptrade.desktop.designkit.kindLabel
 import com.aptrade.desktop.l10n.L10n
 import com.aptrade.desktop.l10n.tr
 import com.aptrade.desktop.l10n.trf
