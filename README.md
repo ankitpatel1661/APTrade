@@ -312,8 +312,9 @@ neutral, while the champagne-gold ramp itself is unchanged in both modes — acc
 brand, never a mode signal). The switch is an **instant whole-tree recolor with no
 animation** (a recorded design decision, not a missing-polish gap), and `isDarkMode`
 persists to `settings.json` alongside the accent. **Security & Privacy**, **Profile**,
-**Account Settings**, and **Help & Support** replace their former placeholders — only
-**Language** remains one. Of Security & Privacy's four toggles (Biometric Login, Require
+**Account Settings**, and **Help & Support** replace their former placeholders (increment
+6e goes on to give **Language** a real destination too — see below). Of Security &
+Privacy's four toggles (Biometric Login, Require
 Auth on Launch, Confirm Trades, Share Usage Analytics), only **Confirm Trades** is
 functional; the other three persist to `settings.json` but drive nothing yet — **HONEST
 PARITY** with macOS, whose own Security page has the identical three-toggle gap. Profile
@@ -332,6 +333,31 @@ update even though buy-vs-buy and sell-vs-sell were already safe), and the deskt
 `persistSettings` load-merge-save sequence is now serialized under a `Mutex`, closing a
 lost-update window where two concurrent preference changes (e.g. an accent change and a
 notification toggle) could silently drop one write.
+
+A **desktop language switcher and chart/UX polish pass** (`:desktopApp`, increment 6e)
+completes macOS parity and closes the roadmap. **Language** is now a real page: choosing
+**English, Deutsch, Italiano, or Español** re-renders the entire desktop UI —
+nav, watchlist, portfolio, asset detail, and every settings page — through a Compose-state
+`LocalizationManager` and a 217-key `L10n` catalog (`tr`/`trf` helpers), with the choice
+persisted to `settings.json` and restored on relaunch. 205 of those keys are transcribed
+verbatim from the macOS `L10n.swift` catalog (same English/German/Italian/Spanish strings);
+the remaining **12 are desktop-only** additions (short button labels, chart-mode names, and
+a couple of RSI/MACD chip words with nothing to transcribe from macOS) — their DE/IT/ES
+values are the author's own translations, not yet reviewed by a native speaker, so treat
+them as provisional pending a follow-up pass. Two chart-fidelity fixes ride alongside:
+the Performance chart's equity curve (and its SPY/QQQ/VTI benchmark twin) now **resamples
+to one point per calendar day** on 1W/1M/1Y/MAX — collapsing the dense intraday/weekend
+grid that made both curves render as flat or stair-stepped segments — while **1D is left
+untouched**, since its native intraday granularity is the whole point of that view; and
+asset-detail indicators (SMA 20, EMA 12, VWAP, Bollinger Bands, RSI 14, MACD) now fetch
+a 26-bar lookback pad ahead of the visible window so every indicator's warm-up is already
+satisfied by the time the chart's visible range begins, fixing overlays that used to render
+across only the right half of the chart. The lookback clamp lives at the application layer
+(a new `FetchChartWindow` use case; the `MarketDataRepository` port itself only grew a KDoc
+clarification, no signature change) — Android's `FetchCandles`-based path is untouched.
+Portfolio holding-row **BUY/SELL** buttons are now **always visible at 35% opacity**,
+brightening to full on hover, reserving their layout space permanently — a **recorded
+divergence** from macOS, which still hover-reveals its buy/sell affordance.
 
 ## Project Structure
 
@@ -353,15 +379,26 @@ APTrade Lite is the foundation. Planned toward the full platform:
 
 - Market-holiday calendar for the scheduler
 - Real authentication (Apple Sign In), biometric gating, and cloud sync (Supabase)
-- **Windows parity, continued** — the `:desktopApp` Compose app now covers Watchlist +
+- **Windows parity — complete.** The `:desktopApp` Compose app now covers Watchlist +
   detail + palette (6a), a Portfolio tab with detail-screen indicators, performance/risk
   intelligence, and export (6b.1 + 6b.2), a News tab with per-symbol company news and
   bookmarks (6c), macOS adoption of the shared portfolio core's all-priced performance
   gate (6b.3), an Android Portfolio screen on the shared portfolio core (6b.4), alerts &
-  notifications (6d.1), and a light theme plus real account-panel settings pages (6d.2).
-  Still to come: a **desktop language switcher**, promoted to its own increment.
+  notifications (6d.1), a light theme plus real account-panel settings pages (6d.2), and a
+  language switcher plus chart/UX polish (6e). Still to come: **none** — macOS parity and
+  localization are complete; the `:desktopApp` roadmap that opened at 6a is closed.
 
-Recently shipped: a desktop **light theme and account-panel settings pages** (increment
+Recently shipped: a desktop **language switcher and chart/UX polish pass** (increment 6e) —
+a real Language page (English/Deutsch/Italiano/Español) driving a whole-UI live re-render
+through `LocalizationManager` and a 217-key `L10n` catalog (205 transcribed verbatim from
+macOS, 12 desktop-only additions with provisional, not-yet-native-reviewed translations),
+persisted across launches; a daily-resample fix for the Performance chart and its benchmark
+twin (flat/stair-step artifacts gone on 1W/1M/1Y/MAX, 1D still intraday); a 26-bar indicator
+lookback pad so SMA/EMA/VWAP/Bollinger/RSI/MACD render full-width instead of only across the
+chart's right half; and an always-visible, hover-brightening BUY/SELL affordance on
+portfolio holding rows (a recorded divergence from macOS's hover-reveal). This closes the
+`:desktopApp` Windows-parity roadmap opened at 6a — no further desktop-parity work is
+planned. A desktop **light theme and account-panel settings pages** (increment
 6d.2) — a THEME section (Dark/Light rows) on the Appearance page above the existing accent
 picker, backed by nine mode-branching `DesignKit` colors transcribed from macOS's
 `Theme.swift` and an instant, non-animated whole-tree recolor; a light-mode wordmark remap
