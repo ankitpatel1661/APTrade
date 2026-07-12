@@ -40,11 +40,22 @@ Ship a native iPhone experience at feature parity with macOS (watchlist, portfol
 
 ## Current state (measured on `main`, 2026-07-12)
 
+**Correction to the 2026-06-29 audit:** the code has advanced far past that audit. Direct inspection of `main` shows iOS is ~85% complete, not a shell. The nav shell and per-screen narrow layouts are already implemented.
+
 - **Xcode wrapper: done.** `project.yml` defines the `APTradeiOS` application target (iOS 17, iPhone-only, portrait) consuming the `APTradeApp` SwiftPM product; `AppIcon` asset present. iOS cannot run as a bare SwiftPM executable, so this xcodegen project is the run/build vehicle.
-- **Phase-0 AppKit gating: landed** in 10 files (`#if os` / `canImport(AppKit|UIKit)`): `AssetDetailView`, `DesignKit`, `NewsView`, `PlatformLayout`, `PortfolioView`, `RootView`, `WatchlistView`, `AppConfig`, `PortfolioExportRenderer`, `APTradeMacApp`.
-- **Remaining raw AppKit in shared presentation: one site.** `RootView.swift:204` uses `NSSavePanel` with an iOS stub at `:218` (`// iOS Phase 0 stub — full export via .fileExporter is Phase 1`). The `NSApp`/`AppDelegate` references in `APTradeMac/APTradeMacApp.swift` are in the macOS-only target and are correct as-is.
-- **Responsive-layout surface is small and bounded:** 9 `minWidth` constraints across 5 files — `RootView`, `WatchlistView`, `PortfolioView`, `AssetDetailView`, `NewsView`.
-- **Test baseline:** 190 tests pass on both macOS and the iPhone simulator (per Phase 0 audit).
+- **Navigation shell: DONE.** `RootView.swift:42-87` has a full `iosBody`: `TabView(selection:)` over Watchlist/Portfolio/News with `NavigationStack`s, account panel as a `.sheet`, command palette as a `.sheet`, asset detail as a `.sheet(item:)`, export as a `.confirmationDialog`. `WatchlistView`/`PortfolioView`/`NewsView` accept `onOpenSearch`/`onOpenAccount` closures on iOS.
+- **Per-screen narrow layouts: substantially DONE.** `WatchlistView`, `PortfolioView`, `NewsView`, `AssetDetailView` gate `minWidth: 560` under `#if os(macOS)` only and carry real `#if os(iOS)` layout branches (e.g. `AssetDetailView.swift:361` pins the chart to a fixed `height: 260` on iOS to stop the area fill flooding the ScrollView). Remaining `minWidth: 104` usages are per-column numeric alignments, correct on iPhone.
+- **PDF export renderer: DONE for iOS.** `PortfolioExportRenderer.swift` defines `PlatformFont`/`PlatformColor` typealiases (`NSFont`/`NSColor` on macOS, `UIFont`/`UIColor` on iOS) with full iOS color/font paths. macOS keeps calibrated-RGB P&L colors; iOS uses sRGB — intentional, must not be "unified."
+- **Remaining raw AppKit in shared presentation: one site.** `RootView.swift:204` uses `NSSavePanel` with an iOS **stub** at `:218` (`// iOS Phase 0 stub — full export via .fileExporter is Phase 1`). The `NSApp`/`AppDelegate` references in `APTradeMac/APTradeMacApp.swift` are in the macOS-only target and are correct as-is.
+- **Touch crosshair: NOT done.** `AssetDetailView.swift:332` and `ExpandableValueChart.swift:193` drive the crosshair from `.onContinuousHover` with no touch fallback, so chart scrubbing does not work on iPhone.
+- **Test baseline:** 190 tests reported passing on both macOS and the iPhone simulator as of the Phase 0 audit; must be re-confirmed on current `main` before changes (Task 1).
+
+## Actual remaining work (this plan)
+
+Only three things remain to ship the iPhone app:
+1. **Export save** — replace the `NSSavePanel`/iOS-stub with a cross-platform `.fileExporter` (extract a shared naming/UTType helper first, TDD).
+2. **Touch crosshair** — add a `DragGesture` scrub path on iOS at the two chart sites.
+3. **Verification pass** — build the `APTradeiOS` scheme, run the 190-test suite on both platforms, and visually walk every screen on the iPhone simulator to catch layout bugs that the already-written (but computer-use-unverifiable) iOS branches may contain.
 
 ## Architecture
 
@@ -52,40 +63,36 @@ No architectural change. The dependency rule is preserved: presentation depends 
 
 ## Phases
 
-Sequencing: **B0 → B2′ → B3 → B4 → B5.** B3 precedes B4 because per-screen layouts hang off the navigation shell.
+Sequencing: **P1 (baseline) → P2 (export helper) → P3 (iOS export) → P4 (touch crosshair) → P5 (verify).** P2 precedes P3 because P3 consumes the extracted helper.
 
-### B0 — Baseline verify (S)
-Confirm the iOS toolchain and regression guard before touching UI.
+### P1 — Baseline verify
+Confirm the iOS toolchain and regression guard before touching anything.
 - `xcodegen generate`, then `xcodebuild` the `APTradeiOS` scheme for an iPhone simulator (iOS 17+).
-- Run the 190-test suite on both macOS and the iPhone simulator; both must be green.
-- **Exit criteria:** clean iOS build + 190/190 on both platforms recorded as the baseline.
+- Run the SwiftPM test suite on macOS (`DEVELOPER_DIR` set) and on the iPhone simulator.
+- **Exit criteria:** clean iOS build; test counts on both platforms recorded as the baseline.
 
-### B2′ — Finish AppKit shims (S–M)
-Close the last non-layout coupling.
-- Replace the `RootView.swift:204` `NSSavePanel` path and the `:218` iOS stub with a cross-platform SwiftUI `.fileExporter` for portfolio export.
-- Audit the `DesignKit` gold→accent logo recolor and `PortfolioExportRenderer` iOS paths: confirm they are real implementations, not compile-only stubs; implement any that are stubbed.
-- **Preserve macOS output exactly** (calibrated-RGB PDF colors; existing save behavior).
-- **Exit criteria:** no `NS*` AppKit APIs remain in shared presentation; export works on iOS sim and is unchanged on macOS; tests green.
+### P2 — Extract export naming/UTType helper (TDD)
+Both macOS and iOS need the same filename stem and content-type resolution. Extract the naming currently inlined in `RootView` into a pure, testable helper and repoint macOS at it.
+- New pure type `PortfolioExportNaming` (filename stem, `filename(for:)`, `contentType(for:)`).
+- macOS `presentSavePanel` uses the helper; behavior unchanged.
+- **Exit criteria:** helper unit-tested; macOS export behavior identical; tests green.
 
-### B3 — Navigation shell (L) — *biggest single piece*
-Convert the wide-window macOS shell into an iPhone-native structure.
-- `RootView` → iOS `TabView` + `NavigationStack` (macOS keeps its custom top tab-switcher via `#if os(macOS)`).
-- Account drawer overlay → presented sheet / pushed stack on iOS.
-- Command palette: add a tap trigger (the ⌘K path stays macOS-only; every palette result is already clickable).
-- **Exit criteria:** all top-level destinations reachable on iPhone via native nav; macOS shell unchanged; tests green.
+### P3 — iOS export via `.fileExporter`
+Replace the iOS stub with a real save flow using the P2 helper.
+- iOS-gated state + `.fileExporter` wired to `iosBody`; produced `Data` wrapped in a `FileDocument`.
+- **Preserve macOS `NSSavePanel` path unchanged.**
+- **Exit criteria:** export writes a file from the iPhone sim; macOS unchanged; no `NS*` API remains reachable on iOS.
 
-### B4 — Per-screen narrow passes (M per screen)
-Make each screen usable at ~390pt.
-- Remove/relax the 9 `minWidth`s in `RootView`, `WatchlistView`, `PortfolioView`, `AssetDetailView`, `NewsView`.
-- Stack the dense `AssetDetailView` vertically (hero + chart + 2-col stat grids + position panel + news). `PerformanceSection` already uses `GridItem(.adaptive(minimum: 150))` and needs no change.
-- Convert fixed-size sheets (Trade 420×460, PriceAlert 360, CommandPalette 520) to iOS sheets with detents.
-- **Exit criteria:** every screen renders without horizontal clipping or unreachable controls on the iPhone sim; macOS layouts unchanged; tests green.
+### P4 — Touch crosshair (`DragGesture`)
+Add a touch scrub path at both chart overlays; keep hover on macOS.
+- `AssetDetailView.swift:332` and `ExpandableValueChart.swift:193`: `#if os(iOS)` `DragGesture(minimumDistance: 0)` calling the existing `updateHover(at:…)`, `.onEnded` clears the hover point; `#else` keeps `onContinuousHover`.
+- **Exit criteria:** crosshair scrubs by touch on iOS; hover path unchanged on macOS; tests green.
 
-### B5 — Touch interactions (S–M)
-Replace pointer-only affordances.
-- Chart crosshair: `onContinuousHover` → `DragGesture` at `AssetDetailView.swift:329` and `ExpandableValueChart.swift:193` (both already use `chartOverlay` + proxy).
-- Ensure the palette tap trigger from B3 is wired on iOS.
-- **Exit criteria:** crosshair scrub works by touch on iOS; hover path unchanged on macOS; tests green.
+### P5 — Full verification pass
+Ship-readiness gate for the already-written iOS UI.
+- Rebuild `APTradeiOS`; run the full suite on both platforms.
+- Visual UAT on the iPhone simulator: walk Watchlist, Portfolio (+ Performance sub-tab), AssetDetail (hero + chart + stat grids + position + news), News, all account/settings subpages, Trade sheet, PriceAlert sheet, command palette, and export — checking for horizontal clipping, unreachable controls, and broken sheets. (Automated computer-use cannot target the dev build, so this is user-performed.)
+- **Exit criteria:** no layout defects outstanding; macOS visually unchanged; both test suites green.
 
 ## Testing strategy
 
