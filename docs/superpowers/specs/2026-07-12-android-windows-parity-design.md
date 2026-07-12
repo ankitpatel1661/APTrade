@@ -54,6 +54,7 @@ Move, verbatim where possible:
 | `infra/FileAlertStore.kt` | `shared/jvmCommonMain` | implements shared alert port |
 | `infra/FileSettingsStore.kt` | `shared/jvmCommonMain` | settings model may need to move with it |
 | `infra/FinnhubKeyConfig.kt` | `shared/jvmCommonMain` | key resolution for news |
+| `infra/FileBookmarkStore.kt` | `shared/jvmCommonMain` | news bookmarks (required by A3) |
 | `l10n/L10n.kt` (catalog + keys) | `shared/commonMain` | pure Kotlin data; 217 keys × 4 languages, moved verbatim |
 | `l10n/AppLanguage.kt` | `shared/commonMain` | enum + display names |
 
@@ -74,7 +75,7 @@ Material 3 `Scaffold` with:
 
 - **A1 — Watchlist screen**: persisted via shared `FileWatchlistStore` (+`AddToWatchlist`/`FetchWatchlist`/`RemoveFromWatchlist`), add-from-search, swipe-to-remove, 15s live prices with daily %, per-row alert bell. Desktop `WatchlistPane` (511 lines) is the reference anatomy; `WatchlistViewModel` mirrors desktop's.
 - **A2 — Alerts**: `PriceAlertSheet` analog (price above / price below / % daily move) reusing shared `AlertUseCases` + promoted `FileAlertStore`; evaluation folded into the watchlist poll (foreground, matching desktop); delivery via `NotificationManager` with a dedicated channel + `POST_NOTIFICATIONS` runtime permission flow (Android 13+); order-fill notifications behind the settings toggle (desktop `AppGraphNotifyOrderFill` pattern).
-- **A3 — News**: News tab with market/category news and per-symbol company news via shared `NewsUseCases`/`FinnhubNewsRepository`, bookmarks via a promoted/shared bookmark store (desktop `FileBookmarkStore` promotes alongside if needed), Finnhub key via promoted `FinnhubKeyConfig`, article open in a Chrome Custom Tab. Desktop `NewsPane` (334 lines) is the reference.
+- **A3 — News**: News tab with market/category news and per-symbol company news via shared `NewsUseCases`/`FinnhubNewsRepository`, bookmarks via the promoted `FileBookmarkStore`, Finnhub key via promoted `FinnhubKeyConfig`, article open in a Chrome Custom Tab. Desktop `NewsPane` (334 lines) is the reference.
 - **A4 — Settings + localization + theme**: account/settings screens (profile, notifications, appearance, security, language, about) mirroring desktop `AccountPanel` anatomy; language switcher live-re-rendering through an Android Compose-state `LocalizationManager` over the shared catalog, persisted via promoted `FileSettingsStore`; **light theme** — lift desktop's 6d.2 light color table into a Material 3 `lightColorScheme` alongside the existing dark scheme — plus the accent picker (desktop `AccentTheme` ramp).
 - **A5 — Verification**: desktop + shared + android Gradle test suites green (proves the promotions didn't regress desktop); emulator UAT walk performed by the user (same protocol as the iOS closeout: agent builds/installs/launches, user drives and reports).
 
