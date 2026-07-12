@@ -45,12 +45,30 @@ data class TradeSheetInfo(
     val initialSide: TradeSide,
 )
 
+/** Strips `money()`'s currency symbol and thousands-grouping commas from a display-formatted
+ *  amount (e.g. `"$63,758.00"` -> `"63758.00"`, `"-$12.50"` -> `"-12.50"`) so it can be re-parsed
+ *  by [Money.usd], which expects a raw decimal string.
+ *
+ *  ROOT CAUSE (UAT round 2, crash on confirm layer): unlike desktop's `TradeDialog`, which
+ *  threads a raw `Quote.price.amountText` through as `priceText` and only formats it for
+ *  display at the point of use (`PortfolioViewModel.kt`'s "RAW — TradeDialog re-parses +
+ *  SuperscriptPrice" comment), Android's [TradeSheetInfo.priceText] is already `money()`-
+ *  formatted at the source (`DetailViewModel`/`PortfolioViewModel`, for the form's AssistChip).
+ *  [estimateDisplay] fed that formatted string straight into `Money.usd(it)` ->
+ *  `BigDecimal.parseString`, which throws `NumberFormatException: Invalid digit for radix $`
+ *  the instant the confirm layer first composes and calls this function — killing the app
+ *  before the confirmation layer could ever appear. Stripping the formatting back out here
+ *  (Android-only; [TradeSheetInfo.priceText]'s existing display contract is unchanged) fixes it
+ *  without touching the shared `Money`/`L10n` catalog or desktop's own (already-raw) path. */
+internal fun rawAmountText(displayText: String): String =
+    displayText.filter { it.isDigit() || it == '.' || it == '-' }
+
 /** Quantity × price as a display-formatted string ([com.aptrade.android.ui.money]), or the
  *  em dash placeholder when the quantity doesn't parse to a positive decimal or no live price
  *  is available. Mirrors desktop `TradeFormState.estimateText` + the confirm layer's own
  *  `estimateDisplay` fallback (`TradeDialog.kt`) — exact decimal math via bignum `BigDecimal`,
  *  never `Double`. */
-private fun estimateDisplay(priceText: String?, quantityText: String): String {
+internal fun estimateDisplay(priceText: String?, quantityText: String): String {
     val quantity = quantityText.trim().let {
         if (it.isEmpty()) return@let null
         try {
@@ -62,7 +80,15 @@ private fun estimateDisplay(priceText: String?, quantityText: String): String {
             null
         }
     }
-    val price = priceText?.let { Money.usd(it) }
+    val price = priceText?.let {
+        try {
+            Money.usd(rawAmountText(it))
+        } catch (e: ArithmeticException) {
+            null
+        } catch (e: NumberFormatException) {
+            null
+        }
+    }
     if (quantity == null || price == null) return "—"
     return money((price.amount * quantity).toStringExpanded())
 }
