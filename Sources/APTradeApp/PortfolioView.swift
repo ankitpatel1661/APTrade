@@ -43,7 +43,15 @@ struct PortfolioView: View {
                     summary
                     if showChart && pnlValues.count > 1 {
                         expandedChart
+                            #if os(iOS)
+                            .padding(.horizontal, 16)
+                            // The card must render at its full content height even when the
+                            // non-scrolling column overflows the viewport; the holdings List
+                            // below is the flexible element that should yield space first.
+                            .layoutPriority(1)
+                            #else
                             .padding(.horizontal, 24)
+                            #endif
                             .padding(.bottom, 16)
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
@@ -178,7 +186,7 @@ struct PortfolioView: View {
                 metric(label: tr(.cashLabel), money: viewModel.valuation.cash, colored: false)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if pnlValues.count > 1 {
+            if pnlValues.count > 1 && !showChart {
                 Button { withAnimation(chartSpring) { showChart.toggle() } } label: {
                     Sparkline(values: pnlValues, color: trendColor)
                         .frame(maxWidth: .infinity, minHeight: 44)

@@ -329,6 +329,15 @@ struct AssetDetailView: View {
                         Rectangle()
                             .fill(Color.clear)
                             .contentShape(Rectangle())
+                            #if os(iOS)
+                            .gesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onChanged { value in
+                                        updateHover(at: value.location, proxy: proxy, geometry: geometry)
+                                    }
+                                    .onEnded { _ in hoverPoint = nil }
+                            )
+                            #else
                             .onContinuousHover { phase in
                                 switch phase {
                                 case .active(let location):
@@ -337,6 +346,7 @@ struct AssetDetailView: View {
                                     hoverPoint = nil
                                 }
                             }
+                            #endif
                         if let hoverPoint, let plotFrame = proxy.plotFrame {
                             let frame = geometry[plotFrame]
                             let value = (hoverPoint.close.amount as NSDecimalNumber).doubleValue

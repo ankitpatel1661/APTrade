@@ -61,14 +61,30 @@ struct ExpandedValueCard: View {
         VStack(alignment: .leading, spacing: 12) {
             header
             chart
+                #if os(iOS)
+                // Fixed (not minHeight): on iPhone the enclosing VStack is a non-scrolling
+                // column that can exceed the viewport, and a compressible minHeight lets
+                // SwiftUI shrink the chart below what its content needs, clipping the
+                // trailing axis label. A fixed height removes that degree of freedom.
+                .frame(maxWidth: .infinity)
+                .frame(height: 150)
+                #else
                 .frame(maxWidth: .infinity, minHeight: 150)
+                #endif
         }
         .padding(16)
         .frame(maxWidth: .infinity)
+        #if os(iOS)
+        // Take exactly the content's natural height and refuse vertical compression, so the
+        // card can never be squeezed shorter than its title row + stats + chart by the
+        // enclosing non-scrolling VStack (the holdings list below yields the space instead).
+        .fixedSize(horizontal: false, vertical: true)
+        #else
         // Size to content (with a 230pt floor) rather than a hard height: the portfolio card
         // carries a taller two-row stats header, and a fixed height let that content — and the
         // red area fill — overflow the background and spill onto the holdings list below.
         .frame(minHeight: 230)
+        #endif
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
@@ -185,17 +201,30 @@ struct ExpandedValueCard: View {
                 AxisValueLabel().foregroundStyle(Theme.textTertiary)
             }
         }
+        #if os(iOS)
+        // Keeps trailing axis labels clear of the card's rounded-rect clip boundary on
+        // iPhone, where the card has less horizontal breathing room than on macOS.
+        .chartPlotStyle { $0.padding(.trailing, 6) }
+        #endif
         .chartLegend(.hidden)
         .chartOverlay { proxy in
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
                     Rectangle().fill(.clear).contentShape(Rectangle())
+                        #if os(iOS)
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { value in updateHover(at: value.location, proxy: proxy, geo: geo) }
+                                .onEnded { _ in hoverIndex = nil }
+                        )
+                        #else
                         .onContinuousHover { phase in
                             switch phase {
                             case .active(let location): updateHover(at: location, proxy: proxy, geo: geo)
                             case .ended: hoverIndex = nil
                             }
                         }
+                        #endif
                     if let hoverIndex, values.indices.contains(hoverIndex), let plotFrame = proxy.plotFrame,
                        let x = proxy.position(forX: hoverIndex),
                        let y = proxy.position(forY: values[hoverIndex]) {

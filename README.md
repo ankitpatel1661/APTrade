@@ -388,7 +388,19 @@ APTrade Lite is the foundation. Planned toward the full platform:
   language switcher plus chart/UX polish (6e). Still to come: **none** — macOS parity and
   localization are complete; the `:desktopApp` roadmap that opened at 6a is closed.
 
-Recently shipped: a desktop **language switcher and chart/UX polish pass** (increment 6e) —
+Recently shipped: the **iPhone app closeout** — the `APTradeiOS` target (iPhone-only,
+portrait, iOS 17) now ships the full macOS feature set from the same SwiftPM presentation
+code: real portfolio export via a themed `.fileExporter` (with a shared, tested
+`PortfolioExportNaming` Domain helper and a user-cancel guard), a touch-drag chart
+crosshair on the detail and expanded-value charts (macOS keeps hover), an always-visible
+watchlist alert bell, iPhone-fitted command palette and price-alert sheets on themed
+`presentationBackground`s, an expand-in-place portfolio P&L card with deterministic
+sizing (no more compression clipping), and an iOS-appropriate Finnhub key empty-state
+string (EN/DE/IT/ES). All changes are `#if os(iOS)`-gated — macOS output is unchanged —
+and both suites hold at 202/202 (macOS `swift test`, iOS simulator via `xcodebuild`).
+The one recorded follow-up: a Settings field for entering the Finnhub key on iPhone,
+where the sandboxed config file isn't user-reachable. Before that: a desktop
+**language switcher and chart/UX polish pass** (increment 6e) —
 a real Language page (English/Deutsch/Italiano/Español) driving a whole-UI live re-render
 through `LocalizationManager` and a 217-key `L10n` catalog (205 transcribed verbatim from
 macOS, 12 desktop-only additions with provisional, not-yet-native-reviewed translations),

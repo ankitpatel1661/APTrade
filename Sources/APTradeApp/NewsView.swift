@@ -133,10 +133,18 @@ struct NewsView: View {
             Image(systemName: "newspaper").font(.system(size: 34)).foregroundStyle(Theme.textSecondary)
             Text(tr(.connectNewsSource))
                 .font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.textPrimary)
-            Text(tr(.finnhubKeyInstructions))
+            Text(finnhubKeyInstructionsText)
                 .font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center).frame(maxWidth: 360)
         }
+    }
+
+    private var finnhubKeyInstructionsText: String {
+        #if os(iOS)
+        tr(.finnhubKeyInstructionsIOS)
+        #else
+        tr(.finnhubKeyInstructions)
+        #endif
     }
 
     private func categoryTitle(_ category: NewsCategory) -> String {

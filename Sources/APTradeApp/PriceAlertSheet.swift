@@ -73,8 +73,13 @@ struct PriceAlertSheet: View {
             }
             .padding(20)
         }
+        #if os(iOS)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Theme.surface)
+        #else
         .frame(width: 360)
         .background(Theme.surface)
+        #endif
     }
 
     private var header: some View {

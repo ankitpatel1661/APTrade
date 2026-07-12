@@ -57,6 +57,10 @@ struct WatchlistView: View {
                     onCreate: { condition in viewModel.addAlert(symbol: asset.symbol, condition: condition) },
                     onDelete: { id in viewModel.deleteAlert(id) }
                 )
+                #if os(iOS)
+                .presentationDetents([.medium, .large])
+                .presentationBackground(Theme.surface)
+                #endif
             }
         }
         #if os(macOS)
@@ -359,8 +363,12 @@ private struct WatchlistRow: View {
                         Sparkline(values: row.spark, color: directionColor)
                             .frame(width: 72, height: 32)
                     }
+                    #if os(iOS)
+                    alertButton
+                    #else
                     alertButton
                         .opacity(isHovered || alertCount > 0 ? 1 : 0)
+                    #endif
                     priceColumn
                 }
                 .contentShape(Rectangle())

@@ -12,12 +12,19 @@ struct CommandPaletteView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
+            #if !os(iOS)
             Color.black.opacity(0.45)
                 .ignoresSafeArea()
                 .onTapGesture { onClose() }
+            #endif
 
             panel
+                #if os(iOS)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                #else
                 .padding(.top, 80)
+                #endif
         }
         .onAppear { fieldFocused = true }
     }
@@ -35,7 +42,11 @@ struct CommandPaletteView: View {
                     .padding(.vertical, 16)
             }
         }
+        #if os(iOS)
+        .frame(maxWidth: .infinity)
+        #else
         .frame(width: 520)
+        #endif
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
         .shadow(color: .black.opacity(0.35), radius: 24, y: 12)

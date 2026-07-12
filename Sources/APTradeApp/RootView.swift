@@ -27,6 +27,11 @@ public struct RootView: View {
     @State private var isExporting = false
     @State private var exportError: String?
 
+    #if os(iOS)
+    @State private var iosExportDocument: PortfolioExportDocument?
+    @State private var showFileExporter = false
+    #endif
+
     @State private var showPalette = false
     @State private var paletteVM = CompositionRoot.makeCommandPaletteViewModel()
     @State private var paletteAsset: Asset?
@@ -66,6 +71,7 @@ public struct RootView: View {
             CommandPaletteView(viewModel: paletteVM,
                                onSelect: { handlePaletteSelection($0) },
                                onClose: { closePalette() })
+                .presentationBackground(Theme.background)
         }
         .confirmationDialog(tr(.exportPortfolioData), isPresented: $showExportDialog, titleVisibility: .visible) {
             ForEach(PortfolioExportFormat.allCases, id: \.self) { format in
@@ -77,6 +83,18 @@ public struct RootView: View {
             get: { exportError != nil }, set: { if !$0 { exportError = nil } })) {
             Button(tr(.ok), role: .cancel) { exportError = nil }
         } message: { Text(exportError ?? "") }
+        .fileExporter(
+            isPresented: $showFileExporter,
+            document: iosExportDocument,
+            contentType: iosExportDocument?.contentType ?? .data,
+            defaultFilename: iosExportDocument?.filename
+        ) { result in
+            if case .failure(let error) = result,
+               (error as NSError).code != NSUserCancelledError {
+                exportError = error.localizedDescription
+            }
+            iosExportDocument = nil
+        }
         .sheet(item: $paletteAsset) { asset in
             NavigationStack {
                 AssetDetailView(asset: asset)
@@ -203,7 +221,7 @@ public struct RootView: View {
         #if os(macOS)
         let panel = NSSavePanel()
         panel.title = tr(.exportPortfolioData)
-        panel.nameFieldStringValue = "\(Self.exportFileStem).\(format.fileExtension)"
+        panel.nameFieldStringValue = PortfolioExportNaming.filename(for: format, on: Date())
         if let contentType = UTType(filenameExtension: format.fileExtension) {
             panel.allowedContentTypes = [contentType]
         }
@@ -215,16 +233,14 @@ public struct RootView: View {
             exportError = error.localizedDescription
         }
         #else
-        // iOS Phase 0 stub — full export via .fileExporter is Phase 1.
+        let contentType = UTType(filenameExtension: format.fileExtension) ?? .data
+        iosExportDocument = PortfolioExportDocument(
+            data: data,
+            contentType: contentType,
+            filename: PortfolioExportNaming.filename(for: format, on: Date())
+        )
+        showFileExporter = true
         #endif
-    }
-
-    /// Date-stamped base filename, e.g. `APTrade-Portfolio-2026-06-25`.
-    private static var exportFileStem: String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return "APTrade-Portfolio-\(formatter.string(from: Date()))"
     }
 
     private func close() {
@@ -789,3 +805,29 @@ public struct RootView: View {
         .overlay(Capsule().stroke(Theme.hairline, lineWidth: 1))
     }
 }
+
+#if os(iOS)
+/// Wraps already-rendered export bytes so SwiftUI's `.fileExporter` can write them.
+/// Export is one-way (write only); the reader init is required by `FileDocument` but unused.
+struct PortfolioExportDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.data] }
+
+    let data: Data
+    let contentType: UTType
+    let filename: String
+
+    init(data: Data, contentType: UTType, filename: String) {
+        self.data = data
+        self.contentType = contentType
+        self.filename = filename
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        throw CocoaError(.fileReadUnsupportedScheme)
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+}
+#endif
