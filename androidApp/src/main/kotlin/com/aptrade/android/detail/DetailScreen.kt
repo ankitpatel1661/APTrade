@@ -8,12 +8,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -40,8 +47,9 @@ private val timeframeLabels = listOf(
     Timeframe.OneYear to "1Y",
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DetailScreen(symbol: String, confirmTrades: Boolean) {
+fun DetailScreen(symbol: String, confirmTrades: Boolean, onBack: () -> Unit) {
     val portfolio = AppGraph.portfolio
     val viewModel: DetailViewModel = viewModel(key = symbol) {
         DetailViewModel(
@@ -59,68 +67,84 @@ fun DetailScreen(symbol: String, confirmTrades: Boolean) {
     val state by viewModel.state.collectAsState()
     var tradeSide by remember { mutableStateOf<TradeSide?>(null) }
 
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(state.symbol, style = MaterialTheme.typography.headlineMedium)
-                state.name?.let {
-                    Text(it, style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(state.symbol) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    state.kindLabel?.let {
+                        AssistChip(
+                            onClick = {},
+                            label = { Text(it) },
+                            modifier = Modifier.padding(end = 8.dp),
+                        )
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
+            state.name?.let {
+                Text(it, style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            state.profileError?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error)
+            }
+            Spacer(Modifier.height(16.dp))
+
+            Button(
+                onClick = { tradeSide = TradeSide.Buy },
+                // Gated on profileResolved (not kindLabel != null): a profile ERROR still resolves
+                // and allows the Stock-fallback trade path; only the in-flight window is blocked,
+                // so a crypto/ETF asset can never fire tradeAsset() before its real kind is known.
+                enabled = state.profileResolved,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("BUY / SELL") }
+            Spacer(Modifier.height(16.dp))
+
+            Row {
+                timeframeLabels.forEach { (timeframe, label) ->
+                    FilterChip(
+                        selected = state.timeframe == timeframe,
+                        onClick = { viewModel.onTimeframeChange(timeframe) },
+                        label = { Text(label) },
+                        modifier = Modifier.padding(end = 8.dp),
+                    )
                 }
             }
-            state.kindLabel?.let { AssistChip(onClick = {}, label = { Text(it) }) }
-        }
-        state.profileError?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error)
-        }
-        Spacer(Modifier.height(16.dp))
-
-        Button(
-            onClick = { tradeSide = TradeSide.Buy },
-            // Gated on profileResolved (not kindLabel != null): a profile ERROR still resolves
-            // and allows the Stock-fallback trade path; only the in-flight window is blocked,
-            // so a crypto/ETF asset can never fire tradeAsset() before its real kind is known.
-            enabled = state.profileResolved,
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("BUY / SELL") }
-        Spacer(Modifier.height(16.dp))
-
-        Row {
-            timeframeLabels.forEach { (timeframe, label) ->
+            Spacer(Modifier.height(8.dp))
+            Row {
                 FilterChip(
-                    selected = state.timeframe == timeframe,
-                    onClick = { viewModel.onTimeframeChange(timeframe) },
-                    label = { Text(label) },
+                    selected = state.mode == ChartMode.Line,
+                    onClick = { viewModel.onModeChange(ChartMode.Line) },
+                    label = { Text("Line") },
                     modifier = Modifier.padding(end = 8.dp),
                 )
+                FilterChip(
+                    selected = state.mode == ChartMode.Candles,
+                    onClick = { viewModel.onModeChange(ChartMode.Candles) },
+                    label = { Text("Candles") },
+                )
             }
-        }
-        Spacer(Modifier.height(8.dp))
-        Row {
-            FilterChip(
-                selected = state.mode == ChartMode.Line,
-                onClick = { viewModel.onModeChange(ChartMode.Line) },
-                label = { Text("Line") },
-                modifier = Modifier.padding(end = 8.dp),
-            )
-            FilterChip(
-                selected = state.mode == ChartMode.Candles,
-                onClick = { viewModel.onModeChange(ChartMode.Candles) },
-                label = { Text("Candles") },
-            )
-        }
-        Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(16.dp))
 
-        Box(Modifier.fillMaxWidth().height(240.dp)) {
-            when {
-                state.isLoadingChart -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                state.chartError != null ->
-                    ErrorPane(state.chartError!!, onRetry = viewModel::retryChart, Modifier.align(Alignment.Center))
-                state.mode == ChartMode.Line ->
-                    LineChart(state.lineValues, Modifier.fillMaxSize())
-                else ->
-                    CandleChart(state.candles, Modifier.fillMaxSize())
+            Box(Modifier.fillMaxWidth().height(240.dp)) {
+                when {
+                    state.isLoadingChart -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                    state.chartError != null ->
+                        ErrorPane(state.chartError!!, onRetry = viewModel::retryChart, Modifier.align(Alignment.Center))
+                    state.mode == ChartMode.Line ->
+                        LineChart(state.lineValues, Modifier.fillMaxSize())
+                    else ->
+                        CandleChart(state.candles, Modifier.fillMaxSize())
+                }
             }
         }
     }

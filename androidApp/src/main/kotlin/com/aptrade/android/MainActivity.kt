@@ -110,6 +110,7 @@ fun AppNavHost(settingsViewModel: SettingsViewModel) {
             DetailScreen(
                 symbol = backStackEntry.arguments?.getString("symbol").orEmpty(),
                 confirmTrades = settings.confirmTrades,
+                onBack = { navController.popBackStack() },
             )
         }
         composable("settings") {
