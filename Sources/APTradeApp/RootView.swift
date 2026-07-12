@@ -71,6 +71,7 @@ public struct RootView: View {
             CommandPaletteView(viewModel: paletteVM,
                                onSelect: { handlePaletteSelection($0) },
                                onClose: { closePalette() })
+                .presentationBackground(Theme.background)
         }
         .confirmationDialog(tr(.exportPortfolioData), isPresented: $showExportDialog, titleVisibility: .visible) {
             ForEach(PortfolioExportFormat.allCases, id: \.self) { format in
