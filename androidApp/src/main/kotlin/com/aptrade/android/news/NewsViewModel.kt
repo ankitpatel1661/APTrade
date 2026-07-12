@@ -7,6 +7,7 @@ import com.aptrade.shared.application.LoadBookmarks
 import com.aptrade.shared.application.ToggleBookmark
 import com.aptrade.shared.domain.NewsArticle
 import com.aptrade.shared.domain.NewsCategory
+import com.aptrade.shared.l10n.L10n
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,8 +17,10 @@ import kotlinx.coroutines.launch
 /** News tab UI state — the Android counterpart to desktop's `NewsUiState`
  *  (desktopApp/.../news/NewsViewModel.kt). Carries the Saved toggle and live headline
  *  [filter] plus the category-scoped article list, the full bookmarked-article list, and the
- *  missing-key empty state. [error] surfaces a bookmark-persistence failure (the fetch path
- *  never throws past [FetchMarketNews], which already swallows failures to an empty list). */
+ *  missing-key empty state. [bookmarkError] surfaces a bookmark-persistence failure (the fetch
+ *  path never throws past [FetchMarketNews], which already swallows failures to an empty
+ *  list) as an [L10n.Key] rather than a resolved string, so the VM stays string-free and the
+ *  UI layer resolves it against the active [com.aptrade.shared.l10n.AppLanguage]. */
 data class NewsUiState(
     val articles: List<NewsArticle> = emptyList(),
     val bookmarks: List<NewsArticle> = emptyList(),
@@ -26,7 +29,7 @@ data class NewsUiState(
     val filter: String = "",
     val isLoading: Boolean = false,
     val needsKey: Boolean = false,
-    val error: String? = null,
+    val bookmarkError: L10n.Key? = null,
 ) {
     /** Ids of bookmarked articles — derived so the UI can render a filled/hollow bookmark
      *  glyph per row without scanning the list. */
@@ -98,20 +101,24 @@ class NewsViewModel(
     }
 
     /** Toggles [article]'s bookmark state and persists the result. A persistence failure
-     *  (e.g. disk full) surfaces via [NewsUiState.error] and leaves the last-good
+     *  (e.g. disk full) surfaces via [NewsUiState.bookmarkError] and leaves the last-good
      *  [NewsUiState.bookmarks] untouched — the toggle simply didn't take. */
     fun toggleBookmark(article: NewsArticle) {
         viewModelScope.launch {
             try {
                 val updated = toggleBookmark.execute(article)
-                _state.update { it.copy(bookmarks = updated, error = null) }
+                _state.update { it.copy(bookmarks = updated, bookmarkError = null) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.update { it.copy(error = "Couldn't update bookmark.") }
+                _state.update { it.copy(bookmarkError = L10n.Key.CouldntUpdateBookmark) }
             }
         }
     }
+
+    /** Clears a surfaced [NewsUiState.bookmarkError] once the UI has shown it (e.g. after the
+     *  snackbar that displayed it is dismissed). */
+    fun clearError() = _state.update { it.copy(bookmarkError = null) }
 
     private suspend fun load(fetch: FetchMarketNews, category: NewsCategory) {
         _state.update { it.copy(isLoading = true) }

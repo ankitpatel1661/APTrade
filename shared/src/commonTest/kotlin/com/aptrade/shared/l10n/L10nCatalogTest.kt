@@ -26,14 +26,16 @@ import kotlin.test.assertTrue
  * retrofit) added 6 more desktop-only Keys (`Back`, `Retry`, `ChartStyleLine`,
  * `BuySellButton`, `Overbought`, `Oversold` — see that task's report for why each has no
  * existing Key), bringing the total to 217. Android i18n snackbar fix added 2 more Keys
- * (`AddedSymbolFmt`, `RemovedSymbolFmt`), bringing the total to 219; the count below tracks
- * the Kotlin-only total going forward, not the Swift source count.
+ * (`AddedSymbolFmt`, `RemovedSymbolFmt`), bringing the total to 219. The Android news-tab
+ * review fix wave added 1 more Key (`CouldntUpdateBookmark`, for the localized bookmark-
+ * persistence-failure snackbar), bringing the total to 220; the count below tracks the
+ * Kotlin-only total going forward, not the Swift source count.
  */
 class L10nCatalogTest {
 
     @Test
-    fun `catalog has exactly 219 keys (205 macOS-transcribed + 12 desktop-only from Tasks 6-7 + 2 Android i18n snackbars)`() {
-        assertEquals(219, L10n.Key.entries.size)
+    fun `catalog has exactly 220 keys (205 macOS-transcribed + 12 desktop-only from Tasks 6-7 + 3 Android-only)`() {
+        assertEquals(220, L10n.Key.entries.size)
     }
 
     @Test

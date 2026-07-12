@@ -7,6 +7,7 @@ import com.aptrade.shared.application.NewsRepository
 import com.aptrade.shared.application.ToggleBookmark
 import com.aptrade.shared.domain.NewsArticle
 import com.aptrade.shared.domain.NewsCategory
+import com.aptrade.shared.l10n.L10n
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -19,7 +20,6 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 private fun article(
@@ -107,9 +107,11 @@ class NewsViewModelTest {
 
     @Test
     fun keyMissingSkipsFetchButStillLoadsBookmarks() = runTest {
-        // fetch-absent VM (null use case) has no network path to touch — structurally proven,
-        // reinforced by asserting the fake's marketLog never receives a call.
-        val repo = FakeNewsRepository()
+        // fetch-absent VM (null use case) has no network path to touch — structurally proven
+        // by construction: `vm(repo = null, ...)` never hands the VM a FetchMarketNews at all,
+        // so there is nothing left to assert against a fake that was never wired in. (A prior
+        // version of this test constructed an unused `repo` and asserted its marketLog was
+        // empty — always trivially true since that fake was never passed to `vm()`.)
         val store = FakeBookmarkStore(initial = listOf(article("saved")))
         val viewModel = vm(repo = null, store = store)
         viewModel.start(); runCurrent()
@@ -119,7 +121,6 @@ class NewsViewModelTest {
         assertTrue(s.articles.isEmpty())
         assertEquals(setOf("saved"), s.bookmarkedIds)
         assertFalse(s.isLoading)
-        assertTrue(repo.marketLog.isEmpty())
     }
 
     @Test
@@ -180,7 +181,7 @@ class NewsViewModelTest {
 
         val s = viewModel.state.value
         assertTrue(s.bookmarkedIds.isEmpty())
-        assertNotNull(s.error)
+        assertEquals(L10n.Key.CouldntUpdateBookmark, s.bookmarkError)
     }
 
     /** Ported from desktopApp/src/test/.../news/NewsViewModelTest.kt's

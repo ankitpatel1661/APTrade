@@ -189,6 +189,7 @@ object L10n {
         FinnhubKeyInstructions(
             english = "Add a Finnhub API key to ~/.config/aptrade/config.json (field \"finnhubAPIKey\") and relaunch.",
         ),
+        CouldntUpdateBookmark(english = "Couldn't update bookmark."),
 
         // Asset detail
         CouldntLoadChart(english = "Couldn't load chart"),
@@ -458,6 +459,7 @@ object L10n {
             Key.Refresh to "Aktualisieren",
             Key.ConnectNewsSource to "Nachrichtenquelle verbinden",
             Key.FinnhubKeyInstructions to "Fügen Sie einen Finnhub-API-Schlüssel in ~/.config/aptrade/config.json (Feld \"finnhubAPIKey\") hinzu und starten Sie die App neu.",
+            Key.CouldntUpdateBookmark to "Lesezeichen konnte nicht aktualisiert werden.",
 
             Key.CouldntLoadChart to "Diagramm konnte nicht geladen werden",
             Key.ChartStyleArea to "Fläche",
@@ -702,6 +704,7 @@ object L10n {
             Key.Refresh to "Aggiorna",
             Key.ConnectNewsSource to "Collega una fonte di notizie",
             Key.FinnhubKeyInstructions to "Aggiungi una chiave API Finnhub in ~/.config/aptrade/config.json (campo \"finnhubAPIKey\") e riavvia.",
+            Key.CouldntUpdateBookmark to "Impossibile aggiornare il segnalibro.",
 
             Key.CouldntLoadChart to "Impossibile caricare il grafico",
             Key.ChartStyleArea to "Area",
@@ -946,6 +949,7 @@ object L10n {
             Key.Refresh to "Actualizar",
             Key.ConnectNewsSource to "Conecta una fuente de noticias",
             Key.FinnhubKeyInstructions to "Agrega una clave de API de Finnhub en ~/.config/aptrade/config.json (campo \"finnhubAPIKey\") y vuelve a iniciar la app.",
+            Key.CouldntUpdateBookmark to "No se pudo actualizar el marcador.",
 
             Key.CouldntLoadChart to "No se pudo cargar el gráfico",
             Key.ChartStyleArea to "Área",

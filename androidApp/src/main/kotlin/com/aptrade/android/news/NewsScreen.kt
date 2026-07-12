@@ -21,11 +21,15 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -73,6 +77,7 @@ fun NewsScreen(padding: PaddingValues) {
         onRefresh = viewModel::refresh,
         onToggleBookmark = viewModel::toggleBookmark,
         onOpenArticle = { url -> openInCustomTab(context, url) },
+        onClearError = viewModel::clearError,
     )
 }
 
@@ -87,7 +92,20 @@ private fun NewsContent(
     onRefresh: () -> Unit,
     onToggleBookmark: (NewsArticle) -> Unit,
     onOpenArticle: (String) -> Unit,
+    onClearError: () -> Unit,
 ) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    val errorMessage = state.bookmarkError?.let { tr(it) }
+
+    // Shows the resolved bookmark-persistence error once, then clears it in the VM so the
+    // snackbar doesn't reappear on next recomposition (e.g. after a config change).
+    LaunchedEffect(errorMessage) {
+        if (errorMessage != null) {
+            snackbarHostState.showSnackbar(errorMessage)
+            onClearError()
+        }
+    }
+
     Box(Modifier.padding(padding).fillMaxSize()) {
         if (state.needsKey) {
             NoKeyState(Modifier.align(Alignment.Center))
@@ -146,6 +164,7 @@ private fun NewsContent(
                 }
             }
         }
+        SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
 }
 
