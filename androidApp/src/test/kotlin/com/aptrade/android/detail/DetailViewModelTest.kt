@@ -13,9 +13,13 @@ import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.Candle
 import com.aptrade.shared.domain.Money
+import com.aptrade.shared.domain.Portfolio
+import com.aptrade.shared.domain.Position
 import com.aptrade.shared.domain.PricePoint
 import com.aptrade.shared.domain.Quote
 import com.aptrade.shared.domain.Timeframe
+import com.aptrade.shared.domain.TradeSide
+import com.ionspin.kotlin.bignum.decimal.BigDecimal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -44,6 +48,7 @@ class DetailViewModelTest {
         symbol: String = "AAPL",
         store: FakePortfolioStore = FakePortfolioStore(),
         now: () -> Long = { 1_700_000_000L },
+        notifyOrderFill: suspend (TradeSide, String, String, String) -> Unit = { _, _, _, _ -> },
     ) = DetailViewModel(
         symbol = symbol,
         fetchProfile = FetchProfile(repo),
@@ -53,6 +58,7 @@ class DetailViewModelTest {
         buyAsset = BuyAsset(repo, store, Mutex()),
         sellAsset = SellAsset(repo, store, Mutex()),
         nowEpochSeconds = now,
+        notifyOrderFill = notifyOrderFill,
     )
 
     @Test
@@ -294,5 +300,103 @@ class DetailViewModelTest {
 
         assertNull(viewModel.state.value.priceText)
         assertEquals(true, viewModel.state.value.profileResolved) // gate still opens normally
+    }
+
+    // --- Order-fill notifications (spec A2 — mirrors PortfolioViewModelTest's own cases) ---
+
+    private data class Notified(
+        val side: TradeSide,
+        val symbol: String,
+        val quantityText: String,
+        val amountFormatted: String,
+    )
+
+    @Test
+    fun successfulBuyFiresOrderFillNotification() = runTest(dispatcher.scheduler) {
+        val repo = FakeMarketDataRepository()
+        repo.profileImpl = { Asset(it, "Apple Inc.", AssetKind.Stock) }
+        repo.quotesImpl = { listOf(Quote("AAPL", Money.usd("100.00"), Money.usd("100.00"), 0.0)) }
+        val store = FakePortfolioStore()
+        val notified = mutableListOf<Notified>()
+        val viewModel = vm(repo, store = store, notifyOrderFill = { side, symbol, qty, amount ->
+            notified += Notified(side, symbol, qty, amount)
+        })
+        dispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.buy("10")
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(1, notified.size)
+        assertEquals(TradeSide.Buy, notified.single().side)
+        assertEquals("AAPL", notified.single().symbol)
+        assertEquals("10", notified.single().quantityText)
+        assertEquals("$1,000.00", notified.single().amountFormatted)
+    }
+
+    @Test
+    fun successfulSellFiresOrderFillNotification() = runTest(dispatcher.scheduler) {
+        val repo = FakeMarketDataRepository()
+        repo.profileImpl = { Asset(it, "Apple Inc.", AssetKind.Stock) }
+        repo.quotesImpl = { listOf(Quote("AAPL", Money.usd("100.00"), Money.usd("100.00"), 0.0)) }
+        val seeded = Portfolio(
+            cash = Money.usd("99000"),
+            positions = listOf(
+                Position(
+                    Asset("AAPL", "Apple Inc.", AssetKind.Stock),
+                    BigDecimal.parseString("10"),
+                    Money.usd("100.00"),
+                    Money.usd("0"),
+                ),
+            ),
+        )
+        val store = FakePortfolioStore().apply { loadImpl = { seeded } }
+        val notified = mutableListOf<Notified>()
+        val viewModel = vm(repo, store = store, notifyOrderFill = { side, symbol, qty, amount ->
+            notified += Notified(side, symbol, qty, amount)
+        })
+        dispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.sell("4")
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(1, notified.size)
+        assertEquals(TradeSide.Sell, notified.single().side)
+        assertEquals("AAPL", notified.single().symbol)
+        assertEquals("4", notified.single().quantityText)
+        assertEquals("$400.00", notified.single().amountFormatted)
+    }
+
+    @Test
+    fun failedBuyNeverFiresOrderFillNotification() = runTest(dispatcher.scheduler) {
+        val repo = FakeMarketDataRepository()
+        repo.profileImpl = { Asset(it, "Apple Inc.", AssetKind.Stock) }
+        repo.quotesImpl = { listOf(Quote("AAPL", Money.usd("300"), Money.usd("300"), 0.0)) }
+        val store = FakePortfolioStore()
+        var notifyCount = 0
+        val viewModel = vm(repo, store = store, notifyOrderFill = { _, _, _, _ -> notifyCount++ })
+        dispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.buy("1000") // 1000 * 300 = $300k > $100k cash
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("Insufficient funds.", viewModel.state.value.tradeError)
+        assertEquals(0, notifyCount)
+    }
+
+    @Test
+    fun tradeNeverFailsWhenNotifierThrows() = runTest(dispatcher.scheduler) {
+        val repo = FakeMarketDataRepository()
+        repo.profileImpl = { Asset(it, "Apple Inc.", AssetKind.Stock) }
+        repo.quotesImpl = { listOf(Quote("AAPL", Money.usd("100.00"), Money.usd("100.00"), 0.0)) }
+        val store = FakePortfolioStore()
+        val viewModel = vm(repo, store = store, notifyOrderFill = { _, _, _, _ -> throw RuntimeException("notifier unavailable") })
+        dispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.buy("10")
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val s = viewModel.state.value
+        assertNull(s.tradeError)
+        assertEquals(1, s.transactionCount)
     }
 }

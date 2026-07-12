@@ -28,6 +28,7 @@ import com.aptrade.shared.application.ResetPortfolio
 import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.application.ToggleBookmark
 import com.aptrade.shared.domain.AssetKind
+import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.domain.WatchlistEntry
 import com.aptrade.shared.infrastructure.FileAlertStore
 import com.aptrade.shared.infrastructure.FileBookmarkStore
@@ -126,8 +127,11 @@ object AppGraph {
 
     // Alerts & notifications (Task 6). The notifier seam mirrors desktop's AppGraph: one
     // AlertNotifier instance shared by EvaluateAlerts, backed here by Android's
-    // NotificationManager rather than desktop's Tray.
-    val alertNotifier: AlertNotifier by lazy {
+    // NotificationManager rather than desktop's Tray. Typed to the concrete class (not the
+    // AlertNotifier interface) so [notifyOrderFill] below can also reach its `notifyFill`
+    // extra method — the same one instance backs both, same as desktop's single TrayNotifier
+    // implementing AlertNotifier AND exposing notifyFill/notifyMarketStatus/notifyDigest.
+    val alertNotifier: AndroidAlertNotifier by lazy {
         val context = requireNotNull(appContext) {
             "AppGraph.initialize(context) must be called before accessing AppGraph.alertNotifier"
         }
@@ -144,6 +148,19 @@ object AppGraph {
         )
     }
 
+    // Settings-gated order-fill delivery (spec A2) — the Android port of desktop AppGraph's
+    // `notifyOrderFill` seam (`AppGraphNotifyOrderFill` pattern): read `settings.orderFills`
+    // once per call and only deliver when it's on. Handed to PortfolioViewModel/DetailViewModel
+    // as a plain suspend closure, same shape as desktop hands it to its PortfolioViewModel.
+    // The gate itself is [buildNotifyOrderFill] (below), extracted so a test can pin it against
+    // a real FileSettingsStore without needing a real AndroidAlertNotifier/Context/
+    // NotificationManager — mirrors desktop's `AppGraphNotifyOrderFillTest` rationale exactly.
+    val notifyOrderFill: suspend (TradeSide, String, String, String) -> Unit by lazy {
+        buildNotifyOrderFill(settingsStore) { side, symbol, quantityText, amountFormatted ->
+            alertNotifier.notifyFill(side, symbol, quantityText, amountFormatted)
+        }
+    }
+
     // The macOS app's seed watchlist (parity with desktopApp's AppGraph.defaultEntries).
     private val defaultWatchlistEntries = listOf(
         WatchlistEntry("AAPL", "Apple Inc.", AssetKind.Stock),
@@ -156,6 +173,26 @@ object AppGraph {
     val addToWatchlist by lazy { AddToWatchlist(watchlistStore) }
     val removeFromWatchlist by lazy { RemoveFromWatchlist(watchlistStore) }
 }
+
+/**
+ * Builds the settings-gated order-fill closure: reads `settingsStore.load().orderFills`
+ * once per call and only invokes [deliver] when it's on. Extracted as a standalone,
+ * package-visible function (rather than inlined in [AppGraph]'s `notifyOrderFill` lazy val)
+ * so a test can construct the REAL gate against a real [FileSettingsStore] (a temp-file
+ * store, no Context/NotificationManager dependency) with a recording `deliver` fake, and pin
+ * `orderFills = true`/`false` both ways — see `AppGraphNotifyOrderFillTest`. Direct port of
+ * desktop's `buildNotifyOrderFill` (`desktopApp/src/main/kotlin/com/aptrade/desktop/
+ * AppGraph.kt`) — same signature, same behavior, no divergence.
+ */
+internal fun buildNotifyOrderFill(
+    settingsStore: FileSettingsStore,
+    deliver: suspend (TradeSide, String, String, String) -> Unit,
+): suspend (TradeSide, String, String, String) -> Unit =
+    { side, symbol, quantityText, amountFormatted ->
+        if (settingsStore.load().orderFills) {
+            deliver(side, symbol, quantityText, amountFormatted)
+        }
+    }
 
 /** The portfolio slice of the composition root: everything that depends on the
  *  [PortfolioStore]. Groups the trade + read + performance use cases sharing one store. */

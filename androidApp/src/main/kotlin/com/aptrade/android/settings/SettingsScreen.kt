@@ -302,9 +302,11 @@ private fun LanguagePage(language: AppLanguage, onSelectLanguage: (AppLanguage) 
  *  `NotificationsPage`. Every toggle persists on change via [onUpdate].
  *
  *  Wiring status (honest parity): [AppSettings.priceAlerts] gates `AppGraph.evaluateAlerts`'s
- *  notifier (wired in Task 6, same as desktop). [AppSettings.orderFills] persists but drives
- *  nothing on Android yet — no order-fill notification pipeline exists here (desktop posts
- *  tray fills; Android's trade flow has no notifier seam). [AppSettings.emailNotifications]
+ *  notifier (wired in Task 6, same as desktop). [AppSettings.orderFills] gates
+ *  `AppGraph.notifyOrderFill` (spec A2 — wired into both `PortfolioViewModel` and
+ *  `DetailViewModel`'s buy/sell paths, posting to the `AndroidAlertNotifier`'s
+ *  `order_fills` notification channel), the same functional wiring as desktop's
+ *  `AppGraphNotifyOrderFill`/`TrayNotifier.notifyFill`. [AppSettings.emailNotifications]
  *  is persisted-but-unwired by design on every platform (no email pipeline exists). */
 @Composable
 private fun NotificationsPage(settings: AppSettings, onUpdate: ((AppSettings) -> AppSettings) -> Unit) {

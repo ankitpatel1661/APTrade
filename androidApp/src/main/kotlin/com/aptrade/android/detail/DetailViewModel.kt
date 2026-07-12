@@ -14,8 +14,10 @@ import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.AssetKind
+import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.domain.Timeframe
 import com.aptrade.shared.domain.TradeError
+import com.aptrade.shared.domain.TradeSide
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -73,6 +75,15 @@ private fun parseQuantity(text: String): BigDecimal? {
     return value
 }
 
+/** [notifyOrderFill] mirrors [com.aptrade.android.portfolio.PortfolioViewModel]'s own
+ *  notifyOrderFill param (spec A2 — desktop `AppGraphNotifyOrderFill` pattern): event-driven,
+ *  fired only after a trade actually succeeds, gated upstream by `settings.orderFills`, and
+ *  never allowed to fail the trade. Defaults to a no-op so existing callers/tests that don't
+ *  care about notifications keep compiling. This screen's own store-mediated `buy`/`sell` is a
+ *  second, independent trade-execution path from the Portfolio screen's `PortfolioViewModel`
+ *  — Android, unlike desktop's single shared PortfolioViewModel instance, has two real trade
+ *  call sites — so it needs its own [notifyOrderFill] wiring rather than sharing one closure
+ *  instance end-to-end. */
 class DetailViewModel(
     private val symbol: String,
     private val fetchProfile: FetchProfile,
@@ -82,6 +93,7 @@ class DetailViewModel(
     private val buyAsset: BuyAsset,
     private val sellAsset: SellAsset,
     private val nowEpochSeconds: () -> Long,
+    private val notifyOrderFill: suspend (TradeSide, String, String, String) -> Unit = { _, _, _, _ -> },
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(DetailUiState(symbol = symbol))
@@ -161,6 +173,7 @@ class DetailViewModel(
             try {
                 val portfolio = buyAsset.execute(asset, quantity, nowEpochSeconds())
                 _state.update { it.copy(tradeError = null, transactionCount = portfolio.transactions.size) }
+                notifyFillSafely(portfolio, TradeSide.Buy)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: TradeError) {
@@ -182,6 +195,7 @@ class DetailViewModel(
             try {
                 val portfolio = sellAsset.execute(symbol, quantity, nowEpochSeconds())
                 _state.update { it.copy(tradeError = null, transactionCount = portfolio.transactions.size) }
+                notifyFillSafely(portfolio, TradeSide.Sell)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: TradeError) {
@@ -189,6 +203,23 @@ class DetailViewModel(
             } catch (e: QuoteError) {
                 _state.update { it.copy(tradeError = e.userMessage()) }
             }
+        }
+    }
+
+    /** Fires the order-fill notification for the just-completed trade's own transaction (the
+     *  most recent one for [symbol]/`side` on the just-returned, already-persisted
+     *  [com.aptrade.shared.domain.Portfolio]). A notifier failure must never surface as a trade
+     *  error: isolated in its own try/catch with CancellationException rethrown and everything
+     *  else swallowed. Mirrors PortfolioViewModel.notifyFillSafely exactly. */
+    private suspend fun notifyFillSafely(portfolio: Portfolio, side: TradeSide) {
+        val txn = portfolio.transactions.lastOrNull { it.symbol == symbol && it.side == side } ?: return
+        try {
+            val amountText = (txn.price.amount * txn.quantity).toStringExpanded()
+            notifyOrderFill(side, symbol, txn.quantity.toStringExpanded(), money(amountText))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            // Notification delivery is best-effort — never let it fail a completed trade.
         }
     }
 

@@ -80,6 +80,7 @@ fun PortfolioScreen(onBack: () -> Unit, onOpenDetail: (String) -> Unit) {
             resetPortfolio = portfolio.resetPortfolio,
             fetchPerformanceReport = portfolio.fetchPerformanceReport,
             nowEpochSeconds = { System.currentTimeMillis() / 1000 },
+            notifyOrderFill = AppGraph.notifyOrderFill,
         )
     }
 

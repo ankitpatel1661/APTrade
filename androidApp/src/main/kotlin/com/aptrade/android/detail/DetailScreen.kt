@@ -53,6 +53,7 @@ fun DetailScreen(symbol: String) {
             buyAsset = portfolio.buyAsset,
             sellAsset = portfolio.sellAsset,
             nowEpochSeconds = { System.currentTimeMillis() / 1000 },
+            notifyOrderFill = AppGraph.notifyOrderFill,
         )
     }
     val state by viewModel.state.collectAsState()

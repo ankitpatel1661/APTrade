@@ -14,6 +14,7 @@ import com.aptrade.android.ui.formatPercent
 import com.aptrade.shared.application.AlertNotifier
 import com.aptrade.shared.domain.PriceAlert
 import com.aptrade.shared.domain.Quote
+import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.l10n.L10n
 
 /** The channel every price-alert notification posts to. Created lazily, once, the first
@@ -21,6 +22,13 @@ import com.aptrade.shared.l10n.L10n
  *  ensure-then-post ordering, and means a process that never triggers an alert never
  *  touches [NotificationManager] at all. */
 internal const val PRICE_ALERTS_CHANNEL_ID = "price_alerts"
+
+/** The channel every order-fill notification posts to (spec A2 — desktop
+ *  `AppGraphNotifyOrderFill`/`TrayNotifier.notifyFill` parity). Separate from
+ *  [PRICE_ALERTS_CHANNEL_ID] so a user can mute one without muting the other, same
+ *  channel-per-notification-kind shape as the price-alerts channel above. Created lazily,
+ *  once, the first time an order fill is about to be posted. */
+internal const val ORDER_FILLS_CHANNEL_ID = "order_fills"
 
 // --- Pure formatters -------------------------------------------------------------
 //
@@ -34,6 +42,18 @@ internal fun formatAlertTitle(symbol: String): String = "$symbol alert"
 
 internal fun formatAlertBody(alert: PriceAlert, quote: Quote): String =
     "${alert.condition.summary} — now ${quote.price.formatted} (${formatPercent(quote.changePercent)})"
+
+internal fun formatOrderFillTitle(): String = "Order filled"
+
+internal fun formatOrderFillBody(
+    side: TradeSide,
+    symbol: String,
+    quantityText: String,
+    amountFormatted: String,
+): String {
+    val verb = if (side == TradeSide.Buy) "Bought" else "Sold"
+    return "$verb $quantityText ${symbol.uppercase()} for $amountFormatted"
+}
 
 /**
  * Delivers triggered price alerts as Android system notifications — the Android counterpart
@@ -60,6 +80,7 @@ class AndroidAlertNotifier(private val context: Context) : AlertNotifier {
     }
 
     private var channelCreated = false
+    private var orderFillsChannelCreated = false
 
     private fun ensureChannel() {
         if (channelCreated || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -72,13 +93,25 @@ class AndroidAlertNotifier(private val context: Context) : AlertNotifier {
         channelCreated = true
     }
 
-    override suspend fun notify(alert: PriceAlert, quote: Quote) {
-        ensureChannel()
+    private fun ensureOrderFillsChannel() {
+        if (orderFillsChannelCreated || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val channel = NotificationChannel(
+            ORDER_FILLS_CHANNEL_ID,
+            tr(L10n.Key.OrderFills),
+            NotificationManager.IMPORTANCE_DEFAULT,
+        )
+        notificationManager.createNotificationChannel(channel)
+        orderFillsChannelCreated = true
+    }
 
-        val hasPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+    private fun hasNotificationPermission(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
                 PackageManager.PERMISSION_GRANTED
-        if (!hasPermission) return
+
+    override suspend fun notify(alert: PriceAlert, quote: Quote) {
+        ensureChannel()
+        if (!hasNotificationPermission()) return
 
         val notification = NotificationCompat.Builder(context, PRICE_ALERTS_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_popup_reminder)
@@ -88,5 +121,30 @@ class AndroidAlertNotifier(private val context: Context) : AlertNotifier {
             .setAutoCancel(true)
             .build()
         notificationManager.notify(alert.id.hashCode(), notification)
+    }
+
+    /**
+     * Delivers an order-fill notification for a just-completed trade — the Android
+     * counterpart to desktop's `TrayNotifier.notifyFill` (spec A2). Posted to its own
+     * [ORDER_FILLS_CHANNEL_ID] channel (not [PRICE_ALERTS_CHANNEL_ID]) so muting one
+     * notification kind never mutes the other. Not part of the shared [AlertNotifier]
+     * port — mirrors `TrayNotifier`, which also exposes `notifyFill` as a plain extra
+     * method rather than a shared-module contract (no `OrderFillNotifier` port exists
+     * in :shared). Gated upstream by `AppGraph.buildNotifyOrderFill`'s
+     * `settings.orderFills` check; this method itself only handles the runtime
+     * notification-permission gate, same as [notify].
+     */
+    suspend fun notifyFill(side: TradeSide, symbol: String, quantityText: String, amountFormatted: String) {
+        ensureOrderFillsChannel()
+        if (!hasNotificationPermission()) return
+
+        val notification = NotificationCompat.Builder(context, ORDER_FILLS_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_popup_reminder)
+            .setContentTitle(formatOrderFillTitle())
+            .setContentText(formatOrderFillBody(side, symbol, quantityText, amountFormatted))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+        notificationManager.notify("$symbol-$side".hashCode(), notification)
     }
 }
