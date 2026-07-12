@@ -16,9 +16,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.aptrade.android.detail.DetailScreen
 import com.aptrade.android.portfolio.PortfolioScreen
-import com.aptrade.android.quotes.QuotesScreen
 import com.aptrade.android.search.SearchScreen
 import com.aptrade.android.ui.theme.APTradeTheme
+import com.aptrade.android.watchlist.WatchlistScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,10 +52,10 @@ fun AppNavHost() {
                 onOpenSettings = { navController.navigate("settings") },
             ) { padding ->
                 when (tab) {
-                    ShellTab.Watchlist -> QuotesScreen(   // Task 5 swaps in WatchlistScreen
+                    ShellTab.Watchlist -> WatchlistScreen(
+                        padding = padding,
                         onOpenSearch = { navController.navigate("search") },
                         onOpenDetail = { symbol -> navController.navigate("detail/$symbol") },
-                        onOpenPortfolio = {},              // superseded by the tab bar
                     )
                     ShellTab.Portfolio -> PortfolioScreen(
                         onBack = {},                        // tab root: no back

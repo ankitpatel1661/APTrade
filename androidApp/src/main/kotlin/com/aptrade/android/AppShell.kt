@@ -23,9 +23,10 @@ import com.aptrade.android.l10n.tr
 import com.aptrade.shared.l10n.L10n
 
 /**
- * The three bottom-tab destinations. Only [Watchlist] has real content this task
- * (via [com.aptrade.android.quotes.QuotesScreen]); Portfolio is already live from an
- * earlier task, News is a placeholder until Task 6.
+ * The three bottom-tab destinations. [Watchlist] and Portfolio both have real content
+ * (via [com.aptrade.android.watchlist.WatchlistScreen] and
+ * [com.aptrade.android.portfolio.PortfolioScreen] respectively); News is a placeholder until
+ * Task 6.
  *
  * Icon substitutions (verified against `material-icons-core`'s curated ~50-icon set —
  * the brief's `RemoveRedEye`/`PieChart`/`Article`/`MoreHoriz` are all part of the larger

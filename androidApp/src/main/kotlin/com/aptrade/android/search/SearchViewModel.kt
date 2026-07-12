@@ -6,6 +6,7 @@ import com.aptrade.android.ui.label
 import com.aptrade.android.ui.userMessage
 import com.aptrade.shared.application.FetchSearch
 import com.aptrade.shared.application.QuoteError
+import com.aptrade.shared.domain.AssetKind
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -17,6 +18,7 @@ import kotlinx.coroutines.launch
 data class AssetRow(
     val symbol: String,
     val name: String,
+    val kind: AssetKind,
     val kindLabel: String,
 )
 
@@ -53,7 +55,7 @@ class SearchViewModel(
                 _state.update { state ->
                     state.copy(
                         isSearching = false,
-                        results = assets.map { AssetRow(it.symbol, it.name, it.kind.label()) },
+                        results = assets.map { AssetRow(it.symbol, it.name, it.kind, it.kind.label()) },
                     )
                 }
             } catch (e: CancellationException) {
