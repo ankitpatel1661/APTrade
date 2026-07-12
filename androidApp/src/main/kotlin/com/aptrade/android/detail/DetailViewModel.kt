@@ -47,6 +47,13 @@ data class DetailUiState(
     val mode: ChartMode = ChartMode.Line,
     val lineValues: List<Double> = emptyList(),
     val candles: List<CandleBar> = emptyList(),
+    /** Parallel to [lineValues]/[candles] respectively — the crosshair readout's pre-formatted
+     *  price text (via [com.aptrade.android.ui.money], never the pixel-math Double) and the
+     *  point's raw epoch second, consumed by [com.aptrade.android.ui.chart.crosshairReadout]. */
+    val lineValueTexts: List<String> = emptyList(),
+    val lineDates: List<Long> = emptyList(),
+    val candleCloseTexts: List<String> = emptyList(),
+    val candleDates: List<Long> = emptyList(),
     val isLoadingChart: Boolean = true,
     val chartError: String? = null,
     /** Inline BUY/SELL failure text for the TradeSheet; null while no trade error is showing. */
@@ -241,6 +248,8 @@ class DetailViewModel(
                                 // Pixel math only — money display always goes through
                                 // Money.formatted/amountText, never this Double.
                                 lineValues = points.map { it.close.amount.doubleValue(false) },
+                                lineValueTexts = points.map { money(it.close.amountText) },
+                                lineDates = points.map { it.epochSeconds },
                             )
                         }
                     }
@@ -257,6 +266,8 @@ class DetailViewModel(
                                         it.close.amount.doubleValue(false),
                                     )
                                 },
+                                candleCloseTexts = candles.map { money(it.close.amountText) },
+                                candleDates = candles.map { it.epochSeconds },
                             )
                         }
                     }

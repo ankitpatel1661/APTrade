@@ -1,15 +1,23 @@
 package com.aptrade.android.ui.chart
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -24,6 +32,11 @@ import androidx.compose.ui.unit.sp
 import com.aptrade.android.detail.CandleBar
 import com.aptrade.android.ui.theme.GainGreen
 import com.aptrade.android.ui.theme.LossRed
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import kotlin.math.roundToInt
 
 @Composable
 fun LineChart(values: List<Double>, modifier: Modifier = Modifier) {
@@ -193,5 +206,106 @@ private fun LegendSwatch(color: Color, dashed: Boolean, label: String) {
             label,
             style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant),
         )
+    }
+}
+
+/** Drag-pointer x → nearest sampled-point index, clamped to the valid range. Mirrors the
+ *  desktop `crosshairIndex` helper (designkit `ValueCard.kt`) exactly, ported to a touch-drag
+ *  gesture instead of mouse hover (Android has no pointer-hover signal): degenerate inputs
+ *  (fewer than two points, a zero-width chart) fall back sensibly rather than dividing by zero
+ *  or returning an out-of-bounds index. */
+internal fun nearestIndex(dragX: Float, chartWidth: Float, pointCount: Int): Int {
+    if (pointCount < 2) return 0
+    if (chartWidth <= 0f) return pointCount - 1
+    val raw = (dragX / chartWidth * (pointCount - 1)).roundToInt()
+    return raw.coerceIn(0, pointCount - 1)
+}
+
+/** The crosshair tooltip's display payload for one sampled point: the pre-formatted price
+ *  text and a "MMM d, h:mm a" date/time (mirrors desktop PerformanceSection's
+ *  `tooltipDateText` format exactly, so the readout reads the same across platforms). */
+internal data class CrosshairReadout(val priceText: String, val dateText: String)
+
+private val CROSSHAIR_DATE_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("MMM d, h:mm a", Locale.US)
+
+/** Maps [index] to its display readout via two PARALLEL arrays — [priceTexts] (already
+ *  display-formatted, e.g. via [com.aptrade.android.ui.money]) and [epochSeconds] (the raw
+ *  UTC instants backing each sampled point). Returns null when [index] is out of range for
+ *  either list (including a parallel-array length mismatch) — the caller shows no tooltip in
+ *  that case rather than crashing or showing a mismatched price/date pair. [zoneId] defaults
+ *  to the device's local zone; pinned to UTC in tests for deterministic date assertions. */
+internal fun crosshairReadout(
+    index: Int,
+    priceTexts: List<String>,
+    epochSeconds: List<Long>,
+    zoneId: ZoneId = ZoneId.systemDefault(),
+): CrosshairReadout? {
+    val price = priceTexts.getOrNull(index) ?: return null
+    val epoch = epochSeconds.getOrNull(index) ?: return null
+    val dateText = Instant.ofEpochSecond(epoch).atZone(zoneId).format(CROSSHAIR_DATE_FORMATTER)
+    return CrosshairReadout(price, dateText)
+}
+
+/** Vertical hairline + filled dot marking the crosshair's active index on [values]' rendered
+ *  curve — the touch-drag analog of the desktop hover crosshair (`ValueCard`/
+ *  `PerformanceSection`'s dashed hairline + dot). [values] MUST use the same min/max/step
+ *  layout as the underlying [LineChart] (or a candle series' close prices in Candle mode) so
+ *  the marker lands exactly on the visible line; fewer than two points draws nothing. */
+@Composable
+fun CrosshairOverlay(
+    values: List<Double>,
+    index: Int,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary,
+) {
+    Canvas(modifier = modifier) {
+        if (values.size < 2) return@Canvas
+        val min = values.min()
+        val max = values.max()
+        val span = (max - min).takeIf { it > 0.0 } ?: 1.0
+        val stepX = size.width / (values.size - 1)
+        val idx = index.coerceIn(0, values.size - 1)
+        val cx = idx * stepX
+        val cy = size.height - ((values[idx] - min) / span * size.height).toFloat()
+        drawLine(
+            color = color.copy(alpha = 0.5f),
+            start = Offset(cx, 0f),
+            end = Offset(cx, size.height),
+            strokeWidth = 1.dp.toPx(),
+        )
+        drawCircle(color = color, radius = 4.dp.toPx(), center = Offset(cx, cy))
+    }
+}
+
+/** The floating readout pill next to the crosshair: price over date, matching the desktop
+ *  `CrosshairTooltip`'s anatomy (value line + smaller secondary-color date line). Horizontally
+ *  biased to the crosshair's [fraction] of the chart width, flipping to the left of the touch
+ *  point past the midpoint so it never clips the far edge. */
+@Composable
+fun CrosshairTooltip(priceText: String, dateText: String, fraction: Float, modifier: Modifier = Modifier) {
+    val alignment = if (fraction > 0.5f) Alignment.TopEnd else Alignment.TopStart
+    Box(modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .align(alignment)
+                .padding(4.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp),
+        ) {
+            Text(
+                priceText,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                dateText,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
