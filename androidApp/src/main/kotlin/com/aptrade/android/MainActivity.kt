@@ -6,6 +6,10 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -32,16 +36,34 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/** Tab roots (Watchlist/Portfolio/News) live under the "shell" destination and are
+ *  switched by [ShellTab] state, not by NavHost — the bottom bar never rebuilds the back
+ *  stack. Search/detail/settings push a NavHost destination on top of the shell. */
 @Composable
 fun AppNavHost() {
     val navController = rememberNavController()
-    NavHost(navController = navController, startDestination = "quotes") {
-        composable("quotes") {
-            QuotesScreen(
+    var tab by rememberSaveable { mutableStateOf(ShellTab.Watchlist) }
+    NavHost(navController = navController, startDestination = "shell") {
+        composable("shell") {
+            AppShell(
+                selected = tab,
+                onSelectTab = { tab = it },
                 onOpenSearch = { navController.navigate("search") },
-                onOpenDetail = { symbol -> navController.navigate("detail/$symbol") },
-                onOpenPortfolio = { navController.navigate("portfolio") },
-            )
+                onOpenSettings = { navController.navigate("settings") },
+            ) { padding ->
+                when (tab) {
+                    ShellTab.Watchlist -> QuotesScreen(   // Task 5 swaps in WatchlistScreen
+                        onOpenSearch = { navController.navigate("search") },
+                        onOpenDetail = { symbol -> navController.navigate("detail/$symbol") },
+                        onOpenPortfolio = {},              // superseded by the tab bar
+                    )
+                    ShellTab.Portfolio -> PortfolioScreen(
+                        onBack = {},                        // tab root: no back
+                        onOpenDetail = { symbol -> navController.navigate("detail/$symbol") },
+                    )
+                    ShellTab.News -> NewsPlaceholder()     // Task 6 replaces
+                }
+            }
         }
         composable("search") {
             SearchScreen(onOpenDetail = { symbol -> navController.navigate("detail/$symbol") })
@@ -49,11 +71,6 @@ fun AppNavHost() {
         composable("detail/{symbol}") { backStackEntry ->
             DetailScreen(symbol = backStackEntry.arguments?.getString("symbol").orEmpty())
         }
-        composable("portfolio") {
-            PortfolioScreen(
-                onBack = { navController.popBackStack() },
-                onOpenDetail = { symbol -> navController.navigate("detail/$symbol") },
-            )
-        }
+        composable("settings") { SettingsPlaceholder() }   // Task 7 replaces
     }
 }

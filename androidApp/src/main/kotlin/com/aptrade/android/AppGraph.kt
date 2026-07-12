@@ -1,5 +1,6 @@
 package com.aptrade.android
 
+import com.aptrade.shared.application.AddToWatchlist
 import com.aptrade.shared.application.BuyAsset
 import com.aptrade.shared.application.FetchCandles
 import com.aptrade.shared.application.FetchHistory
@@ -9,14 +10,23 @@ import com.aptrade.shared.application.FetchPortfolio
 import com.aptrade.shared.application.FetchPortfolioPerformance
 import com.aptrade.shared.application.FetchProfile
 import com.aptrade.shared.application.FetchSearch
+import com.aptrade.shared.application.FetchWatchlist
 import com.aptrade.shared.application.MarketDataRepository
 import com.aptrade.shared.application.PortfolioStore
+import com.aptrade.shared.application.RemoveFromWatchlist
 import com.aptrade.shared.application.ResetPortfolio
 import com.aptrade.shared.application.SellAsset
+import com.aptrade.shared.domain.AssetKind
+import com.aptrade.shared.domain.WatchlistEntry
+import com.aptrade.shared.infrastructure.FileAlertStore
+import com.aptrade.shared.infrastructure.FileBookmarkStore
 import com.aptrade.shared.infrastructure.FilePortfolioStore
+import com.aptrade.shared.infrastructure.FileSettingsStore
+import com.aptrade.shared.infrastructure.FileWatchlistStore
 import com.aptrade.shared.infrastructure.YahooMarketDataRepository
 import kotlinx.coroutines.sync.Mutex
 import java.io.File
+import java.nio.file.Path
 
 /**
  * Process-wide composition root, mirroring the Swift CompositionRoot's `static let`
@@ -59,6 +69,35 @@ object AppGraph {
         }
         PortfolioGraph(repository, FilePortfolioStore(File(dir, "portfolio.json").toPath()))
     }
+
+    /** App-private config directory (`filesDir/aptrade`), mirroring the desktop
+     *  ConfigDir wiring but rooted in Android's sandbox rather than a platform-specific
+     *  user config path. Lazily-backed stores below resolve their JSON file against it. */
+    private fun configDir(): Path {
+        val dir = requireNotNull(filesDir) { "AppGraph.initialize(filesDir) must run before stores are touched" }
+        return dir.toPath().resolve("aptrade")
+    }
+
+    // Watchlist + alerts + news + settings — all against app-private filesDir, mirroring
+    // the desktop ConfigDir wiring but rooted in Android's sandbox. Alert/news use cases
+    // are wired in their own tasks (6/7); the stores are created now so those tasks only
+    // need to add use-case vals against them.
+    val watchlistStore by lazy { FileWatchlistStore(configDir().resolve("watchlist.json")) }
+    val alertStore by lazy { FileAlertStore(configDir().resolve("alerts.json")) }
+    val settingsStore by lazy { FileSettingsStore(configDir().resolve("settings.json")) }
+    val bookmarkStore by lazy { FileBookmarkStore(configDir().resolve("bookmarks.json")) }
+
+    // The macOS app's seed watchlist (parity with desktopApp's AppGraph.defaultEntries).
+    private val defaultWatchlistEntries = listOf(
+        WatchlistEntry("AAPL", "Apple Inc.", AssetKind.Stock),
+        WatchlistEntry("SPY", "SPDR S&P 500 ETF Trust", AssetKind.Etf),
+        WatchlistEntry("BTC-USD", "Bitcoin USD", AssetKind.Crypto),
+        WatchlistEntry("ETH-USD", "Ethereum USD", AssetKind.Crypto),
+    )
+
+    val fetchWatchlist by lazy { FetchWatchlist(watchlistStore, defaultWatchlistEntries) }
+    val addToWatchlist by lazy { AddToWatchlist(watchlistStore) }
+    val removeFromWatchlist by lazy { RemoveFromWatchlist(watchlistStore) }
 }
 
 /** The portfolio slice of the composition root: everything that depends on the
