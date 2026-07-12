@@ -89,7 +89,10 @@ public struct RootView: View {
             contentType: iosExportDocument?.contentType ?? .data,
             defaultFilename: iosExportDocument?.filename
         ) { result in
-            if case .failure(let error) = result { exportError = error.localizedDescription }
+            if case .failure(let error) = result,
+               (error as NSError).code != NSUserCancelledError {
+                exportError = error.localizedDescription
+            }
             iosExportDocument = nil
         }
         .sheet(item: $paletteAsset) { asset in
