@@ -52,9 +52,12 @@ import com.aptrade.desktop.designkit.DKSwitch
 import com.aptrade.desktop.designkit.InterFamily
 import com.aptrade.desktop.designkit.MoonIcon
 import com.aptrade.desktop.designkit.SunIcon
+import com.aptrade.desktop.designkit.deep
+import com.aptrade.desktop.designkit.light
+import com.aptrade.desktop.designkit.mid
 import com.aptrade.desktop.infra.AppSettings
 import com.aptrade.desktop.l10n.AppLanguage
-import com.aptrade.desktop.l10n.L10n
+import com.aptrade.shared.l10n.L10n
 import com.aptrade.desktop.l10n.tr
 
 /** The pages reachable inside the account panel. Root is the row list; the others are

@@ -52,7 +52,7 @@ import com.aptrade.desktop.designkit.formatMoney
 import com.aptrade.desktop.designkit.formatPercent
 import com.aptrade.desktop.designkit.signedMoney
 import com.aptrade.desktop.infra.openUrlInBrowser
-import com.aptrade.desktop.l10n.L10n
+import com.aptrade.shared.l10n.L10n
 import com.aptrade.desktop.l10n.tr
 import com.aptrade.desktop.news.ArticleRow
 import com.aptrade.desktop.portfolio.HoldingRowUi

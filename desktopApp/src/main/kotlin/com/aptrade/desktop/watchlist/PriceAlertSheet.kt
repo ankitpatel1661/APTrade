@@ -44,7 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.designkit.InterFamily
-import com.aptrade.desktop.l10n.L10n
+import com.aptrade.shared.l10n.L10n
 import com.aptrade.desktop.l10n.tr
 import com.aptrade.desktop.l10n.trf
 import com.aptrade.shared.domain.AlertCondition

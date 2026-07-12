@@ -45,7 +45,7 @@ import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.designkit.InterFamily
 import com.aptrade.desktop.designkit.SuperscriptPrice
 import com.aptrade.desktop.designkit.splitPrice
-import com.aptrade.desktop.l10n.L10n
+import com.aptrade.shared.l10n.L10n
 import com.aptrade.desktop.l10n.tr
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.Money

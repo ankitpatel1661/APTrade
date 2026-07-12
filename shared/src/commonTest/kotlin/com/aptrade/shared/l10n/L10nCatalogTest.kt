@@ -1,4 +1,4 @@
-package com.aptrade.desktop.l10n
+package com.aptrade.shared.l10n
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -7,9 +7,14 @@ import kotlin.test.assertTrue
 
 /**
  * Transcribed from `Tests/APTradeAppTests/L10nTests.swift` — the macOS catalog-completeness
- * test. Proves the desktop [L10n] catalog is a faithful, full-coverage port: every [L10n.Key]
- * resolves to a non-blank string for all four [AppLanguage]s, and [tr]/[L10n.string] falls
- * back to [L10n.Key.english] exactly when a translation is missing or blank.
+ * test. Proves the [L10n] catalog is a faithful, full-coverage port: every [L10n.Key]
+ * resolves to a non-blank string for all four [AppLanguage]s.
+ *
+ * Moved from desktopApp (com.aptrade.desktop.l10n.L10nCatalogTest) alongside the catalog
+ * itself so Android shares the same coverage guarantee. The `tr()`/`LocalizationManager`
+ * layer test that lived alongside these assertions stays desktop-only (folded into
+ * `TrfTest.kt`) since `tr`/`LocalizationManager` are Compose-backed desktop types that do
+ * not exist in commonMain.
  *
  * The Swift catalog (`Sources/APTradeApp/L10n.swift`) has exactly 205 `Key` cases with a
  * `table` row for all four languages each — this test pinned that same count on the Kotlin
@@ -44,26 +49,6 @@ class L10nCatalogTest {
     fun `English always resolves via key english, matching the Swift raw-value fallback`() {
         for (key in L10n.Key.entries) {
             assertEquals(key.english, L10n.string(key, AppLanguage.English))
-        }
-    }
-
-    @Test
-    fun `tr resolves the active language and updates when LocalizationManager current changes`() {
-        val original = LocalizationManager.current.value
-        try {
-            LocalizationManager.current.value = AppLanguage.German
-            assertEquals("Beobachtungsliste", tr(L10n.Key.Watchlist))
-
-            LocalizationManager.current.value = AppLanguage.Spanish
-            assertEquals("Lista de seguimiento", tr(L10n.Key.Watchlist))
-
-            LocalizationManager.current.value = AppLanguage.Italian
-            assertEquals("Lista di controllo", tr(L10n.Key.Watchlist))
-
-            LocalizationManager.current.value = AppLanguage.English
-            assertEquals("Watchlist", tr(L10n.Key.Watchlist))
-        } finally {
-            LocalizationManager.current.value = original
         }
     }
 

@@ -31,7 +31,7 @@ import com.aptrade.desktop.designkit.BrandWordmark
 import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.designkit.InterFamily
 import com.aptrade.desktop.designkit.MagnifierIcon
-import com.aptrade.desktop.l10n.L10n
+import com.aptrade.shared.l10n.L10n
 import com.aptrade.desktop.l10n.tr
 
 /** The three top-level destinations. Only Watchlist is live this increment. */
