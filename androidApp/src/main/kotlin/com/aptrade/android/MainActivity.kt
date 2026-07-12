@@ -9,11 +9,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -21,6 +23,8 @@ import com.aptrade.android.detail.DetailScreen
 import com.aptrade.android.news.NewsScreen
 import com.aptrade.android.portfolio.PortfolioScreen
 import com.aptrade.android.search.SearchScreen
+import com.aptrade.android.settings.SettingsScreen
+import com.aptrade.android.settings.SettingsViewModel
 import com.aptrade.android.ui.theme.APTradeTheme
 import com.aptrade.android.watchlist.WatchlistScreen
 
@@ -48,9 +52,17 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            APTradeTheme {
+            // ONE SettingsViewModel scoped to the Activity (not the settings route): its
+            // StateFlow drives APTradeTheme, so the whole tree — every screen, not just the
+            // settings pages — re-themes instantly on a dark/light or accent change, and its
+            // init load applies the persisted language/theme before the user opens settings.
+            val settingsViewModel: SettingsViewModel = viewModel {
+                SettingsViewModel(AppGraph.settingsStore)
+            }
+            val settings by settingsViewModel.settings.collectAsState()
+            APTradeTheme(settings) {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    AppNavHost()
+                    AppNavHost(settingsViewModel)
                 }
             }
         }
@@ -61,7 +73,7 @@ class MainActivity : ComponentActivity() {
  *  switched by [ShellTab] state, not by NavHost — the bottom bar never rebuilds the back
  *  stack. Search/detail/settings push a NavHost destination on top of the shell. */
 @Composable
-fun AppNavHost() {
+fun AppNavHost(settingsViewModel: SettingsViewModel) {
     val navController = rememberNavController()
     var tab by rememberSaveable { mutableStateOf(ShellTab.Watchlist) }
     NavHost(navController = navController, startDestination = "shell") {
@@ -92,6 +104,11 @@ fun AppNavHost() {
         composable("detail/{symbol}") { backStackEntry ->
             DetailScreen(symbol = backStackEntry.arguments?.getString("symbol").orEmpty())
         }
-        composable("settings") { SettingsPlaceholder() }   // Task 7 replaces
+        composable("settings") {
+            SettingsScreen(
+                viewModel = settingsViewModel,
+                onClose = { navController.popBackStack() },
+            )
+        }
     }
 }
