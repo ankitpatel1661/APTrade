@@ -18,6 +18,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.aptrade.android.detail.DetailScreen
+import com.aptrade.android.news.NewsScreen
 import com.aptrade.android.portfolio.PortfolioScreen
 import com.aptrade.android.search.SearchScreen
 import com.aptrade.android.ui.theme.APTradeTheme
@@ -81,7 +82,7 @@ fun AppNavHost() {
                         onBack = {},                        // tab root: no back
                         onOpenDetail = { symbol -> navController.navigate("detail/$symbol") },
                     )
-                    ShellTab.News -> NewsPlaceholder()     // Task 6 replaces
+                    ShellTab.News -> NewsScreen(padding = padding)
                 }
             }
         }

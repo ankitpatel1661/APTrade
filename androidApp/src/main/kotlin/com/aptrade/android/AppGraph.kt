@@ -9,6 +9,7 @@ import com.aptrade.shared.application.CreatePriceAlert
 import com.aptrade.shared.application.EvaluateAlerts
 import com.aptrade.shared.application.FetchCandles
 import com.aptrade.shared.application.FetchHistory
+import com.aptrade.shared.application.FetchMarketNews
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchPerformanceReport
 import com.aptrade.shared.application.FetchPortfolio
@@ -17,12 +18,15 @@ import com.aptrade.shared.application.FetchProfile
 import com.aptrade.shared.application.FetchSearch
 import com.aptrade.shared.application.FetchWatchlist
 import com.aptrade.shared.application.LoadAlerts
+import com.aptrade.shared.application.LoadBookmarks
 import com.aptrade.shared.application.MarketDataRepository
+import com.aptrade.shared.application.NewsRepository
 import com.aptrade.shared.application.PortfolioStore
 import com.aptrade.shared.application.RemoveFromWatchlist
 import com.aptrade.shared.application.RemovePriceAlert
 import com.aptrade.shared.application.ResetPortfolio
 import com.aptrade.shared.application.SellAsset
+import com.aptrade.shared.application.ToggleBookmark
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.WatchlistEntry
 import com.aptrade.shared.infrastructure.FileAlertStore
@@ -30,6 +34,8 @@ import com.aptrade.shared.infrastructure.FileBookmarkStore
 import com.aptrade.shared.infrastructure.FilePortfolioStore
 import com.aptrade.shared.infrastructure.FileSettingsStore
 import com.aptrade.shared.infrastructure.FileWatchlistStore
+import com.aptrade.shared.infrastructure.FinnhubKeyConfig
+import com.aptrade.shared.infrastructure.FinnhubNewsRepository
 import com.aptrade.shared.infrastructure.YahooMarketDataRepository
 import kotlinx.coroutines.sync.Mutex
 import java.io.File
@@ -98,6 +104,25 @@ object AppGraph {
     val alertStore by lazy { FileAlertStore(configDir().resolve("alerts.json")) }
     val settingsStore by lazy { FileSettingsStore(configDir().resolve("settings.json")) }
     val bookmarkStore by lazy { FileBookmarkStore(configDir().resolve("bookmarks.json")) }
+
+    // News (Task 7). FinnhubKeyConfig's default `configDir` param (`resolveConfigDir()`)
+    // targets a desktop home-dir convention — rooted here explicitly at THIS app's own
+    // configDir() (filesDir/aptrade) instead, so the key resolves from the Android app
+    // sandbox rather than a path that doesn't exist/apply on this platform. (Its secondary
+    // `{userHome}/.config/aptrade/config.json` fallback is left at its default; Android's
+    // `user.home` system property doesn't point anywhere meaningful, so that fallback simply
+    // never matches here — harmless.)
+    private val finnhubKeyConfig by lazy { FinnhubKeyConfig(configDir = configDir()) }
+
+    // Null when no Finnhub key is configured; the News tab reads this via NewsViewModel's
+    // `needsKey` rather than attempting requests that would all fail. Mirrors desktop
+    // AppGraph's `newsRepository`/`keyMissing` pair.
+    val newsRepository: NewsRepository? by lazy {
+        finnhubKeyConfig.finnhubApiKey()?.let { FinnhubNewsRepository(it) }
+    }
+    val loadBookmarks by lazy { LoadBookmarks(bookmarkStore) }
+    val toggleBookmark by lazy { ToggleBookmark(bookmarkStore) }
+    val fetchMarketNews by lazy { newsRepository?.let { FetchMarketNews(it) } }
 
     // Alerts & notifications (Task 6). The notifier seam mirrors desktop's AppGraph: one
     // AlertNotifier instance shared by EvaluateAlerts, backed here by Android's

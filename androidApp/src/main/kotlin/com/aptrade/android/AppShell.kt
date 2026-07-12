@@ -23,10 +23,8 @@ import com.aptrade.android.l10n.tr
 import com.aptrade.shared.l10n.L10n
 
 /**
- * The three bottom-tab destinations. [Watchlist] and Portfolio both have real content
- * (via [com.aptrade.android.watchlist.WatchlistScreen] and
- * [com.aptrade.android.portfolio.PortfolioScreen] respectively); News is a placeholder until
- * Task 6.
+ * The three bottom-tab destinations, all backed by real content: [com.aptrade.android.watchlist.WatchlistScreen],
+ * [com.aptrade.android.portfolio.PortfolioScreen], and [com.aptrade.android.news.NewsScreen].
  *
  * Icon substitutions (verified against `material-icons-core`'s curated ~50-icon set —
  * the brief's `RemoveRedEye`/`PieChart`/`Article`/`MoreHoriz` are all part of the larger
@@ -92,14 +90,6 @@ fun AppShell(
             }
         },
     ) { padding -> content(padding) }
-}
-
-/** Placeholder tab body — Task 6 replaces this with the real News feed + bookmarks UI. */
-@Composable
-fun NewsPlaceholder() {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(tr(L10n.Key.News))
-    }
 }
 
 /** Placeholder destination — Task 7 replaces this with the real Settings/Account UI. */
