@@ -190,12 +190,20 @@ struct ExpandedValueCard: View {
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
                     Rectangle().fill(.clear).contentShape(Rectangle())
+                        #if os(iOS)
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { value in updateHover(at: value.location, proxy: proxy, geo: geo) }
+                                .onEnded { _ in hoverIndex = nil }
+                        )
+                        #else
                         .onContinuousHover { phase in
                             switch phase {
                             case .active(let location): updateHover(at: location, proxy: proxy, geo: geo)
                             case .ended: hoverIndex = nil
                             }
                         }
+                        #endif
                     if let hoverIndex, values.indices.contains(hoverIndex), let plotFrame = proxy.plotFrame,
                        let x = proxy.position(forX: hoverIndex),
                        let y = proxy.position(forY: values[hoverIndex]) {
