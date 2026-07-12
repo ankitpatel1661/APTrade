@@ -203,7 +203,7 @@ public struct RootView: View {
         #if os(macOS)
         let panel = NSSavePanel()
         panel.title = tr(.exportPortfolioData)
-        panel.nameFieldStringValue = "\(Self.exportFileStem).\(format.fileExtension)"
+        panel.nameFieldStringValue = PortfolioExportNaming.filename(for: format, on: Date())
         if let contentType = UTType(filenameExtension: format.fileExtension) {
             panel.allowedContentTypes = [contentType]
         }
@@ -217,14 +217,6 @@ public struct RootView: View {
         #else
         // iOS Phase 0 stub — full export via .fileExporter is Phase 1.
         #endif
-    }
-
-    /// Date-stamped base filename, e.g. `APTrade-Portfolio-2026-06-25`.
-    private static var exportFileStem: String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return "APTrade-Portfolio-\(formatter.string(from: Date()))"
     }
 
     private func close() {
