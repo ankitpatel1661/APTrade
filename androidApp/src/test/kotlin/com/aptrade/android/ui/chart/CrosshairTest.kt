@@ -86,4 +86,39 @@ class CrosshairTest {
 
         assertNull(crosshairReadout(1, priceTexts, epochSeconds, utc))
     }
+
+    // --- clampedTooltipX (UAT round 2: "readout must follow the finger") -------------------
+    // Pure Kotlin port of iOS AssetDetailView.swift's hoverTooltip clamping:
+    // clampedX = min(max(frame.origin.x + x, tooltipWidth / 2), geometry.size.width - tooltipWidth / 2)
+
+    @Test
+    fun `tracks the finger in the middle of the chart, away from either edge`() {
+        // 100px-wide chart, 20px tooltip: clamp range is [10, 90]. A raw x of 50 is untouched.
+        assertEquals(50f, clampedTooltipX(rawX = 50f, chartWidth = 100f, tooltipWidth = 20f))
+        assertEquals(30f, clampedTooltipX(rawX = 30f, chartWidth = 100f, tooltipWidth = 20f))
+    }
+
+    @Test
+    fun `clamps to the tooltip's half-width so it never clips the left edge`() {
+        assertEquals(10f, clampedTooltipX(rawX = 0f, chartWidth = 100f, tooltipWidth = 20f))
+        assertEquals(10f, clampedTooltipX(rawX = -40f, chartWidth = 100f, tooltipWidth = 20f))
+    }
+
+    @Test
+    fun `clamps to chartWidth minus half-width so it never clips the right edge`() {
+        assertEquals(90f, clampedTooltipX(rawX = 100f, chartWidth = 100f, tooltipWidth = 20f))
+        assertEquals(90f, clampedTooltipX(rawX = 500f, chartWidth = 100f, tooltipWidth = 20f))
+    }
+
+    @Test
+    fun `a chart no wider than the tooltip centers it rather than pinning to a corner`() {
+        assertEquals(10f, clampedTooltipX(rawX = 0f, chartWidth = 20f, tooltipWidth = 20f))
+        assertEquals(7.5f, clampedTooltipX(rawX = 100f, chartWidth = 15f, tooltipWidth = 40f))
+    }
+
+    @Test
+    fun `a non-positive chart width falls back to the tooltip's own half-width`() {
+        assertEquals(10f, clampedTooltipX(rawX = 50f, chartWidth = 0f, tooltipWidth = 20f))
+        assertEquals(10f, clampedTooltipX(rawX = 50f, chartWidth = -5f, tooltipWidth = 20f))
+    }
 }

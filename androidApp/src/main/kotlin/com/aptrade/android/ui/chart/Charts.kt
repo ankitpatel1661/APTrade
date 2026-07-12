@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,8 +26,11 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aptrade.android.detail.CandleBar
@@ -277,18 +281,80 @@ fun CrosshairOverlay(
     }
 }
 
-/** The floating readout pill next to the crosshair: price over date, matching the desktop
- *  `CrosshairTooltip`'s anatomy (value line + smaller secondary-color date line). Horizontally
- *  biased to the crosshair's [fraction] of the chart width, flipping to the left of the touch
- *  point past the midpoint so it never clips the far edge. */
+/** Clamped tooltip CENTER x-coordinate so a tooltip of [tooltipWidth] centered on [rawX] never
+ *  clips off either edge of a [chartWidth]-wide chart. Pure port of iOS
+ *  `AssetDetailView.swift`'s `hoverTooltip` clamping math (`chartOverlay`):
+ *  `clampedX = min(max(frame.origin.x + x, tooltipWidth / 2), geometry.size.width - tooltipWidth / 2)`
+ *  — same min/max sandwich, just Kotlin `coerceIn`. Degenerate guards: a non-positive
+ *  [chartWidth] centers at the tooltip's own half-width (nothing to clamp against); a chart
+ *  narrower than the tooltip itself centers on the chart (both edges would clip regardless of
+ *  where we put it, so staying centered is the least-bad placement rather than pinning to one
+ *  corner). */
+internal fun clampedTooltipX(rawX: Float, chartWidth: Float, tooltipWidth: Float): Float {
+    val half = tooltipWidth / 2f
+    if (chartWidth <= 0f) return half
+    if (chartWidth <= tooltipWidth) return chartWidth / 2f
+    return rawX.coerceIn(half, chartWidth - half)
+}
+
+/** [CrosshairOverlay]'s counterpart for [DualLineChart]: the crosshair dot must land on the
+ *  PRIMARY curve's actual rendered position, which — unlike a solo [LineChart] — is scaled
+ *  against the shared primary+secondary domain ([dualSeriesLayout]), not primary's own
+ *  min/max. Reusing [CrosshairOverlay] here would mis-scale the dot off the visible line
+ *  whenever the secondary (benchmark) series widens the combined range. Draws only the primary
+ *  point (the readout is always the portfolio value, per [PortfolioScreen]'s comparison-chart
+ *  crosshair); nothing to draw when [dualSeriesLayout] yields an empty layout. */
 @Composable
-fun CrosshairTooltip(priceText: String, dateText: String, fraction: Float, modifier: Modifier = Modifier) {
-    val alignment = if (fraction > 0.5f) Alignment.TopEnd else Alignment.TopStart
+fun DualSeriesCrosshairOverlay(
+    primary: List<Double>,
+    secondary: List<Double>?,
+    index: Int,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary,
+) {
+    Canvas(modifier = modifier) {
+        val layout = dualSeriesLayout(primary, secondary, size.height)
+        val primaryY = layout.primaryY
+        if (primaryY.isEmpty()) return@Canvas
+        val stepX = size.width / (primaryY.size - 1)
+        val idx = index.coerceIn(0, primaryY.size - 1)
+        val cx = idx * stepX
+        val cy = primaryY[idx]
+        drawLine(
+            color = color.copy(alpha = 0.5f),
+            start = Offset(cx, 0f),
+            end = Offset(cx, size.height),
+            strokeWidth = 1.dp.toPx(),
+        )
+        drawCircle(color = color, radius = 4.dp.toPx(), center = Offset(cx, cy))
+    }
+}
+
+/** The floating readout pill next to the crosshair: price over date, matching the desktop
+ *  `CrosshairTooltip`'s anatomy (value line + smaller secondary-color date line). Its x
+ *  position FOLLOWS the finger continuously — [rawX] is the live drag/touch x in px, clamped
+ *  via [clampedTooltipX] (mirroring iOS's hoverTooltip) so a fixed-width tooltip never clips
+ *  off either edge of the [chartWidthPx]-wide chart. Replaces the old binary left/right corner
+ *  flip (UAT round 2: "readout must follow the finger"). */
+@Composable
+fun CrosshairTooltip(
+    priceText: String,
+    dateText: String,
+    rawX: Float,
+    chartWidthPx: Float,
+    modifier: Modifier = Modifier,
+    tooltipWidth: Dp = 120.dp,
+) {
+    val density = LocalDensity.current
+    val tooltipWidthPx = with(density) { tooltipWidth.toPx() }
+    val centerX = clampedTooltipX(rawX, chartWidthPx, tooltipWidthPx)
+    val offsetXPx = (centerX - tooltipWidthPx / 2f).roundToInt()
+    val offsetYPx = with(density) { 4.dp.roundToPx() }
     Box(modifier.fillMaxSize()) {
         Column(
             Modifier
-                .align(alignment)
-                .padding(4.dp)
+                .width(tooltipWidth)
+                .offset { IntOffset(offsetXPx, offsetYPx) }
                 .clip(RoundedCornerShape(8.dp))
                 .background(MaterialTheme.colorScheme.surface)
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))

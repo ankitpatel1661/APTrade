@@ -121,6 +121,13 @@ data class PortfolioUiState(
     val benchmarks: List<String> = listOf("SPY", "QQQ", "VTI"),
     val performanceValues: List<Double> = emptyList(),
     val benchmarkTwinValues: List<Double>? = null,
+    /** Parallel to [performanceValues] — the crosshair readout's pre-formatted, exact-decimal
+     *  price text (via [com.aptrade.android.ui.money] over `Money.amountText`, never the
+     *  pixel-math `performanceValues` Double) and each point's raw epoch second. Mirrors
+     *  DetailUiState's `lineValueTexts`/`lineDates`, consumed by
+     *  [com.aptrade.android.ui.chart.crosshairReadout]. */
+    val performanceValueTexts: List<String> = emptyList(),
+    val performanceDates: List<Long> = emptyList(),
     val metrics: MetricTexts? = null,
     val error: String? = null,
     val tradeError: String? = null,
@@ -295,6 +302,8 @@ class PortfolioViewModel(
             _state.update {
                 it.copy(
                     performanceValues = emptyList(),
+                    performanceValueTexts = emptyList(),
+                    performanceDates = emptyList(),
                     benchmarkTwinValues = null,
                     metrics = null,
                 )
@@ -353,6 +362,8 @@ class PortfolioViewModel(
                 _state.update {
                     it.copy(
                         performanceValues = report.points.map { p -> p.value.amount.doubleValue(false) },
+                        performanceValueTexts = report.points.map { p -> money(p.value.amountText) },
+                        performanceDates = report.points.map { p -> p.epochSeconds },
                         benchmarkTwinValues = report.benchmarkTwinValues
                             ?.map { m -> m.amount.doubleValue(false) },
                         metrics = metrics,

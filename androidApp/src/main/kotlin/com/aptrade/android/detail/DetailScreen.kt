@@ -167,7 +167,8 @@ fun DetailScreen(symbol: String, confirmTrades: Boolean, onBack: () -> Unit) {
                             CrosshairTooltip(
                                 priceText = it.priceText,
                                 dateText = it.dateText,
-                                fraction = index.toFloat() / (pointCount - 1),
+                                rawX = x,
+                                chartWidthPx = chartWidthPx,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }

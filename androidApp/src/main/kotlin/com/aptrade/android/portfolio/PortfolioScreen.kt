@@ -1,6 +1,7 @@
 package com.aptrade.android.portfolio
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,6 +41,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -48,7 +51,11 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aptrade.android.AppGraph
 import com.aptrade.android.ui.chart.ChartLegend
+import com.aptrade.android.ui.chart.CrosshairTooltip
 import com.aptrade.android.ui.chart.DualLineChart
+import com.aptrade.android.ui.chart.DualSeriesCrosshairOverlay
+import com.aptrade.android.ui.chart.crosshairReadout
+import com.aptrade.android.ui.chart.nearestIndex
 import com.aptrade.android.ui.theme.GainGreen
 import com.aptrade.android.ui.theme.LossRed
 import com.aptrade.shared.domain.AllocationSlice
@@ -341,6 +348,7 @@ private fun PerformanceSection(
     // the tracking curve fills in from the first market close, not instantly. Mirrors desktop.
     val maxDayOne = state.span == PortfolioSpan.Max &&
         state.transactions.isNotEmpty() && state.performanceValues.size < 2
+    val chartRenders = !maxDayOne && state.performanceValues.size >= 2 && state.benchmarkTwinValues != null
 
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionHeaderInline("PERFORMANCE")
@@ -365,18 +373,68 @@ private fun PerformanceSection(
             }
         }
 
-        Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+        // Follow-the-finger crosshair (UAT round 2 — same gesture + tooltip mechanic as the
+        // detail chart, reusing the pure nearestIndex/crosshairReadout/clampedTooltipX helpers).
+        // The comparison (benchmark) curve is drawn by the same DualLineChart, so one crosshair
+        // scrubbing the shared x-axis covers both the portfolio and comparison series; the
+        // readout itself always shows the PRIMARY (portfolio) point, in exact-decimal
+        // performanceValueTexts — never the pixels-only performanceValues Double.
+        var dragX by remember { mutableStateOf<Float?>(null) }
+        var chartWidthPx by remember { mutableStateOf(0f) }
+
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(200.dp)
+                .onSizeChanged { chartWidthPx = it.width.toFloat() }
+                .let { base ->
+                    if (chartRenders) {
+                        base.pointerInput(state.span, state.benchmark, state.performanceValues.size) {
+                            detectDragGestures(
+                                onDragStart = { offset -> dragX = offset.x },
+                                onDrag = { change, _ -> dragX = change.position.x },
+                                onDragEnd = { dragX = null },
+                                onDragCancel = { dragX = null },
+                            )
+                        }
+                    } else {
+                        base
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
             when {
                 maxDayOne -> EmptyChartText(
                     "Tracking starts today — performance appears after your first market day.",
                 )
                 state.performanceValues.size < 2 -> EmptyChartText("No performance data yet.")
                 state.benchmarkTwinValues == null -> EmptyChartText("Benchmark unavailable")
-                else -> DualLineChart(
-                    primary = state.performanceValues,
-                    secondary = state.benchmarkTwinValues,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                else -> {
+                    DualLineChart(
+                        primary = state.performanceValues,
+                        secondary = state.benchmarkTwinValues,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    dragX?.let { x ->
+                        val index = nearestIndex(x, chartWidthPx, state.performanceValues.size)
+                        DualSeriesCrosshairOverlay(
+                            primary = state.performanceValues,
+                            secondary = state.benchmarkTwinValues,
+                            index = index,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        val readout = crosshairReadout(index, state.performanceValueTexts, state.performanceDates)
+                        readout?.let {
+                            CrosshairTooltip(
+                                priceText = it.priceText,
+                                dateText = it.dateText,
+                                rawX = x,
+                                chartWidthPx = chartWidthPx,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+                }
             }
         }
 

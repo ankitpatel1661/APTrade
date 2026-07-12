@@ -226,6 +226,38 @@ class PortfolioViewModelTest {
         vm.stop()
     }
 
+    /** UAT round 2 (defect 2, follow-the-finger crosshair on the portfolio chart): the
+     *  crosshair readout must show the EXACT decimal amount (Money/amountText path), never the
+     *  pixels-only `performanceValues` Double — so `performanceValueTexts` must be populated,
+     *  money()-formatted, parallel 1:1 with `performanceValues`, and `performanceDates` must
+     *  carry each point's real epoch second (not a placeholder). */
+    @Test
+    fun performanceReportPopulatesExactDecimalCrosshairTexts() = runTest(dispatcher.scheduler) {
+        val store = FakePortfolioStore().apply { saveImpl = {} ; loadImpl = { heldPortfolio() } }
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { listOf(quote("AAPL", "350")) }
+        repo.historyImpl = { _, _ ->
+            listOf(
+                PricePoint(1_699_000_000L, Money.usd("300.125")),
+                PricePoint(1_699_100_000L, Money.usd("350.5")),
+            )
+        }
+        val vm = vm(store, repo)
+
+        vm.start()
+        runCurrent()
+
+        val s = vm.state.value
+        assertEquals(s.performanceValues.size, s.performanceValueTexts.size)
+        assertEquals(s.performanceValues.size, s.performanceDates.size)
+        assertTrue(s.performanceValueTexts.isNotEmpty())
+        // Exact decimal ($.125 -> rounds to money()'s 2 fraction digits, never a Double's own
+        // binary rounding) and the real point dates, not zeros/placeholders.
+        s.performanceValueTexts.forEach { assertTrue(it.startsWith("$")) }
+        s.performanceDates.forEach { assertTrue(it > 0L) }
+        vm.stop()
+    }
+
     @Test
     fun buySuccessUpdatesPortfolioAndClearsTradeError() = runTest(dispatcher.scheduler) {
         val store = FakePortfolioStore() // starts empty -> Portfolio.starting() ($100k cash)
@@ -308,6 +340,8 @@ class PortfolioViewModelTest {
         val s = vm.state.value
         assertEquals(0, s.holdings.size)
         assertTrue(s.performanceValues.isEmpty())
+        assertTrue(s.performanceValueTexts.isEmpty())
+        assertTrue(s.performanceDates.isEmpty())
         assertNull(s.benchmarkTwinValues)
         assertNull(s.metrics)
         assertEquals("$100,000.00", s.cashText) // Portfolio.starting()
