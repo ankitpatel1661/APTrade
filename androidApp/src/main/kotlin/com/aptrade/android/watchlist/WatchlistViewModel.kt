@@ -6,6 +6,7 @@ import com.aptrade.android.ui.userMessage
 import com.aptrade.shared.application.AddToWatchlist
 import com.aptrade.shared.application.CreatePriceAlert
 import com.aptrade.shared.application.EvaluateAlerts
+import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchWatchlist
 import com.aptrade.shared.application.LoadAlerts
@@ -17,6 +18,7 @@ import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.PriceAlert
 import com.aptrade.shared.domain.Quote
+import com.aptrade.shared.domain.Timeframe
 import com.aptrade.shared.domain.WatchlistEntry
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -30,7 +32,11 @@ import kotlinx.coroutines.launch
 /** One rendered watchlist row. [amountText] is the exact-decimal string straight off
  *  [com.aptrade.shared.domain.Money.amountText] — never a Double — null until the first quote
  *  for this symbol lands. [alertCount] is the row's untriggered-alert count, driving the bell's
- *  filled/outline state and badge (Task 6). */
+ *  filled/outline state and badge (Task 6). [spark] is pixel-math-only (never used for exact
+ *  decimal display) — the row's 1-day close-price series for the mini sparkline rendered left
+ *  of the bell (UAT round 2, defect 3), mirroring desktop's `WatchRow.spark`; empty until the
+ *  first spark refresh lands, and stays empty (never errors the row) on a history-fetch
+ *  failure — sparklines are decoration, same failure-tolerance as desktop. */
 data class WatchRow(
     val symbol: String,
     val name: String,
@@ -38,6 +44,7 @@ data class WatchRow(
     val amountText: String?,
     val changePercent: Double?,
     val alertCount: Int = 0,
+    val spark: List<Double> = emptyList(),
 )
 
 data class WatchlistUiState(
@@ -70,11 +77,18 @@ class WatchlistViewModel(
     private val addToWatchlist: AddToWatchlist,
     private val removeFromWatchlist: RemoveFromWatchlist,
     private val fetchMarketQuotes: FetchMarketQuotes,
+    private val fetchHistory: FetchHistory,
     private val evaluateAlerts: EvaluateAlerts,
     private val loadAlerts: LoadAlerts,
     private val createPriceAlert: CreatePriceAlert,
     private val removePriceAlert: RemovePriceAlert,
     private val pollIntervalMs: Long = 15_000,
+    /** Sparklines refresh every `sparkEveryTicks`-th poll tick rather than every 15s tick —
+     *  mirrors desktop `WatchlistViewModel`'s own `sparkEveryTicks = 4` cadence (history is
+     *  heavier than a quote fetch and a sparkline doesn't need 15s freshness). [load] and
+     *  [refresh] always refresh sparks unconditionally (first paint / explicit pull-to-refresh),
+     *  matching desktop's tick-0-always-fires and manual-refresh-always-fires behavior. */
+    private val sparkEveryTicks: Int = 4,
     private val nowEpochSeconds: () -> Long = { System.currentTimeMillis() / 1000 },
 ) : ViewModel() {
 
@@ -83,6 +97,7 @@ class WatchlistViewModel(
 
     private var entries: List<WatchlistEntry> = emptyList()
     private var quotes: Map<String, Pair<String, Double>> = emptyMap() // symbol -> (amountText, change%)
+    private var sparks: Map<String, List<Double>> = emptyMap()
     private var alertCounts: Map<String, Int> = emptyMap()
     // The full persisted alert list, kept for the sheet's existing-alerts panel — alertCounts
     // (above) is derived from EvaluateAlerts' per-tick pass and only tracks untriggered counts,
@@ -91,27 +106,32 @@ class WatchlistViewModel(
     private var pollJob: Job? = null
 
     /** Loads (and, on first launch, seeds via [fetchWatchlist]) the persisted watchlist, then
-     *  fetches quotes and evaluates alerts for it. Suspend and self-contained — safe to await
-     *  directly. */
+     *  fetches quotes, sparks, and evaluates alerts for it. Suspend and self-contained — safe to
+     *  await directly. */
     suspend fun load() {
         entries = fetchWatchlist.execute()
         refreshQuotes()
+        refreshSparks()
         refreshAlerts()
         publish(loading = false)
     }
 
-    /** Starts (idempotently) the 15s live-quote poll: [load] once, then quotes/alerts refresh
-     *  every tick thereafter. Call from a lifecycle-bound effect (mirrors `PortfolioScreen`'s
-     *  `LifecycleStartEffect`); pair with [stop] on stop/dispose. */
+    /** Starts (idempotently) the 15s live-quote poll: [load] once (which also fires the first
+     *  spark refresh), then quotes/alerts refresh every tick thereafter, with sparks refreshed
+     *  only every [sparkEveryTicks]-th tick. Call from a lifecycle-bound effect (mirrors
+     *  `PortfolioScreen`'s `LifecycleStartEffect`); pair with [stop] on stop/dispose. */
     fun start() {
         if (pollJob != null) return
         pollJob = viewModelScope.launch {
             load()
+            var tick = 1
             while (isActive) {
                 delay(pollIntervalMs)
                 refreshQuotes()
+                if (tick % sparkEveryTicks == 0) refreshSparks()
                 refreshAlerts()
                 publish(loading = false)
+                tick++
             }
         }
     }
@@ -128,6 +148,7 @@ class WatchlistViewModel(
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true) }
             refreshQuotes()
+            refreshSparks()
             refreshAlerts()
             publish(loading = false)
         }
@@ -149,6 +170,7 @@ class WatchlistViewModel(
     suspend fun remove(symbol: String) {
         entries = removeFromWatchlist.execute(symbol)
         quotes = quotes - symbol
+        sparks = sparks - symbol
         publish(loading = false)
     }
 
@@ -255,6 +277,27 @@ class WatchlistViewModel(
         }
     }
 
+    /** Refreshes each entry's 1-day close-price sparkline via [fetchHistory], one symbol at a
+     *  time — mirrors desktop `WatchlistViewModel.refreshSparks()` exactly, including its
+     *  failure tolerance: a per-symbol [QuoteError] is swallowed (that symbol's spark simply
+     *  stays at its last-good value, empty on a first-ever failure) rather than failing the
+     *  whole list or surfacing a watchlist error banner. `.doubleValue(false)` is pixel-math
+     *  only — the sparkline never needs (or gets) exact-decimal precision. */
+    private suspend fun refreshSparks() {
+        val updated = sparks.toMutableMap()
+        for (entry in entries) {
+            try {
+                updated[entry.symbol] = fetchHistory.execute(entry.symbol, Timeframe.OneDay)
+                    .map { it.close.amount.doubleValue(false) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: QuoteError) {
+                // sparklines are decoration — never fail the row for one
+            }
+        }
+        sparks = updated
+    }
+
     private fun publish(loading: Boolean) {
         val rows = entries.map { e ->
             val q = quotes[e.symbol]
@@ -265,6 +308,7 @@ class WatchlistViewModel(
                 amountText = q?.first,
                 changePercent = q?.second,
                 alertCount = alertCounts[e.symbol] ?: 0,
+                spark = sparks[e.symbol] ?: emptyList(),
             )
         }
         _state.update { it.copy(isLoading = loading, rows = rows, alertCounts = alertCounts) }

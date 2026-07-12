@@ -52,6 +52,7 @@ import com.aptrade.android.AppGraph
 import com.aptrade.android.l10n.trf
 import com.aptrade.android.l10n.tr
 import com.aptrade.android.ui.ErrorPane
+import com.aptrade.android.ui.chart.Sparkline
 import com.aptrade.android.ui.formatPercent
 import com.aptrade.android.ui.money
 import com.aptrade.android.ui.theme.GainGreen
@@ -80,6 +81,7 @@ fun WatchlistScreen(
             addToWatchlist = AppGraph.addToWatchlist,
             removeFromWatchlist = AppGraph.removeFromWatchlist,
             fetchMarketQuotes = AppGraph.fetchMarketQuotes,
+            fetchHistory = AppGraph.fetchHistory,
             evaluateAlerts = AppGraph.evaluateAlerts,
             loadAlerts = AppGraph.loadAlerts,
             createPriceAlert = AppGraph.createPriceAlert,
@@ -233,6 +235,15 @@ private fun WatchlistRow(row: WatchRow, onClick: () -> Unit, onOpenAlert: () -> 
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        Sparkline(
+            values = row.spark,
+            color = when {
+                row.changePercent == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                row.changePercent >= 0 -> GainGreen
+                else -> LossRed
+            },
+            modifier = Modifier.padding(end = 8.dp).size(width = 72.dp, height = 32.dp),
+        )
         AlertBell(alertCount = row.alertCount, onClick = onOpenAlert)
         Column(horizontalAlignment = Alignment.End) {
             Text(

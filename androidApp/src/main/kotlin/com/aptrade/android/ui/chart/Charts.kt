@@ -21,10 +21,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -41,6 +43,49 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
+
+/** A tiny (no axes, no crosshair) gradient-filled line — the watchlist row's mini price trend,
+ *  Android counterpart of desktop `designkit/Charts.kt`'s `Sparkline` (same anatomy: a 1.5dp
+ *  stroke over a fading vertical-gradient fill beneath it, [inset]-padded so the line never
+ *  touches the top/bottom edge). [values] is pixel-math only (never used for exact-decimal
+ *  display — the row's own price text is a separate, Money-backed string); fewer than two
+ *  points draws nothing, matching every other chart primitive in this file. Sized by the
+ *  caller — [com.aptrade.android.watchlist.WatchlistScreen]'s row places it at 72x32dp, left of
+ *  the alert bell, mirroring desktop's `WatchlistRow`. */
+@Composable
+fun Sparkline(values: List<Double>, color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        if (values.size < 2) return@Canvas
+        val min = values.min()
+        val max = values.max()
+        val range = max - min
+        val stepX = size.width / (values.size - 1)
+        val inset = 2f
+        fun point(i: Int): Offset {
+            val n = if (range == 0.0) 0.5 else (values[i] - min) / range
+            return Offset(i * stepX, inset + (1 - n.toFloat()) * (size.height - inset * 2))
+        }
+        val line = Path().apply {
+            moveTo(point(0).x, point(0).y)
+            for (i in 1 until values.size) lineTo(point(i).x, point(i).y)
+        }
+        val fill = Path().apply {
+            addPath(line)
+            lineTo(size.width, size.height)
+            lineTo(0f, size.height)
+            close()
+        }
+        drawPath(
+            fill,
+            brush = Brush.verticalGradient(
+                listOf(color.copy(alpha = 0.22f), color.copy(alpha = 0f)),
+                startY = 0f,
+                endY = size.height,
+            ),
+        )
+        drawPath(line, color = color, style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+}
 
 @Composable
 fun LineChart(values: List<Double>, modifier: Modifier = Modifier) {

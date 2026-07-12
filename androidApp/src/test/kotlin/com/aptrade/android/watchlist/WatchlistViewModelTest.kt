@@ -6,9 +6,11 @@ import com.aptrade.shared.application.AlertNotifier
 import com.aptrade.shared.application.AlertStore
 import com.aptrade.shared.application.CreatePriceAlert
 import com.aptrade.shared.application.EvaluateAlerts
+import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchWatchlist
 import com.aptrade.shared.application.LoadAlerts
+import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.RemoveFromWatchlist
 import com.aptrade.shared.application.RemovePriceAlert
 import com.aptrade.shared.application.WatchlistStore
@@ -16,6 +18,7 @@ import com.aptrade.shared.domain.AlertCondition
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.PriceAlert
+import com.aptrade.shared.domain.PricePoint
 import com.aptrade.shared.domain.Quote
 import com.aptrade.shared.domain.WatchlistEntry
 import kotlinx.coroutines.test.runTest
@@ -63,6 +66,7 @@ class WatchlistViewModelTest {
         addToWatchlist = AddToWatchlist(store),
         removeFromWatchlist = RemoveFromWatchlist(store),
         fetchMarketQuotes = FetchMarketQuotes(repo),
+        fetchHistory = FetchHistory(repo),
         evaluateAlerts = EvaluateAlerts(alertStore, notifier, isNotifyEnabled = { true }),
         loadAlerts = LoadAlerts(alertStore),
         createPriceAlert = CreatePriceAlert(alertStore),
@@ -86,6 +90,84 @@ class WatchlistViewModelTest {
         val state = viewModel.state.value
         assertEquals(listOf("AAPL", "BTC-USD"), state.rows.map { it.symbol })
         assertTrue(state.rows.first().amountText != null)
+    }
+
+    // --- spark (UAT round 2, defect 3: watchlist row mini sparklines, Windows/desktop parity) ---
+
+    @Test
+    fun `load populates each row's spark from its 1-day history`() = runTest {
+        val store = FakeWatchlistStore(listOf(
+            WatchlistEntry("AAPL", "Apple Inc.", AssetKind.Stock),
+            WatchlistEntry("BTC-USD", "Bitcoin", AssetKind.Crypto),
+        ))
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { Quote(it, Money.usd("100.00"), Money.usd("100.00"), 0.0) } }
+        repo.historyImpl = { symbol, _ ->
+            when (symbol) {
+                "AAPL" -> listOf(
+                    PricePoint(1_700_000_000L, Money.usd("98.50")),
+                    PricePoint(1_700_003_600L, Money.usd("100.00")),
+                )
+                else -> listOf(
+                    PricePoint(1_700_000_000L, Money.usd("60000")),
+                    PricePoint(1_700_003_600L, Money.usd("61000")),
+                )
+            }
+        }
+        val viewModel = vm(store, repo)
+
+        viewModel.load()
+
+        val rowsBySymbol = viewModel.state.value.rows.associateBy { it.symbol }
+        assertEquals(listOf(98.5, 100.0), rowsBySymbol.getValue("AAPL").spark)
+        assertEquals(listOf(60000.0, 61000.0), rowsBySymbol.getValue("BTC-USD").spark)
+    }
+
+    @Test
+    fun `a history failure for one symbol leaves its spark empty without erroring the row or the list`() = runTest {
+        val store = FakeWatchlistStore(listOf(
+            WatchlistEntry("AAPL", "Apple Inc.", AssetKind.Stock),
+            WatchlistEntry("BTC-USD", "Bitcoin", AssetKind.Crypto),
+        ))
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { Quote(it, Money.usd("100.00"), Money.usd("100.00"), 0.0) } }
+        repo.historyImpl = { symbol, _ ->
+            if (symbol == "AAPL") {
+                throw QuoteError.Network("history unavailable")
+            } else {
+                listOf(PricePoint(1_700_000_000L, Money.usd("60000")), PricePoint(1_700_003_600L, Money.usd("61000")))
+            }
+        }
+        val viewModel = vm(store, repo)
+
+        viewModel.load()
+
+        val state = viewModel.state.value
+        assertEquals(null, state.error) // history failures never surface as a watchlist error banner
+        val rowsBySymbol = state.rows.associateBy { it.symbol }
+        // The row itself is intact — symbol/name/amountText/changePercent all still populated —
+        // only its spark is empty.
+        assertEquals("AAPL", rowsBySymbol.getValue("AAPL").symbol)
+        assertTrue(rowsBySymbol.getValue("AAPL").amountText != null)
+        assertEquals(emptyList(), rowsBySymbol.getValue("AAPL").spark)
+        assertEquals(listOf(60000.0, 61000.0), rowsBySymbol.getValue("BTC-USD").spark)
+    }
+
+    @Test
+    fun `remove drops the row's spark along with the row`() = runTest {
+        val store = FakeWatchlistStore(listOf(WatchlistEntry("AAPL", "Apple Inc.", AssetKind.Stock)))
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { Quote(it, Money.usd("100.00"), Money.usd("100.00"), 0.0) } }
+        repo.historyImpl = { _, _ ->
+            listOf(PricePoint(1_700_000_000L, Money.usd("98.50")), PricePoint(1_700_003_600L, Money.usd("100.00")))
+        }
+        val viewModel = vm(store, repo)
+        viewModel.load()
+        assertTrue(viewModel.state.value.rows.single().spark.isNotEmpty())
+
+        viewModel.remove("AAPL")
+
+        assertEquals(emptyList(), viewModel.state.value.rows)
     }
 
     @Test
