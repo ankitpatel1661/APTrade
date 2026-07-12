@@ -59,7 +59,12 @@ data class TradeSheetInfo(
  *  the instant the confirm layer first composes and calls this function — killing the app
  *  before the confirmation layer could ever appear. Stripping the formatting back out here
  *  (Android-only; [TradeSheetInfo.priceText]'s existing display contract is unchanged) fixes it
- *  without touching the shared `Money`/`L10n` catalog or desktop's own (already-raw) path. */
+ *  without touching the shared `Money`/`L10n` catalog or desktop's own (already-raw) path.
+ *
+ *  SAFETY INVARIANT: this strip is only correct while `ui/Mappers.kt`'s `money()` stays pinned
+ *  to `Locale.US` ("$"/"," with "." decimals). If `money()` ever localizes its separators,
+ *  thread the raw `Money.amountText` through [TradeSheetInfo] instead of re-parsing display
+ *  output — `TradeSheetTest` only covers the current US shape. */
 internal fun rawAmountText(displayText: String): String =
     displayText.filter { it.isDigit() || it == '.' || it == '-' }
 
