@@ -41,7 +41,7 @@ private val timeframeLabels = listOf(
 )
 
 @Composable
-fun DetailScreen(symbol: String) {
+fun DetailScreen(symbol: String, confirmTrades: Boolean) {
     val portfolio = AppGraph.portfolio
     val viewModel: DetailViewModel = viewModel(key = symbol) {
         DetailViewModel(
@@ -136,6 +136,7 @@ fun DetailScreen(symbol: String) {
             ),
             tradeError = state.tradeError,
             transactionCount = state.transactionCount,
+            confirmTrades = confirmTrades,
             onSubmit = { submittedSide, quantity ->
                 when (submittedSide) {
                     TradeSide.Buy -> viewModel.buy(quantity)

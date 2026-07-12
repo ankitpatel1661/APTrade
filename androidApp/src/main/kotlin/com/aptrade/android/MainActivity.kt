@@ -76,6 +76,10 @@ class MainActivity : ComponentActivity() {
 fun AppNavHost(settingsViewModel: SettingsViewModel) {
     val navController = rememberNavController()
     var tab by rememberSaveable { mutableStateOf(ShellTab.Watchlist) }
+    // The live confirmTrades flag (spec A4 — TradeSheet's confirm-layer gate). TradeSheet
+    // snapshots it once when it opens (its own KDoc), so it is fine for THIS to stay live —
+    // collected once, here, rather than re-plumbing SettingsViewModel through every screen.
+    val settings by settingsViewModel.settings.collectAsState()
     NavHost(navController = navController, startDestination = "shell") {
         composable("shell") {
             AppShell(
@@ -93,6 +97,7 @@ fun AppNavHost(settingsViewModel: SettingsViewModel) {
                     ShellTab.Portfolio -> PortfolioScreen(
                         onBack = {},                        // tab root: no back
                         onOpenDetail = { symbol -> navController.navigate("detail/$symbol") },
+                        confirmTrades = settings.confirmTrades,
                     )
                     ShellTab.News -> NewsScreen(padding = padding)
                 }
@@ -102,7 +107,10 @@ fun AppNavHost(settingsViewModel: SettingsViewModel) {
             SearchScreen(onOpenDetail = { symbol -> navController.navigate("detail/$symbol") })
         }
         composable("detail/{symbol}") { backStackEntry ->
-            DetailScreen(symbol = backStackEntry.arguments?.getString("symbol").orEmpty())
+            DetailScreen(
+                symbol = backStackEntry.arguments?.getString("symbol").orEmpty(),
+                confirmTrades = settings.confirmTrades,
+            )
         }
         composable("settings") {
             SettingsScreen(

@@ -355,11 +355,11 @@ private fun NotificationsPage(settings: AppSettings, onUpdate: ((AppSettings) ->
  *  AUTHENTICATION and PRIVACY toggles persist through [onUpdate]; DATA is three decorative
  *  link rows (close-only, same as desktop/macOS).
  *
- *  HONEST PARITY (recorded): on desktop/macOS only [AppSettings.confirmTrades] is functional
- *  (it gates the trade dialog's confirmation layer). On Android even that consumer doesn't
- *  exist yet — `TradeSheet`'s single Confirm button has no settings-gated second step — so
- *  ALL four toggles here persist but drive nothing. Same row structure regardless, so the
- *  wiring lands without UI changes when Android's trade sheet gains the confirm layer. */
+ *  HONEST PARITY (recorded): [AppSettings.confirmTrades] is functional on both desktop/macOS
+ *  AND Android (spec A4) — it gates `TradeSheet`'s in-sheet confirmation layer (`TradeConfirm.kt`),
+ *  the same single functional security toggle as desktop's trade dialog. [AppSettings.biometricLogin],
+ *  [AppSettings.requireAuthOnLaunch], and [AppSettings.analyticsSharing] persist but drive nothing
+ *  yet, same as macOS's SecurityPage rows for those three toggles being simulated-app-only. */
 @Composable
 private fun SecurityPage(
     settings: AppSettings,

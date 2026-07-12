@@ -69,7 +69,7 @@ private fun assetKindFromLabel(label: String?): AssetKind = when (label) {
 private data class TradeTarget(val row: HoldingRowUi, val side: TradeSide)
 
 @Composable
-fun PortfolioScreen(onBack: () -> Unit, onOpenDetail: (String) -> Unit) {
+fun PortfolioScreen(onBack: () -> Unit, onOpenDetail: (String) -> Unit, confirmTrades: Boolean) {
     val portfolio = AppGraph.portfolio
     val viewModel: PortfolioViewModel = viewModel {
         PortfolioViewModel(
@@ -103,6 +103,7 @@ fun PortfolioScreen(onBack: () -> Unit, onOpenDetail: (String) -> Unit) {
         onReset = viewModel::reset,
         exportCsv = viewModel::exportCsv,
         exportJson = viewModel::exportJson,
+        confirmTrades = confirmTrades,
     )
 }
 
@@ -119,6 +120,7 @@ private fun PortfolioContent(
     onReset: () -> Unit,
     exportCsv: () -> String,
     exportJson: () -> String,
+    confirmTrades: Boolean,
 ) {
     val context = LocalContext.current
     var tradeTarget by remember { mutableStateOf<TradeTarget?>(null) }
@@ -221,6 +223,7 @@ private fun PortfolioContent(
             ),
             tradeError = state.tradeError,
             transactionCount = state.transactions.size,
+            confirmTrades = confirmTrades,
             onSubmit = { side, quantity ->
                 when (side) {
                     TradeSide.Buy -> onBuy(
