@@ -182,4 +182,45 @@ class NewsViewModelTest {
         assertTrue(s.bookmarkedIds.isEmpty())
         assertNotNull(s.error)
     }
+
+    /** Ported from desktopApp/src/test/.../news/NewsViewModelTest.kt's
+     *  `filterMatchesSourceCaseInsensitively` — the live headline filter matches case-
+     *  insensitively on headline OR source, and a blank filter restores the unfiltered base. */
+    @Test
+    fun filterMatchesSourceCaseInsensitively() = runTest {
+        val repo = FakeNewsRepository(marketImpl = {
+            listOf(
+                article("1", headline = "Apple beats", source = "Reuters"),
+                article("2", headline = "Market recap", source = "Bloomberg"),
+            )
+        })
+        val viewModel = vm(repo)
+        viewModel.start(); runCurrent()
+
+        viewModel.setFilter("bloom")
+        assertEquals(listOf("2"), viewModel.state.value.visibleArticles.map { it.id })
+
+        // headline match also works, blank restores base
+        viewModel.setFilter("APPLE")
+        assertEquals(listOf("1"), viewModel.state.value.visibleArticles.map { it.id })
+        viewModel.setFilter("")
+        assertEquals(listOf("1", "2"), viewModel.state.value.visibleArticles.map { it.id })
+    }
+
+    /** Ported from desktopApp/src/test/.../news/NewsViewModelTest.kt's
+     *  `showingSavedSwitchesBaseList` — toggling Saved swaps the filter's base list between
+     *  the fetched articles and the bookmarked ones. */
+    @Test
+    fun showingSavedSwitchesBaseList() = runTest {
+        val repo = FakeNewsRepository(marketImpl = { listOf(article("live")) })
+        val store = FakeBookmarkStore(initial = listOf(article("saved")))
+        val viewModel = vm(repo, store)
+        viewModel.start(); runCurrent()
+
+        assertEquals(listOf("live"), viewModel.state.value.visibleArticles.map { it.id })
+        viewModel.setShowingSaved(true)
+        assertEquals(listOf("saved"), viewModel.state.value.visibleArticles.map { it.id })
+        viewModel.setShowingSaved(false)
+        assertEquals(listOf("live"), viewModel.state.value.visibleArticles.map { it.id })
+    }
 }

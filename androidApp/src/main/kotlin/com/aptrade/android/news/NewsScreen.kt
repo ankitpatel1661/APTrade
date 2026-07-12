@@ -20,6 +20,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -67,6 +68,8 @@ fun NewsScreen(padding: PaddingValues) {
         state = state,
         padding = padding,
         onSetCategory = viewModel::setCategory,
+        onSetShowingSaved = viewModel::setShowingSaved,
+        onSetFilter = viewModel::setFilter,
         onRefresh = viewModel::refresh,
         onToggleBookmark = viewModel::toggleBookmark,
         onOpenArticle = { url -> openInCustomTab(context, url) },
@@ -79,6 +82,8 @@ private fun NewsContent(
     state: NewsUiState,
     padding: PaddingValues,
     onSetCategory: (NewsCategory) -> Unit,
+    onSetShowingSaved: (Boolean) -> Unit,
+    onSetFilter: (String) -> Unit,
     onRefresh: () -> Unit,
     onToggleBookmark: (NewsArticle) -> Unit,
     onOpenArticle: (String) -> Unit,
@@ -90,29 +95,44 @@ private fun NewsContent(
             Column(Modifier.fillMaxSize()) {
                 CategoryChipRow(
                     category = state.category,
+                    showingSaved = state.showingSaved,
                     onSetCategory = onSetCategory,
+                    onSetShowingSaved = onSetShowingSaved,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                 )
+                FilterField(
+                    query = state.filter,
+                    onQueryChange = onSetFilter,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 12.dp),
+                )
+                val visible = state.visibleArticles
                 PullToRefreshBox(
                     isRefreshing = state.isLoading && state.articles.isNotEmpty(),
                     onRefresh = onRefresh,
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     when {
-                        state.isLoading && state.articles.isEmpty() ->
+                        state.isLoading && visible.isEmpty() ->
                             CircularProgressIndicator(Modifier.align(Alignment.Center))
-                        state.articles.isEmpty() ->
+                        visible.isEmpty() ->
                             Text(
-                                tr(L10n.Key.NoHeadlinesRightNow),
+                                if (state.showingSaved) {
+                                    tr(L10n.Key.NoSavedArticles)
+                                } else {
+                                    tr(L10n.Key.NoHeadlinesRightNow)
+                                },
                                 modifier = Modifier
                                     .align(Alignment.Center)
                                     .padding(24.dp),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         else -> LazyColumn(Modifier.fillMaxSize()) {
-                            items(state.articles, key = { it.id }) { article ->
+                            items(visible, key = { it.id }) { article ->
                                 ArticleRow(
                                     article = article,
                                     bookmarked = state.bookmarkedIds.contains(article.id),
@@ -129,23 +149,47 @@ private fun NewsContent(
     }
 }
 
-/** General · Crypto · Merger capsules — the Android counterpart to desktop `NewsPane.kt`'s
- *  `PillRow` category selector, rendered as Material3 [FilterChip]s. */
+/** General · Crypto · Merger capsules plus a trailing Saved toggle — the Android counterpart
+ *  to desktop `NewsPane.kt`'s `PillRow`, rendered as Material3 [FilterChip]s. Selecting a
+ *  category while Saved is active leaves the Saved view, mirroring desktop's `PillRow`. */
 @Composable
 private fun CategoryChipRow(
     category: NewsCategory,
+    showingSaved: Boolean,
     onSetCategory: (NewsCategory) -> Unit,
+    onSetShowingSaved: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         for (c in NewsCategory.entries) {
             FilterChip(
-                selected = c == category,
-                onClick = { onSetCategory(c) },
+                selected = !showingSaved && c == category,
+                onClick = {
+                    if (showingSaved) onSetShowingSaved(false)
+                    onSetCategory(c)
+                },
                 label = { Text(categoryLabel(c)) },
             )
         }
+        FilterChip(
+            selected = showingSaved,
+            onClick = { onSetShowingSaved(!showingSaved) },
+            label = { Text(tr(L10n.Key.Saved)) },
+        )
     }
+}
+
+/** Live headline filter — the Android counterpart to desktop `NewsPane.kt`'s `FilterField`,
+ *  rendered as a compact single-line [OutlinedTextField]. */
+@Composable
+private fun FilterField(query: String, onQueryChange: (String) -> Unit, modifier: Modifier = Modifier) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = modifier,
+        placeholder = { Text(tr(L10n.Key.FilterHeadlinesPlaceholder)) },
+        singleLine = true,
+    )
 }
 
 /** Maps a [NewsCategory] to its localized chip text — mirrors desktop `NewsPane.kt`'s
