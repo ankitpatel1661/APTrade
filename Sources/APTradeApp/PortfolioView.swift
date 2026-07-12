@@ -43,7 +43,11 @@ struct PortfolioView: View {
                     summary
                     if showChart && pnlValues.count > 1 {
                         expandedChart
+                            #if os(iOS)
+                            .padding(.horizontal, 16)
+                            #else
                             .padding(.horizontal, 24)
+                            #endif
                             .padding(.bottom, 16)
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
@@ -178,7 +182,7 @@ struct PortfolioView: View {
                 metric(label: tr(.cashLabel), money: viewModel.valuation.cash, colored: false)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if pnlValues.count > 1 {
+            if pnlValues.count > 1 && !showChart {
                 Button { withAnimation(chartSpring) { showChart.toggle() } } label: {
                     Sparkline(values: pnlValues, color: trendColor)
                         .frame(maxWidth: .infinity, minHeight: 44)

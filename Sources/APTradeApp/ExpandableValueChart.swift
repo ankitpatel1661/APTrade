@@ -185,6 +185,11 @@ struct ExpandedValueCard: View {
                 AxisValueLabel().foregroundStyle(Theme.textTertiary)
             }
         }
+        #if os(iOS)
+        // Keeps trailing axis labels clear of the card's rounded-rect clip boundary on
+        // iPhone, where the card has less horizontal breathing room than on macOS.
+        .chartPlotStyle { $0.padding(.trailing, 6) }
+        #endif
         .chartLegend(.hidden)
         .chartOverlay { proxy in
             GeometryReader { geo in
