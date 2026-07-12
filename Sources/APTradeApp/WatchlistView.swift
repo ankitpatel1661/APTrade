@@ -57,6 +57,10 @@ struct WatchlistView: View {
                     onCreate: { condition in viewModel.addAlert(symbol: asset.symbol, condition: condition) },
                     onDelete: { id in viewModel.deleteAlert(id) }
                 )
+                #if os(iOS)
+                .presentationDetents([.medium, .large])
+                .presentationBackground(Theme.surface)
+                #endif
             }
         }
         #if os(macOS)
