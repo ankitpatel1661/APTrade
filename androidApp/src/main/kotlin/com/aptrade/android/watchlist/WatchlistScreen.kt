@@ -17,10 +17,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -33,10 +36,14 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleStartEffect
@@ -73,6 +80,10 @@ fun WatchlistScreen(
             addToWatchlist = AppGraph.addToWatchlist,
             removeFromWatchlist = AppGraph.removeFromWatchlist,
             fetchMarketQuotes = AppGraph.fetchMarketQuotes,
+            evaluateAlerts = AppGraph.evaluateAlerts,
+            loadAlerts = AppGraph.loadAlerts,
+            createPriceAlert = AppGraph.createPriceAlert,
+            removePriceAlert = AppGraph.removePriceAlert,
         )
     }
 
@@ -82,6 +93,8 @@ fun WatchlistScreen(
     }
 
     val state by viewModel.state.collectAsState()
+    var alertTarget by remember { mutableStateOf<WatchRow?>(null) }
+
     WatchlistContent(
         state = state,
         padding = padding,
@@ -90,7 +103,20 @@ fun WatchlistScreen(
         onRefresh = viewModel::refresh,
         onRemove = viewModel::remove,
         onUndoRemove = viewModel::add,
+        onOpenAlert = { row -> alertTarget = row },
     )
+
+    alertTarget?.let { row ->
+        PriceAlertSheet(
+            symbol = row.symbol,
+            name = row.name,
+            currentPriceText = row.amountText,
+            existing = viewModel.alertsFor(row.symbol),
+            onCreate = { condition -> viewModel.createAlert(row.symbol, condition) },
+            onDelete = { id -> viewModel.deleteAlert(id) },
+            onDismiss = { alertTarget = null },
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -103,6 +129,7 @@ private fun WatchlistContent(
     onRefresh: () -> Unit,
     onRemove: suspend (String) -> Unit,
     onUndoRemove: suspend (WatchlistEntry) -> Unit,
+    onOpenAlert: (WatchRow) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -125,6 +152,7 @@ private fun WatchlistContent(
                         SwipeToRemoveRow(
                             row = row,
                             onClick = { onOpenDetail(row.symbol) },
+                            onOpenAlert = { onOpenAlert(row) },
                             onRemove = {
                                 scope.launch {
                                     onRemove(row.symbol)
@@ -149,7 +177,7 @@ private fun WatchlistContent(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SwipeToRemoveRow(row: WatchRow, onClick: () -> Unit, onRemove: () -> Unit) {
+private fun SwipeToRemoveRow(row: WatchRow, onClick: () -> Unit, onOpenAlert: () -> Unit, onRemove: () -> Unit) {
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             if (value != SwipeToDismissBoxValue.Settled) {
@@ -178,12 +206,12 @@ private fun SwipeToRemoveRow(row: WatchRow, onClick: () -> Unit, onRemove: () ->
             }
         },
     ) {
-        WatchlistRow(row = row, onClick = onClick)
+        WatchlistRow(row = row, onClick = onClick, onOpenAlert = onOpenAlert)
     }
 }
 
 @Composable
-private fun WatchlistRow(row: WatchRow, onClick: () -> Unit) {
+private fun WatchlistRow(row: WatchRow, onClick: () -> Unit, onOpenAlert: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -205,6 +233,7 @@ private fun WatchlistRow(row: WatchRow, onClick: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        AlertBell(alertCount = row.alertCount, onClick = onOpenAlert)
         Column(horizontalAlignment = Alignment.End) {
             Text(
                 row.amountText?.let { money(it) } ?: "—",
@@ -218,6 +247,34 @@ private fun WatchlistRow(row: WatchRow, onClick: () -> Unit) {
                     row.changePercent >= 0 -> GainGreen
                     else -> LossRed
                 },
+            )
+        }
+    }
+}
+
+/** The row's alert-bell affordance: gold-tinted with a numeric badge when `alertCount > 0`,
+ *  muted otherwise — the Android counterpart to desktop `WatchlistPane.kt`'s `AlertBell`
+ *  (same tooltip/contentDescription strings, `ActiveAlertsFormat`/`SetAPriceAlert`). No bell
+ *  glyph ships in `material-icons-core` (Notifications/NotificationsActive require the
+ *  `-extended` artifact this app doesn't depend on), so — like desktop — this uses a plain
+ *  emoji glyph with a color swap for the filled/outline distinction, plus a Material3
+ *  [BadgedBox] for the count (a purely Android affordance desktop's tooltip doesn't have). */
+@Composable
+private fun AlertBell(alertCount: Int, onClick: () -> Unit) {
+    val description = if (alertCount > 0) {
+        trf(L10n.Key.ActiveAlertsFormat, alertCount)
+    } else {
+        tr(L10n.Key.SetAPriceAlert)
+    }
+    IconButton(onClick = onClick) {
+        BadgedBox(badge = {
+            if (alertCount > 0) Badge { Text(alertCount.toString()) }
+        }) {
+            Text(
+                "🔔",
+                style = MaterialTheme.typography.titleMedium,
+                color = if (alertCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.semantics { contentDescription = description },
             )
         }
     }

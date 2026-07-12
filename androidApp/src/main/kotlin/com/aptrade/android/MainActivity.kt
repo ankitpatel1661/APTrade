@@ -1,8 +1,11 @@
 package com.aptrade.android
 
+import android.Manifest
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -21,11 +24,28 @@ import com.aptrade.android.ui.theme.APTradeTheme
 import com.aptrade.android.watchlist.WatchlistScreen
 
 class MainActivity : ComponentActivity() {
+
+    // Registered as a property (not inside onCreate) — ActivityResultCaller requires
+    // registration before the Activity reaches CREATED. Denial is non-fatal: price alerts
+    // still evaluate and update the in-app badge/list, only the system notification is
+    // skipped (see AndroidAlertNotifier's permission check before each post).
+    private val requestNotificationPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { /* denial is non-fatal — nothing to do either way */ }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Provide app-private storage to the composition root BEFORE any screen composes,
-        // so AppGraph.portfolio is materialized against the right directory.
-        AppGraph.initialize(filesDir)
+        // Provide app-private storage + an application Context to the composition root
+        // BEFORE any screen composes, so AppGraph.portfolio/alertNotifier are materialized
+        // against the right directory/context.
+        AppGraph.initialize(this)
+
+        // POST_NOTIFICATIONS is a runtime permission only from API 33 (Tiramisu) onward;
+        // below that, notifications need no explicit grant.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
         setContent {
             APTradeTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {

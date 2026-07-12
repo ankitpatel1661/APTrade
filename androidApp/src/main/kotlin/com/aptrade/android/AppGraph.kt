@@ -1,7 +1,12 @@
 package com.aptrade.android
 
+import android.content.Context
+import com.aptrade.android.alerts.AndroidAlertNotifier
 import com.aptrade.shared.application.AddToWatchlist
+import com.aptrade.shared.application.AlertNotifier
 import com.aptrade.shared.application.BuyAsset
+import com.aptrade.shared.application.CreatePriceAlert
+import com.aptrade.shared.application.EvaluateAlerts
 import com.aptrade.shared.application.FetchCandles
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketQuotes
@@ -11,9 +16,11 @@ import com.aptrade.shared.application.FetchPortfolioPerformance
 import com.aptrade.shared.application.FetchProfile
 import com.aptrade.shared.application.FetchSearch
 import com.aptrade.shared.application.FetchWatchlist
+import com.aptrade.shared.application.LoadAlerts
 import com.aptrade.shared.application.MarketDataRepository
 import com.aptrade.shared.application.PortfolioStore
 import com.aptrade.shared.application.RemoveFromWatchlist
+import com.aptrade.shared.application.RemovePriceAlert
 import com.aptrade.shared.application.ResetPortfolio
 import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.domain.AssetKind
@@ -54,18 +61,23 @@ object AppGraph {
     val defaultSymbols = listOf("AAPL", "SPY", "BTC-USD", "ETH-USD")
 
     private var filesDir: File? = null
+    private var appContext: Context? = null
 
-    /** Supply the app-private storage directory. Call once from MainActivity.onCreate
-     *  BEFORE setContent, so [portfolio] is ready by the time any screen composes. */
-    fun initialize(filesDir: File) {
-        this.filesDir = filesDir
+    /** Supply the app-private storage directory and an application [Context] (for the
+     *  [AndroidAlertNotifier]'s `NotificationManager`). Call once from MainActivity.onCreate
+     *  BEFORE setContent, so [portfolio]/[alertNotifier] are ready by the time any screen
+     *  composes. Stores `context.applicationContext` (never the Activity itself) since the
+     *  notifier is expected to outlive any single Activity instance. */
+    fun initialize(context: Context) {
+        this.filesDir = context.filesDir
+        this.appContext = context.applicationContext
     }
 
     /** Portfolio use cases, built lazily from the [filesDir] provided by [initialize].
      *  Shares the single process-wide [repository]. */
     val portfolio: PortfolioGraph by lazy {
         val dir = requireNotNull(filesDir) {
-            "AppGraph.initialize(filesDir) must be called before accessing AppGraph.portfolio"
+            "AppGraph.initialize(context) must be called before accessing AppGraph.portfolio"
         }
         PortfolioGraph(repository, FilePortfolioStore(File(dir, "portfolio.json").toPath()))
     }
@@ -74,18 +86,38 @@ object AppGraph {
      *  ConfigDir wiring but rooted in Android's sandbox rather than a platform-specific
      *  user config path. Lazily-backed stores below resolve their JSON file against it. */
     private fun configDir(): Path {
-        val dir = requireNotNull(filesDir) { "AppGraph.initialize(filesDir) must run before stores are touched" }
+        val dir = requireNotNull(filesDir) { "AppGraph.initialize(context) must run before stores are touched" }
         return dir.toPath().resolve("aptrade")
     }
 
     // Watchlist + alerts + news + settings — all against app-private filesDir, mirroring
-    // the desktop ConfigDir wiring but rooted in Android's sandbox. Alert/news use cases
-    // are wired in their own tasks (6/7); the stores are created now so those tasks only
-    // need to add use-case vals against them.
+    // the desktop ConfigDir wiring but rooted in Android's sandbox. News use cases are
+    // wired in their own task (7); the store is created now so that task only needs to
+    // add use-case vals against it.
     val watchlistStore by lazy { FileWatchlistStore(configDir().resolve("watchlist.json")) }
     val alertStore by lazy { FileAlertStore(configDir().resolve("alerts.json")) }
     val settingsStore by lazy { FileSettingsStore(configDir().resolve("settings.json")) }
     val bookmarkStore by lazy { FileBookmarkStore(configDir().resolve("bookmarks.json")) }
+
+    // Alerts & notifications (Task 6). The notifier seam mirrors desktop's AppGraph: one
+    // AlertNotifier instance shared by EvaluateAlerts, backed here by Android's
+    // NotificationManager rather than desktop's Tray.
+    val alertNotifier: AlertNotifier by lazy {
+        val context = requireNotNull(appContext) {
+            "AppGraph.initialize(context) must be called before accessing AppGraph.alertNotifier"
+        }
+        AndroidAlertNotifier(context)
+    }
+    val loadAlerts by lazy { LoadAlerts(alertStore) }
+    val createPriceAlert by lazy { CreatePriceAlert(alertStore) }
+    val removePriceAlert by lazy { RemovePriceAlert(alertStore) }
+    val evaluateAlerts by lazy {
+        EvaluateAlerts(
+            store = alertStore,
+            notifier = alertNotifier,
+            isNotifyEnabled = { settingsStore.load().priceAlerts },
+        )
+    }
 
     // The macOS app's seed watchlist (parity with desktopApp's AppGraph.defaultEntries).
     private val defaultWatchlistEntries = listOf(
