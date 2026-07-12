@@ -61,14 +61,30 @@ struct ExpandedValueCard: View {
         VStack(alignment: .leading, spacing: 12) {
             header
             chart
+                #if os(iOS)
+                // Fixed (not minHeight): on iPhone the enclosing VStack is a non-scrolling
+                // column that can exceed the viewport, and a compressible minHeight lets
+                // SwiftUI shrink the chart below what its content needs, clipping the
+                // trailing axis label. A fixed height removes that degree of freedom.
+                .frame(maxWidth: .infinity)
+                .frame(height: 150)
+                #else
                 .frame(maxWidth: .infinity, minHeight: 150)
+                #endif
         }
         .padding(16)
         .frame(maxWidth: .infinity)
+        #if os(iOS)
+        // Take exactly the content's natural height and refuse vertical compression, so the
+        // card can never be squeezed shorter than its title row + stats + chart by the
+        // enclosing non-scrolling VStack (the holdings list below yields the space instead).
+        .fixedSize(horizontal: false, vertical: true)
+        #else
         // Size to content (with a 230pt floor) rather than a hard height: the portfolio card
         // carries a taller two-row stats header, and a fixed height let that content — and the
         // red area fill — overflow the background and spill onto the holdings list below.
         .frame(minHeight: 230)
+        #endif
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(

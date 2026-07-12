@@ -45,6 +45,10 @@ struct PortfolioView: View {
                         expandedChart
                             #if os(iOS)
                             .padding(.horizontal, 16)
+                            // The card must render at its full content height even when the
+                            // non-scrolling column overflows the viewport; the holdings List
+                            // below is the flexible element that should yield space first.
+                            .layoutPriority(1)
                             #else
                             .padding(.horizontal, 24)
                             #endif
