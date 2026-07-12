@@ -1,4 +1,4 @@
-package com.aptrade.desktop.infra
+package com.aptrade.shared.infrastructure
 
 import java.nio.file.Path
 import kotlin.io.path.Path

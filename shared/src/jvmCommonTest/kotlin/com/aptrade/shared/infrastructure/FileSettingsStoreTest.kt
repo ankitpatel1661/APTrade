@@ -1,7 +1,8 @@
-package com.aptrade.desktop.infra
+package com.aptrade.shared.infrastructure
 
-import com.aptrade.desktop.designkit.AccentTheme
-import com.aptrade.desktop.l10n.AppLanguage
+import com.aptrade.shared.settings.AccentTheme
+import com.aptrade.shared.settings.AppSettings
+import com.aptrade.shared.l10n.AppLanguage
 import kotlinx.coroutines.test.runTest
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.exists

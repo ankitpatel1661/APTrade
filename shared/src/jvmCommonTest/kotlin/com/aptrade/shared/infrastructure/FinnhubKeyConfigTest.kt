@@ -1,4 +1,4 @@
-package com.aptrade.desktop.infra
+package com.aptrade.shared.infrastructure
 
 import kotlin.io.path.createDirectories
 import kotlin.io.path.createTempDirectory

@@ -1,4 +1,4 @@
-package com.aptrade.desktop.infra
+package com.aptrade.shared.infrastructure
 
 import com.aptrade.shared.domain.NewsArticle
 import kotlinx.coroutines.test.runTest
