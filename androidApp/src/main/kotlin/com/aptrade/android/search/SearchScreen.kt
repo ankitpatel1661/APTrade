@@ -35,6 +35,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aptrade.android.AppGraph
+import com.aptrade.android.l10n.trf
 import com.aptrade.android.l10n.tr
 import com.aptrade.android.ui.ErrorPane
 import com.aptrade.shared.domain.WatchlistEntry
@@ -48,7 +49,6 @@ fun SearchScreen(onOpenDetail: (String) -> Unit) {
     val focusRequester = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
-    val addedLabel = tr(L10n.Key.Add)
 
     Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { scaffoldPadding ->
         Column(Modifier.fillMaxSize().padding(scaffoldPadding)) {
@@ -77,7 +77,7 @@ fun SearchScreen(onOpenDetail: (String) -> Unit) {
                                         AppGraph.addToWatchlist.execute(
                                             WatchlistEntry(row.symbol, row.name, row.kind),
                                         )
-                                        snackbarHostState.showSnackbar("${row.symbol} $addedLabel")
+                                        snackbarHostState.showSnackbar(trf(L10n.Key.AddedSymbolFmt, row.symbol))
                                     }
                                 },
                             )

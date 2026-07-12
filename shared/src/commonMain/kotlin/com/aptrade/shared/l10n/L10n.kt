@@ -282,6 +282,10 @@ object L10n {
         DigestNoSymbols(english = "Add symbols to your watchlist to get a daily digest."),
         DigestUpdating(english = "Your watchlist is being updated. Check back shortly."),
         DigestMoversFormat(english = "Today's movers — %@"),
+
+        // Watchlist snackbar formats (parameterized for i18n)
+        AddedSymbolFmt(english = "Added %@"),
+        RemovedSymbolFmt(english = "Removed %@"),
         ;
     }
 
@@ -532,6 +536,8 @@ object L10n {
             Key.DigestNoSymbols to "Fügen Sie Symbole zu Ihrer Beobachtungsliste hinzu, um eine tägliche Übersicht zu erhalten.",
             Key.DigestUpdating to "Ihre Beobachtungsliste wird aktualisiert. Schauen Sie in Kürze wieder nach.",
             Key.DigestMoversFormat to "Heutige Bewegungen — %@",
+            Key.AddedSymbolFmt to "%@ hinzugefügt",
+            Key.RemovedSymbolFmt to "%@ entfernt",
         ),
         AppLanguage.Italian to mapOf(
             Key.Watchlist to "Lista di controllo",
@@ -774,6 +780,8 @@ object L10n {
             Key.DigestNoSymbols to "Aggiungi simboli alla tua lista di controllo per ricevere un riepilogo giornaliero.",
             Key.DigestUpdating to "La tua lista di controllo è in fase di aggiornamento. Controlla di nuovo a breve.",
             Key.DigestMoversFormat to "I movimenti di oggi — %@",
+            Key.AddedSymbolFmt to "Aggiunto %@",
+            Key.RemovedSymbolFmt to "Rimosso %@",
         ),
         AppLanguage.Spanish to mapOf(
             Key.Watchlist to "Lista de seguimiento",
@@ -1016,6 +1024,8 @@ object L10n {
             Key.DigestNoSymbols to "Agrega símbolos a tu lista de seguimiento para recibir un resumen diario.",
             Key.DigestUpdating to "Tu lista de seguimiento se está actualizando. Vuelve a consultarla pronto.",
             Key.DigestMoversFormat to "Los movimientos de hoy — %@",
+            Key.AddedSymbolFmt to "%@ añadido",
+            Key.RemovedSymbolFmt to "%@ eliminado",
         ),
     )
 

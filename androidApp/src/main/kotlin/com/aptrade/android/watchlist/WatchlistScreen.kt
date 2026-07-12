@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aptrade.android.AppGraph
+import com.aptrade.android.l10n.trf
 import com.aptrade.android.l10n.tr
 import com.aptrade.android.ui.ErrorPane
 import com.aptrade.android.ui.formatPercent
@@ -105,7 +106,6 @@ private fun WatchlistContent(
 ) {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
-    val removeLabel = tr(L10n.Key.RemoveFromWatchlist)
     val undoLabel = tr(L10n.Key.Add)
 
     Box(Modifier.padding(padding).fillMaxSize()) {
@@ -129,7 +129,7 @@ private fun WatchlistContent(
                                 scope.launch {
                                     onRemove(row.symbol)
                                     val result = snackbarHostState.showSnackbar(
-                                        message = "${row.symbol} — $removeLabel",
+                                        message = trf(L10n.Key.RemovedSymbolFmt, row.symbol),
                                         actionLabel = undoLabel,
                                     )
                                     if (result == SnackbarResult.ActionPerformed) {
