@@ -11,10 +11,15 @@ final class MarketActivityPlannerTests: XCTestCase {
         return cal.date(from: DateComponents(year: y, month: mo, day: d, hour: h, minute: mi))!
     }
 
-    private func settings(marketOpenClose: Bool = false, newsDigest: Bool = false) -> AppSettings {
+    private func settings(
+        marketOpenClose: Bool = false,
+        newsDigest: Bool = false,
+        earningsReports: Bool = false
+    ) -> AppSettings {
         var s = AppSettings.default
         s.marketOpenClose = marketOpenClose
         s.newsDigest = newsDigest
+        s.earningsReports = earningsReports
         return s
     }
 
@@ -65,5 +70,24 @@ final class MarketActivityPlannerTests: XCTestCase {
         let (events, _) = planner.plan(now: now, state: SchedulerState(lastStatus: .closed),
                                        settings: settings(newsDigest: true))
         XCTAssertFalse(events.contains(.digestDue))
+    }
+
+    func test_earningsCheck_firesOncePerDay_whenEnabled() {
+        let now = et(2025, 6, 25, 10, 0)
+        let (first, state1) = planner.plan(now: now, state: SchedulerState(lastStatus: .open),
+                                           settings: settings(earningsReports: true))
+        XCTAssertTrue(first.contains(.earningsCheckDue))
+
+        let later = et(2025, 6, 25, 14, 0)
+        let (second, _) = planner.plan(now: later, state: state1, settings: settings(earningsReports: true))
+        XCTAssertFalse(second.contains(.earningsCheckDue), "already sent today")
+    }
+
+    func test_earningsCheck_suppressed_whenToggleOff() {
+        let now = et(2025, 6, 25, 10, 0)
+        let (events, state) = planner.plan(now: now, state: SchedulerState(lastStatus: .open),
+                                           settings: settings(earningsReports: false))
+        XCTAssertFalse(events.contains(.earningsCheckDue))
+        XCTAssertNil(state.lastEarningsDay, "so enabling later in the day still delivers it")
     }
 }

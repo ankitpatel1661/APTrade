@@ -8,6 +8,7 @@ public struct AppSettings: Equatable, Codable, Sendable {
     public var marketOpenClose: Bool
     public var newsDigest: Bool
     public var emailNotifications: Bool
+    public var earningsReports: Bool
 
     // Security & privacy
     public var biometricLogin: Bool
@@ -28,6 +29,7 @@ public struct AppSettings: Equatable, Codable, Sendable {
         marketOpenClose: Bool = false,
         newsDigest: Bool = true,
         emailNotifications: Bool = false,
+        earningsReports: Bool = true,
         biometricLogin: Bool = true,
         requireAuthOnLaunch: Bool = true,
         confirmTrades: Bool = true,
@@ -41,6 +43,7 @@ public struct AppSettings: Equatable, Codable, Sendable {
         self.marketOpenClose = marketOpenClose
         self.newsDigest = newsDigest
         self.emailNotifications = emailNotifications
+        self.earningsReports = earningsReports
         self.biometricLogin = biometricLogin
         self.requireAuthOnLaunch = requireAuthOnLaunch
         self.confirmTrades = confirmTrades
@@ -60,6 +63,7 @@ public struct AppSettings: Equatable, Codable, Sendable {
         marketOpenClose = try c.decodeIfPresent(Bool.self, forKey: .marketOpenClose) ?? d.marketOpenClose
         newsDigest = try c.decodeIfPresent(Bool.self, forKey: .newsDigest) ?? d.newsDigest
         emailNotifications = try c.decodeIfPresent(Bool.self, forKey: .emailNotifications) ?? d.emailNotifications
+        earningsReports = try c.decodeIfPresent(Bool.self, forKey: .earningsReports) ?? d.earningsReports
         biometricLogin = try c.decodeIfPresent(Bool.self, forKey: .biometricLogin) ?? d.biometricLogin
         requireAuthOnLaunch = try c.decodeIfPresent(Bool.self, forKey: .requireAuthOnLaunch) ?? d.requireAuthOnLaunch
         confirmTrades = try c.decodeIfPresent(Bool.self, forKey: .confirmTrades) ?? d.confirmTrades

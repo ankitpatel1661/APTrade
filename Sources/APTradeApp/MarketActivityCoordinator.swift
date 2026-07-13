@@ -49,6 +49,7 @@ final class MarketActivityCoordinator {
             case .marketOpened: await notifier.notifyMarketStatus(opened: true)
             case .marketClosed: await notifier.notifyMarketStatus(opened: false)
             case .digestDue: await notifier.notifyDigest(summary: await digestSummary())
+            case .earningsCheckDue: break // Real handler lands with the coordinator earnings-wiring task.
             }
         }
     }
