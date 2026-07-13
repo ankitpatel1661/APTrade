@@ -123,4 +123,40 @@ class MarketCalendarTest {
         // this instant must be interpreted as EST (UTC-5).
         assertEquals(MarketStatus.OPEN, calendar.status(mondayAfterNovemberDstEndTenAmEstOpen))
     }
+
+    // ---- holiday awareness (2026-07-13 increment) ----
+    //
+    // NOTE: the brief's draft constants for the first two tests below were wrong (off by
+    // 8 days -- 1_795_021_200 decodes to 2026-11-18, not 2026-11-26). Recomputed via
+    // `python3 -c "import datetime;print(datetime.datetime.utcfromtimestamp(N))"` and
+    // fixed here; the third constant (plainWednesdayStaysOpen) checked out as given.
+
+    @Test
+    fun thanksgivingMiddayIsClosed() {
+        // 2026-11-26 12:00 ET (EST, DST ended 2026-11-01) = 17:00 UTC = 1795712400
+        assertEquals(MarketStatus.CLOSED, MarketCalendar().status(1_795_712_400L))
+    }
+
+    @Test
+    fun halfDayClosesAtOnePmEt() {
+        // 2026-11-27 12:59 ET = 17:59 UTC = 1795802340 -> OPEN
+        assertEquals(MarketStatus.OPEN, MarketCalendar().status(1_795_802_340L))
+        // 2026-11-27 13:00 ET = 18:00 UTC = 1795802400 -> CLOSED
+        assertEquals(MarketStatus.CLOSED, MarketCalendar().status(1_795_802_400L))
+    }
+
+    @Test
+    fun plainWednesdayStaysOpen() {
+        // 2026-07-15 12:00 ET = 16:00 UTC (EDT) = 1784131200
+        assertEquals(MarketStatus.OPEN, MarketCalendar().status(1_784_131_200L))
+    }
+
+    @Test
+    fun holidayLookupDelegates() {
+        val cal = MarketCalendar()
+        // 2026-11-26 12:00 ET
+        val epochDay = cal.localEpochDay(1_795_712_400L)
+        assertEquals(USMarketHoliday.Thanksgiving, cal.holiday(epochDay))
+        assertEquals(false, cal.isHalfDay(epochDay))
+    }
 }
