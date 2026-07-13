@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -215,6 +216,25 @@ private fun EarningsRow(event: EarningsEvent, owned: Boolean) {
                 fontFeatureSettings = "tnum",
             ),
         )
+        // Company name beside the symbol — desktop-only by product decision (the mobile
+        // apps show the symbol alone). Finnhub's calendar payload carries no names, so the
+        // lookup is the bundled S&P 500 snapshot; non-index (user-owned) symbols simply
+        // have no name to show. Quiet weight: the symbol stays the anchor.
+        (event.companyName.ifBlank { null } ?: SP500Names[event.symbol])?.let { name ->
+            Spacer(Modifier.width(10.dp))
+            Text(
+                name,
+                style = TextStyle(
+                    fontFamily = InterFamily,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = DK.textSecondary,
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+        }
         Spacer(Modifier.weight(1f))
         SessionChip(event.session)
         event.epsEstimate?.let { eps ->
