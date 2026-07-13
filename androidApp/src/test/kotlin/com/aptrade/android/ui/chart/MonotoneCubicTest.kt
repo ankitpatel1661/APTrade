@@ -133,6 +133,30 @@ class MonotoneCubicTest {
     }
 
     @Test
+    fun `asymmetric peak requires opposing-signs zeroing to prevent overshoot`() {
+        // A peak with asymmetric secants: secants are +10 (left) and -3.33 (right).
+        // Plain averaging would give (10 + (-3.33)) / 2 = 3.33, a non-zero tangent that causes
+        // overshoot above the peak. Only the opposing-signs branch forces the tangent to zero,
+        // preventing bulge above y=100. The 30-unit x-span on descent makes overshoot visible.
+        val points = listOf(Offset(0f, 0f), Offset(10f, 100f), Offset(40f, 0f))
+        val segments = monotoneCubicControlPoints(points)
+        assertEquals(2, segments.size)
+
+        // First segment: (0,0) to (10,100) with secant slope +10.
+        // Second segment: (10,100) to (40,0) with secant slope -3.33.
+        // At the peak (10,100), the tangent must be zero, so the curve does not overshoot.
+        for (segment in segments) {
+            for (i in 0..30) {
+                val y = cubicAt(segment, i / 30f).y
+                assertTrue(
+                    y <= 100f + 0.01f,
+                    "asymmetric peak: curve overshot at t=${i / 30f} in segment ${segment.start}->${segment.end}: y=$y > 100",
+                )
+            }
+        }
+    }
+
+    @Test
     fun `flat run produces a flat curve`() {
         val points = listOf(Offset(0f, 5f), Offset(10f, 5f), Offset(20f, 5f))
         val segments = monotoneCubicControlPoints(points)
