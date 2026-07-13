@@ -143,23 +143,44 @@ struct CalendarView: View {
     }
 
     /// One earnings row: a gold dot when owned (watchlist/portfolio symbol), the ticker,
-    /// a session chip, and the EPS estimate when present.
+    /// a session chip, and the EPS estimate when present. On macOS the row is laid out as
+    /// four fixed columns — `dot · SYMBOL (fixed) · Company Name (fills middle) · chip +
+    /// est (right rail)` — mirroring the Windows desktop's Calendar table (names are a
+    /// desktop-platform decision; iPhone deliberately shows the symbol alone).
     private func earningsRow(_ event: EarningsEvent, owned: Bool) -> some View {
         HStack(spacing: 10) {
             Circle()
                 .fill(owned ? Theme.gold : Color.clear)
                 .frame(width: 6, height: 6)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(event.symbol)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Theme.textPrimary)
-                if !event.companyName.isEmpty {
-                    Text(event.companyName)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(1)
-                }
-            }
+            #if os(macOS)
+            // Symbol column — 76pt fits the longest ticker form ("BRK.B"-style).
+            Text(event.symbol)
+                .font(.system(size: 14, weight: .semibold).monospacedDigit())
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1)
+                .frame(width: 76, alignment: .leading)
+            // Company-name column — Finnhub's payload carries no names, so the lookup is
+            // the bundled S&P 500 snapshot (twin of the Windows desktop's SP500Names);
+            // non-index owned symbols render an empty column. Owns the middle space so the
+            // chip/est right rail sits flush at the row's end.
+            Text(event.companyName.isEmpty ? (sp500Names[event.symbol] ?? "") : event.companyName)
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            sessionChip(event.session)
+            // Estimate column — fixed width, end-aligned, always reserved so chip right
+            // edges stay on one line whether or not an estimate exists.
+            Text(event.epsEstimate.map { "est \(Money(amount: Decimal($0)).formatted)" } ?? "")
+                .font(.system(size: 12, weight: .medium).monospacedDigit())
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(1)
+                .frame(width: 92, alignment: .trailing)
+            #else
+            Text(event.symbol)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
             Spacer()
             sessionChip(event.session)
             if let eps = event.epsEstimate {
@@ -167,6 +188,7 @@ struct CalendarView: View {
                     .font(.system(size: 12, weight: .medium).monospacedDigit())
                     .foregroundStyle(Theme.textSecondary)
             }
+            #endif
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
