@@ -20,17 +20,6 @@ private func holidayName(_ holiday: USMarketHoliday) -> String {
     }
 }
 
-/// `EarningsSession` -> localized label. Swift twin of the Kotlin `sessionLabel`.
-@MainActor
-private func sessionLabel(_ session: EarningsSession) -> String {
-    switch session {
-    case .beforeOpen: return tr(.sessionBeforeOpen)
-    case .afterClose: return tr(.sessionAfterClose)
-    case .duringMarket: return tr(.sessionDuringMarket)
-    case .unknown: return ""
-    }
-}
-
 private let calendarShortDateFormatter: DateFormatter = {
     let f = DateFormatter()
     f.dateFormat = "MMM d"

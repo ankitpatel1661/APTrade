@@ -585,6 +585,8 @@ struct AssetDetailView: View {
                              valueColor: Theme.changeColor(quote.changePercent))
                     StatTile(label: tr(.statSymbol), value: quote.symbol)
                     StatTile(label: tr(.statType), value: typeLabel)
+                    StatTile(label: tr(.nextEarnings),
+                             value: viewModel.nextEarnings.map { "\($0.day) · \(sessionLabel($0.session))" } ?? "—")
                 }
             }
             .padding(20)

@@ -61,13 +61,28 @@ enum CompositionRoot {
 
     static func makeMarketActivityCoordinator() -> MarketActivityCoordinator {
         let repo = makeRepository()
+        // Shared with the planner below so "today" means the same trading day for both
+        // the open/close/digest scheduling and the earnings-day trading-day lookup.
+        let calendar = MarketCalendar()
+        let fetchEarnings = makeFetchEarningsUseCase()
         return MarketActivityCoordinator(
-            planner: MarketActivityPlanner(),
+            planner: MarketActivityPlanner(calendar: calendar),
             stateStore: schedulerStateStore,
             loadSettings: LoadSettingsUseCase(store: settingsStore),
             notifier: marketEventNotifier,
             loadWatchlist: LoadWatchlistUseCase(store: makeStore()),
-            fetchQuotes: FetchQuotesUseCase(repository: repo)
+            fetchQuotes: FetchQuotesUseCase(repository: repo),
+            fetchOwnedEarningsToday: { day in
+                // `fetchOwnedEarningsToday` can't throw (see the coordinator's init) — a
+                // failure must never kill the coordinator's tick, so every error, including
+                // cooperative cancellation, degrades to "no earnings this tick" here rather
+                // than propagating. `FetchEarningsCalendarUseCase.ownedToday` already
+                // degrades ordinary repository failures to `[]` internally; only
+                // `CancellationError` can still reach this point, and `try?` gives it the
+                // same treatment for the same reason.
+                (try? await fetchEarnings.ownedToday(day: day)) ?? []
+            },
+            calendar: calendar
         )
     }
 
@@ -127,11 +142,20 @@ enum CompositionRoot {
 
     static func makeDetailViewModel(for asset: Asset) -> AssetDetailViewModel {
         let repo = makeRepository()
+        // The key is read only here, never above infrastructure. Unlike
+        // `makeFetchEarningsUseCase()` (used where a non-optional use case is required),
+        // a missing key here means "no next-earnings stat" (nil), not a silent empty repo.
+        let key = AppConfig.finnhubAPIKey()
+        let fetchEarnings = key.map {
+            FetchEarningsCalendarUseCase(repository: FinnhubEarningsRepository(apiKey: $0),
+                                          ownSymbols: ownSymbolsProvider())
+        }
         return AssetDetailViewModel(
             asset: asset,
             fetchCandles: FetchCandlesUseCase(repository: repo),
             fetchQuotes: FetchQuotesUseCase(repository: repo),
-            fetchPortfolio: FetchPortfolioUseCase(store: portfolioStore)
+            fetchPortfolio: FetchPortfolioUseCase(store: portfolioStore),
+            fetchEarnings: fetchEarnings
         )
     }
 
@@ -171,11 +195,20 @@ enum CompositionRoot {
     static func makeCalendarViewModel() -> CalendarViewModel {
         // The key is read only here, never above infrastructure.
         let key = AppConfig.finnhubAPIKey()
-        let repo: EarningsCalendarRepository = key.map { FinnhubEarningsRepository(apiKey: $0) } ?? EmptyEarningsRepository()
         return CalendarViewModel(
-            fetchEarnings: FetchEarningsCalendarUseCase(repository: repo, ownSymbols: ownSymbolsProvider()),
+            fetchEarnings: makeFetchEarningsUseCase(),
             loadOwnSymbols: ownSymbolsProvider(),
             keyMissing: key == nil)
+    }
+
+    /// Key-gated earnings use case for callers that need a non-optional
+    /// `FetchEarningsCalendarUseCase` — an `EmptyEarningsRepository` fallback keeps them
+    /// silently empty rather than erroring when no Finnhub key is configured (mirrors
+    /// `makeNewsViewModel`/`makeCalendarViewModel`'s key gating).
+    private static func makeFetchEarningsUseCase() -> FetchEarningsCalendarUseCase {
+        let key = AppConfig.finnhubAPIKey()
+        let repo: EarningsCalendarRepository = key.map { FinnhubEarningsRepository(apiKey: $0) } ?? EmptyEarningsRepository()
+        return FetchEarningsCalendarUseCase(repository: repo, ownSymbols: ownSymbolsProvider())
     }
 
     /// watchlist ∪ portfolio symbols, read fresh per call. `makeStore()`/`portfolioStore` are

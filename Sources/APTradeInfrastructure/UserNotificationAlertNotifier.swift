@@ -52,6 +52,14 @@ public final class UserNotificationAlertNotifier: AlertNotifier, OrderFillNotifi
         )
     }
 
+    public func notifyEarnings(title: String, body: String) async {
+        await deliver(
+            identifier: "earnings-\(UUID().uuidString)",
+            title: title,
+            body: body
+        )
+    }
+
     private func deliver(identifier: String, title: String, body: String) async {
         guard let center = resolveCenterIfNeeded() else { return }
         await requestAuthorizationIfNeeded(center)

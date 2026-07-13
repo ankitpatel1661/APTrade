@@ -76,10 +76,12 @@ public protocol OrderFillNotifier: Sendable {
     func notifyFill(side: TradeSide, symbol: String, quantity: Quantity, amount: Money) async
 }
 
-/// Delivers time-based notifications: market open/close and the daily digest.
+/// Delivers time-based notifications: market open/close, the daily digest, and
+/// earnings-day alerts.
 public protocol MarketEventNotifier: Sendable {
     func notifyMarketStatus(opened: Bool) async
     func notifyDigest(summary: String) async
+    func notifyEarnings(title: String, body: String) async
 }
 
 /// Persists the scheduler's last-fired markers across launches.

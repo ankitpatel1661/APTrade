@@ -22,16 +22,35 @@ final class DetailFakeRepo: MarketDataRepository, @unchecked Sendable {
     }
 }
 
+/// Records nothing beyond the fixed events/error it was built with — mirrors
+/// `CalendarViewModelTests`' fake of the same shape (kept local since that one is
+/// `private` to its own file).
+private final class DetailFakeEarningsCalendarRepository: EarningsCalendarRepository, @unchecked Sendable {
+    private let events: [EarningsEvent]
+    private let error: (any Error)?
+
+    init(events: [EarningsEvent] = [], error: (any Error)? = nil) {
+        self.events = events
+        self.error = error
+    }
+
+    func earnings(fromDay: String, toDay: String) async throws -> [EarningsEvent] {
+        if let error { throw error }
+        return events
+    }
+}
+
 @MainActor
 final class AssetDetailViewModelTests: XCTestCase {
     let asset = Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock)
 
-    func makeVM(_ repo: DetailFakeRepo) -> AssetDetailViewModel {
+    func makeVM(_ repo: DetailFakeRepo, fetchEarnings: FetchEarningsCalendarUseCase? = nil) -> AssetDetailViewModel {
         let store = MemoryStore(Portfolio(cash: Money(amount: 10_000)))
         return AssetDetailViewModel(asset: asset,
                              fetchCandles: FetchCandlesUseCase(repository: repo),
                              fetchQuotes: FetchQuotesUseCase(repository: repo),
-                             fetchPortfolio: FetchPortfolioUseCase(store: store))
+                             fetchPortfolio: FetchPortfolioUseCase(store: store),
+                             fetchEarnings: fetchEarnings)
     }
 
     func test_load_setsQuoteAndPoints_loaded() async {
@@ -63,5 +82,21 @@ final class AssetDetailViewModelTests: XCTestCase {
         await vm.select(.oneYear)
         XCTAssertEqual(vm.timeframe, .oneYear)
         XCTAssertEqual(vm.points.count, 2)
+    }
+
+    func test_load_withOwnedEvent_populatesNextEarnings() async {
+        let event = EarningsEvent(symbol: "AAPL", companyName: "Apple Inc.", day: "2026-08-01",
+                                   session: .afterClose, epsEstimate: 1.5, epsActual: nil)
+        let earningsRepo = DetailFakeEarningsCalendarRepository(events: [event])
+        let fetchEarnings = FetchEarningsCalendarUseCase(repository: earningsRepo) { ["AAPL"] }
+        let vm = makeVM(DetailFakeRepo(), fetchEarnings: fetchEarnings)
+        await vm.load()
+        XCTAssertEqual(vm.nextEarnings, event)
+    }
+
+    func test_load_withNilFetchEarnings_leavesNextEarningsNil() async {
+        let vm = makeVM(DetailFakeRepo(), fetchEarnings: nil)
+        await vm.load()
+        XCTAssertNil(vm.nextEarnings)
     }
 }

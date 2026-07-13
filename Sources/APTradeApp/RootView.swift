@@ -487,6 +487,8 @@ public struct RootView: View {
                               subtitle: tr(.orderFillsSubtitle), isOn: $settingsVM.settings.orderFills)
                     toggleRow(icon: "clock", title: tr(.marketOpenAndClose),
                               subtitle: tr(.marketOpenAndCloseSubtitle), isOn: $settingsVM.settings.marketOpenClose)
+                    toggleRow(icon: "chart.bar.doc.horizontal", title: tr(.earningsReportsToggle),
+                              subtitle: tr(.earningsReportsSubtitle), isOn: $settingsVM.settings.earningsReports)
                     toggleRow(icon: "newspaper", title: tr(.dailyNewsDigest),
                               subtitle: tr(.dailyNewsDigestSubtitle), isOn: $settingsVM.settings.newsDigest)
 
