@@ -38,6 +38,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,11 +46,14 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aptrade.android.AppGraph
+import com.aptrade.android.l10n.tr
 import com.aptrade.android.ui.chart.ChartLegend
 import com.aptrade.android.ui.chart.CrosshairTooltip
 import com.aptrade.android.ui.chart.DualLineChart
@@ -62,6 +66,7 @@ import com.aptrade.shared.domain.AllocationSlice
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.TradeSide
+import com.aptrade.shared.l10n.L10n
 import java.util.Locale
 
 /** Reconstruct an [AssetKind] from the display [HoldingRowUi.kindLabel] so a held-row BUY can call
@@ -74,6 +79,24 @@ private fun assetKindFromLabel(label: String?): AssetKind = when (label) {
 
 /** The holding row a [TradeSheet] is opened against, plus the side the user tapped. */
 private data class TradeTarget(val row: HoldingRowUi, val side: TradeSide)
+
+/** The four content sections switched below the summary header — desktop parity
+ *  ([com.aptrade.desktop.portfolio.PortfolioPane]'s `PortfolioSection`), plus Performance as a
+ *  fourth switchable tab (desktop keeps its chart block always visible above the switcher;
+ *  Android instead folds it into the switcher itself so only one section — chart or list — is
+ *  on screen at a time, matching this screen's existing single-LazyColumn, one-thing-at-a-time
+ *  layout). Order and labels match desktop's set exactly (same four L10n keys). */
+private enum class PortfolioSection { Holdings, Allocation, Activity, Performance }
+
+/** [PortfolioSection]'s display label. A plain function (not an enum property) so it calls
+ *  [tr] fresh on every read — recomposes correctly when the active language changes, mirroring
+ *  desktop's `PortfolioSection.label()` (`PortfolioPane.kt`). */
+private fun PortfolioSection.label(): String = when (this) {
+    PortfolioSection.Holdings -> tr(L10n.Key.HoldingsSection)
+    PortfolioSection.Allocation -> tr(L10n.Key.AllocationSection)
+    PortfolioSection.Activity -> tr(L10n.Key.ActivitySection)
+    PortfolioSection.Performance -> tr(L10n.Key.PerformanceSection)
+}
 
 @Composable
 fun PortfolioScreen(onBack: () -> Unit, onOpenDetail: (String) -> Unit, confirmTrades: Boolean) {
@@ -133,6 +156,7 @@ private fun PortfolioContent(
     var tradeTarget by remember { mutableStateOf<TradeTarget?>(null) }
     var showResetConfirm by remember { mutableStateOf(false) }
     var showExportChooser by remember { mutableStateOf(false) }
+    var section by rememberSaveable { mutableStateOf(PortfolioSection.Holdings) }
 
     Scaffold(
         topBar = {
@@ -154,49 +178,66 @@ private fun PortfolioContent(
                     item { SummaryHeader(state) }
                     item { HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant) }
 
-                    item {
-                        PerformanceSection(
-                            state = state,
-                            onSetSpan = onSetSpan,
-                            onSetBenchmark = onSetBenchmark,
-                        )
-                    }
-                    item { HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant) }
-
-                    if (state.holdings.isNotEmpty()) {
-                        item { SectionHeader("HOLDINGS") }
-                        items(state.holdings, key = { it.symbol }) { row ->
-                            HoldingRow(
-                                row = row,
-                                onOpenDetail = { onOpenDetail(row.symbol) },
-                                onBuy = { tradeTarget = TradeTarget(row, TradeSide.Buy) },
-                                onSell = { tradeTarget = TradeTarget(row, TradeSide.Sell) },
+                    if (state.holdings.isEmpty()) {
+                        // Desktop parity (PortfolioPane.kt): an empty portfolio shows one
+                        // generic empty state below the summary — no switcher, no per-section
+                        // content — regardless of which section was last selected.
+                        item { EmptyHoldingsState() }
+                    } else {
+                        item {
+                            SectionSwitcher(
+                                selected = section,
+                                onSelect = { section = it },
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                             )
-                            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                         }
-                    }
+                        item { HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant) }
 
-                    if (state.allocationByHolding.isNotEmpty() || state.allocationByKind.isNotEmpty()) {
-                        item { SectionHeader("ALLOCATION") }
-                        if (state.allocationByHolding.isNotEmpty()) {
-                            item { AllocationGroupHeader("BY HOLDING") }
-                            items(state.allocationByHolding, key = { "h-${it.id}" }) { slice ->
-                                AllocationBar(slice)
+                        when (section) {
+                            PortfolioSection.Holdings -> {
+                                items(state.holdings, key = { it.symbol }) { row ->
+                                    HoldingRow(
+                                        row = row,
+                                        onOpenDetail = { onOpenDetail(row.symbol) },
+                                        onBuy = { tradeTarget = TradeTarget(row, TradeSide.Buy) },
+                                        onSell = { tradeTarget = TradeTarget(row, TradeSide.Sell) },
+                                    )
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                                }
                             }
-                        }
-                        if (state.allocationByKind.isNotEmpty()) {
-                            item { AllocationGroupHeader("BY CLASS") }
-                            items(state.allocationByKind, key = { "c-${it.id}" }) { slice ->
-                                AllocationBar(slice)
+                            PortfolioSection.Allocation -> {
+                                if (state.allocationByHolding.isNotEmpty()) {
+                                    item { AllocationGroupHeader(tr(L10n.Key.ByHolding)) }
+                                    items(state.allocationByHolding, key = { "h-${it.id}" }) { slice ->
+                                        AllocationBar(slice)
+                                    }
+                                }
+                                if (state.allocationByKind.isNotEmpty()) {
+                                    item { AllocationGroupHeader(tr(L10n.Key.ByClass)) }
+                                    items(state.allocationByKind, key = { "c-${it.id}" }) { slice ->
+                                        AllocationBar(slice)
+                                    }
+                                }
                             }
-                        }
-                    }
-
-                    if (state.transactions.isNotEmpty()) {
-                        item { SectionHeader("ACTIVITY") }
-                        items(state.transactions, key = { it.id }) { txn ->
-                            ActivityRow(txn)
-                            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                            PortfolioSection.Activity -> {
+                                if (state.transactions.isEmpty()) {
+                                    item { EmptyChartText(tr(L10n.Key.NoTransactionsYet)) }
+                                } else {
+                                    items(state.transactions, key = { it.id }) { txn ->
+                                        ActivityRow(txn)
+                                        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                                    }
+                                }
+                            }
+                            PortfolioSection.Performance -> {
+                                item {
+                                    PerformanceSection(
+                                        state = state,
+                                        onSetSpan = onSetSpan,
+                                        onSetBenchmark = onSetBenchmark,
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -445,6 +486,51 @@ private fun PerformanceSection(
     }
 }
 
+/** Holdings / Allocation / Activity / Performance segmented row — the Android counterpart of
+ *  desktop's pill-style [com.aptrade.desktop.portfolio.PortfolioPane]'s `SectionSwitcher`,
+ *  built from the same [SingleChoiceSegmentedButtonRow]/[SegmentedButton] pair the PERFORMANCE
+ *  span bar directly above it already uses (this screen's existing pill idiom). Only the
+ *  selected section renders below it; default is [PortfolioSection.Holdings]. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SectionSwitcher(
+    selected: PortfolioSection,
+    onSelect: (PortfolioSection) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    SingleChoiceSegmentedButtonRow(modifier.fillMaxWidth()) {
+        PortfolioSection.entries.forEachIndexed { index, option ->
+            SegmentedButton(
+                selected = selected == option,
+                onClick = { onSelect(option) },
+                shape = SegmentedButtonDefaults.itemShape(index, PortfolioSection.entries.size),
+            ) {
+                Text(
+                    option.label(),
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+/** Desktop-parity empty state (PortfolioPane.kt's `EmptyState`): the two source sentences
+ *  joined with an em dash, shown in place of the switcher + section content while the
+ *  portfolio holds nothing. */
+@Composable
+private fun EmptyHoldingsState() {
+    Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+        Text(
+            "${tr(L10n.Key.NoHoldingsYet)} — ${tr(L10n.Key.NoHoldingsHint)}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
 @Composable
 private fun EmptyChartText(text: String) {
     Text(
@@ -551,17 +637,6 @@ private fun SideChip(label: String, isBuy: Boolean) {
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
         )
     }
-}
-
-@Composable
-private fun SectionHeader(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelMedium,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp),
-    )
 }
 
 @Composable
