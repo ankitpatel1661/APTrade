@@ -3,7 +3,7 @@ package com.aptrade.android.detail
 import com.aptrade.android.FakeMarketDataRepository
 import com.aptrade.android.FakePortfolioStore
 import com.aptrade.shared.application.BuyAsset
-import com.aptrade.shared.application.FetchCandles
+import com.aptrade.shared.application.FetchChartWindow
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchProfile
@@ -53,7 +53,7 @@ class DetailViewModelTest {
         symbol = symbol,
         fetchProfile = FetchProfile(repo),
         fetchHistory = FetchHistory(repo),
-        fetchCandles = FetchCandles(repo),
+        fetchChartWindow = FetchChartWindow(repo),
         fetchMarketQuotes = FetchMarketQuotes(repo),
         buyAsset = BuyAsset(repo, store, Mutex()),
         sellAsset = SellAsset(repo, store, Mutex()),
@@ -120,9 +120,15 @@ class DetailViewModelTest {
         viewModel.onModeChange(ChartMode.Candles)
         dispatcher.scheduler.advanceUntilIdle()
 
-        val candles = viewModel.state.value.candles
-        assertEquals(1, candles.size)
-        assertEquals(CandleBar(100.00, 102.00, 99.50, 101.50), candles[0])
+        val state = viewModel.state.value
+        assertEquals(1, state.candles.size)
+        // FetchChartWindow (not the plain window-only FetchCandles) is now the sole candle
+        // source, carrying volume through for VWAP — and a single-candle series has no
+        // lookback ahead of it, so visibleStartIndex stays 0 (the full list IS the visible
+        // list, matching FetchChartWindow's own documented degenerate case).
+        assertEquals(CandleBar(100.00, 102.00, 99.50, 101.50, 1000.0), state.candles[0])
+        assertEquals(0, state.visibleStartIndex)
+        assertEquals(1, state.candleCloseTexts.size)
     }
 
     @Test
@@ -381,6 +387,98 @@ class DetailViewModelTest {
 
         assertEquals("Insufficient funds.", viewModel.state.value.tradeError)
         assertEquals(0, notifyCount)
+    }
+
+    // --- Indicator-active candle fetch (desktop parity — DetailViewModelTest.kt) -------------
+
+    @Test
+    fun firstIndicatorActivationFetchesCandlesExactlyOnce() = runTest(dispatcher.scheduler) {
+        val repo = FakeMarketDataRepository()
+        val candleFetches = mutableListOf<Timeframe>()
+        repo.candlesImpl = { _, tf ->
+            candleFetches += tf
+            listOf(Candle(1, Money.usd("1.00"), Money.usd("3.00"), Money.usd("0.50"), Money.usd("2.00")))
+        }
+        val viewModel = vm(repo)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.onIndicatorsActiveChange(true)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(listOf(Timeframe.OneDay), candleFetches)
+        assertEquals(true, viewModel.state.value.indicatorsActive)
+        assertEquals(1, viewModel.state.value.candles.size)
+    }
+
+    @Test
+    fun candleModeTimeframeChangeFetchesCandlesExactlyOnce() = runTest(dispatcher.scheduler) {
+        val repo = FakeMarketDataRepository()
+        val candleFetches = mutableListOf<Timeframe>()
+        repo.candlesImpl = { _, tf ->
+            candleFetches += tf
+            listOf(Candle(1, Money.usd("1.00"), Money.usd("3.00"), Money.usd("0.50"), Money.usd("2.00")))
+        }
+        val viewModel = vm(repo)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.onModeChange(ChartMode.Candles)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf(Timeframe.OneDay), candleFetches)
+
+        viewModel.onTimeframeChange(Timeframe.OneWeek)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf(Timeframe.OneDay, Timeframe.OneWeek), candleFetches)
+    }
+
+    @Test
+    fun reactivatingIndicatorsAfterTimeframeChangeRefetchesCandlesForNewTimeframe() = runTest(dispatcher.scheduler) {
+        val repo = FakeMarketDataRepository()
+        val candleFetches = mutableListOf<Timeframe>()
+        repo.candlesImpl = { _, tf ->
+            candleFetches += tf
+            listOf(Candle(1, Money.usd("1.00"), Money.usd("3.00"), Money.usd("0.50"), Money.usd("2.00")))
+        }
+        val viewModel = vm(repo)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        // Activate: first fetch, seeded for the initial timeframe (OneDay).
+        viewModel.onIndicatorsActiveChange(true)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf(Timeframe.OneDay), candleFetches)
+
+        // Deactivate: no fetch (candles just sit there, now a stale cache waiting to happen).
+        viewModel.onIndicatorsActiveChange(false)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf(Timeframe.OneDay), candleFetches)
+
+        // Timeframe change while inactive: Line mode with no active indicator doesn't need
+        // candles, so this must NOT fetch — the stale OneDay candles are left in state.
+        viewModel.onTimeframeChange(Timeframe.OneMonth)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf(Timeframe.OneDay), candleFetches)
+
+        // Reactivate: must detect the cached candles were fetched for OneDay while the
+        // selection is now OneMonth, and refetch for the NEW timeframe.
+        viewModel.onIndicatorsActiveChange(true)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf(Timeframe.OneDay, Timeframe.OneMonth), candleFetches)
+    }
+
+    @Test
+    fun deactivatingIndicatorsNeverRefetches() = runTest(dispatcher.scheduler) {
+        val repo = FakeMarketDataRepository()
+        val candleFetches = mutableListOf<Timeframe>()
+        repo.candlesImpl = { _, tf -> candleFetches += tf; emptyList() }
+        val viewModel = vm(repo)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.onIndicatorsActiveChange(true)
+        dispatcher.scheduler.advanceUntilIdle()
+        viewModel.onIndicatorsActiveChange(false)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(false, viewModel.state.value.indicatorsActive)
+        assertEquals(1, candleFetches.size) // only the activation fetch, none on deactivation
     }
 
     @Test

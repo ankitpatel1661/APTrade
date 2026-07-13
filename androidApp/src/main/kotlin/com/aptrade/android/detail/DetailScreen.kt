@@ -23,6 +23,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,7 +64,7 @@ fun DetailScreen(symbol: String, confirmTrades: Boolean, onBack: () -> Unit) {
             symbol = symbol,
             fetchProfile = AppGraph.fetchProfile,
             fetchHistory = AppGraph.fetchHistory,
-            fetchCandles = AppGraph.fetchCandles,
+            fetchChartWindow = AppGraph.fetchChartWindow,
             fetchMarketQuotes = AppGraph.fetchMarketQuotes,
             buyAsset = portfolio.buyAsset,
             sellAsset = portfolio.sellAsset,
@@ -116,19 +117,34 @@ fun DetailScreen(symbol: String, confirmTrades: Boolean, onBack: () -> Unit) {
             ) { Text("BUY / SELL") }
             Spacer(Modifier.height(16.dp))
 
+            // Indicator selection is view-local UI state (desktop parity: view-local `remember`,
+            // none on by default). Reported to the VM so it fetches candles in Line mode when
+            // any indicator is on — the VM otherwise only needs OHLCV bars in Candles mode.
+            var selection by remember { mutableStateOf(emptySet<Indicator>()) }
+            LaunchedEffect(selection.isNotEmpty()) { viewModel.onIndicatorsActiveChange(selection.isNotEmpty()) }
+            val series = remember(state.candles, selection) { computeIndicators(state.candles, selection) }
+            val overlaysOn = selection.any { it.isOverlay } && state.candles.size >= 2
+            val visibleCandles = remember(state.candles, state.visibleStartIndex) {
+                state.candles.drop(state.visibleStartIndex)
+            }
+            // What's actually rendered/scrubbed: candle-sourced (visible slice) whenever
+            // overlays are on OR the mode is Candles; otherwise the plain line-history values —
+            // mirrors desktop's DetailContent chart-selection `when`.
+            val readoutFromCandles = overlaysOn || state.mode == ChartMode.Candles
+
             // Span/mode selectors sit BELOW the chart (UAT request) — crosshair drag lives on
             // the chart's own Box so scrubbing near the top of the screen never fights a
             // FilterChip tap target above it.
             var dragX by remember { mutableStateOf<Float?>(null) }
             var chartWidthPx by remember { mutableStateOf(0f) }
-            val pointCount = if (state.mode == ChartMode.Line) state.lineValues.size else state.candles.size
+            val pointCount = if (readoutFromCandles) visibleCandles.size else state.lineValues.size
 
             Box(
                 Modifier
                     .fillMaxWidth()
                     .height(240.dp)
                     .onSizeChanged { chartWidthPx = it.width.toFloat() }
-                    .pointerInput(state.mode, pointCount) {
+                    .pointerInput(state.mode, pointCount, overlaysOn) {
                         detectDragGestures(
                             onDragStart = { offset -> dragX = offset.x },
                             onDrag = { change, _ -> dragX = change.position.x },
@@ -141,10 +157,31 @@ fun DetailScreen(symbol: String, confirmTrades: Boolean, onBack: () -> Unit) {
                     state.isLoadingChart -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                     state.chartError != null ->
                         ErrorPane(state.chartError!!, onRetry = viewModel::retryChart, Modifier.align(Alignment.Center))
+                    // Overlays on: honor the mode. Candles mode -> real candlesticks with overlay
+                    // polylines on top (shared candle index space); Line mode -> the smoothed
+                    // price line drawn from candle closes. Both share one index -> x space so
+                    // overlays align. Otherwise the original Line/Candles rendering.
+                    overlaysOn && state.mode == ChartMode.Candles ->
+                        CandleChartWithOverlays(
+                            candles = state.candles,
+                            series = series,
+                            selection = selection,
+                            visibleStartIndex = state.visibleStartIndex,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    overlaysOn ->
+                        PriceChartWithOverlays(
+                            candles = state.candles,
+                            series = series,
+                            selection = selection,
+                            lineColor = MaterialTheme.colorScheme.primary,
+                            visibleStartIndex = state.visibleStartIndex,
+                            modifier = Modifier.fillMaxSize(),
+                        )
                     state.mode == ChartMode.Line ->
                         LineChart(state.lineValues, Modifier.fillMaxSize())
                     else ->
-                        CandleChart(state.candles, Modifier.fillMaxSize())
+                        CandleChart(visibleCandles, Modifier.fillMaxSize())
                 }
 
                 // Crosshair: only meaningful once the chart has actually rendered (not loading,
@@ -152,16 +189,16 @@ fun DetailScreen(symbol: String, confirmTrades: Boolean, onBack: () -> Unit) {
                 if (!state.isLoadingChart && state.chartError == null && pointCount >= 2) {
                     dragX?.let { x ->
                         val index = nearestIndex(x, chartWidthPx, pointCount)
-                        val curveValues = if (state.mode == ChartMode.Line) {
-                            state.lineValues
+                        val curveValues = if (readoutFromCandles) {
+                            visibleCandles.map { it.close }
                         } else {
-                            state.candles.map { it.close }
+                            state.lineValues
                         }
                         CrosshairOverlay(curveValues, index, modifier = Modifier.fillMaxSize())
-                        val readout = if (state.mode == ChartMode.Line) {
-                            crosshairReadout(index, state.lineValueTexts, state.lineDates)
-                        } else {
+                        val readout = if (readoutFromCandles) {
                             crosshairReadout(index, state.candleCloseTexts, state.candleDates)
+                        } else {
+                            crosshairReadout(index, state.lineValueTexts, state.lineDates)
                         }
                         readout?.let {
                             CrosshairTooltip(
@@ -175,6 +212,18 @@ fun DetailScreen(symbol: String, confirmTrades: Boolean, onBack: () -> Unit) {
                     }
                 }
             }
+            if (selection.contains(Indicator.Rsi) && state.candles.size >= 2) {
+                Spacer(Modifier.height(12.dp))
+                RsiPane(series = series, visibleStartIndex = state.visibleStartIndex)
+            }
+            if (selection.contains(Indicator.Macd) && state.candles.size >= 2) {
+                Spacer(Modifier.height(12.dp))
+                MacdPane(series = series, visibleStartIndex = state.visibleStartIndex)
+            }
+            Spacer(Modifier.height(16.dp))
+            IndicatorChips(selection = selection, onToggle = { ind ->
+                selection = if (selection.contains(ind)) selection - ind else selection + ind
+            })
             Spacer(Modifier.height(16.dp))
 
             Row {

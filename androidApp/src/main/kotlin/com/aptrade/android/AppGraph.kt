@@ -7,7 +7,7 @@ import com.aptrade.shared.application.AlertNotifier
 import com.aptrade.shared.application.BuyAsset
 import com.aptrade.shared.application.CreatePriceAlert
 import com.aptrade.shared.application.EvaluateAlerts
-import com.aptrade.shared.application.FetchCandles
+import com.aptrade.shared.application.FetchChartWindow
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketNews
 import com.aptrade.shared.application.FetchMarketQuotes
@@ -62,7 +62,10 @@ object AppGraph {
     val fetchSearch = FetchSearch(repository)
     val fetchProfile = FetchProfile(repository)
     val fetchHistory = FetchHistory(repository)
-    val fetchCandles = FetchCandles(repository)
+    // Indicator warm-up lookback pad + visible window (desktop parity) — replaces the plain
+    // window-only FetchCandles as DetailViewModel's sole candle source, since Candles-mode
+    // rendering and indicator math now share the one fetch.
+    val fetchChartWindow = FetchChartWindow(repository)
 
     // The macOS app's seed watchlist.
     val defaultSymbols = listOf("AAPL", "SPY", "BTC-USD", "ETH-USD")
