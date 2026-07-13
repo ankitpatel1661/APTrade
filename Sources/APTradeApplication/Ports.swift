@@ -76,10 +76,12 @@ public protocol OrderFillNotifier: Sendable {
     func notifyFill(side: TradeSide, symbol: String, quantity: Quantity, amount: Money) async
 }
 
-/// Delivers time-based notifications: market open/close and the daily digest.
+/// Delivers time-based notifications: market open/close, the daily digest, and
+/// earnings-day alerts.
 public protocol MarketEventNotifier: Sendable {
     func notifyMarketStatus(opened: Bool) async
     func notifyDigest(summary: String) async
+    func notifyEarnings(title: String, body: String) async
 }
 
 /// Persists the scheduler's last-fired markers across launches.
@@ -99,4 +101,13 @@ public protocol NewsRepository: Sendable {
 public protocol BookmarkStore: Sendable {
     func load() -> [NewsArticle]
     func save(_ articles: [NewsArticle])
+}
+
+/// Supplies upcoming/reported earnings releases for a date window. Methods throw on
+/// failure; `FetchEarningsCalendarUseCase` degrades failures to an empty list so the
+/// calendar's holiday banners still render when the network is down — cooperative
+/// cancellation (`CancellationError`) is the one exception to the degrade-to-empty rule
+/// and is rethrown.
+public protocol EarningsCalendarRepository: Sendable {
+    func earnings(fromDay: String, toDay: String) async throws -> [EarningsEvent]
 }

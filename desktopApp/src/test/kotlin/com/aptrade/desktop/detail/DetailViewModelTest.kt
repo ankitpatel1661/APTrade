@@ -1,7 +1,9 @@
 package com.aptrade.desktop.detail
 
 import com.aptrade.desktop.FakeMarketDataRepository
+import com.aptrade.shared.application.EmptyEarningsRepository
 import com.aptrade.shared.application.FetchChartWindow
+import com.aptrade.shared.application.FetchEarningsCalendar
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchProfile
@@ -22,7 +24,10 @@ import kotlin.test.assertNotNull
 
 private fun vm(repo: FakeMarketDataRepository, scope: kotlinx.coroutines.CoroutineScope) =
     DetailViewModel("AAPL", FetchProfile(repo), FetchMarketQuotes(repo),
-        FetchHistory(repo), FetchChartWindow(repo), scope)
+        FetchHistory(repo), FetchChartWindow(repo),
+        // Not under test here (see DetailViewModelEarningsTest) — an always-empty fetch keeps
+        // these chart-focused tests unaffected by the Next-earnings load.
+        FetchEarningsCalendar(EmptyEarningsRepository) { emptySet() }, scope)
 
 class DetailViewModelTest {
 

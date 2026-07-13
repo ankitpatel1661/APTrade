@@ -36,6 +36,8 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aptrade.android.AppGraph
+import com.aptrade.android.calendar.sessionLabel
+import com.aptrade.android.l10n.tr
 import com.aptrade.android.portfolio.TradeSheet
 import com.aptrade.android.portfolio.TradeSheetInfo
 import com.aptrade.android.ui.ErrorPane
@@ -48,6 +50,7 @@ import com.aptrade.android.ui.chart.crosshairReadout
 import com.aptrade.android.ui.chart.nearestIndex
 import com.aptrade.shared.domain.Timeframe
 import com.aptrade.shared.domain.TradeSide
+import com.aptrade.shared.l10n.L10n
 
 private val timeframeLabels = listOf(
     Timeframe.OneDay to "1D",
@@ -71,6 +74,7 @@ fun DetailScreen(symbol: String, confirmTrades: Boolean, onBack: () -> Unit) {
             sellAsset = portfolio.sellAsset,
             nowEpochSeconds = { System.currentTimeMillis() / 1000 },
             notifyOrderFill = AppGraph.notifyOrderFill,
+            fetchEarnings = AppGraph.fetchEarningsCalendar,
         )
     }
     val state by viewModel.state.collectAsState()
@@ -250,6 +254,18 @@ fun DetailScreen(symbol: String, confirmTrades: Boolean, onBack: () -> Unit) {
                     onClick = { viewModel.onModeChange(ChartMode.Candles) },
                     label = { Text("Candles") },
                 )
+            }
+
+            state.nextEarnings?.let { next ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                    Text(
+                        tr(L10n.Key.NextEarnings),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text("${next.day} · ${sessionLabel(next.session)}", style = MaterialTheme.typography.bodySmall)
+                }
             }
         }
     }

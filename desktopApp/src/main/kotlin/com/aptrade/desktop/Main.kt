@@ -24,6 +24,9 @@ import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import com.aptrade.desktop.calendar.CalendarPane
+import com.aptrade.desktop.calendar.CalendarViewModel
+import com.aptrade.desktop.calendar.sessionLabel
 import com.aptrade.desktop.designkit.APTradeDesktopTheme
 import com.aptrade.desktop.detail.DetailScreen
 import com.aptrade.desktop.news.NewsPane
@@ -40,6 +43,8 @@ import com.aptrade.desktop.search.SearchViewModel
 import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.l10n.AppLanguage
 import com.aptrade.desktop.l10n.LocalizationManager
+import com.aptrade.desktop.l10n.tr
+import com.aptrade.desktop.l10n.trf
 import com.aptrade.desktop.ui.AccountPanel
 import com.aptrade.desktop.ui.AppShell
 import com.aptrade.desktop.ui.AppTab
@@ -47,8 +52,10 @@ import com.aptrade.desktop.watchlist.PriceAlertSheet
 import com.aptrade.desktop.watchlist.WatchlistPane
 import com.aptrade.desktop.watchlist.WatchlistViewModel
 import com.aptrade.shared.domain.Asset
+import com.aptrade.shared.domain.MarketCalendar
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.domain.WatchlistEntry
+import com.aptrade.shared.l10n.L10n
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -59,6 +66,9 @@ import java.awt.Dimension
 fun main() = application {
     // ONE AppGraph — one Ktor client — for the whole process.
     val graph = remember { AppGraph() }
+    // Pure/stateless (see MarketCalendar's KDoc); one instance is plenty, shared by the
+    // earnings "today" gate below the same way graph's other pure helpers are shared.
+    val marketCalendar = remember { MarketCalendar() }
 
     // RECORDED DIVERGENCE (increment 6d.1, macOS parity gap): macOS delivers alert/
     // order-fill/market notifications via UNUserNotificationCenter — no equivalent
@@ -114,6 +124,28 @@ fun main() = application {
             loadSettings = { graph.settingsStore.load() },
             notifyMarketStatus = { opened -> graph.trayNotifier.notifyMarketStatus(opened) },
             notifyDigest = { summary -> graph.trayNotifier.notifyDigest(summary) },
+            // All L10n formatting happens here (where tr/trf live) — the coordinator only
+            // hands back the typed EarningsEvent it fetched; see the KDoc on the coordinator's
+            // notifyEarnings param for why.
+            notifyEarnings = { event ->
+                // sessionLabel(Unknown) is "" (no L10n key for it); every language's
+                // EarningsTodayBodyFmt ends with "· %2$s" (EN/DE/IT/ES all verified), so an
+                // empty label would leave a dangling "… · " — trim the orphaned separator in
+                // that one case only, never when a real session label is present.
+                val label = sessionLabel(event.session)
+                val body = trf(L10n.Key.EarningsTodayBodyFmt, event.symbol, label)
+                graph.trayNotifier.notifyEarnings(
+                    title = tr(L10n.Key.EarningsTodayTitle),
+                    body = if (label.isEmpty()) body.trimEnd(' ', '·') else body,
+                )
+            },
+            fetchTodaysOwnEarnings = {
+                // Same market-local trading-day string the planner/coordinator's own
+                // scheduling already keys off of (MarketCalendar.tradingDay), so "today" here
+                // always matches the day the 60s tick considers current.
+                val today = marketCalendar.tradingDay(System.currentTimeMillis() / 1000)
+                graph.fetchEarningsCalendar.ownedToday(today)
+            },
             fetchWatchlist = graph.fetchWatchlist,
             fetchMarketQuotes = graph.fetchMarketQuotes,
             scope = appScope,
@@ -127,6 +159,18 @@ fun main() = application {
             fetchMarketNews = graph.fetchMarketNews,
             loadBookmarks = graph.loadBookmarks,
             toggleBookmark = graph.toggleBookmark,
+            scope = appScope,
+        )
+    }
+    // Calendar VM is created once (like News) but loaded lazily on the first visit to the
+    // Calendar tab — see the newsStarted-mirroring calendarStarted gate in AppRoot below.
+    val calendarViewModel = remember {
+        CalendarViewModel(
+            fetch = graph.fetchEarningsCalendar,
+            calendar = marketCalendar,
+            ownSymbols = graph.ownSymbols,
+            needsKey = graph.earningsKeyMissing,
+            nowEpochSeconds = { System.currentTimeMillis() / 1000 },
             scope = appScope,
         )
     }
@@ -279,6 +323,7 @@ fun main() = application {
                     watchlistViewModel = watchlistViewModel,
                     portfolioViewModel = portfolioViewModel,
                     newsViewModel = newsViewModel,
+                    calendarViewModel = calendarViewModel,
                     searchViewModel = searchViewModel,
                     addFieldViewModel = addFieldViewModel,
                     paletteOpen = paletteOpen,
@@ -320,6 +365,7 @@ private fun AppRoot(
     watchlistViewModel: WatchlistViewModel,
     portfolioViewModel: PortfolioViewModel,
     newsViewModel: NewsViewModel,
+    calendarViewModel: CalendarViewModel,
     searchViewModel: SearchViewModel,
     addFieldViewModel: SearchViewModel,
     paletteOpen: Boolean,
@@ -361,6 +407,15 @@ private fun AppRoot(
         if (selectedTab == AppTab.News && !newsStarted) {
             newsStarted = true
             newsViewModel.start()
+        }
+    }
+    // Mirrors newsStarted exactly: the Calendar tab's single 14-day load fires only once the
+    // user opens it.
+    var calendarStarted by remember { mutableStateOf(false) }
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == AppTab.Calendar && !calendarStarted) {
+            calendarStarted = true
+            calendarViewModel.load()
         }
     }
 
@@ -443,6 +498,7 @@ private fun AppRoot(
                     onRefresh = newsViewModel::refresh,
                     onToggleBookmark = newsViewModel::toggleBookmark,
                 )
+                AppTab.Calendar -> CalendarPane(calendarViewModel)
             }
         }
 

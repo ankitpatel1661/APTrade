@@ -1,4 +1,4 @@
-package com.aptrade.desktop.infra
+package com.aptrade.shared.infrastructure
 
 import com.aptrade.shared.application.SchedulerState
 import com.aptrade.shared.domain.MarketStatus
@@ -10,6 +10,10 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
+/** Promoted (Task 8) alongside the class itself from
+ *  `desktopApp/src/test/kotlin/com/aptrade/desktop/infra/FileSchedulerStateStoreTest.kt` —
+ *  same cases, package-renamed, pinning the shared `jvmCommonMain` copy that Android's
+ *  `AppGraph` now uses too. */
 class FileSchedulerStateStoreTest {
 
     private fun tempFile() = createTempDirectory("aptrade-scheduler-test").resolve("schedulerState.json")
@@ -60,5 +64,27 @@ class FileSchedulerStateStoreTest {
         val state = SchedulerState(lastStatus = null, lastDigestDay = "2026-07-05")
         store.save(state)
         assertEquals(state, store.load())
+    }
+
+    @Test
+    fun `round-trips lastEarningsDay`() = runTest {
+        val file = tempFile()
+        val store = FileSchedulerStateStore(file)
+        val state = SchedulerState(lastStatus = MarketStatus.OPEN, lastDigestDay = "2026-07-05", lastEarningsDay = "2026-07-05")
+        store.save(state)
+        assertEquals(state, store.load())
+    }
+
+    @Test
+    fun `old file without lastEarningsDay loads fine with it defaulting to null`() = runTest {
+        // Back-compat pin: a schedulerState.json written before the earnings-check field
+        // existed has only lastStatus/lastDigestDay. Lenient decode must still succeed and
+        // default lastEarningsDay to null rather than failing the whole-blob load.
+        val file = tempFile()
+        file.writeText("""{"lastStatus":"OPEN","lastDigestDay":"2026-07-05"}""")
+        val loaded = FileSchedulerStateStore(file).load()
+        assertEquals(MarketStatus.OPEN, loaded.lastStatus)
+        assertEquals("2026-07-05", loaded.lastDigestDay)
+        assertEquals(null, loaded.lastEarningsDay)
     }
 }

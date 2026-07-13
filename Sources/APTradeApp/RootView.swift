@@ -9,7 +9,9 @@ import APTradeDomain
 public struct RootView: View {
     public init() {}
 
-    enum Tab: String, CaseIterable { case watchlist = "Watchlist", portfolio = "Portfolio", news = "News" }
+    enum Tab: String, CaseIterable {
+        case watchlist = "Watchlist", portfolio = "Portfolio", news = "News", calendar = "Calendar"
+    }
     private enum PanelRoute {
         case menu, profile, accountSettings, notifications, appearance, security, help, about, language
     }
@@ -62,6 +64,10 @@ public struct RootView: View {
                      onOpenAccount: { showAccountPanel = true })
                 .tabItem { Label(tr(.news), systemImage: "newspaper") }
                 .tag(Tab.news)
+            CalendarView(onOpenSearch: { showPalette = true },
+                         onOpenAccount: { showAccountPanel = true })
+                .tabItem { Label(tr(.calendarTab), systemImage: "calendar") }
+                .tag(Tab.calendar)
         }
         .tint(Theme.gold)
         .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
@@ -141,6 +147,7 @@ public struct RootView: View {
                         case .watchlist: WatchlistView(switcher: AnyView(switcher))
                         case .portfolio: PortfolioView(switcher: AnyView(switcher))
                         case .news: NewsView(switcher: AnyView(switcher))
+                        case .calendar: CalendarView(switcher: AnyView(switcher))
                         }
                     }
                 }
@@ -480,6 +487,8 @@ public struct RootView: View {
                               subtitle: tr(.orderFillsSubtitle), isOn: $settingsVM.settings.orderFills)
                     toggleRow(icon: "clock", title: tr(.marketOpenAndClose),
                               subtitle: tr(.marketOpenAndCloseSubtitle), isOn: $settingsVM.settings.marketOpenClose)
+                    toggleRow(icon: "chart.bar.doc.horizontal", title: tr(.earningsReportsToggle),
+                              subtitle: tr(.earningsReportsSubtitle), isOn: $settingsVM.settings.earningsReports)
                     toggleRow(icon: "newspaper", title: tr(.dailyNewsDigest),
                               subtitle: tr(.dailyNewsDigestSubtitle), isOn: $settingsVM.settings.newsDigest)
 
@@ -814,6 +823,7 @@ public struct RootView: View {
         case .watchlist: return tr(.watchlist)
         case .portfolio: return tr(.portfolio)
         case .news:      return tr(.news)
+        case .calendar:  return tr(.calendarTab)
         }
     }
 
@@ -827,6 +837,8 @@ public struct RootView: View {
                     Text(tabTitle(item))
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(selected ? Theme.textPrimary : Theme.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                         .padding(.horizontal, 18)
                         .padding(.vertical, 8)
                         .background {

@@ -15,10 +15,13 @@ import com.aptrade.shared.application.AlertStore
 import com.aptrade.shared.application.BookmarkStore
 import com.aptrade.shared.application.BuyAsset
 import com.aptrade.shared.application.CreatePriceAlert
+import com.aptrade.shared.application.EarningsCalendarRepository
+import com.aptrade.shared.application.EmptyEarningsRepository
 import com.aptrade.shared.application.EvaluateAlerts
 import com.aptrade.shared.application.FetchCandles
 import com.aptrade.shared.application.FetchChartWindow
 import com.aptrade.shared.application.FetchCompanyNews
+import com.aptrade.shared.application.FetchEarningsCalendar
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketNews
 import com.aptrade.shared.application.FetchMarketQuotes
@@ -45,6 +48,7 @@ import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.domain.WatchlistEntry
 import com.aptrade.shared.infrastructure.FilePortfolioStore
+import com.aptrade.shared.infrastructure.FinnhubEarningsRepository
 import com.aptrade.shared.infrastructure.FinnhubNewsRepository
 import com.aptrade.shared.infrastructure.YahooMarketDataRepository
 import kotlinx.coroutines.sync.Mutex
@@ -109,6 +113,27 @@ class AppGraph(
     val fetchMarketNews = newsRepository?.let { FetchMarketNews(it) }
     val fetchCompanyNews = newsRepository?.let { FetchCompanyNews(it) }
 
+    // Earnings calendar (Task 6): same key-gated, startup-frozen shape as newsRepository/
+    // keyMissing above, sharing the SAME finnhubApiKey read at construction time — one key
+    // read, two consumers. Unlike newsRepository, earningsRepository is never null: with no
+    // key it falls back to EmptyEarningsRepository so the Calendar tab's holiday rows still
+    // render (only the earnings rows are empty) rather than needing a nullable type.
+    val earningsRepository: EarningsCalendarRepository =
+        finnhubApiKey?.let { FinnhubEarningsRepository(it) } ?: EmptyEarningsRepository
+    val earningsKeyMissing: Boolean = finnhubApiKey == null
+    // Shared symbol-ownership provider: watchlist ∪ portfolio, read fresh per call — same two
+    // use cases the coordinator's digestSummary() reads from (fetchWatchlist.execute()) plus
+    // the portfolio store's holdings, mirroring PortfolioViewModel's own symbol source. Public
+    // (not inlined into fetchEarningsCalendar below) so the desktop Calendar tab's ViewModel
+    // (Task 7) can share this EXACT closure for its "gold dot" owned-row indicator instead of
+    // Main.kt duplicating the watchlist-union-portfolio computation a second time.
+    val ownSymbols: suspend () -> Set<String> = {
+        val watchlistSymbols = fetchWatchlist.execute().map { it.symbol }
+        val portfolioSymbols = fetchPortfolio.execute().positions.map { it.asset.symbol }
+        (watchlistSymbols + portfolioSymbols).toSet()
+    }
+    val fetchEarningsCalendar: FetchEarningsCalendar = FetchEarningsCalendar(earningsRepository, ownSymbols)
+
     // Alerts & notifications (increment 6d.1). The notifier seam: TrayNotifier delivers
     // via the shared `trayState`, which the Tray composable in Main.kt also mounts.
     val trayNotifier = TrayNotifier(trayState)
@@ -136,12 +161,13 @@ class AppGraph(
             trayNotifier.notifyFill(side, symbol, quantityText, amountFormatted)
         }
 
-    // Only the production Yahoo repository and (when configured) the Finnhub news
-    // repository own closeable Ktor clients; test doubles passed via the constructor
+    // Only the production Yahoo repository and (when configured) the Finnhub news/earnings
+    // repositories own closeable Ktor clients; test doubles passed via the constructor
     // typically aren't AutoCloseable and are safely skipped.
     fun close() {
         (repository as? AutoCloseable)?.close()
         (newsRepository as? AutoCloseable)?.close()
+        (earningsRepository as? AutoCloseable)?.close()
     }
 }
 

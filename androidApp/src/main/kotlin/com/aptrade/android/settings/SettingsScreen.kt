@@ -309,8 +309,13 @@ private fun LanguagePage(language: AppLanguage, onSelectLanguage: (AppLanguage) 
  *  `AppGraph.notifyOrderFill` (spec A2 — wired into both `PortfolioViewModel` and
  *  `DetailViewModel`'s buy/sell paths, posting to the `AndroidAlertNotifier`'s
  *  `order_fills` notification channel), the same functional wiring as desktop's
- *  `AppGraphNotifyOrderFill`/`TrayNotifier.notifyFill`. [AppSettings.emailNotifications]
- *  is persisted-but-unwired by design on every platform (no email pipeline exists). */
+ *  `AppGraphNotifyOrderFill`/`TrayNotifier.notifyFill`. [AppSettings.marketOpenClose],
+ *  [AppSettings.newsDigest], and [AppSettings.earningsReports] are now ALSO functional
+ *  (Task 8) — all three gate `AndroidMarketActivityCoordinator`'s 60s tick (started in
+ *  `MainActivity`), the same wiring desktop's `DesktopMarketActivityCoordinator` provides.
+ *  Before Task 8 these three toggles were persisted-but-unwired; this is the intended scope
+ *  of that task, not creep. [AppSettings.emailNotifications] is persisted-but-unwired by
+ *  design on every platform (no email pipeline exists). */
 @Composable
 private fun NotificationsPage(settings: AppSettings, onUpdate: ((AppSettings) -> AppSettings) -> Unit) {
     SectionLabel(tr(L10n.Key.PushNotifications))
@@ -338,6 +343,12 @@ private fun NotificationsPage(settings: AppSettings, onUpdate: ((AppSettings) ->
         subtitle = tr(L10n.Key.DailyNewsDigestSubtitle),
         checked = settings.newsDigest,
         onCheckedChange = { checked -> onUpdate { it.copy(newsDigest = checked) } },
+    )
+    ToggleRow(
+        title = tr(L10n.Key.EarningsReportsToggle),
+        subtitle = tr(L10n.Key.EarningsReportsSubtitle),
+        checked = settings.earningsReports,
+        onCheckedChange = { checked -> onUpdate { it.copy(earningsReports = checked) } },
     )
     Spacer(Modifier.height(10.dp))
     // macOS/desktop reuse tr(.email) ("Email") for this section label — not a dedicated

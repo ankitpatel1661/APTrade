@@ -40,6 +40,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aptrade.desktop.AppGraph
 import com.aptrade.desktop.LocalAppGraph
+import com.aptrade.desktop.calendar.formatEventDate
+import com.aptrade.desktop.calendar.sessionLabel
 import com.aptrade.desktop.designkit.CandleChart
 import com.aptrade.desktop.designkit.ChangePill
 import com.aptrade.desktop.designkit.chipLabel
@@ -87,6 +89,7 @@ fun DetailScreen(
             fetchMarketQuotes = graph.fetchMarketQuotes,
             fetchHistory = graph.fetchHistory,
             fetchChartWindow = graph.fetchChartWindow,
+            fetchEarningsCalendar = graph.fetchEarningsCalendar,
             scope = scope,
             fetchCompanyNews = graph.fetchCompanyNews,
             loadBookmarks = graph.loadBookmarks,
@@ -492,6 +495,16 @@ private fun StatRow(
     }
 }
 
+/** One-sided variant of [StatRow] for a stat with no natural pairing on its card (e.g.
+ *  Next-earnings, which doesn't share a row with anything else in KEY STATS). File
+ *  convention: two-value stats use the pair overload above, singles use this one. */
+@Composable
+private fun StatRow(label: String, value: String, color: Color = DK.textPrimary) {
+    Row(Modifier.fillMaxWidth()) {
+        Box(Modifier.weight(1f)) { StatTile(label = label, value = value, valueColor = color) }
+    }
+}
+
 /** KEY STATS: Last, Previous close, Day change, Day change %, Symbol, Type. Money figures are
  *  formatted HERE via formatMoney/signedMoney from raw amountText (contract: raw money never
  *  goes through SuperscriptPrice/Money.usd from these cards). */
@@ -516,6 +529,16 @@ private fun KeyStatsCard(state: DetailUiState) {
             StatRow(
                 leftLabel = tr(L10n.Key.StatSymbol), leftValue = state.symbol,
                 rightLabel = tr(L10n.Key.StatType), rightValue = state.kind?.let { kindLabel(it) } ?: "—",
+            )
+            StatRow(
+                label = tr(L10n.Key.NextEarnings),
+                value = state.nextEarnings?.let { ev ->
+                    val label = sessionLabel(ev.session)
+                    val date = formatEventDate(ev.day)
+                    // sessionLabel(Unknown) is "" — avoid a dangling "Jul 24 · " separator,
+                    // same guard Main.kt's earnings-notification body already applies.
+                    if (label.isEmpty()) date else "$date · $label"
+                } ?: "—",
             )
         }
     }

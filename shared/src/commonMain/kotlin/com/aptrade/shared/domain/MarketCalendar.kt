@@ -20,10 +20,9 @@ private const val EASTERN_DAYLIGHT_OFFSET_SECONDS = -4 * SECONDS_PER_HOUR
 /**
  * Pure US-equity regular-session calendar: weekdays 09:30-16:00 America/New_York.
  *
- * Transcribed from Sources/APTradeDomain/MarketCalendar.swift. Holidays and half-days
- * are intentionally not modeled there either — this is a paper-trading build, so a
- * Thanksgiving "market open" notification is an acceptable inaccuracy on both platforms.
- * (Roadmap item on both sides: a real US market holiday calendar.)
+ * Transcribed from Sources/APTradeDomain/MarketCalendar.swift. Holiday-aware: full NYSE
+ * closures and half-days (13:00 ET close) are resolved via USMarketHolidays and applied
+ * in status() below.
  *
  * DST HANDLING — READ BEFORE CHANGING TIMES:
  * The Swift implementation resolves "America/New_York" via `Foundation.TimeZone`, which
@@ -119,9 +118,11 @@ class MarketCalendar {
         val weekday = isoWeekday(localEpochDay) // 1=Mon ... 7=Sun
         if (weekday !in 1..5) return MarketStatus.CLOSED // weekend
 
+        if (USMarketHolidays.fullHoliday(localEpochDay) != null) return MarketStatus.CLOSED
+
         val minutesIntoDay = secondsIntoDay / SECONDS_PER_MINUTE
         val openMinute = 9 * 60 + 30
-        val closeMinute = 16 * 60
+        val closeMinute = if (USMarketHolidays.isHalfDay(localEpochDay)) 13 * 60 else 16 * 60
         return if (minutesIntoDay in openMinute until closeMinute) MarketStatus.OPEN else MarketStatus.CLOSED
     }
 
@@ -131,6 +132,21 @@ class MarketCalendar {
         val localEpochDay = floorDiv(localSeconds, SECONDS_PER_DAY)
         return formatLocalDate(localEpochDay)
     }
+
+    /** Market-local epoch day for an instant — the key the holiday helpers take. */
+    fun localEpochDay(atEpochSeconds: Long): Long {
+        val localSeconds = atEpochSeconds + offsetSecondsFor(atEpochSeconds)
+        return floorDiv(localSeconds, SECONDS_PER_DAY)
+    }
+
+    /** The full-closure holiday on a market-local day, or null on trading days. */
+    fun holiday(localEpochDay: Long): USMarketHoliday? = USMarketHolidays.fullHoliday(localEpochDay)
+
+    /** True when the market closes at 13:00 ET on this market-local day. */
+    fun isHalfDay(localEpochDay: Long): Boolean = USMarketHolidays.isHalfDay(localEpochDay)
+
+    /** `yyyy-MM-dd` for a market-local epoch day (public face of formatLocalDate). */
+    fun dayString(localEpochDay: Long): String = formatLocalDate(localEpochDay)
 
     private fun formatLocalDate(epochDay: Long): String {
         val (year, month, day) = civilFromDays(epochDay)

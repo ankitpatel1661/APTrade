@@ -25,13 +25,17 @@ import com.aptrade.shared.l10n.AppLanguage
  *
  *  [language] (increment 6e Task 5) defaults to [AppLanguage.English] — the shipped default;
  *  an old settings file written before this field existed must still load English rather than
- *  an unrequested language. */
+ *  an unrequested language.
+ *
+ *  earningsReports (calendar increment) defaults on — a held/watched company reporting
+ *  today is high-signal. */
 data class AppSettings(
     val accent: AccentTheme = AccentTheme.ChampagneGold,
     val priceAlerts: Boolean = true,
     val orderFills: Boolean = true,
     val marketOpenClose: Boolean = false,
     val newsDigest: Boolean = true,
+    val earningsReports: Boolean = true,
     val emailNotifications: Boolean = false,
     val isDarkMode: Boolean = true,
     val biometricLogin: Boolean = true,

@@ -6,6 +6,7 @@ import com.aptrade.android.ui.money
 import com.aptrade.android.ui.userMessage
 import com.aptrade.shared.application.BuyAsset
 import com.aptrade.shared.application.FetchChartWindow
+import com.aptrade.shared.application.FetchEarningsCalendar
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchProfile
@@ -13,6 +14,8 @@ import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.AssetKind
+import com.aptrade.shared.domain.EarningsEvent
+import com.aptrade.shared.domain.MarketCalendar
 import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.domain.Timeframe
 import com.aptrade.shared.domain.TradeError
@@ -78,6 +81,11 @@ data class DetailUiState(
     /** Count of transactions in the portfolio after the last successful trade from this screen.
      *  Monotonic; the TradeSheet snapshots it on open and dismisses when it grows. */
     val transactionCount: Int = 0,
+    /** Earliest upcoming earnings event for this symbol within the next 30 days, or null when
+     *  none is scheduled, the fetch failed, or no earnings source is available. Fetched in its
+     *  own isolated coroutine (Task 9) — mirrors [priceText]'s silent-failure contract; a
+     *  missing/errored fetch never blocks trading or the chart. */
+    val nextEarnings: EarningsEvent? = null,
 )
 
 /** Accepts an optional leading '-', digits, and an optional '.' followed by 1-8 fraction digits.
@@ -118,6 +126,12 @@ class DetailViewModel(
     private val sellAsset: SellAsset,
     private val nowEpochSeconds: () -> Long,
     private val notifyOrderFill: suspend (TradeSide, String, String, String) -> Unit = { _, _, _, _ -> },
+    // Nullable = keyless (mirrors NewsViewModel's fetchMarketNews provider convention): in
+    // practice AppGraph.fetchEarningsCalendar is never actually null (it falls back to
+    // EmptyEarningsRepository with no Finnhub key configured, Task 8), but keeping this
+    // nullable lets a caller/test opt out of the earnings fetch entirely rather than having to
+    // wire an EmptyEarningsRepository-backed instance just to get a no-op.
+    private val fetchEarnings: FetchEarningsCalendar? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(DetailUiState(symbol = symbol))
@@ -158,6 +172,21 @@ class DetailViewModel(
                 throw e
             } catch (e: QuoteError) {
                 // Silent: priceText stays null, trading remains available.
+            }
+        }
+        // Isolated from every other init coroutine, same silent-failure contract as priceText
+        // above: a missing key, network failure, or empty calendar all leave nextEarnings null
+        // and the KEY STATS row simply omits itself (Step 5, DetailScreen).
+        viewModelScope.launch {
+            try {
+                val cal = MarketCalendar()
+                val start = cal.localEpochDay(System.currentTimeMillis() / 1000)
+                val next = fetchEarnings?.nextEarnings(symbol, cal.dayString(start), cal.dayString(start + 30))
+                if (next != null) _state.update { it.copy(nextEarnings = next) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Silent: nextEarnings stays null.
             }
         }
         loadChart()

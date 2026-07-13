@@ -4,6 +4,7 @@ import com.aptrade.desktop.designkit.ChartCandle
 import com.aptrade.desktop.ui.userMessage
 import com.aptrade.shared.application.FetchChartWindow
 import com.aptrade.shared.application.FetchCompanyNews
+import com.aptrade.shared.application.FetchEarningsCalendar
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchProfile
@@ -11,6 +12,8 @@ import com.aptrade.shared.application.LoadBookmarks
 import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.ToggleBookmark
 import com.aptrade.shared.domain.AssetKind
+import com.aptrade.shared.domain.EarningsEvent
+import com.aptrade.shared.domain.MarketCalendar
 import com.aptrade.shared.domain.NewsArticle
 import com.aptrade.shared.domain.Timeframe
 import kotlinx.coroutines.CancellationException
@@ -55,6 +58,12 @@ data class DetailUiState(
     val newsKeyMissing: Boolean = false,
     /** Bookmarked-article state shared with the News tab (same store). */
     val bookmarks: List<NewsArticle> = emptyList(),
+    /** Earliest S&P-500/owned earnings event for this symbol in the next 30 days, or null when
+     *  none is scheduled (or the fetch degrades to empty — FetchEarningsCalendar swallows
+     *  failures, never crashes). The raw typed event is carried here UNLOCALIZED; the pane
+     *  formats/localizes it at render time (Task 7 contract) — mirrors why [kind]/[timeframe]
+     *  stay typed rather than pre-rendered strings. */
+    val nextEarnings: EarningsEvent? = null,
 ) {
     /** Ids of bookmarked articles — lets each news row render its bookmark glyph. */
     val bookmarkedIds: Set<String> get() = bookmarks.mapTo(HashSet()) { it.id }
@@ -69,12 +78,18 @@ class DetailViewModel(
     private val fetchMarketQuotes: FetchMarketQuotes,
     private val fetchHistory: FetchHistory,
     private val fetchChartWindow: FetchChartWindow,
+    /** Always present (AppGraph falls back to EmptyEarningsRepository when no key is
+     *  configured, never null) — unlike [fetchCompanyNews] below, there is no "absent" state
+     *  to model, so this is required like [fetchProfile]/[fetchMarketQuotes]. */
+    private val fetchEarningsCalendar: FetchEarningsCalendar,
     private val scope: CoroutineScope,
     /** Null when no news key is configured — surfaces as [DetailUiState.newsKeyMissing] and
      *  the company-news section stays empty. */
     private val fetchCompanyNews: FetchCompanyNews? = null,
     private val loadBookmarks: LoadBookmarks? = null,
     private val toggleBookmark: ToggleBookmark? = null,
+    private val calendar: MarketCalendar = MarketCalendar(),
+    private val nowEpochSeconds: () -> Long = { System.currentTimeMillis() / 1000 },
 ) {
     private val _state = MutableStateFlow(
         DetailUiState(symbol = symbol, newsKeyMissing = fetchCompanyNews == null),
@@ -113,6 +128,25 @@ class DetailViewModel(
                 throw e
             } catch (e: QuoteError) {
                 // stat tiles stay empty; the chart error path covers messaging
+            }
+        }
+        // Next-earnings loads exactly once per symbol in its own isolated coroutine (like
+        // profile/quote above), a 30-day window from "today" in market-local terms.
+        // FetchEarningsCalendar.nextEarnings already swallows repository failures to null (see
+        // its KDoc), but mirrors the Android twin's belt-and-suspenders catch(Exception) here
+        // for symmetry — only CancellationException must propagate so scope teardown isn't
+        // swallowed.
+        scope.launch {
+            try {
+                val startDay = calendar.localEpochDay(nowEpochSeconds())
+                val today = calendar.dayString(startDay)
+                val toDay = calendar.dayString(startDay + 30)
+                val next = fetchEarningsCalendar.nextEarnings(symbol, today, toDay)
+                _state.update { it.copy(nextEarnings = next) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Silent: nextEarnings stays null.
             }
         }
         loadChart()

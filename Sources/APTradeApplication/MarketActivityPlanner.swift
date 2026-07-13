@@ -7,17 +7,21 @@ public enum ScheduledNotification: Equatable, Sendable {
     case marketOpened
     case marketClosed
     case digestDue
+    case earningsCheckDue
 }
 
 /// Persisted markers so scheduled notifications fire once per event rather than every
-/// poll, and survive relaunches (no duplicate digest after restarting mid-day).
+/// poll, and survive relaunches (no duplicate digest/earnings-check after restarting
+/// mid-day).
 public struct SchedulerState: Codable, Equatable, Sendable {
     public var lastStatus: MarketStatus?
     public var lastDigestDay: String?
+    public var lastEarningsDay: String?
 
-    public init(lastStatus: MarketStatus? = nil, lastDigestDay: String? = nil) {
+    public init(lastStatus: MarketStatus? = nil, lastDigestDay: String? = nil, lastEarningsDay: String? = nil) {
         self.lastStatus = lastStatus
         self.lastDigestDay = lastDigestDay
+        self.lastEarningsDay = lastEarningsDay
     }
 }
 
@@ -52,6 +56,18 @@ public struct MarketActivityPlanner: Sendable {
             if state.lastDigestDay != day, settings.newsDigest {
                 events.append(.digestDue)
                 newState.lastDigestDay = day
+            }
+        }
+
+        // One earnings check per trading day, the first tick we observe the market
+        // open. Mirrors the digest block exactly: the day marker only advances when we
+        // actually fire, so enabling the toggle later in the day still delivers that
+        // day's check.
+        if status == .open {
+            let day = calendar.tradingDay(of: now)
+            if state.lastEarningsDay != day, settings.earningsReports {
+                events.append(.earningsCheckDue)
+                newState.lastEarningsDay = day
             }
         }
 

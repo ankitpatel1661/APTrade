@@ -11,6 +11,11 @@ final class AssetDetailViewModel {
     private let fetchCandles: FetchCandlesUseCase
     private let fetchQuotes: FetchQuotesUseCase
     private let fetchPortfolio: FetchPortfolioUseCase
+    /// nil when no Finnhub key is configured — the next-earnings stat then shows "—"
+    /// rather than erroring (see `CompositionRoot.makeDetailViewModel`).
+    private let fetchEarnings: FetchEarningsCalendarUseCase?
+    private let calendar: MarketCalendar
+    private let now: () -> Date
 
     private(set) var quote: Quote?
     private(set) var candles: [Candle] = []
@@ -20,15 +25,24 @@ final class AssetDetailViewModel {
     private(set) var loadState: LoadState = .idle
     private(set) var isLive = false
     private(set) var position: Position?
+    /// Earliest upcoming (or just-reported) earnings release for this asset in the next
+    /// 30 days, or nil when keyless, none scheduled, or the fetch degrades to empty.
+    private(set) var nextEarnings: EarningsEvent?
 
     init(asset: Asset,
          fetchCandles: FetchCandlesUseCase,
          fetchQuotes: FetchQuotesUseCase,
-         fetchPortfolio: FetchPortfolioUseCase) {
+         fetchPortfolio: FetchPortfolioUseCase,
+         fetchEarnings: FetchEarningsCalendarUseCase? = nil,
+         calendar: MarketCalendar = MarketCalendar(),
+         now: @escaping () -> Date = Date.init) {
         self.asset = asset
         self.fetchCandles = fetchCandles
         self.fetchQuotes = fetchQuotes
         self.fetchPortfolio = fetchPortfolio
+        self.fetchEarnings = fetchEarnings
+        self.calendar = calendar
+        self.now = now
     }
 
     private func apply(_ bars: [Candle]) {
@@ -54,6 +68,26 @@ final class AssetDetailViewModel {
             loadState = .loaded
         } catch {
             loadState = .failed
+        }
+        await loadNextEarnings()
+    }
+
+    /// A 30-day window from "today" in market-local terms — same shape as the Kotlin
+    /// twin's detail VM. `FetchEarningsCalendarUseCase.nextEarnings` already degrades
+    /// non-cancellation failures to nil internally, so only cooperative cancellation
+    /// needs handling here, and it leaves `nextEarnings` untouched rather than
+    /// masquerading a cancelled fetch as "no earnings scheduled".
+    private func loadNextEarnings() async {
+        guard let fetchEarnings else { return }
+        let start = now()
+        let today = calendar.tradingDay(of: start)
+        let toDay = calendar.tradingDay(of: start.addingTimeInterval(30 * 86_400))
+        do {
+            nextEarnings = try await fetchEarnings.nextEarnings(symbol: asset.symbol, fromDay: today, toDay: toDay)
+        } catch is CancellationError {
+            return
+        } catch {
+            // Unreachable: `nextEarnings` only ever throws `CancellationError`.
         }
     }
 

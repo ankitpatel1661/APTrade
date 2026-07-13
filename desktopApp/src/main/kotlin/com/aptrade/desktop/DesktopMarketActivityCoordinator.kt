@@ -8,6 +8,7 @@ import com.aptrade.shared.application.MarketActivityPlanner
 import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.ScheduledNotification
 import com.aptrade.shared.application.SchedulerStateStore
+import com.aptrade.shared.domain.EarningsEvent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -17,7 +18,8 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 /**
- * Drives time-based notifications (market open/close and the daily digest) on a fixed
+ * Drives time-based notifications (market open/close, the daily digest, and the
+ * once-per-trading-day earnings check) on a fixed
  * 60s cadence. Transcribed from Sources/APTradeApp/MarketActivityCoordinator.swift: a
  * light loop polls the pure [MarketActivityPlanner] every tick, persists whatever state
  * it returns, and dispatches whatever events are due. All policy lives in the planner;
@@ -34,6 +36,17 @@ class DesktopMarketActivityCoordinator(
     private val loadSettings: suspend () -> AppSettings,
     private val notifyMarketStatus: suspend (opened: Boolean) -> Unit,
     private val notifyDigest: suspend (summary: String) -> Unit,
+    // Kept a raw `EarningsEvent` -> Unit closure rather than pre-formatted (title, body)
+    // strings (contrast notifyDigest above, which DOES receive a pre-built summary this
+    // class assembles itself in digestSummary()). This class has no L10n access — digestSummary
+    // builds plain hardcoded English, it never calls into com.aptrade.desktop.l10n — so there
+    // is no localization precedent here worth mirroring. Earnings notifications DO need
+    // localized L10n.Key.EarningsTodayTitle/EarningsTodayBodyFmt strings (Task 5), and the
+    // only place that already imports `tr`/`trf` is Main.kt (UI land); routing the typed event
+    // there keeps this coordinator entirely ignorant of L10n, matching its existing
+    // JVM/Compose-light, string-formatting-free shape everywhere except the (unlocalized) digest.
+    private val notifyEarnings: suspend (event: EarningsEvent) -> Unit,
+    private val fetchTodaysOwnEarnings: suspend () -> List<EarningsEvent>,
     private val fetchWatchlist: FetchWatchlist,
     private val fetchMarketQuotes: FetchMarketQuotes,
     private val scope: CoroutineScope,
@@ -59,6 +72,7 @@ class DesktopMarketActivityCoordinator(
             state = stateStore.load(),
             marketOpenCloseEnabled = settings.marketOpenClose,
             newsDigestEnabled = settings.newsDigest,
+            earningsReportsEnabled = settings.earningsReports,
         )
         stateStore.save(newState)
         for (event in events) {
@@ -66,6 +80,27 @@ class DesktopMarketActivityCoordinator(
                 ScheduledNotification.MarketOpened -> notifyMarketStatus(true)
                 ScheduledNotification.MarketClosed -> notifyMarketStatus(false)
                 ScheduledNotification.DigestDue -> notifyDigest(digestSummary())
+                ScheduledNotification.EarningsCheckDue -> {
+                    // Same "never drop the whole tick" reasoning as digestSummary() below: an
+                    // uncaught failure here would kill the tick coroutine and silently disable
+                    // ALL scheduled notifications (open/close, digest, earnings) until relaunch.
+                    // FetchEarningsCalendar.ownedToday already swallows repository failures, but
+                    // its ownSymbols() closure (file-backed watchlist/portfolio reads) can still
+                    // throw — and this constructor param accepts ANY closure — so guard broadly
+                    // here: failure -> no earnings notifications this tick, everything else
+                    // proceeds. Exception (not just QuoteError, the digest's narrower quotes-only
+                    // catch) matches fetchOrEmpty's own breadth in EarningsUseCases.kt.
+                    val todaysOwn = try {
+                        fetchTodaysOwnEarnings()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        emptyList()
+                    }
+                    for (earningsEvent in todaysOwn) {
+                        notifyEarnings(earningsEvent)
+                    }
+                }
             }
         }
     }

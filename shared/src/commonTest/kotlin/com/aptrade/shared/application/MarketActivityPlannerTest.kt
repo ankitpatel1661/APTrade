@@ -3,6 +3,7 @@ package com.aptrade.shared.application
 import com.aptrade.shared.domain.MarketStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class MarketActivityPlannerTest {
@@ -204,6 +205,48 @@ class MarketActivityPlannerTest {
         assertEquals(emptyList(), events)
         assertEquals(MarketStatus.CLOSED, newState.lastStatus)
         assertEquals(null, newState.lastDigestDay)
+    }
+
+    @Test
+    fun earningsCheckFiresOncePerTradingDayWhenEnabled() {
+        val seedState = SchedulerState(lastStatus = MarketStatus.OPEN)
+
+        val (events1, newState1) = planner.plan(
+            nowEpochSeconds = tuesdayTenAmOpen,
+            state = seedState,
+            marketOpenCloseEnabled = false,
+            newsDigestEnabled = false,
+            earningsReportsEnabled = true,
+        )
+
+        assertTrue(events1.contains(ScheduledNotification.EarningsCheckDue))
+        assertEquals("2024-01-09", newState1.lastEarningsDay)
+
+        val (events2, _) = planner.plan(
+            nowEpochSeconds = tuesdayTenAmOpen + 60,
+            state = newState1,
+            marketOpenCloseEnabled = false,
+            newsDigestEnabled = false,
+            earningsReportsEnabled = true,
+        )
+
+        assertFalse(events2.contains(ScheduledNotification.EarningsCheckDue))
+    }
+
+    @Test
+    fun earningsCheckSuppressedWhenToggleOff() {
+        val seedState = SchedulerState(lastStatus = MarketStatus.OPEN)
+
+        val (events, newState) = planner.plan(
+            nowEpochSeconds = tuesdayTenAmOpen,
+            state = seedState,
+            marketOpenCloseEnabled = false,
+            newsDigestEnabled = false,
+            earningsReportsEnabled = false,
+        )
+
+        assertFalse(events.contains(ScheduledNotification.EarningsCheckDue))
+        assertEquals(null, newState.lastEarningsDay)
     }
 
     @Test

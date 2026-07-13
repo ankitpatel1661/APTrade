@@ -31,6 +31,19 @@ internal const val PRICE_ALERTS_CHANNEL_ID = "price_alerts"
  *  once, the first time an order fill is about to be posted. */
 internal const val ORDER_FILLS_CHANNEL_ID = "order_fills"
 
+/** The channel every market open/close notification posts to (Task 8 — desktop
+ *  `DesktopMarketActivityCoordinator`/`TrayNotifier.notifyMarketStatus` parity). Separate
+ *  channel per notification kind, same reasoning as [ORDER_FILLS_CHANNEL_ID]. */
+internal const val MARKET_STATUS_CHANNEL_ID = "market_status"
+
+/** The channel every daily-digest notification posts to (Task 8 — desktop
+ *  `TrayNotifier.notifyDigest` parity). */
+internal const val DAILY_DIGEST_CHANNEL_ID = "daily_digest"
+
+/** The channel every earnings-today notification posts to (Task 8 — desktop
+ *  `TrayNotifier.notifyEarnings` parity). */
+internal const val EARNINGS_CHANNEL_ID = "earnings_reports"
+
 // --- Pure formatters -------------------------------------------------------------
 //
 // Transcribed verbatim from desktop's TrayNotifier (`desktopApp/.../infra/TrayNotifier.kt`),
@@ -55,6 +68,16 @@ internal fun formatOrderFillBody(
     val verb = if (side == TradeSide.Buy) "Bought" else "Sold"
     return "$verb $quantityText ${symbol.uppercase()} for $amountFormatted"
 }
+
+internal fun formatMarketStatusTitle(opened: Boolean): String = if (opened) "Market open" else "Market closed"
+
+internal fun formatMarketStatusBody(opened: Boolean): String = if (opened) {
+    "US equities are now open for regular trading."
+} else {
+    "US equities have closed for the day."
+}
+
+internal fun formatDigestTitle(): String = "Daily digest"
 
 /**
  * Delivers triggered price alerts as Android system notifications — the Android counterpart
@@ -82,6 +105,9 @@ class AndroidAlertNotifier(private val context: Context) : AlertNotifier {
 
     private var channelCreated = false
     private var orderFillsChannelCreated = false
+    private var marketStatusChannelCreated = false
+    private var dailyDigestChannelCreated = false
+    private var earningsChannelCreated = false
 
     private fun ensureChannel() {
         if (channelCreated || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -103,6 +129,39 @@ class AndroidAlertNotifier(private val context: Context) : AlertNotifier {
         )
         notificationManager.createNotificationChannel(channel)
         orderFillsChannelCreated = true
+    }
+
+    private fun ensureMarketStatusChannel() {
+        if (marketStatusChannelCreated || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val channel = NotificationChannel(
+            MARKET_STATUS_CHANNEL_ID,
+            tr(L10n.Key.MarketOpenAndClose),
+            NotificationManager.IMPORTANCE_DEFAULT,
+        )
+        notificationManager.createNotificationChannel(channel)
+        marketStatusChannelCreated = true
+    }
+
+    private fun ensureDailyDigestChannel() {
+        if (dailyDigestChannelCreated || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val channel = NotificationChannel(
+            DAILY_DIGEST_CHANNEL_ID,
+            tr(L10n.Key.DailyNewsDigest),
+            NotificationManager.IMPORTANCE_DEFAULT,
+        )
+        notificationManager.createNotificationChannel(channel)
+        dailyDigestChannelCreated = true
+    }
+
+    private fun ensureEarningsChannel() {
+        if (earningsChannelCreated || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val channel = NotificationChannel(
+            EARNINGS_CHANNEL_ID,
+            tr(L10n.Key.EarningsReportsToggle),
+            NotificationManager.IMPORTANCE_DEFAULT,
+        )
+        notificationManager.createNotificationChannel(channel)
+        earningsChannelCreated = true
     }
 
     private fun hasNotificationPermission(): Boolean =
@@ -149,5 +208,78 @@ class AndroidAlertNotifier(private val context: Context) : AlertNotifier {
             .setAutoCancel(true)
             .build()
         notificationManager.notify("$symbol-$side".hashCode(), notification)
+    }
+
+    /**
+     * Delivers a market open/close notification (Task 8) — the Android counterpart to
+     * desktop's `TrayNotifier.notifyMarketStatus`. [opened] is a plain `Boolean` (the same
+     * shape desktop's method takes: `MarketStatus` is already unwrapped to a Boolean by
+     * `ScheduledNotification` before this call). Posted to its own
+     * [MARKET_STATUS_CHANNEL_ID] channel, same one-channel-per-kind shape as [notifyFill].
+     * Called from [com.aptrade.android.alerts.AndroidMarketActivityCoordinator] once per
+     * open/close transition.
+     */
+    suspend fun notifyMarketStatus(opened: Boolean) {
+        ensureMarketStatusChannel()
+        if (!hasNotificationPermission()) return
+
+        val notification = NotificationCompat.Builder(context, MARKET_STATUS_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setColor(ContextCompat.getColor(context, R.color.notification_accent))
+            .setContentTitle(formatMarketStatusTitle(opened))
+            .setContentText(formatMarketStatusBody(opened))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+        notificationManager.notify(MARKET_STATUS_CHANNEL_ID.hashCode(), notification)
+    }
+
+    /**
+     * Delivers the daily digest notification (Task 8) — the Android counterpart to
+     * desktop's `TrayNotifier.notifyDigest`. [summary] is pre-built plain text
+     * (`AndroidMarketActivityCoordinator.digestSummary()` — top-3 watchlist movers by
+     * `abs(changePercent)`); this method performs no further formatting on it. A fixed
+     * notification id (channel-scoped) so a later digest simply replaces the earlier one
+     * rather than stacking multiple digest notifications in the tray.
+     */
+    suspend fun notifyDigest(summary: String) {
+        ensureDailyDigestChannel()
+        if (!hasNotificationPermission()) return
+
+        val notification = NotificationCompat.Builder(context, DAILY_DIGEST_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setColor(ContextCompat.getColor(context, R.color.notification_accent))
+            .setContentTitle(formatDigestTitle())
+            .setContentText(summary)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+        notificationManager.notify(DAILY_DIGEST_CHANNEL_ID.hashCode(), notification)
+    }
+
+    /**
+     * Delivers an earnings-today notification (Task 8) — the Android counterpart to
+     * desktop's `TrayNotifier.notifyEarnings`. Unlike [notifyDigest] (hardcoded English
+     * title, plain-text body), both [title] and [body] arrive pre-localized here — the
+     * `AppGraph.marketActivityCoordinator` factory resolves `L10n.Key.EarningsTodayTitle`/
+     * `EarningsTodayBodyFmt` via `tr`/`trf` before calling in, so this method performs no
+     * formatting of its own, just the notification post. The notification id is keyed off
+     * [body] (which embeds the symbol) rather than a fixed id, since a single tick can
+     * deliver multiple distinct earnings notifications (one per owned event) that must not
+     * clobber each other in the tray.
+     */
+    suspend fun notifyEarnings(title: String, body: String) {
+        ensureEarningsChannel()
+        if (!hasNotificationPermission()) return
+
+        val notification = NotificationCompat.Builder(context, EARNINGS_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setColor(ContextCompat.getColor(context, R.color.notification_accent))
+            .setContentTitle(title)
+            .setContentText(body)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+        notificationManager.notify(body.hashCode(), notification)
     }
 }
