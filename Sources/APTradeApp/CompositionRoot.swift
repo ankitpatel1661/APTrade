@@ -167,4 +167,26 @@ enum CompositionRoot {
             toggleBookmark: ToggleBookmarkUseCase(store: bookmarkStore),
             keyMissing: key == nil)
     }
+
+    static func makeCalendarViewModel() -> CalendarViewModel {
+        // The key is read only here, never above infrastructure.
+        let key = AppConfig.finnhubAPIKey()
+        let repo: EarningsCalendarRepository = key.map { FinnhubEarningsRepository(apiKey: $0) } ?? EmptyEarningsRepository()
+        return CalendarViewModel(
+            fetchEarnings: FetchEarningsCalendarUseCase(repository: repo, ownSymbols: ownSymbolsProvider()),
+            loadOwnSymbols: ownSymbolsProvider(),
+            keyMissing: key == nil)
+    }
+
+    /// watchlist ∪ portfolio symbols, read fresh per call. `makeStore()`/`portfolioStore` are
+    /// MainActor-isolated (this enum is `@MainActor`), so the read hops onto the main actor
+    /// explicitly, keeping the closure itself plain `@Sendable` — callable from any actor.
+    private static func ownSymbolsProvider() -> @Sendable () async -> Set<String> {
+        {
+            await MainActor.run {
+                Set(LoadWatchlistUseCase(store: makeStore())().map(\.symbol))
+                    .union(FetchPortfolioUseCase(store: portfolioStore)().positions.map(\.asset.symbol))
+            }
+        }
+    }
 }

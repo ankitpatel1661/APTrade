@@ -254,6 +254,30 @@ enum L10n {
         case digestNoSymbols = "Add symbols to your watchlist to get a daily digest."
         case digestUpdating = "Your watchlist is being updated. Check back shortly."
         case digestMoversFormat = "Today's movers — %@"
+
+        // MARK: Calendar (market holidays + earnings)
+        case calendarTab = "Calendar"
+        case marketClosedBannerFmt = "Market closed — %@"
+        case closesEarlyBannerFmt = "Closes 1:00 PM — %@"
+        case holidayNewYears = "New Year's Day"
+        case holidayMLK = "Martin Luther King Jr. Day"
+        case holidayWashington = "Washington's Birthday"
+        case holidayGoodFriday = "Good Friday"
+        case holidayMemorial = "Memorial Day"
+        case holidayJuneteenth = "Juneteenth"
+        case holidayIndependence = "Independence Day"
+        case holidayLabor = "Labor Day"
+        case holidayThanksgiving = "Thanksgiving Day"
+        case holidayChristmas = "Christmas Day"
+        case sessionBeforeOpen = "Before open"
+        case sessionAfterClose = "After close"
+        case sessionDuringMarket = "During market"
+        case nextEarnings = "Next earnings"
+        case earningsReportsToggle = "Earnings reports"
+        case earningsReportsSubtitle = "When a company you hold or watch reports today"
+        case earningsTodayTitle = "Earnings today"
+        case earningsTodayBodyFmt = "%1$@ reports today · %2$@"
+        case noUpcomingEarnings = "No earnings in the next two weeks"
     }
 
     static let table: [Key: [AppLanguage: String]] = [
@@ -761,6 +785,58 @@ enum L10n {
                           .spanish: "Tu lista de seguimiento se está actualizando. Vuelve a consultarla pronto."],
         .digestMoversFormat: [.english: "Today's movers — %@", .german: "Heutige Bewegungen — %@",
                               .italian: "I movimenti di oggi — %@", .spanish: "Los movimientos de hoy — %@"],
+
+        // MARK: Calendar (market holidays + earnings)
+        .calendarTab: [.english: "Calendar", .german: "Kalender",
+                       .italian: "Calendario", .spanish: "Calendario"],
+        .marketClosedBannerFmt: [.english: "Market closed — %@", .german: "Markt geschlossen — %@",
+                                 .italian: "Mercato chiuso — %@", .spanish: "Mercado cerrado — %@"],
+        .closesEarlyBannerFmt: [.english: "Closes 1:00 PM — %@", .german: "Schließt 13:00 Uhr — %@",
+                                .italian: "Chiude alle 13:00 — %@", .spanish: "Cierra a las 13:00 — %@"],
+        .holidayNewYears: [.english: "New Year's Day", .german: "Neujahr",
+                           .italian: "Capodanno", .spanish: "Año Nuevo"],
+        .holidayMLK: [.english: "Martin Luther King Jr. Day", .german: "Martin-Luther-King-Tag",
+                      .italian: "Giorno di Martin Luther King", .spanish: "Día de Martin Luther King"],
+        .holidayWashington: [.english: "Washington's Birthday", .german: "Washingtons Geburtstag",
+                             .italian: "Compleanno di Washington", .spanish: "Natalicio de Washington"],
+        .holidayGoodFriday: [.english: "Good Friday", .german: "Karfreitag",
+                             .italian: "Venerdì Santo", .spanish: "Viernes Santo"],
+        .holidayMemorial: [.english: "Memorial Day", .german: "Memorial Day",
+                           .italian: "Memorial Day", .spanish: "Memorial Day"],
+        .holidayJuneteenth: [.english: "Juneteenth", .german: "Juneteenth",
+                             .italian: "Juneteenth", .spanish: "Juneteenth"],
+        .holidayIndependence: [.english: "Independence Day", .german: "Unabhängigkeitstag",
+                               .italian: "Giorno dell'Indipendenza", .spanish: "Día de la Independencia"],
+        .holidayLabor: [.english: "Labor Day", .german: "Labor Day",
+                        .italian: "Labor Day", .spanish: "Labor Day"],
+        .holidayThanksgiving: [.english: "Thanksgiving Day", .german: "Thanksgiving",
+                               .italian: "Giorno del Ringraziamento", .spanish: "Día de Acción de Gracias"],
+        .holidayChristmas: [.english: "Christmas Day", .german: "Weihnachten",
+                            .italian: "Natale", .spanish: "Navidad"],
+        .sessionBeforeOpen: [.english: "Before open", .german: "Vor Handelsbeginn",
+                             .italian: "Prima dell'apertura", .spanish: "Antes de la apertura"],
+        .sessionAfterClose: [.english: "After close", .german: "Nach Handelsschluss",
+                             .italian: "Dopo la chiusura", .spanish: "Tras el cierre"],
+        .sessionDuringMarket: [.english: "During market", .german: "Während des Handels",
+                               .italian: "Durante la seduta", .spanish: "Durante la sesión"],
+        .nextEarnings: [.english: "Next earnings", .german: "Nächster Quartalsbericht",
+                        .italian: "Prossima trimestrale", .spanish: "Próximo informe trimestral"],
+        .earningsReportsToggle: [.english: "Earnings reports", .german: "Quartalsberichte",
+                                 .italian: "Trimestrali", .spanish: "Informes trimestrales"],
+        .earningsReportsSubtitle: [.english: "When a company you hold or watch reports today",
+                                   .german: "Wenn ein gehaltenes oder beobachtetes Unternehmen heute berichtet",
+                                   .italian: "Quando una società che possiedi o segui pubblica i risultati oggi",
+                                   .spanish: "Cuando una empresa que posees o sigues presenta resultados hoy"],
+        .earningsTodayTitle: [.english: "Earnings today", .german: "Quartalszahlen heute",
+                              .italian: "Trimestrali oggi", .spanish: "Resultados hoy"],
+        .earningsTodayBodyFmt: [.english: "%1$@ reports today · %2$@",
+                                .german: "%1$@ berichtet heute · %2$@",
+                                .italian: "%1$@ pubblica i risultati oggi · %2$@",
+                                .spanish: "%1$@ presenta resultados hoy · %2$@"],
+        .noUpcomingEarnings: [.english: "No earnings in the next two weeks",
+                              .german: "Keine Quartalsberichte in den nächsten zwei Wochen",
+                              .italian: "Nessuna trimestrale nelle prossime due settimane",
+                              .spanish: "Sin informes trimestrales en las próximas dos semanas"],
     ]
 }
 
