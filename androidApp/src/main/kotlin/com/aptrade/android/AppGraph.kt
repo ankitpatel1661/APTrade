@@ -3,6 +3,7 @@ package com.aptrade.android
 import android.content.Context
 import com.aptrade.android.alerts.AndroidAlertNotifier
 import com.aptrade.android.alerts.AndroidMarketActivityCoordinator
+import com.aptrade.android.calendar.sessionLabel
 import com.aptrade.android.l10n.tr
 import com.aptrade.android.l10n.trf
 import com.aptrade.shared.application.AddToWatchlist
@@ -36,7 +37,6 @@ import com.aptrade.shared.application.SchedulerStateStore
 import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.application.ToggleBookmark
 import com.aptrade.shared.domain.AssetKind
-import com.aptrade.shared.domain.EarningsSession
 import com.aptrade.shared.domain.MarketCalendar
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.domain.WatchlistEntry
@@ -319,22 +319,6 @@ internal fun buildNotifyOrderFill(
             deliver(side, symbol, quantityText, amountFormatted)
         }
     }
-
-/**
- * [EarningsSession] -> localized label (Task 8). Direct port of desktop's
- * `sessionLabel` (`desktopApp/src/main/kotlin/com/aptrade/desktop/calendar/CalendarPane.kt`),
- * used there by both the Calendar tab's earnings rows and Main.kt's earnings-notification
- * wiring. Android has no Calendar tab yet (a later task), so this copy exists solely for
- * [AppGraph.marketActivityCoordinator]'s `notifyEarnings` closure — when the Calendar tab
- * lands on Android, move this into that screen's own file and share the one definition,
- * mirroring how desktop consolidated it into CalendarPane.kt.
- */
-internal fun sessionLabel(session: EarningsSession): String = when (session) {
-    EarningsSession.BeforeOpen -> tr(L10n.Key.SessionBeforeOpen)
-    EarningsSession.AfterClose -> tr(L10n.Key.SessionAfterClose)
-    EarningsSession.DuringMarket -> tr(L10n.Key.SessionDuringMarket)
-    EarningsSession.Unknown -> ""
-}
 
 /** The portfolio slice of the composition root: everything that depends on the
  *  [PortfolioStore]. Groups the trade + read + performance use cases sharing one store. */

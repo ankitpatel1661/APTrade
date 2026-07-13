@@ -2,6 +2,7 @@ package com.aptrade.android
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBox
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
@@ -19,8 +20,9 @@ import com.aptrade.android.l10n.tr
 import com.aptrade.shared.l10n.L10n
 
 /**
- * The three bottom-tab destinations, all backed by real content: [com.aptrade.android.watchlist.WatchlistScreen],
- * [com.aptrade.android.portfolio.PortfolioScreen], and [com.aptrade.android.news.NewsScreen].
+ * The four bottom-tab destinations, all backed by real content: [com.aptrade.android.watchlist.WatchlistScreen],
+ * [com.aptrade.android.portfolio.PortfolioScreen], [com.aptrade.android.news.NewsScreen], and
+ * [com.aptrade.android.calendar.CalendarScreen].
  *
  * Icon substitutions (verified against `material-icons-core`'s curated ~50-icon set —
  * the brief's `RemoveRedEye`/`PieChart`/`Article`/`MoreHoriz` are all part of the larger
@@ -31,11 +33,13 @@ import com.aptrade.shared.l10n.L10n
  *  - Account/settings action: `MoreHoriz` → [Icons.Filled.MoreVert] (same overflow-menu
  *    affordance, vertical instead of horizontal dots — the closest core analog).
  *  - Search action: [Icons.Filled.Search] is present in core as-is, no substitution needed.
+ *  - Calendar: [Icons.Filled.DateRange] is present in core as-is (Task 9), no substitution needed.
  */
 enum class ShellTab(val route: String, val labelKey: L10n.Key) {
     Watchlist("watchlist", L10n.Key.Watchlist),
     Portfolio("portfolio", L10n.Key.Portfolio),
     News("news", L10n.Key.News),
+    Calendar("calendar", L10n.Key.CalendarTab),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,6 +81,7 @@ fun AppShell(
                                 ShellTab.Watchlist -> Icons.Filled.Star
                                 ShellTab.Portfolio -> Icons.Filled.AccountBox
                                 ShellTab.News -> Icons.Filled.Info
+                                ShellTab.Calendar -> Icons.Filled.DateRange
                             }
                             Icon(icon, contentDescription = tr(tab.labelKey))
                         },

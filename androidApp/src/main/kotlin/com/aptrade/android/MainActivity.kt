@@ -22,6 +22,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.aptrade.android.calendar.CalendarScreen
 import com.aptrade.android.detail.DetailScreen
 import com.aptrade.android.news.NewsScreen
 import com.aptrade.android.portfolio.PortfolioScreen
@@ -120,6 +121,7 @@ fun AppNavHost(settingsViewModel: SettingsViewModel) {
                         confirmTrades = settings.confirmTrades,
                     )
                     ShellTab.News -> NewsScreen(padding = padding)
+                    ShellTab.Calendar -> CalendarScreen(padding = padding)
                 }
             }
         }
