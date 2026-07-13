@@ -24,6 +24,9 @@ import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import com.aptrade.desktop.calendar.CalendarPane
+import com.aptrade.desktop.calendar.CalendarViewModel
+import com.aptrade.desktop.calendar.sessionLabel
 import com.aptrade.desktop.designkit.APTradeDesktopTheme
 import com.aptrade.desktop.detail.DetailScreen
 import com.aptrade.desktop.news.NewsPane
@@ -49,7 +52,6 @@ import com.aptrade.desktop.watchlist.PriceAlertSheet
 import com.aptrade.desktop.watchlist.WatchlistPane
 import com.aptrade.desktop.watchlist.WatchlistViewModel
 import com.aptrade.shared.domain.Asset
-import com.aptrade.shared.domain.EarningsSession
 import com.aptrade.shared.domain.MarketCalendar
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.domain.WatchlistEntry
@@ -157,6 +159,18 @@ fun main() = application {
             fetchMarketNews = graph.fetchMarketNews,
             loadBookmarks = graph.loadBookmarks,
             toggleBookmark = graph.toggleBookmark,
+            scope = appScope,
+        )
+    }
+    // Calendar VM is created once (like News) but loaded lazily on the first visit to the
+    // Calendar tab — see the newsStarted-mirroring calendarStarted gate in AppRoot below.
+    val calendarViewModel = remember {
+        CalendarViewModel(
+            fetch = graph.fetchEarningsCalendar,
+            calendar = marketCalendar,
+            ownSymbols = graph.ownSymbols,
+            needsKey = graph.earningsKeyMissing,
+            nowEpochSeconds = { System.currentTimeMillis() / 1000 },
             scope = appScope,
         )
     }
@@ -309,6 +323,7 @@ fun main() = application {
                     watchlistViewModel = watchlistViewModel,
                     portfolioViewModel = portfolioViewModel,
                     newsViewModel = newsViewModel,
+                    calendarViewModel = calendarViewModel,
                     searchViewModel = searchViewModel,
                     addFieldViewModel = addFieldViewModel,
                     paletteOpen = paletteOpen,
@@ -345,22 +360,12 @@ fun main() = application {
  *  text (already `Money.amountText`-formatted) used for display and the cost estimate. */
 data class TradeTarget(val asset: Asset, val side: TradeSide, val priceText: String?)
 
-/** Localizes an [EarningsEvent.session] for the earnings-today tray notification body
- *  (`L10n.Key.EarningsTodayBodyFmt`'s `%2$s`). [EarningsSession.Unknown] (Finnhub omits the
- *  hour field sometimes) has no dedicated L10n key — falls back to an empty string so the
- *  notification still reads sensibly ("SYM reports today") rather than surfacing an enum name. */
-private fun sessionLabel(session: EarningsSession): String = when (session) {
-    EarningsSession.BeforeOpen -> tr(L10n.Key.SessionBeforeOpen)
-    EarningsSession.AfterClose -> tr(L10n.Key.SessionAfterClose)
-    EarningsSession.DuringMarket -> tr(L10n.Key.SessionDuringMarket)
-    EarningsSession.Unknown -> ""
-}
-
 @Composable
 private fun AppRoot(
     watchlistViewModel: WatchlistViewModel,
     portfolioViewModel: PortfolioViewModel,
     newsViewModel: NewsViewModel,
+    calendarViewModel: CalendarViewModel,
     searchViewModel: SearchViewModel,
     addFieldViewModel: SearchViewModel,
     paletteOpen: Boolean,
@@ -402,6 +407,15 @@ private fun AppRoot(
         if (selectedTab == AppTab.News && !newsStarted) {
             newsStarted = true
             newsViewModel.start()
+        }
+    }
+    // Mirrors newsStarted exactly: the Calendar tab's single 14-day load fires only once the
+    // user opens it.
+    var calendarStarted by remember { mutableStateOf(false) }
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == AppTab.Calendar && !calendarStarted) {
+            calendarStarted = true
+            calendarViewModel.load()
         }
     }
 
@@ -484,6 +498,7 @@ private fun AppRoot(
                     onRefresh = newsViewModel::refresh,
                     onToggleBookmark = newsViewModel::toggleBookmark,
                 )
+                AppTab.Calendar -> CalendarPane(calendarViewModel)
             }
         }
 

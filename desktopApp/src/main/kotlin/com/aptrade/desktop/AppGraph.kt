@@ -121,14 +121,18 @@ class AppGraph(
     val earningsRepository: EarningsCalendarRepository =
         finnhubApiKey?.let { FinnhubEarningsRepository(it) } ?: EmptyEarningsRepository
     val earningsKeyMissing: Boolean = finnhubApiKey == null
-    val fetchEarningsCalendar: FetchEarningsCalendar = FetchEarningsCalendar(earningsRepository) {
-        // watchlist ∪ portfolio symbols, read fresh per call — same two use cases the
-        // coordinator's digestSummary() reads from (fetchWatchlist.execute()) plus the
-        // portfolio store's holdings, mirroring PortfolioViewModel's own symbol source.
+    // Shared symbol-ownership provider: watchlist ∪ portfolio, read fresh per call — same two
+    // use cases the coordinator's digestSummary() reads from (fetchWatchlist.execute()) plus
+    // the portfolio store's holdings, mirroring PortfolioViewModel's own symbol source. Public
+    // (not inlined into fetchEarningsCalendar below) so the desktop Calendar tab's ViewModel
+    // (Task 7) can share this EXACT closure for its "gold dot" owned-row indicator instead of
+    // Main.kt duplicating the watchlist-union-portfolio computation a second time.
+    val ownSymbols: suspend () -> Set<String> = {
         val watchlistSymbols = fetchWatchlist.execute().map { it.symbol }
         val portfolioSymbols = fetchPortfolio.execute().positions.map { it.asset.symbol }
         (watchlistSymbols + portfolioSymbols).toSet()
     }
+    val fetchEarningsCalendar: FetchEarningsCalendar = FetchEarningsCalendar(earningsRepository, ownSymbols)
 
     // Alerts & notifications (increment 6d.1). The notifier seam: TrayNotifier delivers
     // via the shared `trayState`, which the Tray composable in Main.kt also mounts.

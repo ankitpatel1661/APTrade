@@ -34,11 +34,12 @@ import com.aptrade.desktop.designkit.MagnifierIcon
 import com.aptrade.shared.l10n.L10n
 import com.aptrade.desktop.l10n.tr
 
-/** The three top-level destinations. Only Watchlist is live this increment. */
+/** The four top-level destinations. Only Watchlist is live this increment. */
 enum class AppTab {
     Watchlist,
     Portfolio,
     News,
+    Calendar,
 }
 
 /** [AppTab]'s display label. A plain function (not an enum property) because it must call
@@ -48,6 +49,7 @@ private fun AppTab.title(): String = when (this) {
     AppTab.Watchlist -> tr(L10n.Key.Watchlist)
     AppTab.Portfolio -> tr(L10n.Key.Portfolio)
     AppTab.News -> tr(L10n.Key.News)
+    AppTab.Calendar -> tr(L10n.Key.CalendarTab)
 }
 
 /** Full-window chrome: vertical gradient, centered wordmark with a palette icon
