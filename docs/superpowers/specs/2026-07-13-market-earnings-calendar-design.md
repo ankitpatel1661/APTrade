@@ -17,7 +17,7 @@ Two user-facing capabilities:
 | Question | Decision |
 |---|---|
 | Earnings UI surfaces | Both: detail-screen stat row + dedicated calendar screen |
-| Calendar coverage | Whole market (all companies reporting in the window), user's symbols highlighted/pinned |
+| Calendar coverage | S&P 500 constituents ∪ user's watchlist/portfolio symbols (revised 2026-07-13 from "whole market" — "otherwise it will be a mess"; user chose S&P 500 as the working definition of "Fortune 500 companies"). User's symbols highlighted/pinned and always shown even when not in the index |
 | Notifications | Earnings-day notification for held/watched symbols only, settings-gated; holidays silently correct open/close notifications (no holiday notices) |
 | Rollout | All four platforms in one increment |
 | Holiday data source | Computed rules in the domain layer (no network, no expiry) |
@@ -56,9 +56,11 @@ fetchEarnings(from: Date, to: Date) -> [EarningsEvent]
 
 **No-key fallback:** `EmptyEarningsRepository` returning `[]`, plus the same `keyMissing`/`needsKey` gate news uses. Wiring goes through the *existing* key-refresh paths: Android `AppGraph`'s per-access key re-read, Swift per-view-model factory read — a key saved in Settings applies the next time the Calendar tab opens, matching News.
 
+**Large-cap filter:** a bundled static constituent set `SP500Symbols` (~503 tickers) in each codebase's Domain layer (Swift + shared `commonMain`) — a plain `Set<String>` constant, no network. The calendar use case keeps only events whose symbol is in `SP500Symbols ∪ watchlist ∪ portfolio`, so the screen stays readable and the user's own names never disappear even when outside the index. Constituents drift a few times a year; the set is refreshed opportunistically at maintenance time (acceptable staleness — the user's own symbols are always exact).
+
 **Use case** `FetchEarningsCalendar` serves both surfaces:
 
-- Calendar screen: one ranged fetch, today → +14 days.
+- Calendar screen: one ranged fetch, today → +14 days, filtered per the large-cap rule above.
 - Detail screen "next earnings": ranged fetch today → +30 days filtered to the symbol, earliest hit; absent → the UI shows "—". (Same use case, symbol filtering in the use case, not the view.)
 
 **Caching:** in-memory TTL cache of the ranged response (hours-scale TTL — earnings dates don't move intraday), keyed by range, shared by both surfaces so opening three detail screens doesn't refetch. Follows the existing caching-repository idiom per codebase.
@@ -72,7 +74,7 @@ fetchEarnings(from: Date, to: Date) -> [EarningsEvent]
 - A scrolling list of the next 14 days grouped by day; day headers use the existing section-header treatment.
 - **Banner row** under a day header when the market is closed or closes early: "Market closed — Independence Day" / "Closes 1:00 PM — Christmas Eve". Gold-bordered quiet banner (DesignKit chip/border idiom, not price-direction colors). Weekends show no banner — only holidays and half-days are called out.
 - **Earnings rows:** symbol, company name, before/after-market chip (reuses the kind-chip visual), EPS estimate in `.monospacedDigit()`/`tnum` when present. Days with no earnings and no banner collapse (not rendered as empty headers).
-- **My-symbols treatment:** rows whose symbol is in watchlist ∪ portfolio pin to the top of their day group and get the gold accent treatment; all other rows render quiet. No toggle — whole-market is the one coverage mode (user decision).
+- **My-symbols treatment:** rows whose symbol is in watchlist ∪ portfolio pin to the top of their day group and get the gold accent treatment; the remaining S&P-500 rows render quiet. No coverage toggle (user decision).
 - **No-key state:** the News tab's empty state, verbatim pattern — "Connect a news source" + platform-appropriate key instructions (in-app-field text on iOS/Android, file-drop text on macOS/desktop). Holiday banners still render above it: they're computed locally and need no key.
 - **Loading/error:** same idioms as News (spinner; error pane with Retry).
 
@@ -91,7 +93,7 @@ fetchEarnings(from: Date, to: Date) -> [EarningsEvent]
 ## 5. Testing & parity discipline
 
 - **Holiday rules (the test-rich core):** identical fixed-date test tables in Swift (`MarketCalendarTests`) and Kotlin: all ten 2026 and 2027 holidays; observation shifts (July 4 2026 = Saturday → observed Friday July 3 2026; June 19 2027 = Saturday → observed Friday June 18 2027); Easter/Good Friday across ≥3 years; half-day 12:59 open vs 13:00 closed boundary; a plain Wednesday stays open; `tradingDay` unaffected.
-- **Earnings:** DTO mapping from captured Finnhub JSON (missing fields, unknown session hours, malformed rows dropped); use-case range + symbol filtering; TTL cache behavior (second call within TTL doesn't refetch).
+- **Earnings:** DTO mapping from captured Finnhub JSON (missing fields, unknown session hours, malformed rows dropped); use-case range + symbol filtering; large-cap filtering (non-index symbol dropped, non-index *held* symbol kept, index symbol kept); TTL cache behavior (second call within TTL doesn't refetch).
 - **ViewModels:** day grouping, my-symbols pinning order, banner emission for holiday/half-day days, no-key `needsKey`, empty-day collapsing.
 - **Notification gating:** toggle off → nothing; symbol not held/watched → nothing; held symbol reporting today → exactly one; second tick same day → nothing.
 - **Suites:** all five green before merge (macOS `swift test`, iOS sim `APTradeLite-Package`, `:shared:jvmTest`, `:desktopApp:test`, `:androidApp:testDebugUnitTest`), counts verified from JUnit XML with `--rerun-tasks` per the recorded gotcha. Desktop suite guards that existing behavior (stores, settings JSON) is unchanged apart from the new settings field.
@@ -102,3 +104,4 @@ fetchEarnings(from: Date, to: Date) -> [EarningsEvent]
 - **`AppSettings` gains a field** in both codebases — the load-merge-save seams and settings round-trip tests already cover unknown/new-field tolerance; the new field defaults on for existing users.
 - **Half-day 13:00 close** changes when the "market closed" notification fires on those three days — that is the intended fix, called out here so UAT doesn't read it as a regression.
 - Company names from `/calendar/earnings` are sometimes absent; the row falls back to the symbol alone by design.
+- **S&P 500 constituent drift:** the bundled set goes stale as the index rebalances (a handful of changes per year). Accepted: banner/holiday data is unaffected, held/watched symbols are always shown regardless, and the set is a one-constant maintenance update.
