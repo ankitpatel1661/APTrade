@@ -3,7 +3,6 @@ package com.aptrade.android.portfolio
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aptrade.android.ui.formatPercent
-import com.aptrade.android.ui.label
 import com.aptrade.android.ui.money
 import com.aptrade.android.ui.signedMoney
 import com.aptrade.android.ui.userMessage
@@ -16,6 +15,7 @@ import com.aptrade.shared.application.ResetPortfolio
 import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.domain.AllocationSlice
 import com.aptrade.shared.domain.Asset
+import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.domain.PortfolioExport
 import com.aptrade.shared.domain.Quote
@@ -62,7 +62,7 @@ enum class PortfolioSpan(val label: String) {
 data class HoldingRowUi(
     val symbol: String,
     val name: String,
-    val kindLabel: String,
+    val kind: AssetKind,
     val quantityText: String,
     val averageCostText: String,
     val marketValueText: String,
@@ -391,7 +391,7 @@ class PortfolioViewModel(
                 HoldingRowUi(
                     symbol = position.asset.symbol,
                     name = position.asset.name,
-                    kindLabel = position.asset.kind.label(),
+                    kind = position.asset.kind,
                     quantityText = position.quantity.toStringExpanded(),
                     averageCostText = money(position.averageCost.amountText),
                     marketValueText = money(marketValue.amountText),

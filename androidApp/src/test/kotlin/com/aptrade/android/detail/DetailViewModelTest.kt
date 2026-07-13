@@ -70,7 +70,7 @@ class DetailViewModelTest {
         dispatcher.scheduler.advanceUntilIdle()
 
         assertEquals("Apple Inc.", viewModel.state.value.name)
-        assertEquals("Stock", viewModel.state.value.kindLabel)
+        assertEquals(AssetKind.Stock, viewModel.state.value.kind)
     }
 
     @Test
@@ -246,7 +246,7 @@ class DetailViewModelTest {
         dispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(true, viewModel.state.value.profileResolved)
-        assertEquals("Crypto", viewModel.state.value.kindLabel)
+        assertEquals(AssetKind.Crypto, viewModel.state.value.kind)
 
         viewModel.buy("0.1")
         dispatcher.scheduler.advanceUntilIdle()

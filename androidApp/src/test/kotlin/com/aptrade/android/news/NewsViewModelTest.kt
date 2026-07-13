@@ -85,7 +85,7 @@ class NewsViewModelTest {
         repo: FakeNewsRepository? = FakeNewsRepository(),
         store: FakeBookmarkStore = FakeBookmarkStore(),
     ) = NewsViewModel(
-        fetchMarketNews = repo?.let { FetchMarketNews(it) },
+        fetchMarketNews = { repo?.let { FetchMarketNews(it) } },
         loadBookmarks = LoadBookmarks(store),
         toggleBookmark = ToggleBookmark(store),
     )
@@ -121,6 +121,28 @@ class NewsViewModelTest {
         assertTrue(s.articles.isEmpty())
         assertEquals(setOf("saved"), s.bookmarkedIds)
         assertFalse(s.isLoading)
+    }
+
+    @Test
+    fun startPicksUpAKeyConfiguredAfterConstruction() = runTest {
+        // The Settings key-entry flow: the VM outlives tab switches, so a key saved
+        // mid-session must be seen by the NEXT start() — the provider re-resolves there.
+        var repo: FakeNewsRepository? = null
+        val store = FakeBookmarkStore()
+        val viewModel = NewsViewModel(
+            fetchMarketNews = { repo?.let { FetchMarketNews(it) } },
+            loadBookmarks = LoadBookmarks(store),
+            toggleBookmark = ToggleBookmark(store),
+        )
+        viewModel.start(); runCurrent()
+        assertTrue(viewModel.state.value.needsKey)
+
+        repo = FakeNewsRepository(marketImpl = { listOf(article("after-key")) })
+        viewModel.start(); runCurrent()
+
+        val s = viewModel.state.value
+        assertFalse(s.needsKey)
+        assertEquals(listOf("after-key"), s.articles.map { it.id })
     }
 
     @Test

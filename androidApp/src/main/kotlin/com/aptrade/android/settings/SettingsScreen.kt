@@ -25,14 +25,17 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -115,7 +118,7 @@ fun SettingsScreen(viewModel: SettingsViewModel, onClose: () -> Unit) {
             when (page) {
                 SettingsPage.Root -> RootList(onOpen = { page = it })
                 SettingsPage.Profile -> ProfilePage()
-                SettingsPage.AccountSettings -> AccountSettingsPage()
+                SettingsPage.AccountSettings -> AccountSettingsPage(viewModel)
                 SettingsPage.Notifications -> NotificationsPage(
                     settings = settings,
                     onUpdate = viewModel::update,
@@ -422,9 +425,13 @@ private fun ProfilePage() {
 /** Account Settings page — five decorative detail rows, including the static
  *  "Enabled — Touch ID" biometric row: macOS/desktop display static text here too, NOT
  *  bound to the Security page's Biometric Login toggle. Starting Balance and Display
- *  Currency values stay literal, same as both references. */
+ *  Currency values stay literal, same as both references. Below them, the one LIVE
+ *  control on this page: the Finnhub key-entry field — the Android answer to the
+ *  desktop/macOS "drop a key into config.json" instructions, since the sandboxed config
+ *  dir isn't user-reachable here. Saving writes the same config.json AppGraph's news
+ *  wiring re-reads, so the key applies the next time the News tab loads. */
 @Composable
-private fun AccountSettingsPage() {
+private fun AccountSettingsPage(viewModel: SettingsViewModel) {
     DetailField(label = tr(L10n.Key.TradingMode), value = tr(L10n.Key.SimulatedPaperTrading))
     Spacer(Modifier.height(14.dp))
     DetailField(label = tr(L10n.Key.StartingBalance), value = "$100,000.00")
@@ -434,6 +441,33 @@ private fun AccountSettingsPage() {
     DetailField(label = tr(L10n.Key.DefaultTab), value = tr(L10n.Key.Watchlist))
     Spacer(Modifier.height(14.dp))
     DetailField(label = tr(L10n.Key.BiometricLogin), value = tr(L10n.Key.EnabledTouchID))
+
+    Spacer(Modifier.height(20.dp))
+    SectionLabel(tr(L10n.Key.News))
+    Spacer(Modifier.height(8.dp))
+    val savedKey by viewModel.finnhubKey.collectAsState()
+    // Keyed on savedKey so the draft snaps to the stored value once its async load lands
+    // (or a save normalizes trimming) — otherwise mid-edit text is never clobbered.
+    var draft by remember(savedKey) { mutableStateOf(savedKey) }
+    OutlinedTextField(
+        value = draft,
+        onValueChange = { draft = it },
+        label = { Text(tr(L10n.Key.FinnhubApiKeyField)) },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            tr(L10n.Key.FinnhubKeyAppliesNote),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(
+            enabled = draft.trim() != savedKey,
+            onClick = { viewModel.saveFinnhubKey(draft) },
+        ) { Text(tr(L10n.Key.SaveAction)) }
+    }
 }
 
 // MARK: - Help & Support

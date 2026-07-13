@@ -71,7 +71,7 @@ class SearchViewModelTest {
         dispatcher.scheduler.advanceUntilIdle()
 
         val rows = vm.state.value.results
-        assertEquals(listOf("Stock", "ETF", "Crypto"), rows.map { it.kindLabel })
+        assertEquals(listOf(AssetKind.Stock, AssetKind.Etf, AssetKind.Crypto), rows.map { it.kind })
         assertEquals("AAPL", rows[0].symbol)
     }
 

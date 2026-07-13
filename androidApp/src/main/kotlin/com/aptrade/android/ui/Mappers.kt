@@ -1,7 +1,6 @@
 package com.aptrade.android.ui
 
 import com.aptrade.shared.application.QuoteError
-import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.TradeError
 import java.text.NumberFormat
 import java.util.Locale
@@ -16,12 +15,6 @@ fun TradeError.userMessage(): String = when (this) {
     is TradeError.InsufficientFunds -> "Insufficient funds."
     is TradeError.InsufficientShares -> "Insufficient shares."
     is TradeError.InvalidQuantity -> "Enter a valid quantity."
-}
-
-fun AssetKind.label(): String = when (this) {
-    AssetKind.Stock -> "Stock"
-    AssetKind.Etf -> "ETF"
-    AssetKind.Crypto -> "Crypto"
 }
 
 /** en_US currency formatting of a lossless decimal string (`Money.amountText`): grouped

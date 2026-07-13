@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -60,22 +62,14 @@ import com.aptrade.android.ui.chart.DualLineChart
 import com.aptrade.android.ui.chart.DualSeriesCrosshairOverlay
 import com.aptrade.android.ui.chart.crosshairReadout
 import com.aptrade.android.ui.chart.nearestIndex
+import com.aptrade.android.ui.localizedLabel
 import com.aptrade.android.ui.theme.GainGreen
 import com.aptrade.android.ui.theme.LossRed
 import com.aptrade.shared.domain.AllocationSlice
 import com.aptrade.shared.domain.Asset
-import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.l10n.L10n
 import java.util.Locale
-
-/** Reconstruct an [AssetKind] from the display [HoldingRowUi.kindLabel] so a held-row BUY can call
- *  the VM's `buy(asset, …)`. Mirrors the desktop `assetKindFromLabel`. */
-private fun assetKindFromLabel(label: String?): AssetKind = when (label) {
-    "ETF" -> AssetKind.Etf
-    "Crypto" -> AssetKind.Crypto
-    else -> AssetKind.Stock
-}
 
 /** The holding row a [TradeSheet] is opened against, plus the side the user tapped. */
 private data class TradeTarget(val row: HoldingRowUi, val side: TradeSide)
@@ -278,7 +272,7 @@ private fun PortfolioContent(
                         Asset(
                             symbol = target.row.symbol,
                             name = target.row.name,
-                            kind = assetKindFromLabel(target.row.kindLabel),
+                            kind = target.row.kind,
                         ),
                         quantity,
                     )
@@ -394,7 +388,7 @@ private fun PerformanceSection(
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionHeaderInline("PERFORMANCE")
 
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        SingleChoiceSegmentedButtonRow(Modifier.segmentedRowWidth()) {
             PortfolioSpan.entries.forEachIndexed { index, span ->
                 SegmentedButton(
                     selected = state.span == span,
@@ -486,6 +480,15 @@ private fun PerformanceSection(
     }
 }
 
+/** Segmented rows fill the width on phones but cap at 480dp and center on wider (tablet)
+ *  windows — full-bleed segments there stretch into comically wide tap targets. The trailing
+ *  fillMaxWidth re-fills the now-capped constraint, so phones are pixel-identical to before. */
+private fun Modifier.segmentedRowWidth(): Modifier = this
+    .fillMaxWidth()
+    .wrapContentWidth(Alignment.CenterHorizontally)
+    .widthIn(max = 480.dp)
+    .fillMaxWidth()
+
 /** Holdings / Allocation / Activity / Performance segmented row — the Android counterpart of
  *  desktop's pill-style [com.aptrade.desktop.portfolio.PortfolioPane]'s `SectionSwitcher`,
  *  built from the same [SingleChoiceSegmentedButtonRow]/[SegmentedButton] pair the PERFORMANCE
@@ -498,7 +501,7 @@ private fun SectionSwitcher(
     onSelect: (PortfolioSection) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    SingleChoiceSegmentedButtonRow(modifier.fillMaxWidth()) {
+    SingleChoiceSegmentedButtonRow(modifier.segmentedRowWidth()) {
         PortfolioSection.entries.forEachIndexed { index, option ->
             SegmentedButton(
                 selected = selected == option,
@@ -585,7 +588,7 @@ private fun HoldingRow(
 private fun AllocationBar(slice: AllocationSlice) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(slice.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            Text(slice.localizedLabel(), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             Text(
                 String.format(Locale.US, "%.1f%%", slice.fraction * 100),
                 style = MaterialTheme.typography.bodyMedium,

@@ -52,28 +52,34 @@ data class NewsUiState(
 }
 
 /** Owns the News tab: category-scoped market news, the Saved toggle, live text filter, and
- *  bookmark toggling. [fetchMarketNews] is null when no Finnhub key is configured (AppGraph
- *  passes null) — that becomes [NewsUiState.needsKey] and no fetch is ever attempted.
+ *  bookmark toggling. [fetchMarketNews] is a PROVIDER (not a frozen instance) because this VM
+ *  outlives tab switches in the Activity's ViewModelStore while the user can enter a Finnhub
+ *  key in Settings at any time: [start] re-resolves it on every News-tab entry, so a key saved
+ *  mid-session takes effect the next time the tab opens. It resolves to null while no key is
+ *  configured — that becomes [NewsUiState.needsKey] and no fetch is ever attempted.
  *  Bookmarks always load regardless of key state. Structurally mirrors desktop `NewsViewModel`:
  *  a `MutableStateFlow` mutated only from `viewModelScope`-launched coroutines
  *  (single-threaded confinement via Dispatchers.Main.immediate takes the place of desktop's
  *  single-thread-confined scope). */
 class NewsViewModel(
-    private val fetchMarketNews: FetchMarketNews?,
+    private val fetchMarketNews: () -> FetchMarketNews?,
     private val loadBookmarks: LoadBookmarks,
     private val toggleBookmark: ToggleBookmark,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(NewsUiState(needsKey = fetchMarketNews == null))
+    private val _state = MutableStateFlow(NewsUiState(needsKey = fetchMarketNews() == null))
     val state: StateFlow<NewsUiState> = _state
 
     /** Loads bookmarks (always) and, when a key is configured, the current category's articles.
-     *  Call once when the screen starts composing/observing. */
+     *  Called on every News-tab entry (LifecycleStartEffect) — re-resolving the provider here
+     *  is what picks up a key saved in Settings since the last visit. */
     fun start() {
         viewModelScope.launch {
             _state.update { it.copy(bookmarks = loadBookmarks.execute()) }
         }
-        val fetch = fetchMarketNews ?: return
+        val fetch = fetchMarketNews()
+        _state.update { it.copy(needsKey = fetch == null) }
+        if (fetch == null) return
         viewModelScope.launch { load(fetch, _state.value.category) }
     }
 
@@ -82,7 +88,7 @@ class NewsViewModel(
     fun setCategory(category: NewsCategory) {
         if (_state.value.category == category) return
         _state.update { it.copy(category = category) }
-        val fetch = fetchMarketNews ?: return
+        val fetch = fetchMarketNews() ?: return
         viewModelScope.launch { load(fetch, category) }
     }
 
@@ -96,7 +102,7 @@ class NewsViewModel(
     /** Pull-to-refresh entry point: re-fetches the current category. No-op when no key is
      *  configured (there is nothing to refresh). */
     fun refresh() {
-        val fetch = fetchMarketNews ?: return
+        val fetch = fetchMarketNews() ?: return
         viewModelScope.launch { load(fetch, _state.value.category) }
     }
 

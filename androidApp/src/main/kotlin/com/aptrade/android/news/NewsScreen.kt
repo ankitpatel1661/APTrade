@@ -54,7 +54,7 @@ import com.aptrade.shared.l10n.L10n
 fun NewsScreen(padding: PaddingValues) {
     val viewModel: NewsViewModel = viewModel {
         NewsViewModel(
-            fetchMarketNews = AppGraph.fetchMarketNews,
+            fetchMarketNews = { AppGraph.fetchMarketNews },
             loadBookmarks = AppGraph.loadBookmarks,
             toggleBookmark = AppGraph.toggleBookmark,
         )
@@ -235,7 +235,9 @@ private fun NoKeyState(modifier: Modifier = Modifier) {
         )
         Spacer(Modifier.height(10.dp))
         Text(
-            tr(L10n.Key.FinnhubKeyInstructions),
+            // The in-app variant, not desktop's file-drop instructions: Android's sandboxed
+            // config.json isn't user-reachable — the key is entered in Settings instead.
+            tr(L10n.Key.FinnhubKeyInstructionsInApp),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,

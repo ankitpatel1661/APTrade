@@ -42,6 +42,8 @@ import com.aptrade.desktop.AppGraph
 import com.aptrade.desktop.LocalAppGraph
 import com.aptrade.desktop.designkit.CandleChart
 import com.aptrade.desktop.designkit.ChangePill
+import com.aptrade.desktop.designkit.chipLabel
+import com.aptrade.desktop.designkit.kindLabel
 import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.designkit.InterFamily
 import com.aptrade.desktop.designkit.LineChart
@@ -56,7 +58,6 @@ import com.aptrade.shared.l10n.L10n
 import com.aptrade.desktop.l10n.tr
 import com.aptrade.desktop.news.ArticleRow
 import com.aptrade.desktop.portfolio.HoldingRowUi
-import com.aptrade.desktop.ui.assetKindFromLabel
 import java.math.BigDecimal
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -159,7 +160,7 @@ private fun DetailContent(
                     color = DK.textPrimary,
                 ),
             )
-            state.kindLabel?.let { KindChip(it) }
+            state.kind?.let { KindChip(it) }
             if (onBuy != null) {
                 Spacer(Modifier.weight(1f))
                 TradeButton(
@@ -167,7 +168,7 @@ private fun DetailContent(
                         val asset = com.aptrade.shared.domain.Asset(
                             symbol = state.symbol,
                             name = state.name ?: state.symbol,
-                            kind = assetKindFromLabel(state.kindLabel),
+                            kind = state.kind ?: com.aptrade.shared.domain.AssetKind.Stock,
                         )
                         onBuy(asset, state.amountText)
                     },
@@ -365,9 +366,10 @@ private fun IndicatorChips(selection: Set<Indicator>, onToggle: (Indicator) -> U
 }
 
 @Composable
-private fun KindChip(label: String) {
+private fun KindChip(kind: com.aptrade.shared.domain.AssetKind) {
     Text(
-        label.uppercase(),
+        // chipLabel is translated pre-uppercased (DE "AKTIE" ≠ "STOCK".uppercase()).
+        chipLabel(kind),
         style = TextStyle(
             fontFamily = InterFamily,
             fontSize = 10.sp,
@@ -513,7 +515,7 @@ private fun KeyStatsCard(state: DetailUiState) {
             )
             StatRow(
                 leftLabel = tr(L10n.Key.StatSymbol), leftValue = state.symbol,
-                rightLabel = tr(L10n.Key.StatType), rightValue = state.kindLabel ?: "—",
+                rightLabel = tr(L10n.Key.StatType), rightValue = state.kind?.let { kindLabel(it) } ?: "—",
             )
         }
     }

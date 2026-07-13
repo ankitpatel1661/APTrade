@@ -388,7 +388,21 @@ APTrade Lite is the foundation. Planned toward the full platform:
   language switcher plus chart/UX polish (6e). Still to come: **none** — macOS parity and
   localization are complete; the `:desktopApp` roadmap that opened at 6a is closed.
 
-Recently shipped: **Android → Windows parity** — the `:androidApp` Compose app now carries
+Recently shipped: **cross-platform follow-ups sweep** — the follow-ups recorded at the two
+parity merges are closed. In-app **Finnhub key-entry fields** land on iOS and Android
+(Account Settings on both; the sandboxed `config.json` isn't user-reachable on either
+platform): `AppConfig`/`FinnhubKeyConfig` gained merge-writing save paths into the same
+`config.json` the news wiring reads, the news graphs re-resolve the key per News-tab
+visit (no relaunch), and both platforms' News empty states now point at the field. Android
+notifications got a **branded small icon** (white AP-monogram vector + gold shade accent,
+replacing the stock system glyph). The **`AssetKind` label localization sweep** removed
+every hard-coded Stock/ETF/Crypto display string across Android, desktop, and shared: UI
+models now carry the typed `AssetKind` (the fragile label→kind reverse maps are gone) and
+localize only at render, with 3 new singular kind keys ("Aktie" is neither "Aktien" nor
+"AKTIE") and a typed `kind` on by-class allocation slices. And the portfolio **segmented
+rows now cap at 480 dp** (centered) on tablets instead of stretching full-bleed. Catalog:
+227 keys. Suites at merge: macOS 209 / iOS sim suite green / shared 306 / desktop 212 /
+android 127. Before that: **Android → Windows parity** — the `:androidApp` Compose app now carries
 the full desktop feature set on the shared KMP core: a persisted watchlist (sparklines,
 swipe-to-remove with Undo, add-from-search), price alerts with system notifications and
 settings-gated order-fill notifications, a confirm-trades layer on the trade sheet, news

@@ -121,6 +121,19 @@ object L10n {
         StockChip(english = "STOCK"),
         EtfChip(english = "ETF"),
         CryptoChip(english = "CRYPTO"),
+        // Singular plain-word kind labels (detail chips / type stat rows) — distinct from the
+        // plural section labels above and the pre-uppercased chips ("Aktie" is neither "Aktien"
+        // nor "AKTIE").
+        StockKindLabel(english = "Stock"),
+        EtfKindLabel(english = "ETF"),
+        CryptoKindLabel(english = "Crypto"),
+        // In-app Finnhub key entry (Settings → Account Settings) — platforms whose config
+        // dir isn't user-reachable (Android sandbox, iOS container) get a field instead of
+        // the file-drop instructions.
+        FinnhubApiKeyField(english = "Finnhub API key"),
+        SaveAction(english = "Save"),
+        FinnhubKeyAppliesNote(english = "Applies the next time News loads."),
+        FinnhubKeyInstructionsInApp(english = "Add a Finnhub API key under Account → Account Settings."),
 
         // Portfolio
         HoldingsSection(english = "Holdings"),
@@ -402,6 +415,13 @@ object L10n {
             Key.StockChip to "AKTIE",
             Key.EtfChip to "ETF",
             Key.CryptoChip to "KRYPTO",
+            Key.StockKindLabel to "Aktie",
+            Key.EtfKindLabel to "ETF",
+            Key.CryptoKindLabel to "Krypto",
+            Key.FinnhubApiKeyField to "Finnhub-API-Schlüssel",
+            Key.SaveAction to "Speichern",
+            Key.FinnhubKeyAppliesNote to "Gilt beim nächsten Laden der News.",
+            Key.FinnhubKeyInstructionsInApp to "Fügen Sie einen Finnhub-API-Schlüssel unter Konto → Kontoeinstellungen hinzu.",
 
             Key.HoldingsSection to "Bestände",
             Key.AllocationSection to "Aufteilung",
@@ -647,6 +667,13 @@ object L10n {
             Key.StockChip to "AZIONE",
             Key.EtfChip to "ETF",
             Key.CryptoChip to "CRIPTO",
+            Key.StockKindLabel to "Azione",
+            Key.EtfKindLabel to "ETF",
+            Key.CryptoKindLabel to "Cripto",
+            Key.FinnhubApiKeyField to "Chiave API Finnhub",
+            Key.SaveAction to "Salva",
+            Key.FinnhubKeyAppliesNote to "Si applica al prossimo caricamento delle notizie.",
+            Key.FinnhubKeyInstructionsInApp to "Aggiungi una chiave API Finnhub in Account → Impostazioni account.",
 
             Key.HoldingsSection to "Posizioni",
             Key.AllocationSection to "Allocazione",
@@ -892,6 +919,13 @@ object L10n {
             Key.StockChip to "ACCIÓN",
             Key.EtfChip to "ETF",
             Key.CryptoChip to "CRIPTO",
+            Key.StockKindLabel to "Acción",
+            Key.EtfKindLabel to "ETF",
+            Key.CryptoKindLabel to "Cripto",
+            Key.FinnhubApiKeyField to "Clave de API de Finnhub",
+            Key.SaveAction to "Guardar",
+            Key.FinnhubKeyAppliesNote to "Se aplica la próxima vez que se carguen las noticias.",
+            Key.FinnhubKeyInstructionsInApp to "Agrega una clave de API de Finnhub en Cuenta → Ajustes de cuenta.",
 
             Key.HoldingsSection to "Posiciones",
             Key.AllocationSection to "Asignación",

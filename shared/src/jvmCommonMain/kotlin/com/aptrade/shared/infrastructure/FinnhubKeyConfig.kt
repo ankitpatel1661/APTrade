@@ -3,10 +3,14 @@ package com.aptrade.shared.infrastructure
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import java.nio.file.Path
 import kotlin.io.path.Path
+import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
+import kotlin.io.path.writeText
 
 /** Reads the user's Finnhub API key from a small local config file, never from source.
  *
@@ -44,5 +48,33 @@ class FinnhubKeyConfig(
         } catch (e: IllegalArgumentException) {
             null
         }
+    }
+
+    /** Persists [key] into the PRIMARY location, [configDir]/config.json — the in-app
+     *  settings-field counterpart of the manual file drop (added for platforms whose config
+     *  dir isn't user-reachable). Merge-writes: any other fields already in the file are
+     *  preserved (a corrupt file is replaced wholesale — same tolerance as the read path).
+     *  A blank/null [key] removes the field. Creates the config directory if missing.
+     *  The key value itself is never logged. */
+    fun saveFinnhubApiKey(key: String?) {
+        val file = configDir.resolve("config.json")
+        val existing: Map<String, kotlinx.serialization.json.JsonElement> =
+            if (file.exists()) {
+                try {
+                    (json.parseToJsonElement(file.readText()) as? JsonObject).orEmpty()
+                } catch (e: SerializationException) {
+                    emptyMap()
+                } catch (e: IllegalArgumentException) {
+                    emptyMap()
+                }
+            } else {
+                emptyMap()
+            }
+        val trimmed = key?.trim()?.takeIf { it.isNotBlank() }
+        val updated = existing.toMutableMap().apply {
+            if (trimmed == null) remove("finnhubAPIKey") else put("finnhubAPIKey", JsonPrimitive(trimmed))
+        }
+        file.parent?.createDirectories()
+        file.writeText(json.encodeToString(JsonObject.serializer(), JsonObject(updated)))
     }
 }

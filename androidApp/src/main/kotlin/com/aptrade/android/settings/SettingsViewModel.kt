@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aptrade.android.l10n.LocalizationManager
 import com.aptrade.shared.infrastructure.FileSettingsStore
+import com.aptrade.shared.infrastructure.FinnhubKeyConfig
 import com.aptrade.shared.l10n.AppLanguage
 import com.aptrade.shared.settings.AppSettings
 import kotlinx.coroutines.CancellationException
@@ -57,10 +58,18 @@ internal suspend fun persistSettings(
  */
 class SettingsViewModel(
     private val settingsStore: FileSettingsStore,
+    private val finnhubKeyConfig: FinnhubKeyConfig? = null,
 ) : ViewModel() {
 
     private val _settings = MutableStateFlow(AppSettings())
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
+
+    /** The stored Finnhub API key ("" while none is saved) for the Account Settings
+     *  key-entry field. Lives OUTSIDE [AppSettings] deliberately: the key's home is
+     *  config.json (the file `AppGraph`'s news wiring and the manual file-drop path both
+     *  read), not settings.json — one source of truth, no second persistence path. */
+    private val _finnhubKey = MutableStateFlow("")
+    val finnhubKey: StateFlow<String> = _finnhubKey.asStateFlow()
 
     init {
         // Load persisted settings once at startup. The defaults ARE AppSettings()'s
@@ -77,6 +86,36 @@ class SettingsViewModel(
                 // Corrupt/unreadable settings already fall back to defaults inside the
                 // store; any other unexpected failure keeps the defaults rather than
                 // crashing startup.
+            }
+        }
+        finnhubKeyConfig?.let { config ->
+            viewModelScope.launch {
+                try {
+                    _finnhubKey.value = config.finnhubApiKey().orEmpty()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Throwable) {
+                    // Unreadable config keeps the empty-field default, same tolerance as
+                    // the settings load above.
+                }
+            }
+        }
+    }
+
+    /** Persists [raw] (trimmed; blank clears the key) into config.json through
+     *  [FinnhubKeyConfig.saveFinnhubApiKey], flipping the in-memory state first — the same
+     *  "flip live state, persist fire-and-forget" shape as [update]. AppGraph's news wiring
+     *  re-reads config.json per News-tab entry, so no refresh hook is needed here. */
+    fun saveFinnhubKey(raw: String) {
+        val config = finnhubKeyConfig ?: return
+        _finnhubKey.value = raw.trim()
+        viewModelScope.launch {
+            try {
+                config.saveFinnhubApiKey(raw)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+                // Failed persist: in-memory state stays applied (see class KDoc).
             }
         }
     }

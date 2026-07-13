@@ -4,4 +4,7 @@
          background (DK.bgBottom on desktop/macOS), NOT pure black, so the icon reads as
          part of the brand rather than a plain silhouette. -->
     <color name="ic_launcher_background">#0B0B0E</color>
+    <!-- Notification accent — the brand's mid gold (Theme.goldGradient's center stop on
+         macOS, DK.gold on desktop). Tints the small icon + app name in the shade. -->
+    <color name="notification_accent">#D4A94E</color>
 </resources>
