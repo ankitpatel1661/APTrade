@@ -2,12 +2,18 @@ package com.aptrade.android
 
 import android.content.Context
 import com.aptrade.android.alerts.AndroidAlertNotifier
+import com.aptrade.android.alerts.AndroidMarketActivityCoordinator
+import com.aptrade.android.l10n.tr
+import com.aptrade.android.l10n.trf
 import com.aptrade.shared.application.AddToWatchlist
 import com.aptrade.shared.application.AlertNotifier
 import com.aptrade.shared.application.BuyAsset
 import com.aptrade.shared.application.CreatePriceAlert
+import com.aptrade.shared.application.EarningsCalendarRepository
+import com.aptrade.shared.application.EmptyEarningsRepository
 import com.aptrade.shared.application.EvaluateAlerts
 import com.aptrade.shared.application.FetchChartWindow
+import com.aptrade.shared.application.FetchEarningsCalendar
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketNews
 import com.aptrade.shared.application.FetchMarketQuotes
@@ -19,25 +25,33 @@ import com.aptrade.shared.application.FetchSearch
 import com.aptrade.shared.application.FetchWatchlist
 import com.aptrade.shared.application.LoadAlerts
 import com.aptrade.shared.application.LoadBookmarks
+import com.aptrade.shared.application.MarketActivityPlanner
 import com.aptrade.shared.application.MarketDataRepository
 import com.aptrade.shared.application.NewsRepository
 import com.aptrade.shared.application.PortfolioStore
 import com.aptrade.shared.application.RemoveFromWatchlist
 import com.aptrade.shared.application.RemovePriceAlert
 import com.aptrade.shared.application.ResetPortfolio
+import com.aptrade.shared.application.SchedulerStateStore
 import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.application.ToggleBookmark
 import com.aptrade.shared.domain.AssetKind
+import com.aptrade.shared.domain.EarningsSession
+import com.aptrade.shared.domain.MarketCalendar
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.domain.WatchlistEntry
 import com.aptrade.shared.infrastructure.FileAlertStore
 import com.aptrade.shared.infrastructure.FileBookmarkStore
 import com.aptrade.shared.infrastructure.FilePortfolioStore
+import com.aptrade.shared.infrastructure.FileSchedulerStateStore
 import com.aptrade.shared.infrastructure.FileSettingsStore
 import com.aptrade.shared.infrastructure.FileWatchlistStore
+import com.aptrade.shared.infrastructure.FinnhubEarningsRepository
 import com.aptrade.shared.infrastructure.FinnhubKeyConfig
 import com.aptrade.shared.infrastructure.FinnhubNewsRepository
 import com.aptrade.shared.infrastructure.YahooMarketDataRepository
+import com.aptrade.shared.l10n.L10n
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.sync.Mutex
 import java.io.File
 import java.nio.file.Path
@@ -109,6 +123,16 @@ object AppGraph {
     val settingsStore by lazy { FileSettingsStore(configDir().resolve("settings.json")) }
     val bookmarkStore by lazy { FileBookmarkStore(configDir().resolve("bookmarks.json")) }
 
+    // Market-activity scheduler markers (Task 8) — same filename desktop's AppGraph uses
+    // (resolveConfigDir().resolve("schedulerState.json")), rooted at THIS app's configDir()
+    // instead, mirroring every other store above. Backed by the promoted
+    // `com.aptrade.shared.infrastructure.FileSchedulerStateStore` (moved out of
+    // desktop-only `com.aptrade.desktop.infra` so both platforms share one implementation).
+    val schedulerStateStore: SchedulerStateStore by lazy {
+        FileSchedulerStateStore(configDir().resolve("schedulerState.json"))
+    }
+    val marketActivityPlanner: MarketActivityPlanner by lazy { MarketActivityPlanner() }
+
     // News (Task 7). FinnhubKeyConfig's default `configDir` param (`resolveConfigDir()`)
     // targets a desktop home-dir convention — rooted here explicitly at THIS app's own
     // configDir() (filesDir/aptrade) instead, so the key resolves from the Android app
@@ -146,6 +170,37 @@ object AppGraph {
     val toggleBookmark by lazy { ToggleBookmark(bookmarkStore) }
     val fetchMarketNews: FetchMarketNews? get() = newsRepository?.let { FetchMarketNews(it) }
 
+    // Earnings calendar (Task 8). Mirrors newsRepository's key-caching getter EXACTLY (same
+    // re-read-per-access, rebuild-only-on-change shape, one Ktor client per key) but is never
+    // null: with no key it falls back to [EmptyEarningsRepository], same as desktop AppGraph's
+    // non-nullable `earningsRepository` — the market-activity coordinator's earnings check
+    // (and any future Calendar tab) can always call it without a null check.
+    private val earningsRepositoryLock = Any()
+    private var earningsRepositoryKey: String? = null
+    private var earningsRepositoryInstance: EarningsCalendarRepository = EmptyEarningsRepository
+    val earningsRepository: EarningsCalendarRepository
+        get() = synchronized(earningsRepositoryLock) {
+            val key = finnhubKeyConfig.finnhubApiKey()
+            if (key != earningsRepositoryKey) {
+                earningsRepositoryKey = key
+                earningsRepositoryInstance = key?.let { FinnhubEarningsRepository(it) } ?: EmptyEarningsRepository
+            }
+            earningsRepositoryInstance
+        }
+    val earningsKeyMissing: Boolean get() = finnhubKeyConfig.finnhubApiKey() == null
+
+    // Shared symbol-ownership provider: watchlist ∪ portfolio, read fresh per call — the
+    // Android counterpart to desktop AppGraph's public `ownSymbols` (used there by both the
+    // coordinator's digestSummary()-adjacent earnings check and the Calendar tab's ViewModel).
+    // `portfolio` is the lazy PortfolioGraph below (requires AppGraph.initialize() first, same
+    // precondition as configDir()).
+    val ownSymbols: suspend () -> Set<String> = {
+        val watchlistSymbols = fetchWatchlist.execute().map { it.symbol }
+        val portfolioSymbols = portfolio.fetchPortfolio.execute().positions.map { it.asset.symbol }
+        (watchlistSymbols + portfolioSymbols).toSet()
+    }
+    val fetchEarningsCalendar: FetchEarningsCalendar get() = FetchEarningsCalendar(earningsRepository, ownSymbols)
+
     // Alerts & notifications (Task 6). The notifier seam mirrors desktop's AppGraph: one
     // AlertNotifier instance shared by EvaluateAlerts, backed here by Android's
     // NotificationManager rather than desktop's Tray. Typed to the concrete class (not the
@@ -168,6 +223,56 @@ object AppGraph {
             isNotifyEnabled = { settingsStore.load().priceAlerts },
         )
     }
+
+    // Market-local trading-day calendar (Task 8) — same class desktop's Main.kt instantiates
+    // (`MarketCalendar()`), used to key `fetchTodaysOwnEarnings`'s "today" against the exact
+    // trading day the coordinator's own 60s tick considers current.
+    private val marketCalendar: MarketCalendar by lazy { MarketCalendar() }
+
+    /**
+     * Builds the market-activity coordinator (open/close + digest + earnings-day
+     * notifications, Task 8) — a direct port of desktop's wiring in
+     * `desktopApp/src/main/kotlin/com/aptrade/desktop/Main.kt` (search
+     * `marketActivityCoordinator`). All L10n formatting happens HERE (the wiring site, where
+     * `tr`/`trf` are imported) rather than inside [AndroidMarketActivityCoordinator] itself —
+     * same "coordinator stays L10n-ignorant" shape desktop keeps, see that class's KDoc.
+     *
+     * A factory function (not a lazy singleton val) because [scope] must be supplied by the
+     * caller (MainActivity) so it can be cancelled alongside the caller's own lifecycle —
+     * [scope] MUST be single-thread-confined (Dispatchers.Main), matching desktop's `appScope`
+     * and this coordinator's own KDoc requirement.
+     */
+    fun marketActivityCoordinator(
+        scope: CoroutineScope,
+        nowEpochSeconds: () -> Long = { System.currentTimeMillis() / 1000 },
+    ): AndroidMarketActivityCoordinator = AndroidMarketActivityCoordinator(
+        planner = marketActivityPlanner,
+        stateStore = schedulerStateStore,
+        loadSettings = { settingsStore.load() },
+        notifyMarketStatus = { opened -> alertNotifier.notifyMarketStatus(opened) },
+        notifyDigest = { summary -> alertNotifier.notifyDigest(summary) },
+        notifyEarnings = { event ->
+            // sessionLabel(Unknown) is "" (no L10n key for it); every language's
+            // EarningsTodayBodyFmt ends with "· %2$s" (EN/DE/IT/ES all verified), so an
+            // empty label would leave a dangling "… · " — trim the orphaned separator in
+            // that one case only, never when a real session label is present. Mirrors
+            // desktop Main.kt's notifyEarnings closure verbatim.
+            val label = sessionLabel(event.session)
+            val body = trf(L10n.Key.EarningsTodayBodyFmt, event.symbol, label)
+            alertNotifier.notifyEarnings(
+                title = tr(L10n.Key.EarningsTodayTitle),
+                body = if (label.isEmpty()) body.trimEnd(' ', '·') else body,
+            )
+        },
+        fetchTodaysOwnEarnings = {
+            val today = marketCalendar.tradingDay(nowEpochSeconds())
+            fetchEarningsCalendar.ownedToday(today)
+        },
+        fetchWatchlist = fetchWatchlist,
+        fetchMarketQuotes = fetchMarketQuotes,
+        scope = scope,
+        nowEpochSeconds = nowEpochSeconds,
+    )
 
     // Settings-gated order-fill delivery (spec A2) — the Android port of desktop AppGraph's
     // `notifyOrderFill` seam (`AppGraphNotifyOrderFill` pattern): read `settings.orderFills`
@@ -214,6 +319,22 @@ internal fun buildNotifyOrderFill(
             deliver(side, symbol, quantityText, amountFormatted)
         }
     }
+
+/**
+ * [EarningsSession] -> localized label (Task 8). Direct port of desktop's
+ * `sessionLabel` (`desktopApp/src/main/kotlin/com/aptrade/desktop/calendar/CalendarPane.kt`),
+ * used there by both the Calendar tab's earnings rows and Main.kt's earnings-notification
+ * wiring. Android has no Calendar tab yet (a later task), so this copy exists solely for
+ * [AppGraph.marketActivityCoordinator]'s `notifyEarnings` closure — when the Calendar tab
+ * lands on Android, move this into that screen's own file and share the one definition,
+ * mirroring how desktop consolidated it into CalendarPane.kt.
+ */
+internal fun sessionLabel(session: EarningsSession): String = when (session) {
+    EarningsSession.BeforeOpen -> tr(L10n.Key.SessionBeforeOpen)
+    EarningsSession.AfterClose -> tr(L10n.Key.SessionAfterClose)
+    EarningsSession.DuringMarket -> tr(L10n.Key.SessionDuringMarket)
+    EarningsSession.Unknown -> ""
+}
 
 /** The portfolio slice of the composition root: everything that depends on the
  *  [PortfolioStore]. Groups the trade + read + performance use cases sharing one store. */

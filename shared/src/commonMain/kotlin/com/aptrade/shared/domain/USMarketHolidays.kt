@@ -20,6 +20,14 @@ enum class USMarketHoliday {
  *  - Good Friday = Easter Sunday (anonymous Gregorian algorithm) minus 2 days.
  *  - Half-days (13:00 ET close): day after Thanksgiving; July 3 and December 24 when
  *    they are weekdays NOT already consumed as the observed July 4 / Christmas.
+ *
+ *  THREADING (Task 1 review, closed Task 8): the per-year [cache] below is a plain,
+ *  unsynchronized `HashMap` — safe only because every caller is single-thread-confined
+ *  (each platform's coordinator/ViewModel scope: desktop's `Dispatchers.Main`-confined
+ *  `DesktopMarketActivityCoordinator`/calendar scope, Android's equally Main-confined
+ *  `AndroidMarketActivityCoordinator`). Do not call into this object from a
+ *  multi-threaded dispatcher (e.g. `Dispatchers.Default`/`IO`) without adding real
+ *  synchronization first.
  */
 object USMarketHolidays {
 

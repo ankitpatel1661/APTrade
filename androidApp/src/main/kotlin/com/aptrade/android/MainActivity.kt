@@ -9,9 +9,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -27,6 +30,10 @@ import com.aptrade.android.settings.SettingsScreen
 import com.aptrade.android.settings.SettingsViewModel
 import com.aptrade.android.ui.theme.APTradeTheme
 import com.aptrade.android.watchlist.WatchlistScreen
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 
 class MainActivity : ComponentActivity() {
 
@@ -60,6 +67,19 @@ class MainActivity : ComponentActivity() {
                 SettingsViewModel(AppGraph.settingsStore, AppGraph.finnhubKey)
             }
             val settings by settingsViewModel.settings.collectAsState()
+
+            // Market-activity coordinator (Task 8) — open/close + daily-digest + earnings-day
+            // notifications, 60s cadence. A single-thread-confined scope (Dispatchers.Main),
+            // mirroring desktop's `appScope` in Main.kt and living beside the alert-evaluation
+            // loop (WatchlistViewModel's own poll, which drives EvaluateAlerts) for the same
+            // process lifetime: created once here, cancelled in the DisposableEffect below.
+            val marketActivityScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
+            val marketActivityCoordinator = remember {
+                AppGraph.marketActivityCoordinator(scope = marketActivityScope)
+            }
+            LaunchedEffect(Unit) { marketActivityCoordinator.start() }
+            DisposableEffect(Unit) { onDispose { marketActivityScope.cancel() } }
+
             APTradeTheme(settings) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     AppNavHost(settingsViewModel)
