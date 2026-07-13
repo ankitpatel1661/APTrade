@@ -16,6 +16,37 @@ public enum AppConfig {
         return key
     }
 
+    /// Persists `key` into the config file (trimmed; nil/blank removes the field) — the
+    /// in-app settings-field counterpart of the manual file drop, added because iOS's
+    /// sandboxed config path isn't user-reachable. Merge-writes: any other fields already
+    /// in the file are preserved (a corrupt file is replaced wholesale — same tolerance as
+    /// the read path). Creates intermediate directories. The key value is never logged.
+    /// Returns whether the write landed.
+    @discardableResult
+    public static func saveFinnhubAPIKey(_ key: String?, path: URL? = nil) -> Bool {
+        guard let finalPath = path ?? defaultConfigPath else { return false }
+        var object: [String: Any] = [:]
+        if let data = try? Data(contentsOf: finalPath),
+           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            object = existing
+        }
+        let trimmed = key?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmed, !trimmed.isEmpty {
+            object["finnhubAPIKey"] = trimmed
+        } else {
+            object.removeValue(forKey: "finnhubAPIKey")
+        }
+        do {
+            try FileManager.default.createDirectory(
+                at: finalPath.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+            try data.write(to: finalPath, options: .atomic)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// The default config file location. macOS uses the user's home directory (outside the
     /// app sandbox); iOS has no `homeDirectoryForCurrentUser` API, so it falls back to the
     /// app's Documents directory, which is sandbox-valid.

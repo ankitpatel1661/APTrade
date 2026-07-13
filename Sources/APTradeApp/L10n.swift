@@ -169,7 +169,12 @@ enum L10n {
         case refresh = "Refresh"
         case connectNewsSource = "Connect a news source"
         case finnhubKeyInstructions = "Add a Finnhub API key to ~/.config/aptrade/config.json (field \"finnhubAPIKey\") and relaunch."
-        case finnhubKeyInstructionsIOS = "Open this app's folder in the Files app and add a Finnhub API key to .config/aptrade/config.json (field \"finnhubAPIKey\"), then relaunch."
+        case finnhubKeyInstructionsIOS = "Add a Finnhub API key under Account → Account Settings."
+        // In-app Finnhub key entry (Account → Account Settings, iOS) — the sandboxed config
+        // path isn't user-reachable, so iOS gets a field instead of file-drop instructions.
+        case finnhubApiKeyField = "Finnhub API key"
+        case saveAction = "Save"
+        case finnhubKeyAppliesNote = "Applies the next time News loads."
 
         // MARK: Asset detail
         case couldntLoadChart = "Couldn't load chart"
@@ -586,10 +591,18 @@ enum L10n {
                                   .german: "Fügen Sie einen Finnhub-API-Schlüssel in ~/.config/aptrade/config.json (Feld \"finnhubAPIKey\") hinzu und starten Sie die App neu.",
                                   .italian: "Aggiungi una chiave API Finnhub in ~/.config/aptrade/config.json (campo \"finnhubAPIKey\") e riavvia.",
                                   .spanish: "Agrega una clave de API de Finnhub en ~/.config/aptrade/config.json (campo \"finnhubAPIKey\") y vuelve a iniciar la app."],
-        .finnhubKeyInstructionsIOS: [.english: "Open this app's folder in the Files app and add a Finnhub API key to .config/aptrade/config.json (field \"finnhubAPIKey\"), then relaunch.",
-                                     .german: "Öffnen Sie den Ordner dieser App in der App \"Dateien\" und fügen Sie einen Finnhub-API-Schlüssel in .config/aptrade/config.json (Feld \"finnhubAPIKey\") hinzu, starten Sie die App dann neu.",
-                                     .italian: "Apri la cartella di questa app nell'app File e aggiungi una chiave API Finnhub in .config/aptrade/config.json (campo \"finnhubAPIKey\"), quindi riavvia.",
-                                     .spanish: "Abre la carpeta de esta app en la app Archivos y agrega una clave de API de Finnhub en .config/aptrade/config.json (campo \"finnhubAPIKey\"), luego vuelve a iniciar la app."],
+        .finnhubKeyInstructionsIOS: [.english: "Add a Finnhub API key under Account → Account Settings.",
+                                     .german: "Fügen Sie einen Finnhub-API-Schlüssel unter Konto → Kontoeinstellungen hinzu.",
+                                     .italian: "Aggiungi una chiave API Finnhub in Account → Impostazioni account.",
+                                     .spanish: "Agrega una clave de API de Finnhub en Cuenta → Ajustes de cuenta."],
+        .finnhubApiKeyField: [.english: "Finnhub API key", .german: "Finnhub-API-Schlüssel",
+                              .italian: "Chiave API Finnhub", .spanish: "Clave de API de Finnhub"],
+        .saveAction: [.english: "Save", .german: "Speichern",
+                      .italian: "Salva", .spanish: "Guardar"],
+        .finnhubKeyAppliesNote: [.english: "Applies the next time News loads.",
+                                 .german: "Gilt beim nächsten Laden der News.",
+                                 .italian: "Si applica al prossimo caricamento delle notizie.",
+                                 .spanish: "Se aplica la próxima vez que se carguen las noticias."],
 
         // MARK: Asset detail
         .couldntLoadChart: [.english: "Couldn't load chart", .german: "Diagramm konnte nicht geladen werden",

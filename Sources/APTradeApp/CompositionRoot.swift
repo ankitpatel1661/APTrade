@@ -45,7 +45,11 @@ enum CompositionRoot {
     static func makeSettingsViewModel() -> SettingsViewModel {
         SettingsViewModel(
             loadSettings: LoadSettingsUseCase(store: settingsStore),
-            saveSettings: SaveSettingsUseCase(store: settingsStore)
+            saveSettings: SaveSettingsUseCase(store: settingsStore),
+            // Same config.json the news factories below read — the key applies the next
+            // time a news view model is built (News tab re-entry rebuilds it).
+            loadFinnhubKey: { AppConfig.finnhubAPIKey() },
+            persistFinnhubKey: { AppConfig.saveFinnhubAPIKey($0) }
         )
     }
 

@@ -19,6 +19,9 @@ public struct RootView: View {
     @State private var panelRoute: PanelRoute = .menu
     @State private var isLoggedIn = true
     @State private var settingsVM = CompositionRoot.makeSettingsViewModel()
+    /// Draft text for the iOS Finnhub key field; synced from `settingsVM.finnhubKey` when
+    /// the Account Settings page appears, compared against it to enable Save.
+    @State private var finnhubKeyDraft = ""
     @State private var scheduler = CompositionRoot.makeMarketActivityCoordinator()
     @Namespace private var pill
 
@@ -420,6 +423,44 @@ public struct RootView: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
+
+            #if os(iOS)
+            // Finnhub key entry — iOS only: the sandboxed config.json isn't user-reachable,
+            // so the key is entered here instead of the macOS file-drop flow. Saving writes
+            // the same config.json the news factories re-read per News visit.
+            sectionLabel(tr(.news))
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    TextField(tr(.finnhubApiKeyField), text: $finnhubKeyDraft)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 14))
+                        .foregroundStyle(Theme.textPrimary)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    if finnhubKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines) != settingsVM.finnhubKey {
+                        Button(tr(.saveAction)) {
+                            settingsVM.saveFinnhubKey(finnhubKeyDraft)
+                            finnhubKeyDraft = settingsVM.finnhubKey
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(Theme.bgBottom)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(Theme.goldGradient, in: Capsule())
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 11)
+                .background(Theme.surface, in: Capsule())
+
+                Text(tr(.finnhubKeyAppliesNote))
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            .padding(.horizontal, 20)
+            .onAppear { finnhubKeyDraft = settingsVM.finnhubKey }
+            #endif
 
             Spacer()
         }
