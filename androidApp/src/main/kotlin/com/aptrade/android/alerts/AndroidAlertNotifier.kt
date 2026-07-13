@@ -9,6 +9,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import com.aptrade.android.R
 import com.aptrade.android.l10n.tr
 import com.aptrade.android.ui.formatPercent
 import com.aptrade.shared.application.AlertNotifier
@@ -114,7 +115,8 @@ class AndroidAlertNotifier(private val context: Context) : AlertNotifier {
         if (!hasNotificationPermission()) return
 
         val notification = NotificationCompat.Builder(context, PRICE_ALERTS_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_popup_reminder)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setColor(ContextCompat.getColor(context, R.color.notification_accent))
             .setContentTitle(formatAlertTitle(alert.symbol))
             .setContentText(formatAlertBody(alert, quote))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -139,7 +141,8 @@ class AndroidAlertNotifier(private val context: Context) : AlertNotifier {
         if (!hasNotificationPermission()) return
 
         val notification = NotificationCompat.Builder(context, ORDER_FILLS_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_popup_reminder)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setColor(ContextCompat.getColor(context, R.color.notification_accent))
             .setContentTitle(formatOrderFillTitle())
             .setContentText(formatOrderFillBody(side, symbol, quantityText, amountFormatted))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)

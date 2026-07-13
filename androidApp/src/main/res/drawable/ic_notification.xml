@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status-bar small icon: the APTrade "AP" monogram (launcher mark's diagonal A-stroke
+     flowing into the P) reduced to the flat white-on-transparent silhouette Android
+     requires — the system renders small icons as an alpha mask, so any gradient or
+     interior detail (the mark's candlesticks) would flatten to mush at ~18dp. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Diagonal A-stroke -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M2.6,19.5 L12.2,4.5 L15.6,4.5 L6,19.5 Z" />
+    <!-- P stem -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M14.6,4.5 L17.6,4.5 L17.6,19.5 L14.6,19.5 Z" />
+    <!-- P bowl -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M17.6,4.5 a5,5 0 0 1 0,10 l0,-3 a2,2 0 0 0 0,-4 Z" />
+</vector>
