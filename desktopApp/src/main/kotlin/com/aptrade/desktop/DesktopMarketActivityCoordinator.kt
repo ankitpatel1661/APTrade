@@ -17,7 +17,8 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 /**
- * Drives time-based notifications (market open/close and the daily digest) on a fixed
+ * Drives time-based notifications (market open/close, the daily digest, and the
+ * once-per-trading-day earnings check) on a fixed
  * 60s cadence. Transcribed from Sources/APTradeApp/MarketActivityCoordinator.swift: a
  * light loop polls the pure [MarketActivityPlanner] every tick, persists whatever state
  * it returns, and dispatches whatever events are due. All policy lives in the planner;
@@ -59,6 +60,7 @@ class DesktopMarketActivityCoordinator(
             state = stateStore.load(),
             marketOpenCloseEnabled = settings.marketOpenClose,
             newsDigestEnabled = settings.newsDigest,
+            earningsReportsEnabled = settings.earningsReports,
         )
         stateStore.save(newState)
         for (event in events) {
@@ -66,6 +68,8 @@ class DesktopMarketActivityCoordinator(
                 ScheduledNotification.MarketOpened -> notifyMarketStatus(true)
                 ScheduledNotification.MarketClosed -> notifyMarketStatus(false)
                 ScheduledNotification.DigestDue -> notifyDigest(digestSummary())
+                // wired in a later task (Task 6 replaces it)
+                ScheduledNotification.EarningsCheckDue -> {}
             }
         }
     }

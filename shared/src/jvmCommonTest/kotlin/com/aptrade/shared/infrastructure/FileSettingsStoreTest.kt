@@ -304,4 +304,33 @@ class FileSettingsStoreTest {
         assertEquals(false, loaded.priceAlerts)
         assertEquals(AppLanguage.English, loaded.language)
     }
+
+    // --- Earnings calendar (calendar increment) ---
+
+    @Test
+    fun `earningsReports defaults to true`() = runTest {
+        assertEquals(true, AppSettings().earningsReports)
+    }
+
+    @Test
+    fun `round-trips earningsReports false`() = runTest {
+        val file = tempFile()
+        val store = FileSettingsStore(file)
+        store.save(AppSettings(earningsReports = false))
+        assertEquals(false, store.load().earningsReports)
+    }
+
+    @Test
+    fun `old file without earningsReports key loads fine with it defaulting to true`() = runTest {
+        // Back-compat pin (same family as isDarkMode/security/language tests above): a
+        // settings.json written before the earnings-check field existed has no
+        // "earningsReports" key at all. Lenient decode must still succeed and default the
+        // new flag to true rather than failing the whole-blob load.
+        val file = tempFile()
+        file.writeText("""{"accent":"Sapphire","newsDigest":false}""")
+        val loaded = FileSettingsStore(file).load()
+        assertEquals(AccentTheme.Sapphire, loaded.accent)
+        assertEquals(false, loaded.newsDigest)
+        assertEquals(true, loaded.earningsReports)
+    }
 }
