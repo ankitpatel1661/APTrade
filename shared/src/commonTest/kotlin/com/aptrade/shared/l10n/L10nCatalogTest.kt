@@ -31,14 +31,16 @@ import kotlin.test.assertTrue
  * persistence-failure snackbar), bringing the total to 220. The AssetKind label localization
  * sweep added 3 more Keys (`StockKindLabel`/`EtfKindLabel`/`CryptoKindLabel` — the singular
  * plain words the detail chip/type stat row show; "Aktie" is neither "Aktien" nor "AKTIE"),
- * bringing the total to 223; the count below tracks the Kotlin-only total going forward, not
+ * bringing the total to 223. The Android in-app Finnhub key-entry field added 4 more Keys
+ * (`FinnhubApiKeyField`/`SaveAction`/`FinnhubKeyAppliesNote`/`FinnhubKeyInstructionsInApp`),
+ * bringing the total to 227; the count below tracks the Kotlin-only total going forward, not
  * the Swift source count.
  */
 class L10nCatalogTest {
 
     @Test
-    fun `catalog has exactly 223 keys (205 macOS-transcribed + 12 desktop-only from Tasks 6-7 + 6 Kotlin-side additions)`() {
-        assertEquals(223, L10n.Key.entries.size)
+    fun `catalog has exactly 227 keys (205 macOS-transcribed + 12 desktop-only from Tasks 6-7 + 10 Kotlin-side additions)`() {
+        assertEquals(227, L10n.Key.entries.size)
     }
 
     @Test

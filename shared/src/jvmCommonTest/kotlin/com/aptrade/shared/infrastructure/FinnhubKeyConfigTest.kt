@@ -102,4 +102,57 @@ class FinnhubKeyConfigTest {
 
         assertNull(key)
     }
+
+    // --- saveFinnhubApiKey (the in-app settings-field write path) ---------------------
+
+    @Test
+    fun savedKeyRoundTripsThroughTheReadPath() {
+        val configDir = createTempDirectory("aptrade-test")
+        val home = createTempDirectory("aptrade-test-home")
+        val config = FinnhubKeyConfig(configDir = configDir, userHome = home.toString())
+
+        config.saveFinnhubApiKey("  round-trip-key  ")
+
+        assertEquals("round-trip-key", config.finnhubApiKey())
+    }
+
+    @Test
+    fun saveCreatesTheConfigDirectoryWhenMissing() {
+        val configDir = createTempDirectory("aptrade-test").resolve("nested").resolve("aptrade")
+        val home = createTempDirectory("aptrade-test-home")
+        val config = FinnhubKeyConfig(configDir = configDir, userHome = home.toString())
+
+        config.saveFinnhubApiKey("fresh-key")
+
+        assertEquals("fresh-key", config.finnhubApiKey())
+    }
+
+    @Test
+    fun savePreservesUnknownFieldsAlreadyInTheFile() {
+        val configDir = createTempDirectory("aptrade-test")
+        configDir.resolve("config.json").writeText(
+            """{"finnhubAPIKey": "old-key", "someOtherField": "kept"}""",
+        )
+        val home = createTempDirectory("aptrade-test-home")
+        val config = FinnhubKeyConfig(configDir = configDir, userHome = home.toString())
+
+        config.saveFinnhubApiKey("new-key")
+
+        assertEquals("new-key", config.finnhubApiKey())
+        val text = configDir.resolve("config.json").toFile().readText()
+        assertEquals(true, text.contains("someOtherField"), "unknown field dropped: $text")
+        assertEquals(true, text.contains("kept"), "unknown field's value dropped: $text")
+    }
+
+    @Test
+    fun savingBlankRemovesTheKey() {
+        val configDir = createTempDirectory("aptrade-test")
+        configDir.resolve("config.json").writeText("""{"finnhubAPIKey": "old-key"}""")
+        val home = createTempDirectory("aptrade-test-home")
+        val config = FinnhubKeyConfig(configDir = configDir, userHome = home.toString())
+
+        config.saveFinnhubApiKey("   ")
+
+        assertNull(config.finnhubApiKey())
+    }
 }

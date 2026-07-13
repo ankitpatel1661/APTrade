@@ -2,6 +2,7 @@ package com.aptrade.android.settings
 
 import com.aptrade.android.l10n.LocalizationManager
 import com.aptrade.shared.infrastructure.FileSettingsStore
+import com.aptrade.shared.infrastructure.FinnhubKeyConfig
 import com.aptrade.shared.l10n.AppLanguage
 import com.aptrade.shared.settings.AccentTheme
 import com.aptrade.shared.settings.AppSettings
@@ -200,4 +201,26 @@ class SettingsViewModelTest {
         assertEquals(true, result.marketOpenClose)        // set by the even-indexed mutators
         assertEquals(false, result.newsDigest)            // set by the odd-indexed mutators
     }
+
+    // MARK: - ViewModel: Finnhub key entry (Account Settings field)
+
+    @Test
+    fun `saved finnhub key persists to config json and loads back on next construction`() =
+        runTest(dispatcher.scheduler) {
+            val configDir = createTempDirectory("aptrade-android-key-test")
+            val home = createTempDirectory("aptrade-android-key-test-home")
+            val keyConfig = FinnhubKeyConfig(configDir = configDir, userHome = home.toString())
+
+            val vm = SettingsViewModel(tempSettingsStore(), keyConfig)
+            vm.saveFinnhubKey("  entered-key-123  ")
+
+            // Live state trims immediately (the field's Save button disables against it)…
+            assertEquals("entered-key-123", vm.finnhubKey.value)
+            // …and the write lands in the SAME config.json the news wiring reads.
+            awaitUntil { keyConfig.finnhubApiKey() == "entered-key-123" }
+
+            // A fresh ViewModel (next app launch) loads the stored key into the field.
+            val vm2 = SettingsViewModel(tempSettingsStore(), keyConfig)
+            awaitUntil { vm2.finnhubKey.value == "entered-key-123" }
+        }
 }

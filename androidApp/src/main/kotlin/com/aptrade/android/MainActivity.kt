@@ -57,7 +57,7 @@ class MainActivity : ComponentActivity() {
             // settings pages — re-themes instantly on a dark/light or accent change, and its
             // init load applies the persisted language/theme before the user opens settings.
             val settingsViewModel: SettingsViewModel = viewModel {
-                SettingsViewModel(AppGraph.settingsStore)
+                SettingsViewModel(AppGraph.settingsStore, AppGraph.finnhubKey)
             }
             val settings by settingsViewModel.settings.collectAsState()
             APTradeTheme(settings) {

@@ -118,15 +118,33 @@ object AppGraph {
     // never matches here — harmless.)
     private val finnhubKeyConfig by lazy { FinnhubKeyConfig(configDir = configDir()) }
 
+    /** Exposed for the Settings screen's key-entry field (read current key / save a new one).
+     *  Saving writes the same config.json [newsRepository] below re-reads, so no explicit
+     *  refresh hook is needed. */
+    val finnhubKey: FinnhubKeyConfig get() = finnhubKeyConfig
+
     // Null when no Finnhub key is configured; the News tab reads this via NewsViewModel's
-    // `needsKey` rather than attempting requests that would all fail. Mirrors desktop
-    // AppGraph's `newsRepository`/`keyMissing` pair.
-    val newsRepository: NewsRepository? by lazy {
-        finnhubKeyConfig.finnhubApiKey()?.let { FinnhubNewsRepository(it) }
-    }
+    // `needsKey` rather than attempting requests that would all fail. Diverges from desktop
+    // AppGraph's startup-frozen `newsRepository`/`keyMissing` val pair: Android has an in-app
+    // key-entry field (the sandboxed config.json isn't user-reachable), so the key is re-read
+    // per access and the repository rebuilt ONLY when it actually changed — never per call,
+    // since each FinnhubNewsRepository owns a Ktor client (the CompositionRoot one-instance
+    // rule from the macOS retrofit).
+    private val newsRepositoryLock = Any()
+    private var newsRepositoryKey: String? = null
+    private var newsRepositoryInstance: NewsRepository? = null
+    val newsRepository: NewsRepository?
+        get() = synchronized(newsRepositoryLock) {
+            val key = finnhubKeyConfig.finnhubApiKey()
+            if (key != newsRepositoryKey) {
+                newsRepositoryKey = key
+                newsRepositoryInstance = key?.let { FinnhubNewsRepository(it) }
+            }
+            newsRepositoryInstance
+        }
     val loadBookmarks by lazy { LoadBookmarks(bookmarkStore) }
     val toggleBookmark by lazy { ToggleBookmark(bookmarkStore) }
-    val fetchMarketNews by lazy { newsRepository?.let { FetchMarketNews(it) } }
+    val fetchMarketNews: FetchMarketNews? get() = newsRepository?.let { FetchMarketNews(it) }
 
     // Alerts & notifications (Task 6). The notifier seam mirrors desktop's AppGraph: one
     // AlertNotifier instance shared by EvaluateAlerts, backed here by Android's
