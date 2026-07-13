@@ -388,7 +388,23 @@ APTrade Lite is the foundation. Planned toward the full platform:
   language switcher plus chart/UX polish (6e). Still to come: **none** — macOS parity and
   localization are complete; the `:desktopApp` roadmap that opened at 6a is closed.
 
-Recently shipped: the **iPhone app closeout** — the `APTradeiOS` target (iPhone-only,
+Recently shipped: **Android → Windows parity** — the `:androidApp` Compose app now carries
+the full desktop feature set on the shared KMP core: a persisted watchlist (sparklines,
+swipe-to-remove with Undo, add-from-search), price alerts with system notifications and
+settings-gated order-fill notifications, a confirm-trades layer on the trade sheet, news
+with categories, a Saved view, headline filter, bookmarks and a custom-tab reader, full
+settings pages with a live 4-language switcher (persisted across relaunch), the desktop
+light/dark color tables and accent picker, technical indicators (SMA/EMA/VWAP/Bollinger
+overlays + RSI/MACD panels) over the shared `TechnicalIndicators` math, monotone-cubic
+smooth charts with follow-the-finger crosshairs, a portfolio section switcher, and a real
+launcher icon. Foundation: the desktop's file stores (watchlist/alerts/settings/bookmarks/
+Finnhub key + `ConfigDir`) moved to `shared/jvmCommonMain` and the 220-key L10n catalog +
+`AppLanguage` + an identity-only `AccentTheme` to `shared/commonMain`, with desktop
+typealias re-exports keeping the desktop app byte-identical (its suite stayed green
+throughout; store JSON formats unchanged). Suites at merge: desktop 212 / shared 302 /
+android 125. Recorded follow-ups: an in-app Finnhub key-entry field, branded notification
+icon assets, and an `AssetKind` label localization sweep. Before that: the
+**iPhone app closeout** — the `APTradeiOS` target (iPhone-only,
 portrait, iOS 17) now ships the full macOS feature set from the same SwiftPM presentation
 code: real portfolio export via a themed `.fileExporter` (with a shared, tested
 `PortfolioExportNaming` Domain helper and a user-cancel guard), a touch-drag chart
