@@ -39,17 +39,20 @@ fun timeframeLabel(tf: Timeframe): String = when (tf) {
     Timeframe.OneMonth -> "1M"; Timeframe.OneYear -> "1Y"
 }
 
+/** The plain-word singular kind label ("Stock" / "Aktie") — L10n `.stockKindLabel` family,
+ *  read live at render time (detail stat row). ViewModels no longer cache this string; they
+ *  carry the [AssetKind] itself so a language switch recomposes the label. */
+@Composable
 fun kindLabel(kind: AssetKind): String = when (kind) {
-    AssetKind.Stock -> "Stock"; AssetKind.Etf -> "ETF"; AssetKind.Crypto -> "Crypto"
+    AssetKind.Stock -> tr(L10n.Key.StockKindLabel)
+    AssetKind.Etf -> tr(L10n.Key.EtfKindLabel)
+    AssetKind.Crypto -> tr(L10n.Key.CryptoKindLabel)
 }
 
-/** The uppercased kind chip text (watchlist rows, palette/suggestion rows) — L10n
- *  `.stockChip`/`.etfChip`/`.cryptoChip`, matching `CommandPaletteView.swift`/
- *  `WatchlistView.swift`'s `chipLabel`. Distinct from [kindLabel]: that plain-word helper
- *  also feeds non-Compose call sites (e.g. `DetailViewModel`'s cached `kindLabel` state) that
- *  are out of scope for this retrofit wave, so it stays untranslated here; this composable
- *  function is read live at render time by the two watchlist/palette call sites that need the
- *  chip's own translated, pre-uppercased string (DE "AKTIE" is not "STOCK".uppercase()). */
+/** The uppercased kind chip text (watchlist rows, palette/suggestion rows, detail KindChip) —
+ *  L10n `.stockChip`/`.etfChip`/`.cryptoChip`, matching `CommandPaletteView.swift`/
+ *  `WatchlistView.swift`'s `chipLabel`. Distinct from [kindLabel]: the chip strings are
+ *  translated pre-uppercased (DE "AKTIE" is not "STOCK".uppercase()). */
 @Composable
 fun chipLabel(kind: AssetKind): String = when (kind) {
     AssetKind.Stock -> tr(L10n.Key.StockChip)

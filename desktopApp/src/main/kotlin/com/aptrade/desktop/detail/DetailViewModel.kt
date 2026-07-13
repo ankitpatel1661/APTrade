@@ -1,7 +1,6 @@
 package com.aptrade.desktop.detail
 
 import com.aptrade.desktop.designkit.ChartCandle
-import com.aptrade.desktop.designkit.kindLabel
 import com.aptrade.desktop.ui.userMessage
 import com.aptrade.shared.application.FetchChartWindow
 import com.aptrade.shared.application.FetchCompanyNews
@@ -11,6 +10,7 @@ import com.aptrade.shared.application.FetchProfile
 import com.aptrade.shared.application.LoadBookmarks
 import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.ToggleBookmark
+import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.NewsArticle
 import com.aptrade.shared.domain.Timeframe
 import kotlinx.coroutines.CancellationException
@@ -26,7 +26,7 @@ enum class ChartMode { Line, Candles }
 data class DetailUiState(
     val symbol: String,
     val name: String? = null,
-    val kindLabel: String? = null,
+    val kind: AssetKind? = null,
     val amountText: String? = null,
     val changePercent: Double? = null,
     val previousCloseText: String? = null,
@@ -94,7 +94,7 @@ class DetailViewModel(
         scope.launch {
             try {
                 val asset = fetchProfile.execute(symbol)
-                _state.update { it.copy(name = asset.name, kindLabel = kindLabel(asset.kind)) }
+                _state.update { it.copy(name = asset.name, kind = asset.kind) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: QuoteError) {

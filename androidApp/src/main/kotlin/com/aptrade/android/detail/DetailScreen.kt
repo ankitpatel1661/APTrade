@@ -39,6 +39,7 @@ import com.aptrade.android.AppGraph
 import com.aptrade.android.portfolio.TradeSheet
 import com.aptrade.android.portfolio.TradeSheetInfo
 import com.aptrade.android.ui.ErrorPane
+import com.aptrade.android.ui.localizedLabel
 import com.aptrade.android.ui.chart.CandleChart
 import com.aptrade.android.ui.chart.CrosshairOverlay
 import com.aptrade.android.ui.chart.CrosshairTooltip
@@ -85,10 +86,10 @@ fun DetailScreen(symbol: String, confirmTrades: Boolean, onBack: () -> Unit) {
                     }
                 },
                 actions = {
-                    state.kindLabel?.let {
+                    state.kind?.let {
                         AssistChip(
                             onClick = {},
-                            label = { Text(it) },
+                            label = { Text(it.localizedLabel()) },
                             modifier = Modifier.padding(end = 8.dp),
                         )
                     }

@@ -121,6 +121,12 @@ object L10n {
         StockChip(english = "STOCK"),
         EtfChip(english = "ETF"),
         CryptoChip(english = "CRYPTO"),
+        // Singular plain-word kind labels (detail chips / type stat rows) — distinct from the
+        // plural section labels above and the pre-uppercased chips ("Aktie" is neither "Aktien"
+        // nor "AKTIE").
+        StockKindLabel(english = "Stock"),
+        EtfKindLabel(english = "ETF"),
+        CryptoKindLabel(english = "Crypto"),
 
         // Portfolio
         HoldingsSection(english = "Holdings"),
@@ -402,6 +408,9 @@ object L10n {
             Key.StockChip to "AKTIE",
             Key.EtfChip to "ETF",
             Key.CryptoChip to "KRYPTO",
+            Key.StockKindLabel to "Aktie",
+            Key.EtfKindLabel to "ETF",
+            Key.CryptoKindLabel to "Krypto",
 
             Key.HoldingsSection to "Bestände",
             Key.AllocationSection to "Aufteilung",
@@ -647,6 +656,9 @@ object L10n {
             Key.StockChip to "AZIONE",
             Key.EtfChip to "ETF",
             Key.CryptoChip to "CRIPTO",
+            Key.StockKindLabel to "Azione",
+            Key.EtfKindLabel to "ETF",
+            Key.CryptoKindLabel to "Cripto",
 
             Key.HoldingsSection to "Posizioni",
             Key.AllocationSection to "Allocazione",
@@ -892,6 +904,9 @@ object L10n {
             Key.StockChip to "ACCIÓN",
             Key.EtfChip to "ETF",
             Key.CryptoChip to "CRIPTO",
+            Key.StockKindLabel to "Acción",
+            Key.EtfKindLabel to "ETF",
+            Key.CryptoKindLabel to "Cripto",
 
             Key.HoldingsSection to "Posiciones",
             Key.AllocationSection to "Asignación",

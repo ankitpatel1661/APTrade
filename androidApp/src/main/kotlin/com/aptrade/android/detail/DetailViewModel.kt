@@ -2,7 +2,6 @@ package com.aptrade.android.detail
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.aptrade.android.ui.label
 import com.aptrade.android.ui.money
 import com.aptrade.android.ui.userMessage
 import com.aptrade.shared.application.BuyAsset
@@ -37,10 +36,10 @@ data class CandleBar(val open: Double, val high: Double, val low: Double, val cl
 data class DetailUiState(
     val symbol: String,
     val name: String? = null,
-    val kindLabel: String? = null,
+    val kind: AssetKind? = null,
     val profileError: String? = null,
     /** True once the profile request has RESOLVED — success or error, doesn't matter which.
-     *  Gates the BUY/SELL entry point so a trade can never fire while [kindLabel] is still
+     *  Gates the BUY/SELL entry point so a trade can never fire while [kind] is still
      *  unset (the window in which a crypto/ETF asset would be misclassified as Stock). */
     val profileResolved: Boolean = false,
     /** Pre-formatted live price for the TradeSheet's AssistChip (≡ portfolio holding row's
@@ -139,7 +138,7 @@ class DetailViewModel(
             try {
                 val asset = fetchProfile.execute(symbol)
                 _state.update {
-                    it.copy(name = asset.name, kindLabel = asset.kind.label(), profileResolved = true)
+                    it.copy(name = asset.name, kind = asset.kind, profileResolved = true)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -190,17 +189,12 @@ class DetailViewModel(
 
     /** The [Asset] to buy: this screen's [symbol] plus the name/kind loaded by the profile fetch.
      *  Falls back to `Asset(symbol, symbol, Stock)` ONLY when the profile resolved with an ERROR
-     *  (kindLabel genuinely absent) — the UI gates BUY/SELL entry on [DetailUiState.profileResolved]
+     *  (kind genuinely absent) — the UI gates BUY/SELL entry on [DetailUiState.profileResolved]
      *  so this is never reached while the profile fetch is still in flight; a successfully-loaded
      *  crypto or ETF asset is therefore never misclassified as Stock. */
     private fun tradeAsset(): Asset {
         val s = _state.value
-        val kind = when (s.kindLabel) {
-            "ETF" -> AssetKind.Etf
-            "Crypto" -> AssetKind.Crypto
-            else -> AssetKind.Stock
-        }
-        return Asset(symbol = symbol, name = s.name ?: symbol, kind = kind)
+        return Asset(symbol = symbol, name = s.name ?: symbol, kind = s.kind ?: AssetKind.Stock)
     }
 
     /** Store-mediated BUY: [buyAsset] quote-firsts, loads the portfolio fresh from disk, appends,

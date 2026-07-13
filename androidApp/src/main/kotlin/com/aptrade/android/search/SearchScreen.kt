@@ -38,6 +38,7 @@ import com.aptrade.android.AppGraph
 import com.aptrade.android.l10n.trf
 import com.aptrade.android.l10n.tr
 import com.aptrade.android.ui.ErrorPane
+import com.aptrade.android.ui.localizedLabel
 import com.aptrade.shared.domain.WatchlistEntry
 import com.aptrade.shared.l10n.L10n
 import kotlinx.coroutines.launch
@@ -108,7 +109,7 @@ private fun ResultRow(row: AssetRow, onClick: () -> Unit, onAdd: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        AssistChip(onClick = onClick, label = { Text(row.kindLabel) })
+        AssistChip(onClick = onClick, label = { Text(row.kind.localizedLabel()) })
         IconButton(onClick = onAdd) {
             Icon(Icons.Filled.Add, contentDescription = tr(L10n.Key.Add))
         }

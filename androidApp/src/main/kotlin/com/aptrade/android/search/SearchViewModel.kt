@@ -2,7 +2,6 @@ package com.aptrade.android.search
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.aptrade.android.ui.label
 import com.aptrade.android.ui.userMessage
 import com.aptrade.shared.application.FetchSearch
 import com.aptrade.shared.application.QuoteError
@@ -19,7 +18,6 @@ data class AssetRow(
     val symbol: String,
     val name: String,
     val kind: AssetKind,
-    val kindLabel: String,
 )
 
 data class SearchUiState(
@@ -55,7 +53,7 @@ class SearchViewModel(
                 _state.update { state ->
                     state.copy(
                         isSearching = false,
-                        results = assets.map { AssetRow(it.symbol, it.name, it.kind, it.kind.label()) },
+                        results = assets.map { AssetRow(it.symbol, it.name, it.kind) },
                     )
                 }
             } catch (e: CancellationException) {

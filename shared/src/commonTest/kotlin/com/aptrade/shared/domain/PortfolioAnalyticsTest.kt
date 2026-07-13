@@ -68,6 +68,9 @@ class PortfolioAnalyticsTest {
         val slices = p.allocationByKind(quotes)
 
         assertEquals(listOf("Stocks", "Crypto"), slices.map { it.label })
+        // By-class slices carry their typed kind for render-time localization;
+        // by-holding slices (see the test above) leave it null.
+        assertEquals(listOf(AssetKind.Stock, AssetKind.Crypto), slices.map { it.kind })
         assertEquals(3100.0, slices[0].value)
         assertEquals(6000.0, slices[1].value)
     }

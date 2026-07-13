@@ -43,7 +43,6 @@ import com.aptrade.desktop.l10n.LocalizationManager
 import com.aptrade.desktop.ui.AccountPanel
 import com.aptrade.desktop.ui.AppShell
 import com.aptrade.desktop.ui.AppTab
-import com.aptrade.desktop.ui.assetKindFromLabel
 import com.aptrade.desktop.watchlist.PriceAlertSheet
 import com.aptrade.desktop.watchlist.WatchlistPane
 import com.aptrade.desktop.watchlist.WatchlistViewModel
@@ -420,7 +419,7 @@ private fun AppRoot(
                         val asset = Asset(
                             symbol = symbol,
                             name = row?.name ?: symbol,
-                            kind = assetKindFromLabel(row?.kindLabel),
+                            kind = row?.kind ?: com.aptrade.shared.domain.AssetKind.Stock,
                         )
                         onOpenTrade(TradeTarget(asset, side, row?.priceText))
                     },

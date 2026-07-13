@@ -443,11 +443,22 @@ private fun AllocationView(state: PortfolioUiState) {
         AllocationGroupHeader(tr(L10n.Key.ByClass))
         Spacer(Modifier.height(12.dp))
         for (slice in state.allocationByKind) {
-            AllocationBar(label = slice.label, fraction = slice.fraction, fillColor = kindColor(slice.id))
+            AllocationBar(label = sliceLabel(slice), fraction = slice.fraction, fillColor = kindColor(slice.id))
             Spacer(Modifier.height(14.dp))
         }
         Spacer(Modifier.height(24.dp))
     }
+}
+
+/** A slice's display label, localized live: by-class slices translate their [AllocationSlice.kind]
+ *  through the plural section words (macOS `PortfolioView.swift`'s key set); by-holding slices
+ *  (kind == null) show the symbol carried in [AllocationSlice.label]. */
+@Composable
+private fun sliceLabel(slice: AllocationSlice): String = when (slice.kind) {
+    com.aptrade.shared.domain.AssetKind.Stock -> tr(L10n.Key.StocksLabel)
+    com.aptrade.shared.domain.AssetKind.Etf -> tr(L10n.Key.EtfsLabel)
+    com.aptrade.shared.domain.AssetKind.Crypto -> tr(L10n.Key.CryptoLabel)
+    null -> slice.label
 }
 
 /** The allocation donut (150dp) with a HOLDINGS + total-value center overlay, beside a manual
@@ -486,7 +497,7 @@ private fun AllocationDonutRow(state: PortfolioUiState) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box(Modifier.width(9.dp).height(9.dp).clip(RoundedCornerShape(50)).background(donutColor(slice.id)))
                     Text(
-                        slice.label,
+                        sliceLabel(slice),
                         style = TextStyle(
                             fontFamily = InterFamily, fontSize = 13.sp,
                             fontWeight = FontWeight.Medium, color = DK.textPrimary,

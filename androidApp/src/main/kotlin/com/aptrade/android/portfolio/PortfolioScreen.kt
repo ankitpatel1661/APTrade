@@ -62,22 +62,14 @@ import com.aptrade.android.ui.chart.DualLineChart
 import com.aptrade.android.ui.chart.DualSeriesCrosshairOverlay
 import com.aptrade.android.ui.chart.crosshairReadout
 import com.aptrade.android.ui.chart.nearestIndex
+import com.aptrade.android.ui.localizedLabel
 import com.aptrade.android.ui.theme.GainGreen
 import com.aptrade.android.ui.theme.LossRed
 import com.aptrade.shared.domain.AllocationSlice
 import com.aptrade.shared.domain.Asset
-import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.l10n.L10n
 import java.util.Locale
-
-/** Reconstruct an [AssetKind] from the display [HoldingRowUi.kindLabel] so a held-row BUY can call
- *  the VM's `buy(asset, …)`. Mirrors the desktop `assetKindFromLabel`. */
-private fun assetKindFromLabel(label: String?): AssetKind = when (label) {
-    "ETF" -> AssetKind.Etf
-    "Crypto" -> AssetKind.Crypto
-    else -> AssetKind.Stock
-}
 
 /** The holding row a [TradeSheet] is opened against, plus the side the user tapped. */
 private data class TradeTarget(val row: HoldingRowUi, val side: TradeSide)
@@ -280,7 +272,7 @@ private fun PortfolioContent(
                         Asset(
                             symbol = target.row.symbol,
                             name = target.row.name,
-                            kind = assetKindFromLabel(target.row.kindLabel),
+                            kind = target.row.kind,
                         ),
                         quantity,
                     )
@@ -596,7 +588,7 @@ private fun HoldingRow(
 private fun AllocationBar(slice: AllocationSlice) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(slice.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            Text(slice.localizedLabel(), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             Text(
                 String.format(Locale.US, "%.1f%%", slice.fraction * 100),
                 style = MaterialTheme.typography.bodyMedium,

@@ -43,12 +43,15 @@ val Portfolio.realizedPnL: Money
     }
 
 /** One slice of the allocation breakdown — a holding or an asset class — with its share
- *  of total holdings value. */
+ *  of total holdings value. [kind] is set only on by-class slices so a UI can localize the
+ *  class name at render time; [label] stays the untranslated fallback (and IS the symbol on
+ *  by-holding slices, where [kind] is null). */
 data class AllocationSlice(
     val id: String,
     val label: String,
     val value: Double,
     val fraction: Double,
+    val kind: AssetKind? = null,
 )
 
 private fun labelForKind(kind: AssetKind): String = when (kind) {
@@ -96,6 +99,7 @@ fun Portfolio.allocationByKind(quotes: Map<String, Quote>): List<AllocationSlice
                 label = labelForKind(kind),
                 value = value,
                 fraction = if (total == 0.0) 0.0 else value / total,
+                kind = kind,
             )
         }
     }

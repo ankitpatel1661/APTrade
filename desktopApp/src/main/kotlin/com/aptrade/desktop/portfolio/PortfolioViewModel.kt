@@ -2,7 +2,6 @@ package com.aptrade.desktop.portfolio
 
 import com.aptrade.desktop.designkit.formatMoney
 import com.aptrade.desktop.designkit.formatPercent
-import com.aptrade.desktop.designkit.kindLabel
 import com.aptrade.desktop.designkit.signedMoney
 import com.aptrade.desktop.ui.userMessage
 import com.aptrade.shared.application.BuyAsset
@@ -13,6 +12,7 @@ import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.ResetPortfolio
 import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.domain.Asset
+import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.AllocationSlice
 import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.domain.PortfolioExport
@@ -65,7 +65,7 @@ enum class PortfolioSpan(val label: String) {
 data class HoldingRowUi(
     val symbol: String,
     val name: String,
-    val kindLabel: String,
+    val kind: AssetKind,
     val quantityText: String,
     val averageCostText: String,
     val marketValueText: String,
@@ -428,7 +428,7 @@ class PortfolioViewModel(
                 HoldingRowUi(
                     symbol = position.asset.symbol,
                     name = position.asset.name,
-                    kindLabel = kindLabel(position.asset.kind),
+                    kind = position.asset.kind,
                     quantityText = position.quantity.toStringExpanded(),
                     averageCostText = formatMoney(position.averageCost.amountText),
                     marketValueText = marketValue.amountText,          // RAW — SuperscriptPrice consumer
