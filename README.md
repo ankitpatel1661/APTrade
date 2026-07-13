@@ -377,7 +377,6 @@ logo/                       Brand assets
 
 APTrade Lite is the foundation. Planned toward the full platform:
 
-- Market-holiday calendar for the scheduler
 - Real authentication (Apple Sign In), biometric gating, and cloud sync (Supabase)
 - **Windows parity — complete.** The `:desktopApp` Compose app now covers Watchlist +
   detail + palette (6a), a Portfolio tab with detail-screen indicators, performance/risk
@@ -388,7 +387,25 @@ APTrade Lite is the foundation. Planned toward the full platform:
   language switcher plus chart/UX polish (6e). Still to come: **none** — macOS parity and
   localization are complete; the `:desktopApp` roadmap that opened at 6a is closed.
 
-Recently shipped: **cross-platform follow-ups sweep** — the follow-ups recorded at the two
+Recently shipped: **holiday-aware `MarketCalendar` + S&P 500 earnings calendar** — a
+computed NYSE holiday and half-day calendar replaces the fixed one on both codebases
+(New Year's/MLK/Presidents/Good Friday/Memorial/Juneteenth/July 4th/Labor/Thanksgiving/
+Christmas with observed-weekend shifts, plus the day-before-July-4th, day-after-
+Thanksgiving, and Christmas Eve 1pm-ET half-days), closing the market-holiday-calendar
+roadmap item. A new **Calendar tab** ships on all four platforms (macOS, iOS, desktop,
+Android) — holiday and half-day banners for the visible range alongside an S&P 500 +
+your-watchlist earnings list, backed by a shared `FinnhubEarningsRepository`
+(`/calendar/earnings`, 6h TTL cache) and a `FetchEarningsCalendar` use case
+(`.execute`/`.nextEarnings`/`.ownedToday`). Asset detail gains a **Next-earnings** stat
+on all four platforms, and a settings-gated **earnings-day notification** (riding the
+existing `EarningsCheckDue` planner event) joins the open/close and top-movers digest
+alerts. Android's market-activity coordinator goes fully functional in this pass — the
+open/close and daily-movers-digest toggles, previously inert, now drive real
+notifications alongside the new earnings check. 22 new L10n keys (tab, banners,
+holidays, sessions, earnings) across EN/DE/IT/ES bring the catalog to 231. Suites at
+merge: macOS 249 / iOS sim suite green (249) / shared 366 / desktop 215 / android 144.
+
+Before that: **cross-platform follow-ups sweep** — the follow-ups recorded at the two
 parity merges are closed. In-app **Finnhub key-entry fields** land on iOS and Android
 (Account Settings on both; the sandboxed `config.json` isn't user-reachable on either
 platform): `AppConfig`/`FinnhubKeyConfig` gained merge-writing save paths into the same
