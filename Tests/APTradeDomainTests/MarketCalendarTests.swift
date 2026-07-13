@@ -33,4 +33,27 @@ final class MarketCalendarTests: XCTestCase {
         // 00:30 ET on the 25th is still 04:30 UTC on the 25th — same market day.
         XCTAssertEqual(calendar.tradingDay(of: et(2025, 6, 25, 0, 30)), "2025-06-25")
     }
+
+    func test_thanksgivingMiddayIsClosed() {
+        XCTAssertEqual(calendar.status(at: et(2026, 11, 26, 12, 0)), .closed)
+    }
+
+    func test_halfDayClosesAtOnePm() {
+        XCTAssertEqual(calendar.status(at: et(2026, 11, 27, 12, 59)), .open)
+        XCTAssertEqual(calendar.status(at: et(2026, 11, 27, 13, 0)), .closed)
+    }
+
+    func test_plainWednesdayStaysOpen() {
+        XCTAssertEqual(calendar.status(at: et(2026, 7, 15, 12, 0)), .open)
+    }
+
+    func test_holidayLookup() {
+        XCTAssertEqual(calendar.holiday(on: et(2026, 11, 26, 12, 0)), .thanksgiving)
+        XCTAssertTrue(calendar.isHalfDay(on: et(2026, 11, 27, 12, 0)))
+    }
+
+    func test_newYearsObservedOnPriorYearDec31_isClosed() {
+        // Jan 1 2028 is a Saturday -> observed Fri Dec 31 2027.
+        XCTAssertEqual(calendar.status(at: et(2027, 12, 31, 12, 0)), .closed)
+    }
 }
