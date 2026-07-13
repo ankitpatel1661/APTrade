@@ -1,6 +1,7 @@
 package com.aptrade.desktop.l10n
 
 import androidx.compose.runtime.mutableStateOf
+import com.aptrade.shared.l10n.L10n
 
 /**
  * Holds the active [AppLanguage] as Compose snapshot state — the same pattern as

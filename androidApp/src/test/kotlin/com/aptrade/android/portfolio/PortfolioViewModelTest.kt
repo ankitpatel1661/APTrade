@@ -16,6 +16,7 @@ import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.domain.Position
 import com.aptrade.shared.domain.PricePoint
 import com.aptrade.shared.domain.Quote
+import com.aptrade.shared.domain.TradeSide
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -63,6 +64,7 @@ class PortfolioViewModelTest {
         store: FakePortfolioStore,
         repo: FakeMarketDataRepository,
         now: () -> Long = { 1_700_000_000L },
+        notifyOrderFill: suspend (TradeSide, String, String, String) -> Unit = { _, _, _, _ -> },
     ): PortfolioViewModel {
         val perf = FetchPortfolioPerformance(repo, store)
         return PortfolioViewModel(
@@ -75,6 +77,7 @@ class PortfolioViewModelTest {
             nowEpochSeconds = now,
             tickMillis = 15_000,
             zoneId = utc,
+            notifyOrderFill = notifyOrderFill,
         )
     }
 
@@ -223,6 +226,38 @@ class PortfolioViewModelTest {
         vm.stop()
     }
 
+    /** UAT round 2 (defect 2, follow-the-finger crosshair on the portfolio chart): the
+     *  crosshair readout must show the EXACT decimal amount (Money/amountText path), never the
+     *  pixels-only `performanceValues` Double — so `performanceValueTexts` must be populated,
+     *  money()-formatted, parallel 1:1 with `performanceValues`, and `performanceDates` must
+     *  carry each point's real epoch second (not a placeholder). */
+    @Test
+    fun performanceReportPopulatesExactDecimalCrosshairTexts() = runTest(dispatcher.scheduler) {
+        val store = FakePortfolioStore().apply { saveImpl = {} ; loadImpl = { heldPortfolio() } }
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { listOf(quote("AAPL", "350")) }
+        repo.historyImpl = { _, _ ->
+            listOf(
+                PricePoint(1_699_000_000L, Money.usd("300.125")),
+                PricePoint(1_699_100_000L, Money.usd("350.5")),
+            )
+        }
+        val vm = vm(store, repo)
+
+        vm.start()
+        runCurrent()
+
+        val s = vm.state.value
+        assertEquals(s.performanceValues.size, s.performanceValueTexts.size)
+        assertEquals(s.performanceValues.size, s.performanceDates.size)
+        assertTrue(s.performanceValueTexts.isNotEmpty())
+        // Exact decimal ($.125 -> rounds to money()'s 2 fraction digits, never a Double's own
+        // binary rounding) and the real point dates, not zeros/placeholders.
+        s.performanceValueTexts.forEach { assertTrue(it.startsWith("$")) }
+        s.performanceDates.forEach { assertTrue(it > 0L) }
+        vm.stop()
+    }
+
     @Test
     fun buySuccessUpdatesPortfolioAndClearsTradeError() = runTest(dispatcher.scheduler) {
         val store = FakePortfolioStore() // starts empty -> Portfolio.starting() ($100k cash)
@@ -305,6 +340,8 @@ class PortfolioViewModelTest {
         val s = vm.state.value
         assertEquals(0, s.holdings.size)
         assertTrue(s.performanceValues.isEmpty())
+        assertTrue(s.performanceValueTexts.isEmpty())
+        assertTrue(s.performanceDates.isEmpty())
         assertNull(s.benchmarkTwinValues)
         assertNull(s.metrics)
         assertEquals("$100,000.00", s.cashText) // Portfolio.starting()
@@ -361,6 +398,97 @@ class PortfolioViewModelTest {
 
         val txn = vm.state.value.transactions.first()
         assertEquals("Nov 14, 2023, 10:13 PM", txn.dateText)
+        vm.stop()
+    }
+
+    // --- Order-fill notifications (spec A2 — mirrors desktop PortfolioViewModelTest) ---
+
+    private data class Notified(
+        val side: TradeSide,
+        val symbol: String,
+        val quantityText: String,
+        val amountFormatted: String,
+    )
+
+    @Test
+    fun successfulBuyFiresOrderFillNotification() = runTest(dispatcher.scheduler) {
+        val store = FakePortfolioStore() // starts empty -> Portfolio.starting() ($100k cash)
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { listOf(quote("AAPL", "100.00")) }
+        val notified = mutableListOf<Notified>()
+        val vm = vm(store, repo, notifyOrderFill = { side, symbol, qty, amount ->
+            notified += Notified(side, symbol, qty, amount)
+        })
+
+        vm.start()
+        runCurrent()
+        vm.buy(aapl, "10")
+        runCurrent()
+
+        assertEquals(1, notified.size)
+        assertEquals(TradeSide.Buy, notified.single().side)
+        assertEquals("AAPL", notified.single().symbol)
+        assertEquals("10", notified.single().quantityText)
+        assertEquals("$1,000.00", notified.single().amountFormatted)
+        vm.stop()
+    }
+
+    @Test
+    fun successfulSellFiresOrderFillNotification() = runTest(dispatcher.scheduler) {
+        val store = FakePortfolioStore().apply { saveImpl = {} ; loadImpl = { heldPortfolio() } }
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { listOf(quote("AAPL", "100.00")) }
+        val notified = mutableListOf<Notified>()
+        val vm = vm(store, repo, notifyOrderFill = { side, symbol, qty, amount ->
+            notified += Notified(side, symbol, qty, amount)
+        })
+
+        vm.start()
+        runCurrent()
+        vm.sell("AAPL", "4")
+        runCurrent()
+
+        assertEquals(1, notified.size)
+        assertEquals(TradeSide.Sell, notified.single().side)
+        assertEquals("AAPL", notified.single().symbol)
+        assertEquals("4", notified.single().quantityText)
+        assertEquals("$400.00", notified.single().amountFormatted)
+        vm.stop()
+    }
+
+    @Test
+    fun failedBuyNeverFiresOrderFillNotification() = runTest(dispatcher.scheduler) {
+        val store = FakePortfolioStore() // $100k cash
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { listOf(quote("AAPL", "1000000.00")) }
+        var notifyCount = 0
+        val vm = vm(store, repo, notifyOrderFill = { _, _, _, _ -> notifyCount++ })
+
+        vm.start()
+        runCurrent()
+        vm.buy(aapl, "10") // 10 * 1,000,000 far exceeds $100k cash
+        runCurrent()
+
+        assertEquals("Insufficient funds.", vm.state.value.tradeError)
+        assertEquals(0, notifyCount)
+        vm.stop()
+    }
+
+    @Test
+    fun tradeNeverFailsWhenNotifierThrows() = runTest(dispatcher.scheduler) {
+        val store = FakePortfolioStore()
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { listOf(quote("AAPL", "100.00")) }
+        val vm = vm(store, repo, notifyOrderFill = { _, _, _, _ -> throw RuntimeException("notifier unavailable") })
+
+        vm.start()
+        runCurrent()
+        vm.buy(aapl, "10")
+        runCurrent()
+
+        val s = vm.state.value
+        assertNull(s.tradeError)
+        assertEquals(listOf("AAPL"), s.holdings.map { it.symbol })
         vm.stop()
     }
 }

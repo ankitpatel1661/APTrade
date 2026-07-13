@@ -121,6 +121,13 @@ data class PortfolioUiState(
     val benchmarks: List<String> = listOf("SPY", "QQQ", "VTI"),
     val performanceValues: List<Double> = emptyList(),
     val benchmarkTwinValues: List<Double>? = null,
+    /** Parallel to [performanceValues] — the crosshair readout's pre-formatted, exact-decimal
+     *  price text (via [com.aptrade.android.ui.money] over `Money.amountText`, never the
+     *  pixel-math `performanceValues` Double) and each point's raw epoch second. Mirrors
+     *  DetailUiState's `lineValueTexts`/`lineDates`, consumed by
+     *  [com.aptrade.android.ui.chart.crosshairReadout]. */
+    val performanceValueTexts: List<String> = emptyList(),
+    val performanceDates: List<Long> = emptyList(),
     val metrics: MetricTexts? = null,
     val error: String? = null,
     val tradeError: String? = null,
@@ -154,7 +161,13 @@ private fun parseQuantity(text: String): BigDecimal? {
  *  performance chart, and export. Polls held symbols' quotes every [tickMillis] (the standard
  *  15s app-wide cadence) so open positions stay live while the screen is [start]ed. The
  *  internal `portfolio`/`quotes` vars rely on [viewModelScope]'s single-threaded confinement
- *  (Dispatchers.Main) instead of locks. */
+ *  (Dispatchers.Main) instead of locks.
+ *
+ *  [notifyOrderFill] mirrors desktop's `notifyOrderFill` (spec A2 — desktop
+ *  `AppGraphNotifyOrderFill`/`PortfolioViewModel.notifyFillSafely`): event-driven, fired only
+ *  after a trade actually succeeds, gated upstream by `settings.orderFills`, and never allowed
+ *  to fail the trade — CancellationException rethrows, everything else is swallowed. Defaults
+ *  to a no-op so existing callers/tests that don't care about notifications keep compiling. */
 class PortfolioViewModel(
     private val fetchPortfolio: FetchPortfolio,
     private val fetchMarketQuotes: FetchMarketQuotes,
@@ -165,6 +178,7 @@ class PortfolioViewModel(
     private val nowEpochSeconds: () -> Long,
     private val tickMillis: Long = 15_000,
     private val zoneId: ZoneId = ZoneId.systemDefault(),
+    private val notifyOrderFill: suspend (TradeSide, String, String, String) -> Unit = { _, _, _, _ -> },
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(PortfolioUiState())
@@ -229,6 +243,7 @@ class PortfolioViewModel(
                 refreshQuotes()
                 _state.update { it.copy(tradeError = null) }
                 publish(loading = false)
+                notifyFillSafely(TradeSide.Buy, asset.symbol)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: TradeError) {
@@ -251,6 +266,7 @@ class PortfolioViewModel(
                 refreshQuotes()
                 _state.update { it.copy(tradeError = null) }
                 publish(loading = false)
+                notifyFillSafely(TradeSide.Sell, symbol)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: TradeError) {
@@ -261,6 +277,24 @@ class PortfolioViewModel(
         }
     }
 
+    /** Fires the order-fill notification for the just-completed trade's own transaction (the
+     *  most recent one for `symbol`/`side` — `buy`/`sell` above just persisted it via
+     *  `buyAsset`/`sellAsset`). A notifier failure must never surface as a trade error: this
+     *  runs strictly after the trade's own state update, isolated in its own try/catch with
+     *  CancellationException rethrown and everything else swallowed. Mirrors desktop
+     *  PortfolioViewModel.notifyFillSafely exactly. */
+    private suspend fun notifyFillSafely(side: TradeSide, symbol: String) {
+        val txn = portfolio.transactions.lastOrNull { it.symbol == symbol && it.side == side } ?: return
+        try {
+            val amountText = (txn.price.amount * txn.quantity).toStringExpanded()
+            notifyOrderFill(side, symbol, txn.quantity.toStringExpanded(), money(amountText))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            // Notification delivery is best-effort — never let it fail a completed trade.
+        }
+    }
+
     fun reset() {
         viewModelScope.launch {
             portfolio = resetPortfolio.execute()
@@ -268,6 +302,8 @@ class PortfolioViewModel(
             _state.update {
                 it.copy(
                     performanceValues = emptyList(),
+                    performanceValueTexts = emptyList(),
+                    performanceDates = emptyList(),
                     benchmarkTwinValues = null,
                     metrics = null,
                 )
@@ -326,6 +362,8 @@ class PortfolioViewModel(
                 _state.update {
                     it.copy(
                         performanceValues = report.points.map { p -> p.value.amount.doubleValue(false) },
+                        performanceValueTexts = report.points.map { p -> money(p.value.amountText) },
+                        performanceDates = report.points.map { p -> p.epochSeconds },
                         benchmarkTwinValues = report.benchmarkTwinValues
                             ?.map { m -> m.amount.doubleValue(false) },
                         metrics = metrics,

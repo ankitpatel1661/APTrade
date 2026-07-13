@@ -1,5 +1,6 @@
 package com.aptrade.desktop.l10n
 
+import com.aptrade.shared.l10n.L10n
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -69,6 +70,30 @@ class TrfTest {
                 "Moves 5% in a day",
                 trf(L10n.Key.PercentMoveSummaryFormat, "5"),
             )
+        } finally {
+            LocalizationManager.current.value = original
+        }
+    }
+
+    @Test
+    fun `tr resolves the active language and updates when LocalizationManager current changes`() {
+        // Moved from L10nCatalogTest (desktopApp/.../l10n/L10nCatalogTest.kt, deleted) when
+        // the catalog itself moved to shared: tr()/LocalizationManager are Compose-backed
+        // desktop-only types with no commonMain equivalent, so this tr()-layer coverage stays
+        // here rather than moving with the catalog-completeness assertions.
+        val original = LocalizationManager.current.value
+        try {
+            LocalizationManager.current.value = AppLanguage.German
+            assertEquals("Beobachtungsliste", tr(L10n.Key.Watchlist))
+
+            LocalizationManager.current.value = AppLanguage.Spanish
+            assertEquals("Lista de seguimiento", tr(L10n.Key.Watchlist))
+
+            LocalizationManager.current.value = AppLanguage.Italian
+            assertEquals("Lista di controllo", tr(L10n.Key.Watchlist))
+
+            LocalizationManager.current.value = AppLanguage.English
+            assertEquals("Watchlist", tr(L10n.Key.Watchlist))
         } finally {
             LocalizationManager.current.value = original
         }

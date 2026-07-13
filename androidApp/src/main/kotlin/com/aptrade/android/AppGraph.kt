@@ -1,22 +1,46 @@
 package com.aptrade.android
 
+import android.content.Context
+import com.aptrade.android.alerts.AndroidAlertNotifier
+import com.aptrade.shared.application.AddToWatchlist
+import com.aptrade.shared.application.AlertNotifier
 import com.aptrade.shared.application.BuyAsset
-import com.aptrade.shared.application.FetchCandles
+import com.aptrade.shared.application.CreatePriceAlert
+import com.aptrade.shared.application.EvaluateAlerts
+import com.aptrade.shared.application.FetchChartWindow
 import com.aptrade.shared.application.FetchHistory
+import com.aptrade.shared.application.FetchMarketNews
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchPerformanceReport
 import com.aptrade.shared.application.FetchPortfolio
 import com.aptrade.shared.application.FetchPortfolioPerformance
 import com.aptrade.shared.application.FetchProfile
 import com.aptrade.shared.application.FetchSearch
+import com.aptrade.shared.application.FetchWatchlist
+import com.aptrade.shared.application.LoadAlerts
+import com.aptrade.shared.application.LoadBookmarks
 import com.aptrade.shared.application.MarketDataRepository
+import com.aptrade.shared.application.NewsRepository
 import com.aptrade.shared.application.PortfolioStore
+import com.aptrade.shared.application.RemoveFromWatchlist
+import com.aptrade.shared.application.RemovePriceAlert
 import com.aptrade.shared.application.ResetPortfolio
 import com.aptrade.shared.application.SellAsset
+import com.aptrade.shared.application.ToggleBookmark
+import com.aptrade.shared.domain.AssetKind
+import com.aptrade.shared.domain.TradeSide
+import com.aptrade.shared.domain.WatchlistEntry
+import com.aptrade.shared.infrastructure.FileAlertStore
+import com.aptrade.shared.infrastructure.FileBookmarkStore
 import com.aptrade.shared.infrastructure.FilePortfolioStore
+import com.aptrade.shared.infrastructure.FileSettingsStore
+import com.aptrade.shared.infrastructure.FileWatchlistStore
+import com.aptrade.shared.infrastructure.FinnhubKeyConfig
+import com.aptrade.shared.infrastructure.FinnhubNewsRepository
 import com.aptrade.shared.infrastructure.YahooMarketDataRepository
 import kotlinx.coroutines.sync.Mutex
 import java.io.File
+import java.nio.file.Path
 
 /**
  * Process-wide composition root, mirroring the Swift CompositionRoot's `static let`
@@ -38,28 +62,140 @@ object AppGraph {
     val fetchSearch = FetchSearch(repository)
     val fetchProfile = FetchProfile(repository)
     val fetchHistory = FetchHistory(repository)
-    val fetchCandles = FetchCandles(repository)
+    // Indicator warm-up lookback pad + visible window (desktop parity) — replaces the plain
+    // window-only FetchCandles as DetailViewModel's sole candle source, since Candles-mode
+    // rendering and indicator math now share the one fetch.
+    val fetchChartWindow = FetchChartWindow(repository)
 
     // The macOS app's seed watchlist.
     val defaultSymbols = listOf("AAPL", "SPY", "BTC-USD", "ETH-USD")
 
     private var filesDir: File? = null
+    private var appContext: Context? = null
 
-    /** Supply the app-private storage directory. Call once from MainActivity.onCreate
-     *  BEFORE setContent, so [portfolio] is ready by the time any screen composes. */
-    fun initialize(filesDir: File) {
-        this.filesDir = filesDir
+    /** Supply the app-private storage directory and an application [Context] (for the
+     *  [AndroidAlertNotifier]'s `NotificationManager`). Call once from MainActivity.onCreate
+     *  BEFORE setContent, so [portfolio]/[alertNotifier] are ready by the time any screen
+     *  composes. Stores `context.applicationContext` (never the Activity itself) since the
+     *  notifier is expected to outlive any single Activity instance. */
+    fun initialize(context: Context) {
+        this.filesDir = context.filesDir
+        this.appContext = context.applicationContext
     }
 
     /** Portfolio use cases, built lazily from the [filesDir] provided by [initialize].
      *  Shares the single process-wide [repository]. */
     val portfolio: PortfolioGraph by lazy {
         val dir = requireNotNull(filesDir) {
-            "AppGraph.initialize(filesDir) must be called before accessing AppGraph.portfolio"
+            "AppGraph.initialize(context) must be called before accessing AppGraph.portfolio"
         }
         PortfolioGraph(repository, FilePortfolioStore(File(dir, "portfolio.json").toPath()))
     }
+
+    /** App-private config directory (`filesDir/aptrade`), mirroring the desktop
+     *  ConfigDir wiring but rooted in Android's sandbox rather than a platform-specific
+     *  user config path. Lazily-backed stores below resolve their JSON file against it. */
+    private fun configDir(): Path {
+        val dir = requireNotNull(filesDir) { "AppGraph.initialize(context) must run before stores are touched" }
+        return dir.toPath().resolve("aptrade")
+    }
+
+    // Watchlist + alerts + news + settings — all against app-private filesDir, mirroring
+    // the desktop ConfigDir wiring but rooted in Android's sandbox. News use cases are
+    // wired in their own task (7); the store is created now so that task only needs to
+    // add use-case vals against it.
+    val watchlistStore by lazy { FileWatchlistStore(configDir().resolve("watchlist.json")) }
+    val alertStore by lazy { FileAlertStore(configDir().resolve("alerts.json")) }
+    val settingsStore by lazy { FileSettingsStore(configDir().resolve("settings.json")) }
+    val bookmarkStore by lazy { FileBookmarkStore(configDir().resolve("bookmarks.json")) }
+
+    // News (Task 7). FinnhubKeyConfig's default `configDir` param (`resolveConfigDir()`)
+    // targets a desktop home-dir convention — rooted here explicitly at THIS app's own
+    // configDir() (filesDir/aptrade) instead, so the key resolves from the Android app
+    // sandbox rather than a path that doesn't exist/apply on this platform. (Its secondary
+    // `{userHome}/.config/aptrade/config.json` fallback is left at its default; Android's
+    // `user.home` system property doesn't point anywhere meaningful, so that fallback simply
+    // never matches here — harmless.)
+    private val finnhubKeyConfig by lazy { FinnhubKeyConfig(configDir = configDir()) }
+
+    // Null when no Finnhub key is configured; the News tab reads this via NewsViewModel's
+    // `needsKey` rather than attempting requests that would all fail. Mirrors desktop
+    // AppGraph's `newsRepository`/`keyMissing` pair.
+    val newsRepository: NewsRepository? by lazy {
+        finnhubKeyConfig.finnhubApiKey()?.let { FinnhubNewsRepository(it) }
+    }
+    val loadBookmarks by lazy { LoadBookmarks(bookmarkStore) }
+    val toggleBookmark by lazy { ToggleBookmark(bookmarkStore) }
+    val fetchMarketNews by lazy { newsRepository?.let { FetchMarketNews(it) } }
+
+    // Alerts & notifications (Task 6). The notifier seam mirrors desktop's AppGraph: one
+    // AlertNotifier instance shared by EvaluateAlerts, backed here by Android's
+    // NotificationManager rather than desktop's Tray. Typed to the concrete class (not the
+    // AlertNotifier interface) so [notifyOrderFill] below can also reach its `notifyFill`
+    // extra method — the same one instance backs both, same as desktop's single TrayNotifier
+    // implementing AlertNotifier AND exposing notifyFill/notifyMarketStatus/notifyDigest.
+    val alertNotifier: AndroidAlertNotifier by lazy {
+        val context = requireNotNull(appContext) {
+            "AppGraph.initialize(context) must be called before accessing AppGraph.alertNotifier"
+        }
+        AndroidAlertNotifier(context)
+    }
+    val loadAlerts by lazy { LoadAlerts(alertStore) }
+    val createPriceAlert by lazy { CreatePriceAlert(alertStore) }
+    val removePriceAlert by lazy { RemovePriceAlert(alertStore) }
+    val evaluateAlerts by lazy {
+        EvaluateAlerts(
+            store = alertStore,
+            notifier = alertNotifier,
+            isNotifyEnabled = { settingsStore.load().priceAlerts },
+        )
+    }
+
+    // Settings-gated order-fill delivery (spec A2) — the Android port of desktop AppGraph's
+    // `notifyOrderFill` seam (`AppGraphNotifyOrderFill` pattern): read `settings.orderFills`
+    // once per call and only deliver when it's on. Handed to PortfolioViewModel/DetailViewModel
+    // as a plain suspend closure, same shape as desktop hands it to its PortfolioViewModel.
+    // The gate itself is [buildNotifyOrderFill] (below), extracted so a test can pin it against
+    // a real FileSettingsStore without needing a real AndroidAlertNotifier/Context/
+    // NotificationManager — mirrors desktop's `AppGraphNotifyOrderFillTest` rationale exactly.
+    val notifyOrderFill: suspend (TradeSide, String, String, String) -> Unit by lazy {
+        buildNotifyOrderFill(settingsStore) { side, symbol, quantityText, amountFormatted ->
+            alertNotifier.notifyFill(side, symbol, quantityText, amountFormatted)
+        }
+    }
+
+    // The macOS app's seed watchlist (parity with desktopApp's AppGraph.defaultEntries).
+    private val defaultWatchlistEntries = listOf(
+        WatchlistEntry("AAPL", "Apple Inc.", AssetKind.Stock),
+        WatchlistEntry("SPY", "SPDR S&P 500 ETF Trust", AssetKind.Etf),
+        WatchlistEntry("BTC-USD", "Bitcoin USD", AssetKind.Crypto),
+        WatchlistEntry("ETH-USD", "Ethereum USD", AssetKind.Crypto),
+    )
+
+    val fetchWatchlist by lazy { FetchWatchlist(watchlistStore, defaultWatchlistEntries) }
+    val addToWatchlist by lazy { AddToWatchlist(watchlistStore) }
+    val removeFromWatchlist by lazy { RemoveFromWatchlist(watchlistStore) }
 }
+
+/**
+ * Builds the settings-gated order-fill closure: reads `settingsStore.load().orderFills`
+ * once per call and only invokes [deliver] when it's on. Extracted as a standalone,
+ * package-visible function (rather than inlined in [AppGraph]'s `notifyOrderFill` lazy val)
+ * so a test can construct the REAL gate against a real [FileSettingsStore] (a temp-file
+ * store, no Context/NotificationManager dependency) with a recording `deliver` fake, and pin
+ * `orderFills = true`/`false` both ways — see `AppGraphNotifyOrderFillTest`. Direct port of
+ * desktop's `buildNotifyOrderFill` (`desktopApp/src/main/kotlin/com/aptrade/desktop/
+ * AppGraph.kt`) — same signature, same behavior, no divergence.
+ */
+internal fun buildNotifyOrderFill(
+    settingsStore: FileSettingsStore,
+    deliver: suspend (TradeSide, String, String, String) -> Unit,
+): suspend (TradeSide, String, String, String) -> Unit =
+    { side, symbol, quantityText, amountFormatted ->
+        if (settingsStore.load().orderFills) {
+            deliver(side, symbol, quantityText, amountFormatted)
+        }
+    }
 
 /** The portfolio slice of the composition root: everything that depends on the
  *  [PortfolioStore]. Groups the trade + read + performance use cases sharing one store. */

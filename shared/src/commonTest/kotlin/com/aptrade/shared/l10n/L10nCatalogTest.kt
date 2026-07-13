@@ -1,4 +1,4 @@
-package com.aptrade.desktop.l10n
+package com.aptrade.shared.l10n
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -7,9 +7,14 @@ import kotlin.test.assertTrue
 
 /**
  * Transcribed from `Tests/APTradeAppTests/L10nTests.swift` — the macOS catalog-completeness
- * test. Proves the desktop [L10n] catalog is a faithful, full-coverage port: every [L10n.Key]
- * resolves to a non-blank string for all four [AppLanguage]s, and [tr]/[L10n.string] falls
- * back to [L10n.Key.english] exactly when a translation is missing or blank.
+ * test. Proves the [L10n] catalog is a faithful, full-coverage port: every [L10n.Key]
+ * resolves to a non-blank string for all four [AppLanguage]s.
+ *
+ * Moved from desktopApp (com.aptrade.desktop.l10n.L10nCatalogTest) alongside the catalog
+ * itself so Android shares the same coverage guarantee. The `tr()`/`LocalizationManager`
+ * layer test that lived alongside these assertions stays desktop-only (folded into
+ * `TrfTest.kt`) since `tr`/`LocalizationManager` are Compose-backed desktop types that do
+ * not exist in commonMain.
  *
  * The Swift catalog (`Sources/APTradeApp/L10n.swift`) has exactly 205 `Key` cases with a
  * `table` row for all four languages each — this test pinned that same count on the Kotlin
@@ -20,14 +25,17 @@ import kotlin.test.assertTrue
  * no existing Key), bringing the total to 211. Task 7 (6e wave 2 — detail/news/alerts
  * retrofit) added 6 more desktop-only Keys (`Back`, `Retry`, `ChartStyleLine`,
  * `BuySellButton`, `Overbought`, `Oversold` — see that task's report for why each has no
- * existing Key), bringing the total to 217; the count below tracks the Kotlin-only total
- * going forward, not the Swift source count.
+ * existing Key), bringing the total to 217. Android i18n snackbar fix added 2 more Keys
+ * (`AddedSymbolFmt`, `RemovedSymbolFmt`), bringing the total to 219. The Android news-tab
+ * review fix wave added 1 more Key (`CouldntUpdateBookmark`, for the localized bookmark-
+ * persistence-failure snackbar), bringing the total to 220; the count below tracks the
+ * Kotlin-only total going forward, not the Swift source count.
  */
 class L10nCatalogTest {
 
     @Test
-    fun `catalog has exactly 217 keys (205 macOS-transcribed + 12 desktop-only from Tasks 6-7)`() {
-        assertEquals(217, L10n.Key.entries.size)
+    fun `catalog has exactly 220 keys (205 macOS-transcribed + 12 desktop-only from Tasks 6-7 + 3 Android-only)`() {
+        assertEquals(220, L10n.Key.entries.size)
     }
 
     @Test
@@ -44,26 +52,6 @@ class L10nCatalogTest {
     fun `English always resolves via key english, matching the Swift raw-value fallback`() {
         for (key in L10n.Key.entries) {
             assertEquals(key.english, L10n.string(key, AppLanguage.English))
-        }
-    }
-
-    @Test
-    fun `tr resolves the active language and updates when LocalizationManager current changes`() {
-        val original = LocalizationManager.current.value
-        try {
-            LocalizationManager.current.value = AppLanguage.German
-            assertEquals("Beobachtungsliste", tr(L10n.Key.Watchlist))
-
-            LocalizationManager.current.value = AppLanguage.Spanish
-            assertEquals("Lista de seguimiento", tr(L10n.Key.Watchlist))
-
-            LocalizationManager.current.value = AppLanguage.Italian
-            assertEquals("Lista di controllo", tr(L10n.Key.Watchlist))
-
-            LocalizationManager.current.value = AppLanguage.English
-            assertEquals("Watchlist", tr(L10n.Key.Watchlist))
-        } finally {
-            LocalizationManager.current.value = original
         }
     }
 

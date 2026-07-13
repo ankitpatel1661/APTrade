@@ -43,7 +43,7 @@ import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.designkit.InterFamily
 import com.aptrade.desktop.designkit.StatTile
 import com.aptrade.desktop.designkit.crosshairIndex
-import com.aptrade.desktop.l10n.L10n
+import com.aptrade.shared.l10n.L10n
 import com.aptrade.desktop.l10n.tr
 
 /** The Portfolio tab's chart-and-analytics surface — the Compose port of

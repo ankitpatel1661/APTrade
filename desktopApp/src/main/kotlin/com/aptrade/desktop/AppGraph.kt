@@ -9,7 +9,7 @@ import com.aptrade.desktop.infra.FileSettingsStore
 import com.aptrade.desktop.infra.FileWatchlistStore
 import com.aptrade.desktop.infra.FinnhubKeyConfig
 import com.aptrade.desktop.infra.TrayNotifier
-import com.aptrade.desktop.infra.resolveConfigDir
+import com.aptrade.shared.infrastructure.resolveConfigDir
 import com.aptrade.shared.application.AddToWatchlist
 import com.aptrade.shared.application.AlertStore
 import com.aptrade.shared.application.BookmarkStore
