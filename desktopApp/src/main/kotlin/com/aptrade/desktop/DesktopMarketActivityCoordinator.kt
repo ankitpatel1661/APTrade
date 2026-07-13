@@ -81,8 +81,24 @@ class DesktopMarketActivityCoordinator(
                 ScheduledNotification.MarketClosed -> notifyMarketStatus(false)
                 ScheduledNotification.DigestDue -> notifyDigest(digestSummary())
                 ScheduledNotification.EarningsCheckDue -> {
-                    for (event in fetchTodaysOwnEarnings()) {
-                        notifyEarnings(event)
+                    // Same "never drop the whole tick" reasoning as digestSummary() below: an
+                    // uncaught failure here would kill the tick coroutine and silently disable
+                    // ALL scheduled notifications (open/close, digest, earnings) until relaunch.
+                    // FetchEarningsCalendar.ownedToday already swallows repository failures, but
+                    // its ownSymbols() closure (file-backed watchlist/portfolio reads) can still
+                    // throw — and this constructor param accepts ANY closure — so guard broadly
+                    // here: failure -> no earnings notifications this tick, everything else
+                    // proceeds. Exception (not just QuoteError, the digest's narrower quotes-only
+                    // catch) matches fetchOrEmpty's own breadth in EarningsUseCases.kt.
+                    val todaysOwn = try {
+                        fetchTodaysOwnEarnings()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        emptyList()
+                    }
+                    for (earningsEvent in todaysOwn) {
+                        notifyEarnings(earningsEvent)
                     }
                 }
             }

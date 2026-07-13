@@ -126,9 +126,15 @@ fun main() = application {
             // hands back the typed EarningsEvent it fetched; see the KDoc on the coordinator's
             // notifyEarnings param for why.
             notifyEarnings = { event ->
+                // sessionLabel(Unknown) is "" (no L10n key for it); every language's
+                // EarningsTodayBodyFmt ends with "· %2$s" (EN/DE/IT/ES all verified), so an
+                // empty label would leave a dangling "… · " — trim the orphaned separator in
+                // that one case only, never when a real session label is present.
+                val label = sessionLabel(event.session)
+                val body = trf(L10n.Key.EarningsTodayBodyFmt, event.symbol, label)
                 graph.trayNotifier.notifyEarnings(
                     title = tr(L10n.Key.EarningsTodayTitle),
-                    body = trf(L10n.Key.EarningsTodayBodyFmt, event.symbol, sessionLabel(event.session)),
+                    body = if (label.isEmpty()) body.trimEnd(' ', '·') else body,
                 )
             },
             fetchTodaysOwnEarnings = {

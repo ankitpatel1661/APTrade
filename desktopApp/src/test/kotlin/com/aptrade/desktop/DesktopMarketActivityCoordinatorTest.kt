@@ -251,6 +251,36 @@ class DesktopMarketActivityCoordinatorTest {
     }
 
     @Test
+    fun earningsFetchFailureDropsOnlyEarningsAndTheLoopSurvives() = runTest {
+        // Regression guard for the review-found Critical: an uncaught QuoteError from the
+        // earnings fetch used to kill the tick coroutine, silently disabling ALL scheduled
+        // notifications until relaunch. Failure must drop only this tick's earnings
+        // notifications; later ticks (here: the open->closed transition) still fire.
+        val stateStore = InMemorySchedulerStateStore(initial = SchedulerState(lastStatus = com.aptrade.shared.domain.MarketStatus.OPEN))
+        val notified = mutableListOf<EarningsEvent>()
+        val statusEvents = mutableListOf<Boolean>()
+        var now = mondayTenAmOpen
+        val coordinator = coordinator(
+            stateStore = stateStore,
+            settings = AppSettings(marketOpenClose = true, newsDigest = false, earningsReports = true),
+            notifyMarketStatus = { opened -> statusEvents += opened },
+            notifyEarnings = { event -> notified += event },
+            fetchTodaysOwnEarnings = { throw QuoteError.Network("down") },
+            nowEpochSeconds = { now },
+            scope = backgroundScope,
+        )
+
+        coordinator.start(); runCurrent()
+        assertTrue(notified.isEmpty())             // failure -> no earnings notification
+        assertEquals(1, stateStore.saveCallCount)  // tick completed, state persisted
+
+        now = mondayNineAmClosed + 24 * 3_600      // next day pre-open -> market closed
+        advanceTimeBy(60_001); runCurrent()
+        assertEquals(listOf(false), statusEvents)  // loop survived: transition still delivered
+        assertTrue(notified.isEmpty())
+    }
+
+    @Test
     fun earningsCheckDueWithNoOwnedEventsNotifiesNothing() = runTest {
         val stateStore = InMemorySchedulerStateStore(initial = SchedulerState(lastStatus = com.aptrade.shared.domain.MarketStatus.OPEN))
         val notified = mutableListOf<EarningsEvent>()
