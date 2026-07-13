@@ -101,4 +101,15 @@ final class CalendarViewModelTests: XCTestCase {
         XCTAssertFalse(vm.isLoading)
         XCTAssertTrue(vm.days.isEmpty)
     }
+
+    /// Regression guard (review finding): ticker forms differ between sources ("BRK.B" Finnhub
+    /// vs "BRK-B" Yahoo/watchlist) — a watched dash-form symbol must still mark the dot-form
+    /// event as owned via `ownSymbols`'s normalized storage.
+    func test_dashFormOwnSymbol_marksDotFormEventAsOwned_viaNormalizedState() async {
+        let vm = makeVM(events: [event(symbol: "BRK.B", day: "2026-11-24")], ownSymbols: ["BRK-B"])
+        await vm.load()
+
+        XCTAssertTrue(vm.ownSymbols.contains("BRK.B")) // normalized storage: dash -> dot
+        XCTAssertTrue(vm.days.contains { $0.day == "2026-11-24" && $0.events.contains { $0.symbol == "BRK.B" } })
+    }
 }

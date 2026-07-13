@@ -132,9 +132,10 @@ class DetailViewModel(
         }
         // Next-earnings loads exactly once per symbol in its own isolated coroutine (like
         // profile/quote above), a 30-day window from "today" in market-local terms.
-        // FetchEarningsCalendar.nextEarnings already swallows non-cancellation failures to
-        // null (see its KDoc) — this launch never needs a QuoteError catch, only
-        // CancellationException must propagate so scope teardown isn't swallowed.
+        // FetchEarningsCalendar.nextEarnings already swallows repository failures to null (see
+        // its KDoc), but mirrors the Android twin's belt-and-suspenders catch(Exception) here
+        // for symmetry — only CancellationException must propagate so scope teardown isn't
+        // swallowed.
         scope.launch {
             try {
                 val startDay = calendar.localEpochDay(nowEpochSeconds())
@@ -144,6 +145,8 @@ class DetailViewModel(
                 _state.update { it.copy(nextEarnings = next) }
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: Exception) {
+                // Silent: nextEarnings stays null.
             }
         }
         loadChart()

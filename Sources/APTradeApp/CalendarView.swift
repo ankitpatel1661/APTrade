@@ -102,7 +102,10 @@ struct CalendarView: View {
                 banner(String(format: tr(.closesEarlyBannerFmt), calendarShortDateFormatter.string(from: group.date)))
             }
             ForEach(group.events, id: \.symbol) { event in
-                earningsRow(event, owned: viewModel.ownSymbols.contains(event.symbol))
+                // viewModel.ownSymbols is already normalized (CalendarViewModel) — normalize the
+                // event's symbol here too so a watched "BRK-B" still lights up the owned dot on
+                // Finnhub's "BRK.B" event.
+                earningsRow(event, owned: viewModel.ownSymbols.contains(normalized(event.symbol)))
             }
             Divider().overlay(Theme.hairline).padding(.horizontal, 16).padding(.top, 4)
         }

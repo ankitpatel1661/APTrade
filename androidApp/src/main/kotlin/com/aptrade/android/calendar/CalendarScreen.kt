@@ -41,6 +41,7 @@ import com.aptrade.android.AppGraph
 import com.aptrade.android.l10n.tr
 import com.aptrade.android.l10n.trf
 import com.aptrade.android.ui.money
+import com.aptrade.shared.application.normalized
 import com.aptrade.shared.domain.EarningsEvent
 import com.aptrade.shared.domain.EarningsSession
 import com.aptrade.shared.domain.USMarketHoliday
@@ -147,7 +148,10 @@ private fun CalendarContent(state: CalendarUiState, padding: PaddingValues) {
                         }
                     }
                     items(day.events, key = { "ev-${day.localEpochDay}-${it.symbol}" }) { event ->
-                        EarningsRow(event = event, owned = event.symbol in state.ownSymbols)
+                        // state.ownSymbols is already normalized (CalendarViewModel) — normalize
+                        // the event's symbol here too so a watched "BRK-B" still lights up the
+                        // owned dot on Finnhub's "BRK.B" event.
+                        EarningsRow(event = event, owned = normalized(event.symbol) in state.ownSymbols)
                     }
                     item(key = "div-${day.localEpochDay}") {
                         Spacer(Modifier.height(4.dp))

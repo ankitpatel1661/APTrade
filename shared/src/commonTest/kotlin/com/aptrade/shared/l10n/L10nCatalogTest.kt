@@ -16,9 +16,11 @@ import kotlin.test.assertTrue
  * `TrfTest.kt`) since `tr`/`LocalizationManager` are Compose-backed desktop types that do
  * not exist in commonMain.
  *
- * The Swift catalog (`Sources/APTradeApp/L10n.swift`) has exactly 205 `Key` cases with a
- * `table` row for all four languages each — this test pinned that same count on the Kotlin
- * side so the transcription couldn't silently drop or duplicate a key. Task 6 (6e wave 1 —
+ * The Swift catalog (`Sources/APTradeApp/L10n.swift`) started at exactly 205 `Key` cases with a
+ * `table` row for all four languages each — this test originally pinned that same count on the
+ * Kotlin side so the transcription couldn't silently drop or duplicate a key. The Swift catalog
+ * has since grown independently (Calendar tab, etc.) and now has 231 cases; the two counts are
+ * no longer expected to match — this test tracks the Kotlin-only total below. Task 6 (6e wave 1 —
  * navigation/watchlist/portfolio retrofit) added 6 desktop-only Keys with no macOS counterpart
  * (`StartOverWithFormat`, `ExportEllipsis`, `ResetPortfolioEllipsis`, `ByClass`,
  * `TrackingStartsTodayMessage`, `NoPerformanceDataYet` — see the task report for why each has

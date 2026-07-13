@@ -92,4 +92,47 @@ class CalendarViewModelTest {
         assertTrue(s.days.any { it.day == "2026-11-26" && it.holiday == USMarketHoliday.Thanksgiving })
         assertTrue(s.days.any { it.day == "2026-11-27" && it.isHalfDay })
     }
+
+    /** Regression guard (review finding): [ownSymbols] is a raw file-backed watchlist/portfolio
+     *  read that sits OUTSIDE [FetchEarningsCalendar]'s own failure guard and can throw
+     *  IOException. Uncaught, it used to kill this load's coroutine — leaving `isLoading` stuck
+     *  forever (desktop loads the Calendar tab once per session). A thrown ownSymbols must
+     *  degrade to empty events/ownSymbols but still finish the load with the holiday-only days
+     *  built and rendered. */
+    @Test
+    fun throwingOwnSymbolsDegradesToHolidayOnlyDaysWithoutHangingIsLoading() = runTest {
+        val vm = CalendarViewModel(
+            fetch = FetchEarningsCalendar(FakeEarningsCalendarRepository(listOf(event("AAPL", "2026-11-24")))) { emptySet() },
+            calendar = calendar,
+            ownSymbols = { throw java.io.IOException("watchlist file unreadable") },
+            needsKey = false,
+            nowEpochSeconds = { nowEpochSeconds },
+            scope = backgroundScope,
+        )
+        vm.load(); runCurrent()
+
+        val s = vm.state.value
+        assertFalse(s.isLoading)
+        assertEquals(emptySet(), s.ownSymbols)
+        assertTrue(s.days.all { it.events.isEmpty() })
+        assertTrue(s.days.any { it.day == "2026-11-26" && it.holiday == USMarketHoliday.Thanksgiving })
+        assertTrue(s.days.any { it.day == "2026-11-27" && it.isHalfDay })
+    }
+
+    /** Regression guard (review finding): ticker forms differ between sources ("BRK.B" Finnhub
+     *  vs "BRK-B" Yahoo/watchlist) — a watched dash-form symbol must still mark the dot-form
+     *  event as owned via [CalendarUiState.ownSymbols]'s normalized storage. */
+    @Test
+    fun dashFormOwnSymbolMarksDotFormEventAsOwnedViaNormalizedState() = runTest {
+        val vm = vm(
+            backgroundScope,
+            events = listOf(event("BRK.B", "2026-11-24")),
+            ownSymbols = setOf("BRK-B"),
+        )
+        vm.load(); runCurrent()
+
+        val s = vm.state.value
+        assertTrue(s.ownSymbols.contains("BRK.B")) // normalized storage: dash -> dot
+        assertTrue(s.days.any { it.day == "2026-11-24" && it.events.any { e -> e.symbol == "BRK.B" } })
+    }
 }

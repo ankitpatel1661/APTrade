@@ -18,6 +18,9 @@ final class CalendarViewModel {
     }
 
     private(set) var days: [DayGroup] = []
+    /// Dot/dash-`normalized` form (see `APTradeApplication`'s `normalized(_:)`) so the owned-dot
+    /// check at render time (`viewModel.ownSymbols.contains(normalized(event.symbol))`) matches
+    /// a watched "BRK-B" against Finnhub's "BRK.B" event.
     private(set) var ownSymbols: Set<String> = []
     private(set) var isLoading = false
     let keyMissing: Bool
@@ -43,16 +46,22 @@ final class CalendarViewModel {
         isLoading = true
         defer { isLoading = false }
         let start = now()
-        // The 86_400-second stride is safe here because the day KEY comes from
-        // `calendar.tradingDay(of:)` (ET wall clock) each step — a DST hour shift cannot
-        // skip or double a calendar day over a 14-day window.
+        // The 86_400-second stride is a fixed-duration step, not calendar-day arithmetic, so a
+        // US DST transition inside the 14-day window shifts every subsequent step's ET wall-clock
+        // time by up to ~1 hour. That can only re-map a step's `tradingDay(of:)` key onto the
+        // adjacent calendar day when the step lands within that ~1h of ET midnight — and US DST
+        // transitions always fall in the small hours of a Sunday, which never has holiday,
+        // half-day, or earnings content of its own (`buildCalendarDays`'s Kotlin twin drops
+        // content-less days the same way). So the one day whose key could wobble is always
+        // dropped by the `guard ... else { return nil }` below regardless, making the drift
+        // unobservable in `days`.
         let window = (0..<14).map { start.addingTimeInterval(Double($0) * 86_400) }
         do {
             let events = try await fetchEarnings.execute(
                 fromDay: calendar.tradingDay(of: window[0]),
                 toDay: calendar.tradingDay(of: window[13]))
             let byDay = Dictionary(grouping: events, by: \.day)
-            ownSymbols = await loadOwnSymbols()
+            ownSymbols = Set(await loadOwnSymbols().map(normalized))
             days = window.compactMap { date in
                 let day = calendar.tradingDay(of: date)
                 let holiday = calendar.holiday(on: date)

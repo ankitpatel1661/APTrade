@@ -3,12 +3,18 @@ package com.aptrade.desktop.calendar
 import com.aptrade.shared.application.CalendarDay
 import com.aptrade.shared.application.FetchEarningsCalendar
 import com.aptrade.shared.application.buildCalendarDays
+import com.aptrade.shared.application.normalized
+import com.aptrade.shared.domain.EarningsEvent
 import com.aptrade.shared.domain.MarketCalendar
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
+/** [ownSymbols] holds the dot/dash-[normalized] form (shared/EarningsUseCases.kt's helper of
+ *  the same name) so the owned-dot check at render time (`normalized(event.symbol) in
+ *  state.ownSymbols`) matches a watched "BRK-B" against Finnhub's "BRK.B" event. */
 data class CalendarUiState(
     val days: List<CalendarDay> = emptyList(),
     val ownSymbols: Set<String> = emptySet(),
@@ -35,13 +41,27 @@ class CalendarViewModel(
         val start = calendar.localEpochDay(nowEpochSeconds())
         _state.value = _state.value.copy(isLoading = true)
         scope.launch {
-            // fetch.execute already swallows failures to emptyList() (FetchEarningsCalendar
-            // contract) — no try/catch needed here; buildCalendarDays with empty events still
-            // yields the holiday/half-day rows for the window.
-            val events = fetch.execute(calendar.dayString(start), calendar.dayString(start + 13))
+            // fetch.execute's OWN internals already swallow repository failures to emptyList()
+            // (FetchEarningsCalendar contract) — but ownSymbols() is a raw file-backed read
+            // (watchlist + portfolio) that sits OUTSIDE that guard and can throw IOException.
+            // Same "never leave the caller stuck" reasoning as
+            // DesktopMarketActivityCoordinator's EarningsCheckDue guard: an uncaught failure
+            // here would leave isLoading spinning forever (desktop loads this tab once per
+            // session). Degrade to empty events/ownSymbols TOGETHER on any non-cancellation
+            // failure (the Pair keeps the two assignments atomic — a fetch that already
+            // succeeded before a failing ownSymbols() must not leave a half-updated state);
+            // buildCalendarDays with an empty event list still yields the holiday/half-day rows
+            // for the window, which are local and must render regardless.
+            val (events, own) = try {
+                fetch.execute(calendar.dayString(start), calendar.dayString(start + 13)) to ownSymbols()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emptyList<EarningsEvent>() to emptySet()
+            }
             _state.value = CalendarUiState(
                 days = buildCalendarDays(start, 14, calendar, events),
-                ownSymbols = ownSymbols(),
+                ownSymbols = own.mapTo(HashSet(), ::normalized),
                 isLoading = false,
                 needsKey = needsKey,
             )

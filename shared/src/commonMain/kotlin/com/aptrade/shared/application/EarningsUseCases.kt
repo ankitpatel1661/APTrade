@@ -4,8 +4,13 @@ import com.aptrade.shared.domain.EarningsEvent
 import com.aptrade.shared.domain.SP500Symbols
 import kotlinx.coroutines.CancellationException
 
-/** Ticker forms differ between sources ("BRK.B" vs "BRK-B"); compare on a dot/dash-blind key. */
-private fun normalized(symbol: String): String = symbol.uppercase().replace('-', '.')
+/** Ticker forms differ between sources ("BRK.B" vs "BRK-B"); compare on a dot/dash-blind key.
+ *  PUBLIC (not private): the desktop/Android Calendar VMs (separate Gradle modules — `internal`
+ *  is module-scoped and isn't visible across the `:shared` / `:desktopApp` / `:androidApp`
+ *  project boundary without extra friend-path wiring) need this SAME dot/dash-blind key to mark
+ *  the owned-symbol dot on an event whose form differs from the watchlist/portfolio form (e.g. a
+ *  watched "BRK-B" must still light up Finnhub's "BRK.B" event). */
+fun normalized(symbol: String): String = symbol.uppercase().replace('-', '.')
 
 /**
  * Serves both earnings surfaces. [ownSymbols] is a provider (watchlist ∪ portfolio read

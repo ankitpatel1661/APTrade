@@ -1,7 +1,11 @@
 import APTradeDomain
 
 /// Ticker forms differ between sources ("BRK.B" vs "BRK-B"); compare on a dot/dash-blind key.
-private func normalized(_ symbol: String) -> String {
+/// `package` (not `private`): the macOS/iOS Calendar VM/View (APTradeApp target, same package)
+/// need this SAME dot/dash-blind key to mark the owned-symbol dot on an event whose symbol form
+/// differs from the watchlist/portfolio form (e.g. a watched "BRK-B" must still light up
+/// Finnhub's "BRK.B" event).
+package func normalized(_ symbol: String) -> String {
     symbol.uppercased().replacingOccurrences(of: "-", with: ".")
 }
 
