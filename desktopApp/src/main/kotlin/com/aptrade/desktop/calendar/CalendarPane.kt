@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -194,8 +195,11 @@ private fun Banner(text: String) {
     }
 }
 
-/** One earnings row: a gold dot when [owned] (watchlist/portfolio symbol), the ticker, a
- *  session chip (KindChip visual), and the EPS estimate when present. */
+/** One earnings row, laid out as four fixed columns so every row lines up like a table:
+ *  `dot · SYMBOL (fixed) · Company Name (fills middle) · chip + est (right rail)`.
+ *  The symbol column is fixed-width so all company names start on the same vertical line;
+ *  the estimate column is fixed-width and end-aligned (and always reserved, even when
+ *  empty) so the session chips' right edges align on the same line too. */
 @Composable
 private fun EarningsRow(event: EarningsEvent, owned: Boolean) {
     Row(
@@ -206,6 +210,7 @@ private fun EarningsRow(event: EarningsEvent, owned: Boolean) {
             if (owned) Box(Modifier.size(6.dp).clip(CircleShape).background(DK.gold))
         }
         Spacer(Modifier.width(10.dp))
+        // Symbol column — 76dp fits the longest ticker form ("BRK.B"-style, 5 chars + dot).
         Text(
             event.symbol,
             style = TextStyle(
@@ -215,41 +220,43 @@ private fun EarningsRow(event: EarningsEvent, owned: Boolean) {
                 color = DK.textPrimary,
                 fontFeatureSettings = "tnum",
             ),
+            maxLines = 1,
+            modifier = Modifier.width(76.dp),
         )
-        // Company name beside the symbol — desktop-only by product decision (the mobile
-        // apps show the symbol alone). Finnhub's calendar payload carries no names, so the
-        // lookup is the bundled S&P 500 snapshot; non-index (user-owned) symbols simply
-        // have no name to show. Quiet weight: the symbol stays the anchor.
-        (event.companyName.ifBlank { null } ?: SP500Names[event.symbol])?.let { name ->
-            Spacer(Modifier.width(10.dp))
-            Text(
-                name,
-                style = TextStyle(
-                    fontFamily = InterFamily,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Normal,
-                    color = DK.textSecondary,
-                ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-        }
-        Spacer(Modifier.weight(1f))
+        // Company-name column — desktop-only by product decision (the mobile apps show the
+        // symbol alone). Finnhub's calendar payload carries no names, so the lookup is the
+        // bundled S&P 500 snapshot; non-index (user-owned) symbols render an empty column.
+        // Sole weighted child: it owns ALL the middle space, pinning the chip/est right rail
+        // flush to the row's end.
+        Text(
+            event.companyName.ifBlank { null } ?: SP500Names[event.symbol].orEmpty(),
+            style = TextStyle(
+                fontFamily = InterFamily,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Normal,
+                color = DK.textSecondary,
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(end = 12.dp),
+        )
         SessionChip(event.session)
-        event.epsEstimate?.let { eps ->
-            Spacer(Modifier.width(10.dp))
-            Text(
-                "est " + formatMoney(BigDecimal.valueOf(eps).toPlainString()),
-                style = TextStyle(
-                    fontFamily = InterFamily,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = DK.textSecondary,
-                    fontFeatureSettings = "tnum",
-                ),
-            )
-        }
+        Spacer(Modifier.width(12.dp))
+        // Estimate column — fixed width, end-aligned, ALWAYS reserved so chip right edges
+        // stay on one line whether or not an estimate exists.
+        Text(
+            event.epsEstimate?.let { "est " + formatMoney(BigDecimal.valueOf(it).toPlainString()) } ?: "",
+            style = TextStyle(
+                fontFamily = InterFamily,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = DK.textSecondary,
+                fontFeatureSettings = "tnum",
+            ),
+            maxLines = 1,
+            textAlign = TextAlign.End,
+            modifier = Modifier.width(92.dp),
+        )
     }
 }
 
