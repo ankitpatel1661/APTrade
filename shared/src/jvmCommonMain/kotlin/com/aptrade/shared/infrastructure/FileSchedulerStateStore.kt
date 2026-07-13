@@ -26,11 +26,9 @@ import kotlin.io.path.readText
  * PROMOTED to `shared/jvmCommonMain` (Task 8) from what had been a desktop-only copy at
  * `desktopApp/src/main/kotlin/com/aptrade/desktop/infra/FileSchedulerStateStore.kt`, so
  * Android's `AppGraph` can share the exact same file format/behavior — mirrors how
- * `FileWatchlistStore`/`FileAlertStore`/`FileBookmarkStore`/`FileSettingsStore`/
- * `FilePortfolioStore` were already promoted here for the same reason. Desktop's own
- * `com.aptrade.desktop.infra.FileSchedulerStateStore` is left as-is (out of this task's
- * scope to migrate desktop's AppGraph wiring over) — a known, pre-existing duplication
- * also present for the other promoted stores above, not introduced by this promotion.
+ * `FileWatchlistStore`/`FileAlertStore`/`FileBookmarkStore`/`FileSettingsStore` were
+ * already promoted here for the same reason. Desktop's file is now the same one-line
+ * `typealias` re-export those sibling stores use, so exactly ONE implementation exists.
  */
 class FileSchedulerStateStore(private val file: Path) : SchedulerStateStore {
 
