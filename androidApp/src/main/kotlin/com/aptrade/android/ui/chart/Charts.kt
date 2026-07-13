@@ -43,6 +43,101 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
+
+/** One cubic Bézier segment between two consecutive data points, expressed as Compose [Offset]s
+ *  ready for [Path.cubicTo]. [start]/[end] are the original data points (the curve passes
+ *  through them exactly — Hermite interpolation, not an approximation); [control1]/[control2]
+ *  are the Bézier control points derived from the segment's Fritsch–Carlson tangents. */
+internal data class CubicSegment(val start: Offset, val control1: Offset, val control2: Offset, val end: Offset)
+
+/** Monotone cubic (Fritsch–Carlson, 1980) interpolation control points for [points] (assumed
+ *  sorted by ascending x, which every chart in this file already produces). Deliberately NOT a
+ *  naive Catmull-Rom/bezier-midpoint curve: those overshoot above a local high or below a local
+ *  low, which would misrepresent the actual traded price on a line/area price chart — this
+ *  construction guarantees the curve never leaves the `[min(y_i, y_{i+1}), max(y_i, y_{i+1})]`
+ *  band on any monotone run of the input. Degenerate inputs: fewer than 2 points returns
+ *  [emptyList] (nothing to draw, matching every other chart primitive here); exactly 2 points
+ *  degrades to a single segment whose control points sit exactly on the connecting line
+ *  (indistinguishable from a plain `lineTo`).
+ *
+ *  Algorithm:
+ *  1. Secant slopes `Δ_k` between consecutive points.
+ *  2. Initial tangent `m_k` at each point: the lone adjacent secant at the ends, the average of
+ *     the two adjacent secants everywhere else.
+ *  3. Zero the tangent at any point flanked by secants of opposite sign (a local extremum) —
+ *     this is what stops the curve from bulging past a peak or trough.
+ *  4. Fritsch–Carlson's τ-clamp: rescale a segment's two tangents so neither exceeds 3× the
+ *     segment's own secant slope — the other overshoot guard, for steep runs between shallow
+ *     neighbors.
+ *  Each interval's Hermite tangents are then converted to Bézier control points at the standard
+ *  1/3 and 2/3 x-offsets. */
+internal fun monotoneCubicControlPoints(points: List<Offset>): List<CubicSegment> {
+    val n = points.size
+    if (n < 2) return emptyList()
+
+    val dx = FloatArray(n - 1)
+    val delta = FloatArray(n - 1)
+    for (i in 0 until n - 1) {
+        val dxi = points[i + 1].x - points[i].x
+        dx[i] = dxi
+        delta[i] = if (dxi == 0f) 0f else (points[i + 1].y - points[i].y) / dxi
+    }
+
+    val m = FloatArray(n)
+    m[0] = delta[0]
+    m[n - 1] = delta[n - 2]
+    for (i in 1 until n - 1) {
+        val opposingSigns = (delta[i - 1] > 0f) != (delta[i] > 0f)
+        m[i] = if (delta[i - 1] == 0f || delta[i] == 0f || opposingSigns) 0f else (delta[i - 1] + delta[i]) / 2f
+    }
+
+    for (i in 0 until n - 1) {
+        if (delta[i] == 0f) {
+            m[i] = 0f
+            m[i + 1] = 0f
+            continue
+        }
+        if (m[i] / delta[i] < 0f) m[i] = 0f
+        if (m[i + 1] / delta[i] < 0f) m[i + 1] = 0f
+        val alpha = m[i] / delta[i]
+        val beta = m[i + 1] / delta[i]
+        val h = alpha * alpha + beta * beta
+        if (h > 9f) {
+            val tau = 3f / sqrt(h.toDouble()).toFloat()
+            m[i] = tau * alpha * delta[i]
+            m[i + 1] = tau * beta * delta[i]
+        }
+    }
+
+    return (0 until n - 1).map { i ->
+        val p0 = points[i]
+        val p1 = points[i + 1]
+        val third = dx[i] / 3f
+        CubicSegment(
+            start = p0,
+            control1 = Offset(p0.x + third, p0.y + m[i] * third),
+            control2 = Offset(p1.x - third, p1.y - m[i + 1] * third),
+            end = p1,
+        )
+    }
+}
+
+/** Appends [points] to this [Path] as a monotone-cubic curve (via [monotoneCubicControlPoints]):
+ *  `moveTo` the first point, then `cubicTo` through each segment. Fewer than 2 points is a
+ *  no-op — every caller in this file already guards `values.size < 2` before building a path. */
+internal fun Path.monotoneCubicLineTo(points: List<Offset>) {
+    val segments = monotoneCubicControlPoints(points)
+    if (segments.isEmpty()) return
+    moveTo(segments.first().start.x, segments.first().start.y)
+    for (segment in segments) {
+        cubicTo(
+            segment.control1.x, segment.control1.y,
+            segment.control2.x, segment.control2.y,
+            segment.end.x, segment.end.y,
+        )
+    }
+}
 
 /** A tiny (no axes, no crosshair) gradient-filled line — the watchlist row's mini price trend,
  *  Android counterpart of desktop `designkit/Charts.kt`'s `Sparkline` (same anatomy: a 1.5dp
@@ -65,10 +160,7 @@ fun Sparkline(values: List<Double>, color: Color, modifier: Modifier = Modifier)
             val n = if (range == 0.0) 0.5 else (values[i] - min) / range
             return Offset(i * stepX, inset + (1 - n.toFloat()) * (size.height - inset * 2))
         }
-        val line = Path().apply {
-            moveTo(point(0).x, point(0).y)
-            for (i in 1 until values.size) lineTo(point(i).x, point(i).y)
-        }
+        val line = Path().apply { monotoneCubicLineTo(values.indices.map { point(it) }) }
         val fill = Path().apply {
             addPath(line)
             lineTo(size.width, size.height)
@@ -96,12 +188,12 @@ fun LineChart(values: List<Double>, modifier: Modifier = Modifier) {
         val max = values.max()
         val span = (max - min).takeIf { it > 0.0 } ?: 1.0
         val stepX = size.width / (values.size - 1)
-        val path = Path()
-        values.forEachIndexed { i, value ->
+        val points = values.mapIndexed { i, value ->
             val x = i * stepX
             val y = size.height - ((value - min) / span * size.height).toFloat()
-            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            Offset(x, y)
         }
+        val path = Path().apply { monotoneCubicLineTo(points) }
         drawPath(path, color = color, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
     }
 }
@@ -198,11 +290,8 @@ fun DualLineChart(
 
         fun drawSeries(ys: List<Float>, color: Color, dashed: Boolean) {
             val stepX = size.width / (ys.size - 1)
-            val path = Path()
-            ys.forEachIndexed { i, y ->
-                val x = i * stepX
-                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-            }
+            val points = ys.mapIndexed { i, y -> Offset(i * stepX, y) }
+            val path = Path().apply { monotoneCubicLineTo(points) }
             drawPath(
                 path,
                 color = color,
