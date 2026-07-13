@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -394,7 +396,7 @@ private fun PerformanceSection(
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionHeaderInline("PERFORMANCE")
 
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        SingleChoiceSegmentedButtonRow(Modifier.segmentedRowWidth()) {
             PortfolioSpan.entries.forEachIndexed { index, span ->
                 SegmentedButton(
                     selected = state.span == span,
@@ -486,6 +488,15 @@ private fun PerformanceSection(
     }
 }
 
+/** Segmented rows fill the width on phones but cap at 480dp and center on wider (tablet)
+ *  windows — full-bleed segments there stretch into comically wide tap targets. The trailing
+ *  fillMaxWidth re-fills the now-capped constraint, so phones are pixel-identical to before. */
+private fun Modifier.segmentedRowWidth(): Modifier = this
+    .fillMaxWidth()
+    .wrapContentWidth(Alignment.CenterHorizontally)
+    .widthIn(max = 480.dp)
+    .fillMaxWidth()
+
 /** Holdings / Allocation / Activity / Performance segmented row — the Android counterpart of
  *  desktop's pill-style [com.aptrade.desktop.portfolio.PortfolioPane]'s `SectionSwitcher`,
  *  built from the same [SingleChoiceSegmentedButtonRow]/[SegmentedButton] pair the PERFORMANCE
@@ -498,7 +509,7 @@ private fun SectionSwitcher(
     onSelect: (PortfolioSection) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    SingleChoiceSegmentedButtonRow(modifier.fillMaxWidth()) {
+    SingleChoiceSegmentedButtonRow(modifier.segmentedRowWidth()) {
         PortfolioSection.entries.forEachIndexed { index, option ->
             SegmentedButton(
                 selected = selected == option,
