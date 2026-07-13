@@ -103,7 +103,9 @@ public protocol BookmarkStore: Sendable {
 
 /// Supplies upcoming/reported earnings releases for a date window. Methods throw on
 /// failure; `FetchEarningsCalendarUseCase` degrades failures to an empty list so the
-/// calendar's holiday banners still render when the network is down.
+/// calendar's holiday banners still render when the network is down — cooperative
+/// cancellation (`CancellationError`) is the one exception to the degrade-to-empty rule
+/// and is rethrown.
 public protocol EarningsCalendarRepository: Sendable {
     func earnings(fromDay: String, toDay: String) async throws -> [EarningsEvent]
 }
