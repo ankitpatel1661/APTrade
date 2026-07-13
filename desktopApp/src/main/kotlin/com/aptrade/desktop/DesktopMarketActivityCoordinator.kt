@@ -8,6 +8,7 @@ import com.aptrade.shared.application.MarketActivityPlanner
 import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.ScheduledNotification
 import com.aptrade.shared.application.SchedulerStateStore
+import com.aptrade.shared.domain.EarningsEvent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -35,6 +36,17 @@ class DesktopMarketActivityCoordinator(
     private val loadSettings: suspend () -> AppSettings,
     private val notifyMarketStatus: suspend (opened: Boolean) -> Unit,
     private val notifyDigest: suspend (summary: String) -> Unit,
+    // Kept a raw `EarningsEvent` -> Unit closure rather than pre-formatted (title, body)
+    // strings (contrast notifyDigest above, which DOES receive a pre-built summary this
+    // class assembles itself in digestSummary()). This class has no L10n access — digestSummary
+    // builds plain hardcoded English, it never calls into com.aptrade.desktop.l10n — so there
+    // is no localization precedent here worth mirroring. Earnings notifications DO need
+    // localized L10n.Key.EarningsTodayTitle/EarningsTodayBodyFmt strings (Task 5), and the
+    // only place that already imports `tr`/`trf` is Main.kt (UI land); routing the typed event
+    // there keeps this coordinator entirely ignorant of L10n, matching its existing
+    // JVM/Compose-light, string-formatting-free shape everywhere except the (unlocalized) digest.
+    private val notifyEarnings: suspend (event: EarningsEvent) -> Unit,
+    private val fetchTodaysOwnEarnings: suspend () -> List<EarningsEvent>,
     private val fetchWatchlist: FetchWatchlist,
     private val fetchMarketQuotes: FetchMarketQuotes,
     private val scope: CoroutineScope,
@@ -68,8 +80,11 @@ class DesktopMarketActivityCoordinator(
                 ScheduledNotification.MarketOpened -> notifyMarketStatus(true)
                 ScheduledNotification.MarketClosed -> notifyMarketStatus(false)
                 ScheduledNotification.DigestDue -> notifyDigest(digestSummary())
-                // wired in a later task (Task 6 replaces it)
-                ScheduledNotification.EarningsCheckDue -> {}
+                ScheduledNotification.EarningsCheckDue -> {
+                    for (event in fetchTodaysOwnEarnings()) {
+                        notifyEarnings(event)
+                    }
+                }
             }
         }
     }

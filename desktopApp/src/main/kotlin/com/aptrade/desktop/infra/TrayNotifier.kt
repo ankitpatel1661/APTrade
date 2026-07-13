@@ -107,4 +107,16 @@ class TrayNotifier(private val trayState: TrayState) : AlertNotifier {
     suspend fun notifyDigest(summary: String) {
         trayState.sendNotification(Notification(formatDigestTitle(), summary))
     }
+
+    /**
+     * Delivers an earnings-today notification.
+     *
+     * Unlike [notifyDigest] (hardcoded English title, plain-text body), both [title] and
+     * [body] arrive pre-localized here — Main.kt resolves `L10n.Key.EarningsTodayTitle`/
+     * `EarningsTodayBodyFmt` via `tr`/`trf` before calling in, so this class (like
+     * [notifyFill]) performs no formatting of its own, just the `sendNotification` call.
+     */
+    suspend fun notifyEarnings(title: String, body: String) {
+        trayState.sendNotification(Notification(title, body))
+    }
 }

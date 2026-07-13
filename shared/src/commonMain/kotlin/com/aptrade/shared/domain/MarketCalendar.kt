@@ -145,6 +145,9 @@ class MarketCalendar {
     /** True when the market closes at 13:00 ET on this market-local day. */
     fun isHalfDay(localEpochDay: Long): Boolean = USMarketHolidays.isHalfDay(localEpochDay)
 
+    /** `yyyy-MM-dd` for a market-local epoch day (public face of formatLocalDate). */
+    fun dayString(localEpochDay: Long): String = formatLocalDate(localEpochDay)
+
     private fun formatLocalDate(epochDay: Long): String {
         val (year, month, day) = civilFromDays(epochDay)
         val monthStr = if (month < 10) "0$month" else "$month"

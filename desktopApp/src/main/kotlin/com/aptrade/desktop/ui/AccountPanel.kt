@@ -503,6 +503,12 @@ private fun NotificationsPage(
         checked = settings.newsDigest,
         onCheckedChange = { checked -> onUpdate { it.copy(newsDigest = checked) } },
     )
+    ToggleRow(
+        title = tr(L10n.Key.EarningsReportsToggle),
+        subtitle = tr(L10n.Key.EarningsReportsSubtitle),
+        checked = settings.earningsReports,
+        onCheckedChange = { checked -> onUpdate { it.copy(earningsReports = checked) } },
+    )
     Spacer(Modifier.height(10.dp))
     // macOS reuses tr(.email) ("Email") for this section label too (RootView.swift:426) —
     // not a dedicated EMAIL-section Key. Mirrored here rather than adding a duplicate Key.

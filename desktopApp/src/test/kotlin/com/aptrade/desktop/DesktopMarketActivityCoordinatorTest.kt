@@ -9,6 +9,8 @@ import com.aptrade.shared.application.SchedulerState
 import com.aptrade.shared.application.SchedulerStateStore
 import com.aptrade.shared.application.WatchlistStore
 import com.aptrade.shared.domain.AssetKind
+import com.aptrade.shared.domain.EarningsEvent
+import com.aptrade.shared.domain.EarningsSession
 import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.Quote
 import com.aptrade.shared.domain.WatchlistEntry
@@ -56,6 +58,8 @@ class DesktopMarketActivityCoordinatorTest {
         quotesImpl: suspend (List<String>) -> List<Quote> = { emptyList() },
         notifyMarketStatus: suspend (Boolean) -> Unit = {},
         notifyDigest: suspend (String) -> Unit = {},
+        notifyEarnings: suspend (EarningsEvent) -> Unit = {},
+        fetchTodaysOwnEarnings: suspend () -> List<EarningsEvent> = { emptyList() },
         nowEpochSeconds: () -> Long,
         scope: kotlinx.coroutines.CoroutineScope,
     ): DesktopMarketActivityCoordinator {
@@ -66,6 +70,8 @@ class DesktopMarketActivityCoordinatorTest {
             loadSettings = { settings },
             notifyMarketStatus = notifyMarketStatus,
             notifyDigest = notifyDigest,
+            notifyEarnings = notifyEarnings,
+            fetchTodaysOwnEarnings = fetchTodaysOwnEarnings,
             fetchWatchlist = FetchWatchlist(watchlistStore, emptyList()),
             fetchMarketQuotes = FetchMarketQuotes(repo),
             scope = scope,
@@ -220,5 +226,45 @@ class DesktopMarketActivityCoordinatorTest {
         now = mondayNineAmClosed + 24 * 3_600  // next day pre-open -> closed again
         advanceTimeBy(60_001); runCurrent()
         assertEquals(listOf(true, false), statusEvents)
+    }
+
+    @Test
+    fun earningsCheckDueNotifiesOncePerOwnedEvent() = runTest {
+        val stateStore = InMemorySchedulerStateStore(initial = SchedulerState(lastStatus = com.aptrade.shared.domain.MarketStatus.OPEN))
+        val ownedEvents = listOf(
+            EarningsEvent("AAPL", "Apple Inc.", "2024-01-08", EarningsSession.AfterClose, null, null),
+            EarningsEvent("MSFT", "Microsoft Corp.", "2024-01-08", EarningsSession.BeforeOpen, null, null),
+        )
+        val notified = mutableListOf<EarningsEvent>()
+        val coordinator = coordinator(
+            stateStore = stateStore,
+            settings = AppSettings(marketOpenClose = false, newsDigest = false, earningsReports = true),
+            notifyEarnings = { event -> notified += event },
+            fetchTodaysOwnEarnings = { ownedEvents },
+            nowEpochSeconds = { mondayTenAmOpen },
+            scope = backgroundScope,
+        )
+
+        coordinator.start(); runCurrent()
+
+        assertEquals(ownedEvents, notified)
+    }
+
+    @Test
+    fun earningsCheckDueWithNoOwnedEventsNotifiesNothing() = runTest {
+        val stateStore = InMemorySchedulerStateStore(initial = SchedulerState(lastStatus = com.aptrade.shared.domain.MarketStatus.OPEN))
+        val notified = mutableListOf<EarningsEvent>()
+        val coordinator = coordinator(
+            stateStore = stateStore,
+            settings = AppSettings(marketOpenClose = false, newsDigest = false, earningsReports = true),
+            notifyEarnings = { event -> notified += event },
+            fetchTodaysOwnEarnings = { emptyList() },
+            nowEpochSeconds = { mondayTenAmOpen },
+            scope = backgroundScope,
+        )
+
+        coordinator.start(); runCurrent()
+
+        assertTrue(notified.isEmpty())
     }
 }

@@ -40,6 +40,8 @@ import com.aptrade.desktop.search.SearchViewModel
 import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.l10n.AppLanguage
 import com.aptrade.desktop.l10n.LocalizationManager
+import com.aptrade.desktop.l10n.tr
+import com.aptrade.desktop.l10n.trf
 import com.aptrade.desktop.ui.AccountPanel
 import com.aptrade.desktop.ui.AppShell
 import com.aptrade.desktop.ui.AppTab
@@ -47,8 +49,11 @@ import com.aptrade.desktop.watchlist.PriceAlertSheet
 import com.aptrade.desktop.watchlist.WatchlistPane
 import com.aptrade.desktop.watchlist.WatchlistViewModel
 import com.aptrade.shared.domain.Asset
+import com.aptrade.shared.domain.EarningsSession
+import com.aptrade.shared.domain.MarketCalendar
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.domain.WatchlistEntry
+import com.aptrade.shared.l10n.L10n
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -59,6 +64,9 @@ import java.awt.Dimension
 fun main() = application {
     // ONE AppGraph — one Ktor client — for the whole process.
     val graph = remember { AppGraph() }
+    // Pure/stateless (see MarketCalendar's KDoc); one instance is plenty, shared by the
+    // earnings "today" gate below the same way graph's other pure helpers are shared.
+    val marketCalendar = remember { MarketCalendar() }
 
     // RECORDED DIVERGENCE (increment 6d.1, macOS parity gap): macOS delivers alert/
     // order-fill/market notifications via UNUserNotificationCenter — no equivalent
@@ -114,6 +122,22 @@ fun main() = application {
             loadSettings = { graph.settingsStore.load() },
             notifyMarketStatus = { opened -> graph.trayNotifier.notifyMarketStatus(opened) },
             notifyDigest = { summary -> graph.trayNotifier.notifyDigest(summary) },
+            // All L10n formatting happens here (where tr/trf live) — the coordinator only
+            // hands back the typed EarningsEvent it fetched; see the KDoc on the coordinator's
+            // notifyEarnings param for why.
+            notifyEarnings = { event ->
+                graph.trayNotifier.notifyEarnings(
+                    title = tr(L10n.Key.EarningsTodayTitle),
+                    body = trf(L10n.Key.EarningsTodayBodyFmt, event.symbol, sessionLabel(event.session)),
+                )
+            },
+            fetchTodaysOwnEarnings = {
+                // Same market-local trading-day string the planner/coordinator's own
+                // scheduling already keys off of (MarketCalendar.tradingDay), so "today" here
+                // always matches the day the 60s tick considers current.
+                val today = marketCalendar.tradingDay(System.currentTimeMillis() / 1000)
+                graph.fetchEarningsCalendar.ownedToday(today)
+            },
             fetchWatchlist = graph.fetchWatchlist,
             fetchMarketQuotes = graph.fetchMarketQuotes,
             scope = appScope,
@@ -314,6 +338,17 @@ fun main() = application {
 /** The open trade dialog's target: which asset, which side to pre-select, and the live price
  *  text (already `Money.amountText`-formatted) used for display and the cost estimate. */
 data class TradeTarget(val asset: Asset, val side: TradeSide, val priceText: String?)
+
+/** Localizes an [EarningsEvent.session] for the earnings-today tray notification body
+ *  (`L10n.Key.EarningsTodayBodyFmt`'s `%2$s`). [EarningsSession.Unknown] (Finnhub omits the
+ *  hour field sometimes) has no dedicated L10n key — falls back to an empty string so the
+ *  notification still reads sensibly ("SYM reports today") rather than surfacing an enum name. */
+private fun sessionLabel(session: EarningsSession): String = when (session) {
+    EarningsSession.BeforeOpen -> tr(L10n.Key.SessionBeforeOpen)
+    EarningsSession.AfterClose -> tr(L10n.Key.SessionAfterClose)
+    EarningsSession.DuringMarket -> tr(L10n.Key.SessionDuringMarket)
+    EarningsSession.Unknown -> ""
+}
 
 @Composable
 private fun AppRoot(
