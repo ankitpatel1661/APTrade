@@ -49,6 +49,16 @@ class USMarketHolidaysTest {
     @Test fun christmas2027_saturdayObservedFriday() =
         assertEquals(USMarketHoliday.Christmas, USMarketHolidays.fullHoliday(day(2027, 12, 24)))
 
+    // ---- year-boundary: New Year's observed in the PRIOR calendar year ----
+
+    @Test fun newYears2028_saturdayObservedPriorDec31() {
+        // Jan 1 2028 is a Saturday -> NYSE observes it on Friday Dec 31 2027. The observed
+        // day lives in civil year 2027 while the rule belongs to year 2028 — the lookup
+        // must bridge that boundary (New Year's is the only holiday that can cross it).
+        assertEquals(USMarketHoliday.NewYearsDay, USMarketHolidays.fullHoliday(day(2027, 12, 31)))
+        assertNull(USMarketHolidays.fullHoliday(day(2028, 1, 1)))
+    }
+
     // ---- Good Friday across years pins the Easter math ----
 
     @Test fun goodFriday2028() = assertEquals(USMarketHoliday.GoodFriday, USMarketHolidays.fullHoliday(day(2028, 4, 14)))

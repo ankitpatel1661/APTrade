@@ -152,6 +152,13 @@ class MarketCalendarTest {
     }
 
     @Test
+    fun observedNewYearsOnPriorDec31IsClosed() {
+        // Jan 1 2028 is a Saturday -> observed Friday 2027-12-31.
+        // 2027-12-31 12:00 ET (EST, DST ended 2027-11-07) = 17:00 UTC = 1830272400
+        assertEquals(MarketStatus.CLOSED, MarketCalendar().status(1_830_272_400L))
+    }
+
+    @Test
     fun holidayLookupDelegates() {
         val cal = MarketCalendar()
         // 2026-11-26 12:00 ET

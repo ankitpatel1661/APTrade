@@ -25,12 +25,18 @@ object USMarketHolidays {
 
     fun fullHoliday(localEpochDay: Long): USMarketHoliday? {
         val (year, _, _) = civilFromDays(localEpochDay)
-        return holidaysFor(year)[localEpochDay]
+        // Year+1's table is consulted too: when Jan 1 of year+1 falls on a Saturday, its
+        // observed closure is Dec 31 of THIS year (e.g. Fri 2027-12-31 for Jan 1 2028).
+        // New Year's is the only holiday whose observed day can cross a year boundary,
+        // so the shifted New Year's entry is the only year+1 entry that can match here.
+        return holidaysFor(year)[localEpochDay] ?: holidaysFor(year + 1)[localEpochDay]
     }
 
     fun isHalfDay(localEpochDay: Long): Boolean {
+        // Route through fullHoliday (not holidaysFor(year) directly) so the cross-year
+        // observed New Year's on Dec 31 is suppressed here exactly as it is reported there.
+        if (fullHoliday(localEpochDay) != null) return false
         val (year, _, _) = civilFromDays(localEpochDay)
-        if (holidaysFor(year).containsKey(localEpochDay)) return false
         val weekday = isoWeekday(localEpochDay)
         if (weekday !in 1..5) return false
         val dayAfterThanksgiving = nthWeekdayOfMonth(year, month = 11, isoWeekday = 4, n = 4) + 1
