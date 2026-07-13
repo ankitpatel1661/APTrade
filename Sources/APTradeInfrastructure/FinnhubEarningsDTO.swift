@@ -19,11 +19,29 @@ struct FinnhubEarningsEntryDTO: Decodable {
 }
 
 enum FinnhubEarningsMapper {
+    /// Maps the payload to events, dropping unusable rows AND collapsing duplicate
+    /// (symbol, date) rows to the LAST one. Finnhub lists estimate revisions as extra rows
+    /// for the same company/day (observed live: BNY twice on 2026-07-15) — downstream, list
+    /// identity assumes at most one event per (symbol, day). Last row wins (the fresher
+    /// revision); the first encounter's position is kept, so output order is stable.
+    /// Twin of the Kotlin `FinnhubEarningsMapper` — keep the rules in lockstep.
     static func events(from data: Data) throws -> [EarningsEvent] {
         let decoded: FinnhubEarningsCalendarDTO
         do { decoded = try JSONDecoder().decode(FinnhubEarningsCalendarDTO.self, from: data) }
         catch { throw AppError.decoding }
-        return (decoded.earningsCalendar ?? []).compactMap(event(from:))
+        let rows = (decoded.earningsCalendar ?? []).compactMap(event(from:))
+        var indexFor: [String: Int] = [:]
+        var deduped: [EarningsEvent] = []
+        for row in rows {
+            let key = "\(row.symbol)|\(row.day)"
+            if let existing = indexFor[key] {
+                deduped[existing] = row
+            } else {
+                indexFor[key] = deduped.count
+                deduped.append(row)
+            }
+        }
+        return deduped
     }
 
     /// Skips any entry missing a non-blank symbol or date — the same drop rule as the

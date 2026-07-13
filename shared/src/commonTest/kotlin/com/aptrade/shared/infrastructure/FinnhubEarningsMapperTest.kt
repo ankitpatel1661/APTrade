@@ -50,6 +50,31 @@ class FinnhubEarningsMapperTest {
         assertEquals(emptyList(), FinnhubEarningsMapper.events(dto))
     }
 
+    @Test
+    fun duplicateSymbolDateRowsCollapseToTheLastOne() {
+        // Real payload shape (BNY, 2026-07-15): Finnhub lists estimate revisions as extra
+        // rows for the same (symbol, date). The UIs key list items by (day, symbol), so
+        // duplicates crashed the Compose Calendar tab outright. The mapper owns the
+        // invariant: at most ONE event per (symbol, date), keeping the LAST row (later
+        // rows are the fresher revision), original encounter order preserved.
+        val payload = """
+            {"earningsCalendar":[
+              {"date":"2026-07-15","epsEstimate":2.2023,"hour":"bmo","symbol":"BNY"},
+              {"date":"2026-07-15","epsEstimate":1.11,"hour":"amc","symbol":"KO"},
+              {"date":"2026-07-15","epsEstimate":2.2271,"hour":"bmo","symbol":"BNY"},
+              {"date":"2026-07-16","epsEstimate":3.0,"hour":"bmo","symbol":"BNY"}
+            ]}
+        """.trimIndent()
+        val dto = finnhubJson.decodeFromString(FinnhubEarningsCalendarDTO.serializer(), payload)
+        val events = FinnhubEarningsMapper.events(dto)
+
+        // Order of first encounter preserved; same symbol on a DIFFERENT day is kept.
+        assertEquals(listOf("BNY" to "2026-07-15", "KO" to "2026-07-15", "BNY" to "2026-07-16"),
+            events.map { it.symbol to it.day })
+        // Last-row-wins: the revised estimate survives.
+        assertEquals(2.2271, events.first { it.symbol == "BNY" && it.day == "2026-07-15" }.epsEstimate)
+    }
+
     // --- Repository / cache -------------------------------------------------
 
     private fun clientCapturing(

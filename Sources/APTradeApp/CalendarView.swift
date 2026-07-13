@@ -101,7 +101,11 @@ struct CalendarView: View {
             } else if group.isHalfDay {
                 banner(String(format: tr(.closesEarlyBannerFmt), calendarShortDateFormatter.string(from: group.date)))
             }
-            ForEach(group.events, id: \.symbol) { event in
+            // Offset-composited identity: the mapper guarantees one event per (symbol, day),
+            // but duplicate ForEach IDs are undefined behavior in SwiftUI — never let list
+            // identity be the thing that misbehaves on unexpected data (the Compose twin
+            // crashed outright on Finnhub's duplicate revision rows before the mapper dedupe).
+            ForEach(Array(group.events.enumerated()), id: \.offset) { _, event in
                 // viewModel.ownSymbols is already normalized (CalendarViewModel) — normalize the
                 // event's symbol here too so a watched "BRK-B" still lights up the owned dot on
                 // Finnhub's "BRK.B" event.

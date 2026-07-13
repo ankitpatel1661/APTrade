@@ -58,6 +58,29 @@ final class FinnhubEarningsMapperTests: XCTestCase {
         XCTAssertEqual(events, [])
     }
 
+    func test_events_duplicateSymbolDateRows_collapseToTheLastOne() throws {
+        // Real payload shape (BNY, 2026-07-15): Finnhub lists estimate revisions as extra
+        // rows for the same (symbol, date). List identity downstream assumes at most one
+        // event per (symbol, day) — the Compose twin crashed outright on this. Last row
+        // wins (fresher revision), original encounter order preserved. Twin of the Kotlin
+        // duplicateSymbolDateRowsCollapseToTheLastOne test.
+        let payload = """
+        {"earningsCalendar":[
+          {"date":"2026-07-15","epsEstimate":2.2023,"hour":"bmo","symbol":"BNY"},
+          {"date":"2026-07-15","epsEstimate":1.11,"hour":"amc","symbol":"KO"},
+          {"date":"2026-07-15","epsEstimate":2.2271,"hour":"bmo","symbol":"BNY"},
+          {"date":"2026-07-16","epsEstimate":3.0,"hour":"bmo","symbol":"BNY"}
+        ]}
+        """.data(using: .utf8)!
+        let events = try FinnhubEarningsMapper.events(from: payload)
+
+        XCTAssertEqual(events.map { "\($0.symbol)|\($0.day)" },
+                       ["BNY|2026-07-15", "KO|2026-07-15", "BNY|2026-07-16"],
+                       "order of first encounter preserved; same symbol on another day kept")
+        XCTAssertEqual(events.first { $0.symbol == "BNY" && $0.day == "2026-07-15" }?.epsEstimate,
+                       2.2271, "last-row-wins: the revised estimate survives")
+    }
+
     func test_events_malformedJSON_throwsDecoding() {
         let bad = "not json".data(using: .utf8)!
         XCTAssertThrowsError(try FinnhubEarningsMapper.events(from: bad)) { error in

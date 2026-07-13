@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -124,7 +125,11 @@ fun CalendarPane(viewModel: CalendarViewModel) {
                             Banner(trf(L10n.Key.ClosesEarlyBannerFmt, formatEventDate(day.day)))
                         }
                     }
-                    items(day.events, key = { "ev-${day.localEpochDay}-${it.symbol}" }) { event ->
+                    // Index-suffixed key: the mapper guarantees one event per (symbol, day),
+                    // but a duplicate LazyColumn key kills the whole app (observed live with
+                    // Finnhub's revision rows before the mapper dedupe) — never let list
+                    // identity be the thing that crashes on unexpected data.
+                    itemsIndexed(day.events, key = { index, ev -> "ev-${day.localEpochDay}-${ev.symbol}-$index" }) { _, event ->
                         // state.ownSymbols is already normalized (CalendarViewModel) — normalize
                         // the event's symbol here too so a watched "BRK-B" still lights up the
                         // owned dot on Finnhub's "BRK.B" event.
