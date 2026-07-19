@@ -135,11 +135,11 @@ public enum PieMath {
         return result
     }
 
-    /// Calculates the signed drift (target % − current %) for each slice, in percentage points to 2 dp.
+    /// Calculates the signed drift (actual % − target %) for each slice, in percentage points to 2 dp.
     ///
     /// Drift measures how far each asset is from its target allocation:
-    /// - Positive drift: underweight (should buy)
-    /// - Negative drift: overweight (should sell)
+    /// - Positive drift: overweight (should sell)
+    /// - Negative drift: underweight (should buy)
     /// - Zero drift: at target
     ///
     /// - Parameters:
@@ -155,7 +155,7 @@ public enum PieMath {
         // Compute total current value
         let totalCurrent = currentValues.values.reduce(Decimal(0)) { $0 + $1.amount }
 
-        // Compute drift per slice: target% - actual%
+        // Compute drift per slice: actual% - target%
         var result: [String: Percentage] = [:]
 
         for slice in targets {
@@ -163,7 +163,7 @@ public enum PieMath {
             let actualPercent = totalCurrent > 0
                 ? (current / totalCurrent) * 100
                 : Decimal(0)
-            let driftValue = slice.targetWeight.value - actualPercent
+            let driftValue = actualPercent - slice.targetWeight.value
             let rounded = Self.rounded(driftValue)
             result[slice.symbol] = Percentage(value: rounded)
         }
@@ -176,16 +176,19 @@ public enum PieMath {
     /// The plan achieves exact net-zero cash by:
     /// 1. Computing delta (buy/sell amount) for each slice: delta_i = (target_i% ÷ 100) × total − current_i
     /// 2. Rounding each delta to cents
-    /// 3. Folding any net-cash remainder into the largest-target slice's order
+    /// 3. Folding the negated net-cash remainder (−netCash) into the largest-target slice's
+    ///    order, so the correction cancels the residual rather than doubling it
     ///    (if that fold would flip the order side or make amount negative, walk to the next slice)
-    /// 4. Dropping all orders under $0.01
+    ///
+    /// Orders are always 2-dp amounts and zero deltas are excluded above, so no sub-cent
+    /// orders can arise — no separate sub-cent filter is needed.
     ///
     /// - Parameters:
     ///   - currentValues: Map of symbol to current money value in the pie.
     ///   - targets: The target allocation (slices with symbol and target weight).
     ///
-    /// - Returns: An array of rebalance orders, each with amount ≥ $0.01, such that
-    ///   Σ(buy amounts) == Σ(sell amounts). Empty if already at target or pie is empty.
+    /// - Returns: An array of rebalance orders, each with a positive amount, such that
+    ///   Σ(buy amounts) == Σ(sell amounts) exactly. Empty if already at target or pie is empty.
     public static func rebalancePlan(
         currentValues: [String: Money],
         targets: [PieSlice]
@@ -227,8 +230,9 @@ public enum PieMath {
                 return a.targetWeight.value > b.targetWeight.value
             }
 
-            // Walk through slices, trying to fold netCash
-            var remaining = netCash
+            // Walk through slices, trying to fold the correction (−netCash) so it cancels
+            // the residual instead of doubling it.
+            var remaining = -netCash
             for slice in sortedByWeight {
                 let current = rounded[slice.symbol] ?? Decimal(0)
                 let newValue = current + remaining
@@ -260,7 +264,8 @@ public enum PieMath {
             // This should not happen in well-formed cases
         }
 
-        // Build orders, filtering out sub-cent amounts
+        // Build orders. Zero deltas are excluded; all nonzero deltas are already
+        // 2-dp rounded, so every remaining amount is ≥ $0.01 (no sub-cent filter needed).
         var orders: [RebalanceOrder] = []
         let currencyCode = currentValues.values.first?.currencyCode ?? "USD"
 
@@ -271,10 +276,6 @@ public enum PieMath {
             }
 
             let amount = abs(delta)
-            if amount < Decimal(string: "0.01") ?? 0 {
-                continue  // Drop sub-cent orders
-            }
-
             let side: RebalanceSide = delta > 0 ? .buy : .sell
             let order = RebalanceOrder(
                 symbol: slice.symbol,

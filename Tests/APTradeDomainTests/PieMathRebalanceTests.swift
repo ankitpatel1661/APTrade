@@ -19,10 +19,11 @@ final class PieMathRebalanceTests: XCTestCase {
 
         let result = PieMath.drift(currentValues: currentValues, targets: targets)
 
-        // Total = $100. Target A = 50, current 70 → drift = 50 - 70 = -20.00
-        // Target B = 50, current 30 → drift = 50 - 30 = +20.00
-        XCTAssertEqual(result["A"], Percentage(value: Decimal(string: "-20.00") ?? 0), "A should drift −20.00")
-        XCTAssertEqual(result["B"], Percentage(value: Decimal(string: "20.00") ?? 0), "B should drift +20.00")
+        // Total = $100. Drift is signed (actual − target).
+        // A: actual 70, target 50 → drift = 70 - 50 = +20.00 (overweight)
+        // B: actual 30, target 50 → drift = 30 - 50 = -20.00 (underweight)
+        XCTAssertEqual(result["A"], Percentage(value: Decimal(string: "20.00") ?? 0), "A should drift +20.00")
+        XCTAssertEqual(result["B"], Percentage(value: Decimal(string: "-20.00") ?? 0), "B should drift −20.00")
     }
 
     /// Test drift at-target: all slices at target → all zero
@@ -138,29 +139,32 @@ final class PieMathRebalanceTests: XCTestCase {
         XCTAssertEqual(buysSum, sellsSum, "Net cash (buys - sells) must equal exactly $0")
     }
 
-    /// Test rebalancePlan drops sub-cent orders
-    func testRebalancePlanDropsSubCentOrders() {
-        // A=$100, B=$100, C=$100 (total=$300)
-        // Targets: A=33.33%, B=33.33%, C=33.34%
-        // Ideals: A=$99.99, B=$99.99, C=$100.02
-        // Deltas: A=-$0.01, B=-$0.01, C=+$0.02
+    /// Reviewer-verified counterexample: shipped fold added +netCash instead of −netCash,
+    /// doubling the imbalance. current {A:$1, B:$0, C:$0}, targets {A:33.34, B:33.33, C:33.33}
+    /// must net to exactly $0.00 (shipped code produced sell A 0.68 / buy B 0.33 / buy C 0.33,
+    /// net −0.02).
+    func testRebalancePlanNetZeroFoldDoesNotDoubleImbalance() {
         let currentValues: [String: Money] = [
-            "A": Money(amount: 100),
-            "B": Money(amount: 100),
-            "C": Money(amount: 100)
+            "A": Money(amount: 1),
+            "B": Money(amount: 0),
+            "C": Money(amount: 0)
         ]
         let targets = [
-            PieSlice(symbol: "A", assetKind: .stock, targetWeight: Percentage(value: Decimal(string: "33.33") ?? 0)),
+            PieSlice(symbol: "A", assetKind: .stock, targetWeight: Percentage(value: Decimal(string: "33.34") ?? 0)),
             PieSlice(symbol: "B", assetKind: .stock, targetWeight: Percentage(value: Decimal(string: "33.33") ?? 0)),
-            PieSlice(symbol: "C", assetKind: .stock, targetWeight: Percentage(value: Decimal(string: "33.34") ?? 0))
+            PieSlice(symbol: "C", assetKind: .stock, targetWeight: Percentage(value: Decimal(string: "33.33") ?? 0))
         ]
 
         let result = PieMath.rebalancePlan(currentValues: currentValues, targets: targets)
 
-        // All orders should be >= $0.01; sub-cent orders are dropped
+        let buys = result.filter { $0.side == .buy }
+        let sells = result.filter { $0.side == .sell }
+        let buysSum = buys.reduce(Decimal(0)) { $0 + $1.amount.amount }
+        let sellsSum = sells.reduce(Decimal(0)) { $0 + $1.amount.amount }
+
+        XCTAssertEqual(buysSum, sellsSum, "Net cash must be exactly $0, got buys=\(buysSum) sells=\(sellsSum)")
         for order in result {
-            XCTAssertGreaterThanOrEqual(order.amount.amount, Decimal(string: "0.01") ?? 0,
-                                       "Order for \(order.symbol) should be at least $0.01, got \(order.amount.amount)")
+            XCTAssertGreaterThan(order.amount.amount, 0, "Order for \(order.symbol) must have a positive amount")
         }
     }
 
