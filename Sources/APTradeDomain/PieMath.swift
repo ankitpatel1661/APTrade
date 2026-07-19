@@ -76,19 +76,31 @@ public enum PieMath {
             sumRounded += r
         }
 
-        // Compute remainder and add to largest-target slice
-        let remainder = contrib - sumRounded
+        // Distribute remainder, clamping to avoid negative values
+        var remainder = contrib - sumRounded
         if remainder != 0 {
-            // Find the largest-target slice (ties → lexicographically first symbol)
-            let largestSlice = targets.sorted { a, b in
+            // Sort slices by target weight (desc), then symbol (asc for ties)
+            let sortedByWeightAndSymbol = targets.sorted { a, b in
                 if a.targetWeight.value == b.targetWeight.value {
                     return a.symbol < b.symbol
                 }
                 return a.targetWeight.value > b.targetWeight.value
-            }.first
+            }
 
-            if let largest = largestSlice {
-                rounded[largest.symbol] = (rounded[largest.symbol] ?? Decimal(0)) + remainder
+            // Walk through slices, adding remainder and clamping at 0
+            for slice in sortedByWeightAndSymbol {
+                let current = rounded[slice.symbol] ?? Decimal(0)
+                let newValue = current + remainder
+                if newValue >= 0 {
+                    // Can fully absorb the remainder
+                    rounded[slice.symbol] = newValue
+                    remainder = 0
+                    break
+                } else {
+                    // Clamp to 0, roll over the unclamped portion
+                    rounded[slice.symbol] = 0
+                    remainder = newValue  // newValue is negative, so remainder becomes more negative
+                }
             }
         }
 

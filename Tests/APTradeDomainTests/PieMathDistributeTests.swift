@@ -108,6 +108,70 @@ final class PieMathDistributeTests: XCTestCase {
         XCTAssertEqual(sum, contribution.amount)
     }
 
+    // MARK: - Test: Regression — rounding-induced negative via remainder
+    func testRegressionNegativeRemainderCounterexample() {
+        // Reviewer counterexample: deficits cause .plain rounding UP, making remainder negative.
+        // targets A=60/B=20/C=20, current A=$32.30, B=$0.97, C=$0.97, contribution=$6.53
+        let contribution = Money(amount: Decimal(string: "6.53") ?? 0)
+        let currentValues: [String: Money] = [
+            "A": Money(amount: Decimal(string: "32.30") ?? 0),
+            "B": Money(amount: Decimal(string: "0.97") ?? 0),
+            "C": Money(amount: Decimal(string: "0.97") ?? 0)
+        ]
+        let targets = [
+            PieSlice(symbol: "A", assetKind: .stock, targetWeight: Percentage(value: 60)),
+            PieSlice(symbol: "B", assetKind: .stock, targetWeight: Percentage(value: 20)),
+            PieSlice(symbol: "C", assetKind: .stock, targetWeight: Percentage(value: 20))
+        ]
+
+        let result = PieMath.distribute(contribution: contribution, currentValues: currentValues, targets: targets)
+
+        // Invariant 1: Sum equals contribution exactly
+        let sum = result.values.reduce(Decimal(0)) { $0 + $1.amount }
+        XCTAssertEqual(sum, contribution.amount, "Sum must equal contribution exactly")
+
+        // Invariant 2: All values non-negative (the critical defect being fixed)
+        for (symbol, money) in result {
+            XCTAssertGreaterThanOrEqual(money.amount, 0, "Symbol \(symbol) must be non-negative, got \(money.amount)")
+        }
+    }
+
+    // MARK: - Test: Weight-tie lexicographic remainder rule
+    func testRemainderDistributionByWeightAndLexicographic() {
+        // Three slices: A=30, B=30, C=40.
+        // Contribution $1.00 to an empty pie.
+        // Ideal: A=$0.30, B=$0.30, C=$0.40
+        // Rounded: A=$0.30, B=$0.30, C=$0.40 (no rounding error in this case)
+        // But if there IS a remainder (e.g., rounding error), it should go to C (largest at 40%).
+        // For tie-breaking: if we had A=35, B=35, C=30, remainder goes to A (lex-first of tied 35s).
+
+        let contribution = Money(amount: 1)
+        let currentValues: [String: Money] = [:]
+        let targets = [
+            PieSlice(symbol: "A", assetKind: .stock, targetWeight: Percentage(value: 30)),
+            PieSlice(symbol: "B", assetKind: .stock, targetWeight: Percentage(value: 30)),
+            PieSlice(symbol: "C", assetKind: .stock, targetWeight: Percentage(value: 40))
+        ]
+
+        let result = PieMath.distribute(contribution: contribution, currentValues: currentValues, targets: targets)
+
+        // Sum must be exactly $1.00
+        let sum = result.values.reduce(Decimal(0)) { $0 + $1.amount }
+        XCTAssertEqual(sum, contribution.amount)
+
+        // All values non-negative
+        for (symbol, money) in result {
+            XCTAssertGreaterThanOrEqual(money.amount, 0)
+        }
+
+        // Expected: C (40%) gets the largest share
+        let a = result["A"]?.amount ?? 0
+        let b = result["B"]?.amount ?? 0
+        let c = result["C"]?.amount ?? 0
+        XCTAssertGreaterThanOrEqual(c, a)
+        XCTAssertGreaterThanOrEqual(c, b)
+    }
+
     // MARK: - Test (e): Property loop over 25 seeded cases
     func testPropertyLoopInvariants() {
         // Fixed array of (contribution, currents, targets) tuples
