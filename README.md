@@ -6,12 +6,16 @@
 
 **Trade. Invest. Grow.**
 
-An ultra-premium **native macOS** investing platform — built in SwiftUI on a strict Clean Architecture, with a gold-on-black identity and live market data.
+An ultra-premium **native investing platform across four OSes** — a SwiftUI flagship on **macOS**, with full-parity native apps on **Windows**, **iPhone**, and **Android** — built on a strict Clean Architecture, a gold-on-black identity, and live market data.
 
-![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-0C0B09?logo=apple)
+![macOS](https://img.shields.io/badge/macOS-14%2B-0C0B09?logo=apple)
+![Windows](https://img.shields.io/badge/Windows-Compose%20Desktop-0C0B09?logo=windows)
+![iOS](https://img.shields.io/badge/iPhone-iOS%2017%2B-0C0B09?logo=apple)
+![Android](https://img.shields.io/badge/Android-API%2035-0C0B09?logo=android)
 ![Swift](https://img.shields.io/badge/Swift-6.0-D4A94E?logo=swift)
+![Kotlin](https://img.shields.io/badge/Kotlin-Multiplatform-D4A94E?logo=kotlin)
 ![Architecture](https://img.shields.io/badge/architecture-Clean-D4A94E)
-![Tests](https://img.shields.io/badge/tests-253%20passing-46C98A)
+![Tests](https://img.shields.io/badge/macOS%20tests-253%20passing-46C98A)
 
 </div>
 
@@ -19,9 +23,22 @@ An ultra-premium **native macOS** investing platform — built in SwiftUI on a s
 
 ## Overview
 
-APTrade is a desktop investing experience focused on **professional portfolio management and market intelligence** — not high-frequency trading. This repository is **APTrade Lite**: a fully native, live-updating watchlist, asset-detail, and **simulated paper-trading portfolio** covering **stocks, ETFs, and crypto**, built to a production-quality bar.
+APTrade is an investing experience focused on **professional portfolio management and market intelligence** — not high-frequency trading. This repository is **APTrade Lite**: a fully native, live-updating watchlist, asset-detail, and **simulated paper-trading portfolio** covering **stocks, ETFs, and crypto**, built to a production-quality bar — and it now ships as **four native apps at feature parity**.
 
-The whole app is written against pure domain logic with framework code pushed to the edges, so the market data source (currently Yahoo Finance), the news source (Finnhub), persistence, and notifications are each a single swappable adapter behind a port.
+The whole app is written against pure domain logic with framework code pushed to the edges, so the market data source (currently Yahoo Finance), the news source (Finnhub), persistence, and notifications are each a single swappable adapter behind a port. The two Apple apps (macOS + iPhone) share one SwiftUI presentation layer; the two Compose apps (Windows + Android) share a Kotlin Multiplatform core — so the same domain math, indicators, and persistence formats carry across all four.
+
+## Platforms
+
+APTrade ships as **four native apps at feature parity** — macOS is the flagship reference implementation, and the other three mirror its feature set (with a handful of per-platform divergences recorded in each app's section below). The **Features** section below describes this shared feature set.
+
+| Platform | Target | UI stack | Status | Build |
+|----------|--------|----------|--------|-------|
+| **macOS** | `APTradeApp` (SwiftPM executable) | SwiftUI + AppKit | Flagship — full feature set | [Getting Started](#getting-started) |
+| **iPhone** | `APTradeiOS` (iOS 17, portrait) | SwiftUI (same presentation code as macOS) | Full parity | [iOS app](#iphone-app) |
+| **Windows** | `:desktopApp` (Compose Desktop) | Compose Multiplatform + shared KMP core | Full parity | [Windows desktop app](#windows-desktop-app) |
+| **Android** | `:androidApp` (Jetpack Compose, API 35) | Jetpack Compose + shared KMP core | Full parity | [Android app](#android-app) |
+
+Every app carries: a live watchlist, asset detail with candlestick/area charts and technical indicators, a paper-trading portfolio with performance/risk analytics and export, Finnhub-backed news, price alerts and scheduled notifications, a holiday-aware calendar with an S&P 500 earnings list, a four-language switcher (English/Deutsch/Italiano/Español), and the gold-on-black accent-themable identity.
 
 ## Features
 
@@ -165,11 +182,48 @@ Homebrew OpenJDK 17 and `/Applications/Xcode.app` by default; override via `JAVA
 / `DEVELOPER_DIR`). The framework ships Apple-Silicon (arm64) slices only — iOS Simulator
 builds must target arm64 (the default on Apple-Silicon Macs).
 
-### Android app (walking skeleton)
+### iPhone app
 
-A three-screen Jetpack Compose app (`androidApp/`) runs on the same shared Kotlin core as the
-macOS/iOS app: live quotes for the default watchlist, debounced asset search, and an asset
-detail view with line/candlestick charts across 1D/1W/1M/1Y timeframes.
+The iPhone app is the `APTradeiOS` target (**iPhone-only, portrait, iOS 17**), which reuses the
+**same SwiftUI presentation code as macOS** from the `APTradeApp` package — every platform
+difference is `#if os(iOS)`-gated, so macOS output is unchanged. It ships the full macOS feature
+set (watchlist, charts + indicators, paper-trading portfolio with export via a themed
+`.fileExporter`, news, alerts, calendar, and the four-language switcher), with iPhone-fitted
+touch interactions (a touch-drag chart crosshair where macOS hovers) and sheet presentations.
+
+The Xcode project is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen)
+(`brew install xcodegen`) and is gitignored. Build the shared framework first (above), then:
+
+```bash
+xcodegen generate                     # writes APTrade.xcodeproj from project.yml
+open APTrade.xcodeproj                 # select the APTradeiOS scheme + an iPhone simulator, Run
+```
+
+To run the domain/application/view-model suites on the iOS simulator, use the SwiftPM-generated
+`APTradeLite-Package` scheme (there is no bare `APTradeLite` scheme):
+
+```bash
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test \
+  -scheme APTradeLite-Package \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -skipPackagePluginValidation
+```
+
+> **Gotcha:** the generated `APTrade.xcodeproj` **shadows** the package — while it sits beside
+> `Package.swift`, `xcodebuild` uses the app project (target `APTradeiOS`) and the
+> `APTradeLite-Package` scheme disappears. To run the package tests, move `APTrade.xcodeproj`
+> aside temporarily (it regenerates via `xcodegen generate`), run the tests, then restore it.
+
+### Android app
+
+A full Jetpack Compose app (`androidApp/`) at **feature parity** with macOS/Windows, on the same
+shared Kotlin Multiplatform core: a persisted watchlist (live quotes, sparklines,
+swipe-to-remove with Undo, add-from-search), asset detail with line/candlestick charts and the
+full indicator set (SMA/EMA/VWAP/Bollinger overlays + RSI/MACD panes), a paper-trading
+**Portfolio** with performance/risk analytics and export, a **News** tab with categories,
+bookmarks and a Saved view, **price alerts** with system notifications and a market-activity
+coordinator, a holiday-aware **Calendar** with an S&P 500 earnings list, and full **Settings**
+pages with a live four-language switcher, light/dark themes, and the accent picker.
 
 Requirements: Android SDK (API 35) with `sdk.dir` in `local.properties`, JDK 17.
 
@@ -189,7 +243,7 @@ a cash-flow-replay benchmark twin, per-holding rows with **BUY/SELL** trading th
 bottom sheet, allocation bars by holding and by asset class, an activity ledger of every
 buy/sell with its trade date, an **Export…** action, and a **Reset portfolio** action.
 
-Divergences from the macOS/desktop Portfolio in this first Android cut: export is a plain-text
+**Recorded divergences** from the macOS/desktop Portfolio: export is a plain-text
 **share-sheet** (CSV / JSON) with **no PDF**; the performance chart has **no crosshair
 scrubber**; allocation is **bars only** (no donut chart); and the entry point is the top-bar
 **List icon** rather than a dedicated tab. Trading is reachable both from an existing holding
@@ -198,13 +252,17 @@ row's BUY/SELL **and** from a prominent **BUY / SELL** action on each asset's de
 detail. Both entry points open the same modal-bottom-sheet trade form; a detail-made trade
 persists to the shared store and appears in the Portfolio on return.
 
-### Windows desktop app (walking skeleton)
+### Windows desktop app
 
-A Compose Desktop app (`desktopApp/`) targets Windows, on the same shared Kotlin core as
-the macOS/iOS/Android apps: a Watchlist tab with live prices and add/remove, an asset
-detail view with line/candlestick charts, and a Ctrl+K search palette — recreating the
-macOS app's gold-on-black visual identity. It's developed and run on this Mac as a proxy
-for the Windows target; CI builds and tests it on an actual Windows runner.
+A Compose Desktop app (`desktopApp/`) targets Windows at **full macOS parity**, on the same
+shared Kotlin Multiplatform core as the Android app: Watchlist, asset detail (charts +
+indicators + KEY STATS / YOUR POSITION), a Ctrl+K search palette, a Portfolio tab with a
+performance chart, benchmark overlay and 7-metric risk grid, a News tab with per-symbol
+company news and bookmarks, price alerts and tray notifications, a holiday-aware Calendar
+with an S&P 500 earnings list, and a full account panel (light/dark themes, accent picker,
+four-language switcher, and real settings pages) — recreating the macOS app's gold-on-black
+visual identity. It's developed and run on this Mac as a proxy for the Windows target; CI
+builds and tests it on an actual Windows runner, packaging an `.msi` installer.
 
 ```bash
 export JAVA_HOME="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
@@ -372,10 +430,13 @@ Sources/
 ├── APTradeDomain/          Entities & value objects (pure)
 ├── APTradeApplication/     Use cases & ports
 ├── APTradeInfrastructure/  Yahoo repo, caching, persistence, notifications
-└── APTradeApp/             SwiftUI views, view models, DesignKit, Theme
+├── APTradeApp/             SwiftUI views, view models, DesignKit, Theme (macOS + iOS)
+└── APTradeiOS/             iPhone app target (reuses APTradeApp)
 Tests/                      One test target per layer
-androidApp/                 Android app (Jetpack Compose walking skeleton)
-desktopApp/                 Windows app (Compose Desktop walking skeleton)
+shared/                     Kotlin Multiplatform core (quotes, portfolio, indicators, stores)
+desktopApp/                 Windows app (Compose Desktop, full parity)
+androidApp/                 Android app (Jetpack Compose, full parity)
+project.yml                 XcodeGen spec for the APTradeiOS Xcode project
 logo/                       Brand assets
 ```
 
