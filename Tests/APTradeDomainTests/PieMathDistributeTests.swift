@@ -138,38 +138,39 @@ final class PieMathDistributeTests: XCTestCase {
 
     // MARK: - Test: Weight-tie lexicographic remainder rule
     func testRemainderDistributionByWeightAndLexicographic() {
-        // Three slices: A=30, B=30, C=40.
-        // Contribution $1.00 to an empty pie.
-        // Ideal: A=$0.30, B=$0.30, C=$0.40
-        // Rounded: A=$0.30, B=$0.30, C=$0.40 (no rounding error in this case)
-        // But if there IS a remainder (e.g., rounding error), it should go to C (largest at 40%).
-        // For tie-breaking: if we had A=35, B=35, C=30, remainder goes to A (lex-first of tied 35s).
+        // Targets A=35/B=35/C=30, empty pie, contribution $10.01.
+        // totalAfter = 10.01
+        // Deficits: A = 10.01*35/100 = 3.5035, B = 3.5035, C = 10.01*30/100 = 3.003
+        // sumDeficits = 10.01 (sufficient case)
+        // Allocations: A = 3.5035, B = 3.5035, C = 3.003
+        // Rounded: A = 3.50, B = 3.50, C = 3.00 (all .plain rounds 3.5035→3.50, 3.003→3.00)
+        // Sum rounded = 10.00, remainder = +0.01
+        // Sorted by weight (desc) and symbol (asc): [A(35), B(35), C(30)]
+        // A gets remainder: A = 3.50 + 0.01 = 3.51 ✓
+        // Expected: A = 3.51, B = 3.50, C = 3.00, sum = 10.01
 
-        let contribution = Money(amount: 1)
+        let contribution = Money(amount: Decimal(string: "10.01") ?? 0)
         let currentValues: [String: Money] = [:]
         let targets = [
-            PieSlice(symbol: "A", assetKind: .stock, targetWeight: Percentage(value: 30)),
-            PieSlice(symbol: "B", assetKind: .stock, targetWeight: Percentage(value: 30)),
-            PieSlice(symbol: "C", assetKind: .stock, targetWeight: Percentage(value: 40))
+            PieSlice(symbol: "A", assetKind: .stock, targetWeight: Percentage(value: 35)),
+            PieSlice(symbol: "B", assetKind: .stock, targetWeight: Percentage(value: 35)),
+            PieSlice(symbol: "C", assetKind: .stock, targetWeight: Percentage(value: 30))
         ]
 
         let result = PieMath.distribute(contribution: contribution, currentValues: currentValues, targets: targets)
 
-        // Sum must be exactly $1.00
+        // Sum must be exactly $10.01
         let sum = result.values.reduce(Decimal(0)) { $0 + $1.amount }
-        XCTAssertEqual(sum, contribution.amount)
+        XCTAssertEqual(sum, contribution.amount, "Sum must equal contribution exactly")
 
-        // All values non-negative
-        for (symbol, money) in result {
-            XCTAssertGreaterThanOrEqual(money.amount, 0)
-        }
-
-        // Expected: C (40%) gets the largest share
+        // Verify the weight-tie lexicographic rule: remainder lands on A (lex-first of 35/35 tie)
         let a = result["A"]?.amount ?? 0
         let b = result["B"]?.amount ?? 0
         let c = result["C"]?.amount ?? 0
-        XCTAssertGreaterThanOrEqual(c, a)
-        XCTAssertGreaterThanOrEqual(c, b)
+
+        XCTAssertEqual(a, Decimal(string: "3.51") ?? 0, "A should get the remainder (3.50 + 0.01)")
+        XCTAssertEqual(b, Decimal(string: "3.50") ?? 0, "B should get exactly 3.50")
+        XCTAssertEqual(c, Decimal(string: "3.00") ?? 0, "C should get exactly 3.00")
     }
 
     // MARK: - Test (e): Property loop over 25 seeded cases
