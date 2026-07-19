@@ -70,10 +70,23 @@ public enum PieSchedule {
     /// All contribution days in (`afterDay`, `throughDay`], stepping `cadence` from
     /// `anchorDay` (weekly +7d, biweekly +14d, monthly +1 month clamped — via
     /// `DateComponents(month:)` so overflow, e.g. Jan 31 -> Feb 28, comes from
-    /// Foundation, not hand math). The window check is against each *unrolled* cadence
-    /// step; the result is then rolled forward to the nearest trading day, so a step
-    /// that lands exactly on a holiday is still captured and reported at its rolled
-    /// date. Sorted ascending, deduped.
+    /// Foundation, not hand math; each monthly step is `anchor + n months`, computed
+    /// from the original anchor every time, never chained off a previous result, so
+    /// there is no cumulative drift). The `(afterDay, throughDay]` window check is
+    /// against each cadence step's *rolled* value — the actual due day money moves on —
+    /// not the unrolled calendar step. Checking the unrolled step instead would let a
+    /// step whose roll pushes it past `throughDay` through, and could drop a step
+    /// forever: a step landing just before `afterDay` unrolled but rolling to just
+    /// after it would fail both this window's lower bound and the *next* window's
+    /// (since by then it's already <= that window's `afterDay` too). Because roll only
+    /// ever moves a date forward and cadence steps are spaced at least a week apart,
+    /// rolled values are monotonic non-decreasing in step order, so breaking the loop
+    /// the first time a rolled candidate exceeds `throughDay` is safe. Stepping starts
+    /// at `anchor + 1*cadence` — the bare anchor itself is never a `dueDays` candidate;
+    /// `nextDueDay` is the entry point that treats the anchor as eligible when it's the
+    /// very first due day of a fresh schedule. Sorted ascending, deduped. Malformed
+    /// `anchorDay` silently falls back to an empty array (mirrors `rollToTradingDay`'s
+    /// return-input fallback on malformed input) rather than throwing.
     public static func dueDays(
         anchorDay: String,
         cadence: PieCadence,
@@ -85,15 +98,16 @@ public enum PieSchedule {
         guard let anchor = date(fromDay: anchorDay, calendar: calendar) else { return [] }
 
         var results: [String] = []
-        var step = 0
+        var step = 1
         while step < maxSteps {
             guard let candidate = candidateDate(anchor: anchor, cadence: cadence, step: step) else {
                 break
             }
-            let candidateDay = calendar.tradingDay(of: candidate)
-            if candidateDay > throughDay { break }
-            if candidateDay > afterDay {
-                results.append(rollToTradingDay(candidateDay, calendar: calendar))
+            let unrolledDay = calendar.tradingDay(of: candidate)
+            let rolledDay = rollToTradingDay(unrolledDay, calendar: calendar)
+            if rolledDay > throughDay { break }
+            if rolledDay > afterDay {
+                results.append(rolledDay)
             }
             step += 1
         }

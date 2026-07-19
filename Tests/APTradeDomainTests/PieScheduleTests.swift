@@ -119,6 +119,57 @@ final class PieScheduleTests: XCTestCase {
         XCTAssertEqual(days, ["2026-07-20", "2026-08-03"])
     }
 
+    // MARK: - dueDays: window bounds test the ROLLED due day (fix-wave regression)
+
+    func test_dueDays_regressionA_rolledCandidateMustNotExceedThroughDay() {
+        // Reviewer's exact repro. Anchor is a Saturday; the only cadence step in this
+        // window unrolls to Sat 2026-02-07, which rolls to Mon 2026-02-09 — past
+        // throughDay. Checking the window against the unrolled value let it through;
+        // checking it against the rolled value (the actual due day) correctly excludes
+        // it, so the window is empty.
+        let days = PieSchedule.dueDays(
+            anchorDay: "2026-01-31",
+            cadence: .weekly,
+            afterDay: "2026-01-31",
+            throughDay: "2026-02-07",
+            calendar: calendar
+        )
+        XCTAssertEqual(days, [])
+    }
+
+    func test_dueDays_regressionB_rolledCandidateIsNotDroppedForever() {
+        // Same anchor/cadence as regression A, shifted one window later. The Sat
+        // 2026-02-07 step's rolled value (Mon 2026-02-09) correctly lands inside THIS
+        // window and must be reported — proving the step isn't silently dropped
+        // forever by an unrolled-vs-afterDay comparison that would exclude it from
+        // both the (…, Feb 7] window (rolled value is past it) and the (Feb 8, …]
+        // window (unrolled value is before it).
+        let days = PieSchedule.dueDays(
+            anchorDay: "2026-01-31",
+            cadence: .weekly,
+            afterDay: "2026-02-08",
+            throughDay: "2026-02-15",
+            calendar: calendar
+        )
+        XCTAssertEqual(days, ["2026-02-09"])
+    }
+
+    func test_dueDays_monthly_multiStepAntiDrift_stepsFromAnchorNotPriorResult() {
+        // Anchor 2026-01-31, monthly. Step 1 clamps to Feb 28 (rolled to Mon Mar 2).
+        // Step 2 must clamp from the ORIGINAL anchor (Jan 31 + 2 months = Mar 31), not
+        // from the rolled Mar 2 result of step 1 — proving there's no cumulative drift
+        // from chaining off a prior rolled value. Mar 31 2026 is a plain Tuesday
+        // trading day, so it appears unrolled.
+        let days = PieSchedule.dueDays(
+            anchorDay: "2026-01-31",
+            cadence: .monthly,
+            afterDay: "2026-01-31",
+            throughDay: "2026-04-01",
+            calendar: calendar
+        )
+        XCTAssertEqual(days, ["2026-03-02", "2026-03-31"])
+    }
+
     // MARK: - nextDueDay: anchor itself is the first due day
 
     func test_nextDueDay_beforeAnchor_returnsAnchorRolled() {
