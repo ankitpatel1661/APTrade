@@ -41,7 +41,7 @@ public struct Portfolio: Equatable, Codable, Sendable {
     }
 
     public func buying(_ asset: Asset, quantity: Quantity, at price: Money,
-                       on date: Date = Date()) throws -> Portfolio {
+                       on date: Date = Date(), pieId: String? = nil) throws -> Portfolio {
         guard !quantity.isZero else { throw TradeError.invalidQuantity }
         let cost = price.amount * quantity.amount
         guard cash.amount >= cost else { throw TradeError.insufficientFunds }
@@ -67,7 +67,7 @@ public struct Portfolio: Equatable, Codable, Sendable {
         }
 
         let txn = Transaction(symbol: asset.symbol, side: .buy,
-                              quantity: quantity, price: price, date: date)
+                              quantity: quantity, price: price, date: date, pieId: pieId)
         return Portfolio(
             cash: Money(amount: cash.amount - cost, currencyCode: cash.currencyCode),
             positions: updated,
@@ -76,7 +76,7 @@ public struct Portfolio: Equatable, Codable, Sendable {
     }
 
     public func selling(_ symbol: String, quantity: Quantity, at price: Money,
-                        on date: Date = Date()) throws -> Portfolio {
+                        on date: Date = Date(), pieId: String? = nil) throws -> Portfolio {
         guard !quantity.isZero else { throw TradeError.invalidQuantity }
         guard let index = positions.firstIndex(where: { $0.asset.symbol == symbol }),
               positions[index].quantity.amount >= quantity.amount else {
@@ -102,7 +102,7 @@ public struct Portfolio: Equatable, Codable, Sendable {
         }
 
         let txn = Transaction(symbol: symbol, side: .sell,
-                              quantity: quantity, price: price, date: date)
+                              quantity: quantity, price: price, date: date, pieId: pieId)
         return Portfolio(
             cash: Money(amount: cash.amount + proceeds, currencyCode: cash.currencyCode),
             positions: updated,
