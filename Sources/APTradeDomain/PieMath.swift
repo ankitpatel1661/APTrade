@@ -1,5 +1,24 @@
 import Foundation
 
+/// Direction of a rebalance trade: buy or sell.
+public enum RebalanceSide: String, Codable, Sendable {
+    case buy
+    case sell
+}
+
+/// A single rebalance trade to restore a pie to its target allocation.
+public struct RebalanceOrder: Equatable, Sendable {
+    public let symbol: String
+    public let side: RebalanceSide
+    public let amount: Money  // always positive
+
+    public init(symbol: String, side: RebalanceSide, amount: Money) {
+        self.symbol = symbol
+        self.side = side
+        self.amount = amount
+    }
+}
+
 /// Self-balancing contribution distribution for investment pies.
 public enum PieMath {
     /// Splits a contribution across pie slices, preferring underweight slices.
@@ -114,5 +133,157 @@ public enum PieMath {
         var input = d
         NSDecimalRound(&result, &input, 2, .plain)
         return result
+    }
+
+    /// Calculates the signed drift (target % − current %) for each slice, in percentage points to 2 dp.
+    ///
+    /// Drift measures how far each asset is from its target allocation:
+    /// - Positive drift: underweight (should buy)
+    /// - Negative drift: overweight (should sell)
+    /// - Zero drift: at target
+    ///
+    /// - Parameters:
+    ///   - currentValues: Map of symbol to current money value in the pie.
+    ///   - targets: The target allocation (slices with symbol and target weight).
+    ///
+    /// - Returns: A dictionary mapping each target symbol to its drift in percentage points,
+    ///   rounded to 2 decimal places.
+    public static func drift(
+        currentValues: [String: Money],
+        targets: [PieSlice]
+    ) -> [String: Percentage] {
+        // Compute total current value
+        let totalCurrent = currentValues.values.reduce(Decimal(0)) { $0 + $1.amount }
+
+        // Compute drift per slice: target% - actual%
+        var result: [String: Percentage] = [:]
+
+        for slice in targets {
+            let current = currentValues[slice.symbol]?.amount ?? Decimal(0)
+            let actualPercent = totalCurrent > 0
+                ? (current / totalCurrent) * 100
+                : Decimal(0)
+            let driftValue = slice.targetWeight.value - actualPercent
+            let rounded = Self.rounded(driftValue)
+            result[slice.symbol] = Percentage(value: rounded)
+        }
+
+        return result
+    }
+
+    /// Generates rebalance orders to restore each slice to its target allocation.
+    ///
+    /// The plan achieves exact net-zero cash by:
+    /// 1. Computing delta (buy/sell amount) for each slice: delta_i = (target_i% ÷ 100) × total − current_i
+    /// 2. Rounding each delta to cents
+    /// 3. Folding any net-cash remainder into the largest-target slice's order
+    ///    (if that fold would flip the order side or make amount negative, walk to the next slice)
+    /// 4. Dropping all orders under $0.01
+    ///
+    /// - Parameters:
+    ///   - currentValues: Map of symbol to current money value in the pie.
+    ///   - targets: The target allocation (slices with symbol and target weight).
+    ///
+    /// - Returns: An array of rebalance orders, each with amount ≥ $0.01, such that
+    ///   Σ(buy amounts) == Σ(sell amounts). Empty if already at target or pie is empty.
+    public static func rebalancePlan(
+        currentValues: [String: Money],
+        targets: [PieSlice]
+    ) -> [RebalanceOrder] {
+        // Compute total current value
+        let totalCurrent = currentValues.values.reduce(Decimal(0)) { $0 + $1.amount }
+
+        // Empty or at-target pie: no rebalancing needed
+        if totalCurrent == 0 {
+            return []
+        }
+
+        // Compute raw deltas (target - current) for each slice
+        var deltas: [String: Decimal] = [:]
+        for slice in targets {
+            let current = currentValues[slice.symbol]?.amount ?? Decimal(0)
+            let ideal = (slice.targetWeight.value / 100) * totalCurrent
+            deltas[slice.symbol] = ideal - current
+        }
+
+        // Round each delta to cents
+        var rounded: [String: Decimal] = [:]
+        var netCash = Decimal(0)  // sum of all rounded deltas (should be ~0 after folding)
+
+        for slice in targets {
+            let delta = deltas[slice.symbol] ?? Decimal(0)
+            let r = Self.rounded(delta)
+            rounded[slice.symbol] = r
+            netCash += r
+        }
+
+        // Fold remainder into largest-target slice, walking if needed
+        if netCash != 0 {
+            // Sort slices by target weight (descending), then symbol (ascending for ties)
+            let sortedByWeight = targets.sorted { a, b in
+                if a.targetWeight.value == b.targetWeight.value {
+                    return a.symbol < b.symbol
+                }
+                return a.targetWeight.value > b.targetWeight.value
+            }
+
+            // Walk through slices, trying to fold netCash
+            var remaining = netCash
+            for slice in sortedByWeight {
+                let current = rounded[slice.symbol] ?? Decimal(0)
+                let newValue = current + remaining
+
+                // Check if this fold would flip the order side or make it negative
+                if (current >= 0 && newValue >= 0) || (current < 0 && newValue < 0) {
+                    // Same side or stays zero: safe to absorb
+                    rounded[slice.symbol] = newValue
+                    remaining = 0
+                    break
+                } else if newValue == 0 {
+                    // Exactly zero: safe to absorb
+                    rounded[slice.symbol] = 0
+                    remaining = 0
+                    break
+                } else if current == 0 && abs(newValue) < abs(remaining) {
+                    // This slice is zero and the fold reduces the magnitude: safe to take what we can
+                    rounded[slice.symbol] = newValue
+                    remaining = 0
+                    break
+                } else {
+                    // Flip or negative: clamp to 0 and walk on
+                    rounded[slice.symbol] = 0
+                    remaining = newValue
+                }
+            }
+
+            // If remainder still not absorbed (all slices clamped to 0), leave it
+            // This should not happen in well-formed cases
+        }
+
+        // Build orders, filtering out sub-cent amounts
+        var orders: [RebalanceOrder] = []
+        let currencyCode = currentValues.values.first?.currencyCode ?? "USD"
+
+        for slice in targets {
+            let delta = rounded[slice.symbol] ?? Decimal(0)
+            if delta == 0 {
+                continue  // No change needed
+            }
+
+            let amount = abs(delta)
+            if amount < Decimal(string: "0.01") ?? 0 {
+                continue  // Drop sub-cent orders
+            }
+
+            let side: RebalanceSide = delta > 0 ? .buy : .sell
+            let order = RebalanceOrder(
+                symbol: slice.symbol,
+                side: side,
+                amount: Money(amount: amount, currencyCode: currencyCode)
+            )
+            orders.append(order)
+        }
+
+        return orders
     }
 }
