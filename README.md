@@ -11,7 +11,7 @@ An ultra-premium **native macOS** investing platform — built in SwiftUI on a s
 ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-0C0B09?logo=apple)
 ![Swift](https://img.shields.io/badge/Swift-6.0-D4A94E?logo=swift)
 ![Architecture](https://img.shields.io/badge/architecture-Clean-D4A94E)
-![Tests](https://img.shields.io/badge/tests-200%20passing-46C98A)
+![Tests](https://img.shields.io/badge/tests-249%20passing-46C98A)
 
 </div>
 
@@ -64,6 +64,12 @@ The whole app is written against pure domain logic with framework code pushed to
 - **Filter** the feed instantly by headline or source, **bookmark** any article, and flip to a **Saved** view that persists across launches. Tapping a headline opens it in your default browser.
 - **No-key state** — without a Finnhub key the app degrades gracefully to a "connect a news source" prompt; the key lives only in `~/.config/aptrade/config.json`, never in the bundle.
 
+### Calendar & earnings
+- **Calendar tab** — a dedicated tab showing **holiday and half-day banners** for the visible range, driven by a computed, US-DST-aware NYSE `MarketCalendar` (statutory holidays with observed-weekend shifts, plus the day-before-July-4th, day-after-Thanksgiving, and Christmas Eve 1pm-ET half-days) — no hard-coded date table.
+- **Earnings list** — upcoming **S&P 500 + your-watchlist** earnings grouped by trading day, each row showing the ticker, company name, reporting **session** (before open / after close), and EPS estimate; symbols you hold are flagged. Backed by a shared `FinnhubEarningsRepository` (`/calendar/earnings`, 6-hour TTL cache) and a `FetchEarningsCalendar` use case (`.execute` / `.nextEarnings` / `.ownedToday`).
+- **Next-earnings stat** on every asset's detail view, plus a settings-gated **earnings-day notification** that rides the same market-hours scheduler as the open/close and daily-digest alerts.
+- **No-key state** — without a Finnhub key the earnings list degrades to an empty state (an `EmptyEarningsRepository` fallback); the holiday/half-day banners still render, since the calendar is computed locally.
+
 ### Settings & appearance
 - A unified, persisted **settings** layer — every preference (notification toggles, security/privacy, trade confirmation, theme, accent) flows through one store with a forward-compatible decoder.
 - **Selectable accents** — Champagne Gold, Rose Gold, Sapphire, Amethyst, and Platinum re-tint the whole brand ramp **including the logo/wordmark artwork** (gold pixels are remapped onto the chosen accent); **dark / light** mode toggle.
@@ -97,9 +103,9 @@ Strict **Clean Architecture**. Dependencies point inward only; the domain knows 
 └─────────────────────────────────────────────┘
 ```
 
-- **Domain** — `Asset`, `Quote`, `Money`, `Percentage`, `Quantity`, `Portfolio`, `Position`, `Candle`, `PricePoint`, `PriceAlert`, `NewsArticle`, `NewsCategory`, `AppSettings`, `AccentTheme`, `AppLanguage`, `MarketCalendar`, `Timeframe`, plus pure calculations: `TechnicalIndicators` (SMA/EMA/RSI/Bollinger/MACD), portfolio performance reconstruction, realized-P&L, and the `PortfolioExport` model. No framework imports.
-- **Application** — use cases (quotes, history, **candles**, search, watchlist, buy/sell, portfolio snapshots, **performance reconstruction**, **export**, **news**, **bookmarks**, alerts, settings, market-activity planning) orchestrating over ports: `MarketDataRepository`, `WatchlistStore`, `PortfolioStore`, `PortfolioHistoryStore`, `AlertStore`, `AlertNotifier`, `OrderFillNotifier`, `MarketEventNotifier`, `SettingsStore`, `SchedulerStateStore`, `PortfolioExportRenderer`, `NewsRepository`, `BookmarkStore`.
-- **Infrastructure** — `SharedCoreMarketDataRepository` (quotes, history, OHLC candles, profile, and search via the shared Kotlin core), `CachingMarketDataRepository`, `FinnhubNewsRepository` (with an `EmptyNewsRepository` no-key fallback), `AppConfig` (reads the Finnhub key from `~/.config/aptrade/config.json`), `UserNotificationAlertNotifier`, `UserDefaults`-backed stores (incl. bookmarks), and a dependency-free **export renderer** (Core Graphics PDF + a hand-rolled ZIP writer producing OOXML `.xlsx` / `.docx`).
+- **Domain** — `Asset`, `Quote`, `Money`, `Percentage`, `Quantity`, `Portfolio`, `Position`, `Candle`, `PricePoint`, `PriceAlert`, `NewsArticle`, `NewsCategory`, `AppSettings`, `AccentTheme`, `AppLanguage`, `MarketCalendar`, `EarningsEvent`, `Timeframe`, plus pure calculations: `TechnicalIndicators` (SMA/EMA/RSI/Bollinger/MACD), portfolio performance reconstruction, realized-P&L, and the `PortfolioExport` model. No framework imports.
+- **Application** — use cases (quotes, history, **candles**, search, watchlist, buy/sell, portfolio snapshots, **performance reconstruction**, **export**, **news**, **bookmarks**, alerts, settings, market-activity planning, **earnings calendar**) orchestrating over ports: `MarketDataRepository`, `WatchlistStore`, `PortfolioStore`, `PortfolioHistoryStore`, `AlertStore`, `AlertNotifier`, `OrderFillNotifier`, `MarketEventNotifier`, `SettingsStore`, `SchedulerStateStore`, `PortfolioExportRenderer`, `NewsRepository`, `BookmarkStore`, `EarningsCalendarRepository`.
+- **Infrastructure** — `SharedCoreMarketDataRepository` (quotes, history, OHLC candles, profile, and search via the shared Kotlin core), `CachingMarketDataRepository`, `FinnhubNewsRepository` (with an `EmptyNewsRepository` no-key fallback), `FinnhubEarningsRepository` (with an `EmptyEarningsRepository` no-key fallback), `AppConfig` (reads the Finnhub key from `~/.config/aptrade/config.json`), `UserNotificationAlertNotifier`, `UserDefaults`-backed stores (incl. bookmarks), and a dependency-free **export renderer** (Core Graphics PDF + a hand-rolled ZIP writer producing OOXML `.xlsx` / `.docx`).
 - **Presentation** — declarative SwiftUI views with thin `@Observable` view models; a `MarketActivityCoordinator` runs the notification scheduler; `ThemeManager` and `LocalizationManager` drive live theme/accent and language switching; a typed `L10n` catalog backs `tr(_:)` localization; all dependencies wired in `CompositionRoot`.
 
 Built throughout on Swift 6 concurrency — `async/await`, `actor` isolation, and `Sendable` types. Business policy (e.g. the market-hours scheduler) is kept as **pure, fully tested functions**, with clocks and I/O injected at the edges.
@@ -144,7 +150,7 @@ The app ships as a bare SwiftPM executable. Launching the built binary directly 
 DEVELOPER_DIR=/Applications/Xcode.app swift test
 ```
 
-> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **200 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction, the all-priced gate + benchmark head-trim), the market calendar, use cases, the market-activity planner, alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, and the view models.
+> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **249 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction, the all-priced gate + benchmark head-trim), the market calendar and earnings calendar, use cases, the market-activity planner (incl. earnings-check scheduling), alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the Finnhub earnings mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, and the view models.
 
 ### Building the shared Kotlin core
 
