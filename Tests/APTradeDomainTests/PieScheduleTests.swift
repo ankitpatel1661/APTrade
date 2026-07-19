@@ -184,6 +184,37 @@ final class PieScheduleTests: XCTestCase {
         XCTAssertEqual(next, "2026-07-06")
     }
 
+    // MARK: - nextDueDay: compares the ROLLED candidate, not the unrolled one (fix-wave)
+
+    func test_nextDueDay_regressionA_comparesRolledCandidate_notUnrolled() {
+        // Sat 2026-02-07 candidate rolls to Mon 2026-02-09, which IS > afterDay
+        // 2026-02-08 — the correct next due day. Comparing the unrolled candidate
+        // (2026-02-07, which is NOT > 2026-02-08) would wrongly skip straight past it
+        // to the 2026-02-14 candidate, whose roll (across the Presidents Day holiday
+        // on 2026-02-16) lands on 2026-02-17.
+        let next = PieSchedule.nextDueDay(
+            anchorDay: "2026-01-31",
+            cadence: .weekly,
+            afterDay: "2026-02-08",
+            calendar: calendar
+        )
+        XCTAssertEqual(next, "2026-02-09")
+    }
+
+    func test_nextDueDay_afterDayExactlyOnRolledDueDay_returnsTheNextOne() {
+        // afterDay is itself a previously-reported rolled due day (2026-02-09); the
+        // comparison is strict >, so that same day is not returned again. The next
+        // candidate (Sat 2026-02-14) rolls across Presidents Day (2026-02-16) to
+        // 2026-02-17.
+        let next = PieSchedule.nextDueDay(
+            anchorDay: "2026-01-31",
+            cadence: .weekly,
+            afterDay: "2026-02-09",
+            calendar: calendar
+        )
+        XCTAssertEqual(next, "2026-02-17")
+    }
+
     // MARK: - dueDays: sorted ascending, deduped
 
     func test_dueDays_resultsAreSortedAscending() {

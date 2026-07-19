@@ -115,10 +115,22 @@ public enum PieSchedule {
     }
 
     /// The single next contribution day strictly after `afterDay`, stepping `cadence`
-    /// from `anchorDay` (the anchor day itself is eligible when it falls after
-    /// `afterDay`), rolled forward to the nearest trading day. Falls back to `afterDay`
-    /// on malformed `anchorDay` or if the cap is exhausted — both unreachable with real
+    /// from `anchorDay`, returning the first *rolled* candidate (the actual trading day
+    /// money moves on) that is strictly after `afterDay`. Falls back to `afterDay` on
+    /// malformed `anchorDay` or if the cap is exhausted — both unreachable with real
     /// calendars, since cadence steps are strictly monotonic.
+    ///
+    /// Step 0 (the anchor itself) is eligible, unlike `dueDays`, since this is the
+    /// entry point that answers "what's the very first due day of a fresh schedule" —
+    /// its eligibility is judged against the *unrolled* anchor day: the anchor is the
+    /// user-configured reference date, and whether that reference has already elapsed
+    /// is naturally judged in calendar terms, not by where it happens to land once
+    /// rolled onto a trading day. Every later step (>= 1) is judged against its
+    /// *rolled* value instead, since what actually matters for "has this occurrence
+    /// already happened" is the real trading day the contribution fires on. Comparing
+    /// a later step's unrolled value would reproduce the same bug `dueDays` had: a
+    /// step landing just before `afterDay` unrolled but rolling to just after it would
+    /// be wrongly skipped, silently jumping to the following cadence step instead.
     public static func nextDueDay(
         anchorDay: String,
         cadence: PieCadence,
@@ -132,9 +144,12 @@ public enum PieSchedule {
             guard let candidate = candidateDate(anchor: anchor, cadence: cadence, step: step) else {
                 return afterDay
             }
-            let candidateDay = calendar.tradingDay(of: candidate)
-            if candidateDay > afterDay {
-                return rollToTradingDay(candidateDay, calendar: calendar)
+            let unrolledDay = calendar.tradingDay(of: candidate)
+            if step == 0 {
+                if unrolledDay > afterDay { return rollToTradingDay(unrolledDay, calendar: calendar) }
+            } else {
+                let rolledDay = rollToTradingDay(unrolledDay, calendar: calendar)
+                if rolledDay > afterDay { return rolledDay }
             }
             step += 1
         }
