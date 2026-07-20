@@ -186,4 +186,28 @@ final class AssetDetailViewModelTests: XCTestCase {
         XCTAssertEqual(vm.loadState, .loaded)
         XCTAssertEqual(vm.quote?.symbol, "AAPL")
     }
+
+    /// Regression: a payer whose last event within the fetch window is old enough that
+    /// `lastEvent.exDate + cadenceInterval` lands before "now" must NOT surface a past date
+    /// under the "Est." badge. `nextEstimatedExDate` should hide (nil) while the rest of
+    /// `DividendInfo` (rate/yield/recentAmounts) still shows — mirrors
+    /// `IncomeViewModel.buildUpcoming`'s `projected.exDate > asOf` guard.
+    func test_load_projectedNextExDateInPast_hidesDateButKeepsOtherFields() async throws {
+        let repo = DetailFakeRepo()
+        repo.historyByTf[.oneDay] = [PricePoint(date: Date(timeIntervalSince1970: 0), close: Money(amount: 10))]
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let dividendRepo = SpyDividendEventsRepository()
+        // Annual cadence (365-day gap), last event ~700 days ago: projected next ex-date
+        // = lastEvent + 365d = now - 335d, i.e. still in the past relative to `now`.
+        dividendRepo.eventsToReturn = [
+            DividendEvent(symbol: "AAPL", exDate: now.addingTimeInterval(-700 * 86_400), amountPerShare: Money(amount: 0.20)),
+            DividendEvent(symbol: "AAPL", exDate: now.addingTimeInterval(-1065 * 86_400), amountPerShare: Money(amount: 0.20)),
+        ]
+        let vm = makeVM(repo, dividendEventsRepository: dividendRepo, now: { now })
+        await vm.load()
+
+        let info = try XCTUnwrap(vm.dividendInfo)
+        XCTAssertNil(info.nextEstimatedExDate)
+        XCTAssertEqual(info.recentAmounts, dividendRepo.eventsToReturn.sorted { $0.exDate < $1.exDate }.map(\.amountPerShare))
+    }
 }

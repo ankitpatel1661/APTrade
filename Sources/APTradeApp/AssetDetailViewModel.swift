@@ -126,11 +126,18 @@ final class AssetDetailViewModel {
             let price = quote?.price.amount ?? 0
             let yieldFraction = price > 0 ? (rate.amount / price as NSDecimalNumber).doubleValue : 0
             let recentAmounts = events.sorted { $0.exDate < $1.exDate }.suffix(8).map(\.amountPerShare)
+            // Future-only guard, mirroring `IncomeViewModel.buildUpcoming`: a projection
+            // that lands before "now" (e.g. a payer whose last event in the window is old
+            // enough that lastEvent.exDate + cadenceInterval < now) must not surface a past
+            // date under the "Est." badge. The row simply hides — the rest of DividendInfo
+            // (rate/yield/recentAmounts) still shows since nextEstimatedExDate is Optional.
+            let projected = DividendMath.nextProjected(events: events)
+            let nextEstimatedExDate = (projected?.exDate).flatMap { $0 > asOf ? $0 : nil }
 
             dividendInfo = DividendInfo(
                 trailingAnnualRate: rate,
                 yieldFraction: yieldFraction,
-                nextEstimatedExDate: DividendMath.nextProjected(events: events)?.exDate,
+                nextEstimatedExDate: nextEstimatedExDate,
                 recentAmounts: Array(recentAmounts)
             )
         } catch {
