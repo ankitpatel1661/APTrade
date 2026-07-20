@@ -87,4 +87,33 @@ class FileSchedulerStateStoreTest {
         assertEquals("2026-07-05", loaded.lastDigestDay)
         assertEquals(null, loaded.lastEarningsDay)
     }
+
+    @Test
+    fun `round-trips lastContributionDay`() = runTest {
+        val file = tempFile()
+        val store = FileSchedulerStateStore(file)
+        val state = SchedulerState(
+            lastStatus = MarketStatus.OPEN,
+            lastDigestDay = "2026-07-05",
+            lastEarningsDay = "2026-07-05",
+            lastContributionDay = "2026-07-05",
+        )
+        store.save(state)
+        assertEquals(state, store.load())
+    }
+
+    @Test
+    fun `old file without lastContributionDay loads fine with it defaulting to null`() = runTest {
+        // Back-compat pin (same family as the lastEarningsDay test above): a
+        // schedulerState.json written before the contribution-check field existed has only
+        // lastStatus/lastDigestDay/lastEarningsDay. Lenient decode must still succeed and
+        // default lastContributionDay to null rather than failing the whole-blob load.
+        val file = tempFile()
+        file.writeText("""{"lastStatus":"OPEN","lastDigestDay":"2026-07-05","lastEarningsDay":"2026-07-05"}""")
+        val loaded = FileSchedulerStateStore(file).load()
+        assertEquals(MarketStatus.OPEN, loaded.lastStatus)
+        assertEquals("2026-07-05", loaded.lastDigestDay)
+        assertEquals("2026-07-05", loaded.lastEarningsDay)
+        assertEquals(null, loaded.lastContributionDay)
+    }
 }

@@ -250,6 +250,48 @@ class MarketActivityPlannerTest {
     }
 
     @Test
+    fun contributionCheckFiresOncePerTradingDayWhenEnabled() {
+        val seedState = SchedulerState(lastStatus = MarketStatus.OPEN)
+
+        val (events1, newState1) = planner.plan(
+            nowEpochSeconds = tuesdayTenAmOpen,
+            state = seedState,
+            marketOpenCloseEnabled = false,
+            newsDigestEnabled = false,
+            pieContributionsEnabled = true,
+        )
+
+        assertTrue(events1.contains(ScheduledNotification.ContributionCheckDue))
+        assertEquals("2024-01-09", newState1.lastContributionDay)
+
+        val (events2, _) = planner.plan(
+            nowEpochSeconds = tuesdayTenAmOpen + 60,
+            state = newState1,
+            marketOpenCloseEnabled = false,
+            newsDigestEnabled = false,
+            pieContributionsEnabled = true,
+        )
+
+        assertFalse(events2.contains(ScheduledNotification.ContributionCheckDue))
+    }
+
+    @Test
+    fun contributionCheckSuppressedWhenToggleOff() {
+        val seedState = SchedulerState(lastStatus = MarketStatus.OPEN)
+
+        val (events, newState) = planner.plan(
+            nowEpochSeconds = tuesdayTenAmOpen,
+            state = seedState,
+            marketOpenCloseEnabled = false,
+            newsDigestEnabled = false,
+            pieContributionsEnabled = false,
+        )
+
+        assertFalse(events.contains(ScheduledNotification.ContributionCheckDue))
+        assertEquals(null, newState.lastContributionDay)
+    }
+
+    @Test
     fun stateRoundTripsThroughAFakeStoreUnchangedWhenNothingIsSaved() {
         val store = FakeSchedulerStateStore(SchedulerState(lastStatus = MarketStatus.OPEN, lastDigestDay = "2024-01-08"))
 

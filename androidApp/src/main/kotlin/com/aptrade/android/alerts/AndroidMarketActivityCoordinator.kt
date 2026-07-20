@@ -102,6 +102,14 @@ class AndroidMarketActivityCoordinator(
                         notifyEarnings(earningsEvent)
                     }
                 }
+                ScheduledNotification.ContributionCheckDue -> {
+                    // No-op for now: M7.2 Task 9 only adds the planner event (mirroring
+                    // EarningsCheckDue's shape) so the sealed `when` above stays exhaustive.
+                    // Real due-contribution catch-up + notification wiring is Android's
+                    // M7.3 pie-contributions increment (this app is untouched by M7.2
+                    // otherwise), gated by settings.pieContributions per Global Constraints
+                    // correction 6 (desktop's Task 12 precedent).
+                }
             }
         }
     }

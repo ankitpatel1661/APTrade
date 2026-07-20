@@ -101,6 +101,13 @@ class DesktopMarketActivityCoordinator(
                         notifyEarnings(earningsEvent)
                     }
                 }
+                ScheduledNotification.ContributionCheckDue -> {
+                    // No-op for now: M7.2 Task 9 only adds the planner event (mirroring
+                    // EarningsCheckDue's shape) so the sealed `when` above stays exhaustive.
+                    // Task 12 wires the real due-contribution catch-up + notification here,
+                    // gated by settings.pieContributions on both this planner-event path and
+                    // launch catch-up (Global Constraints correction 6).
+                }
             }
         }
     }
