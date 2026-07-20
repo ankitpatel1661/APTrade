@@ -336,7 +336,7 @@ class PortfolioGraph(
     private val portfolioMutex = Mutex()
     val buyAsset = BuyAsset(repository, portfolioStore, portfolioMutex)
     val sellAsset = SellAsset(repository, portfolioStore, portfolioMutex)
-    val resetPortfolio = ResetPortfolio(portfolioStore)
+    val resetPortfolio = ResetPortfolio(portfolioStore, portfolioMutex)
     val fetchPortfolioPerformance = FetchPortfolioPerformance(repository, portfolioStore)
     val fetchPerformanceReport = FetchPerformanceReport(repository, fetchPortfolioPerformance)
 }

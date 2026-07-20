@@ -72,7 +72,7 @@ class PortfolioViewModelTest {
             fetchMarketQuotes = FetchMarketQuotes(repo),
             buyAsset = BuyAsset(repo, store, Mutex()),
             sellAsset = SellAsset(repo, store, Mutex()),
-            resetPortfolio = ResetPortfolio(store),
+            resetPortfolio = ResetPortfolio(store, Mutex()),
             fetchPerformanceReport = FetchPerformanceReport(repo, perf),
             nowEpochSeconds = now,
             tickMillis = 15_000,
