@@ -118,7 +118,7 @@ final class IncomeViewModel: ObservableObject {
                                 quotes: quotes, receivedYTD: receivedYTD, asOf: asOf)
         months = Self.buildMonths(transactions: transactions, positions: nonCryptoPositions,
                                   eventsBySymbol: eventsBySymbol, asOf: asOf)
-        upcoming = Self.buildUpcoming(positions: nonCryptoPositions, eventsBySymbol: eventsBySymbol)
+        upcoming = Self.buildUpcoming(positions: nonCryptoPositions, eventsBySymbol: eventsBySymbol, asOf: asOf)
             .sorted { $0.estimatedExDate < $1.estimatedExDate }
         holdings = Self.buildHoldings(positions: nonCryptoPositions, eventsBySymbol: eventsBySymbol,
                                       transactions: transactions, asOf: asOf)
@@ -217,10 +217,10 @@ final class IncomeViewModel: ObservableObject {
     // MARK: - Upcoming
 
     private static func buildUpcoming(positions: [Position],
-                                      eventsBySymbol: [String: [DividendEvent]]) -> [UpcomingRow] {
+                                      eventsBySymbol: [String: [DividendEvent]], asOf: Date) -> [UpcomingRow] {
         positions.compactMap { position -> UpcomingRow? in
             let events = eventsBySymbol[position.asset.symbol] ?? []
-            guard let projected = DividendMath.nextProjected(events: events) else { return nil }
+            guard let projected = DividendMath.nextProjected(events: events), projected.exDate > asOf else { return nil }
             let amount = Money(amount: projected.amountPerShare.amount * position.quantity.amount,
                                currencyCode: projected.amountPerShare.currencyCode)
             return UpcomingRow(id: position.asset.symbol, symbol: position.asset.symbol,

@@ -208,6 +208,42 @@ final class IncomeViewModelTests: XCTestCase {
         XCTAssertEqual(vm.upcoming[1].estimatedAmount, usd("51"))    // 0.51 × 100
     }
 
+    // MARK: - Regression: a stale nextProjected (landing in the past) must not surface
+
+    /// `DividendMath.nextProjected` is just `lastEvent.exDate + cadenceInterval` — it has
+    /// no awareness of "now". A symbol whose last recorded event is old enough that its
+    /// projected next payout has already elapsed (e.g. an annual payer last seen ~700
+    /// days ago) must NOT show up in `upcoming` as a future-dated row. A symbol with a
+    /// genuinely future projection must still appear.
+    func test_upcoming_excludesStaleProjection_pastAsOf() async throws {
+        var portfolio = Portfolio.starting(cash: usd("20000"))
+        portfolio = try portfolio.buying(Asset(symbol: "OLD", name: "Old Annual Payer", kind: .stock),
+                                         quantity: qty("10"), at: usd("50"), on: utc(2022, 1, 5))
+        portfolio = try portfolio.buying(Asset(symbol: "KO", name: "Coca-Cola", kind: .stock),
+                                         quantity: qty("100"), at: usd("60"), on: utc(2025, 1, 5))
+
+        // OLD: annual cadence, last event 2024-08-01 → nextProjected ≈ 2025-08-01,
+        // which is BEFORE fixedNow (2026-07-20) — a stale, already-elapsed projection.
+        let oldEvents = [
+            DividendEvent(symbol: "OLD", exDate: utc(2023, 7, 28), amountPerShare: usd("2.00")),
+            DividendEvent(symbol: "OLD", exDate: utc(2024, 8, 1), amountPerShare: usd("2.10"))
+        ]
+        // KO: quarterly, last event 2026-05-14 → nextProjected ≈ 2026-08-13, genuinely
+        // in the future relative to fixedNow.
+        let koEvents = [
+            DividendEvent(symbol: "KO", exDate: utc(2025, 11, 14), amountPerShare: usd("0.46")),
+            DividendEvent(symbol: "KO", exDate: utc(2026, 2, 14), amountPerShare: usd("0.48")),
+            DividendEvent(symbol: "KO", exDate: utc(2026, 5, 14), amountPerShare: usd("0.51"))
+        ]
+        let (vm, _) = makeVM(portfolio: portfolio, quotes: [:], events: ["OLD": oldEvents, "KO": koEvents])
+        await vm.load()
+
+        XCTAssertFalse(vm.upcoming.contains { $0.symbol == "OLD" },
+                       "a projection dated before 'now' must not appear as an upcoming payout")
+        XCTAssertTrue(vm.upcoming.contains { $0.symbol == "KO" })
+        XCTAssertEqual(vm.upcoming.count, 1)
+    }
+
     // MARK: - (e) event-fetch failure degrades upcoming only
 
     func test_eventFetchFailure_upcomingEmpty_historyAndReceivedYTDStillPopulate() async throws {
