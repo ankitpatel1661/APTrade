@@ -144,7 +144,7 @@ public extension PortfolioExport {
     /// UTC calendar year as `asOf`. Pure ledger arithmetic — no quotes, no networking.
     private static func dividendsReceivedYTD(transactions: [Transaction], asOf: Date) -> Decimal {
         var utcCalendar = Calendar(identifier: .gregorian)
-        utcCalendar.timeZone = TimeZone(identifier: "UTC")!
+        utcCalendar.timeZone = TimeZone.gmt
         let currentYear = utcCalendar.component(.year, from: asOf)
         return transactions
             .filter { $0.side == .dividend && utcCalendar.component(.year, from: $0.date) == currentYear }

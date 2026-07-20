@@ -258,7 +258,7 @@ final class IncomeViewModel: ObservableObject {
 
     private static var utcCalendar: Calendar = {
         var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = TimeZone(identifier: "UTC")!
+        cal.timeZone = TimeZone.gmt
         return cal
     }()
 

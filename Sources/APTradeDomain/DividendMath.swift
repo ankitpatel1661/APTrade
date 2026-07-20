@@ -134,7 +134,7 @@ public enum DividendMath {
     private static func monthKey(for date: Date) -> String {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.timeZone = TimeZone(identifier: "UTC")!
+        formatter.timeZone = TimeZone.gmt
         formatter.dateFormat = "yyyy-MM"
         return formatter.string(from: date)
     }
