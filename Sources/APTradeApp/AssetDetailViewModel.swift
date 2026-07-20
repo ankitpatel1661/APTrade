@@ -7,6 +7,15 @@ import APTradeDomain
 final class AssetDetailViewModel {
     enum LoadState: Equatable { case idle, loading, loaded, failed }
 
+    /// Dividend snapshot shown on the asset detail screen. `nil` hides the section
+    /// entirely — non-payers, crypto, and degraded fetches all present the same way.
+    struct DividendInfo: Equatable {
+        let trailingAnnualRate: Money       // per share
+        let yieldFraction: Double           // trailingAnnualRate / current price
+        let nextEstimatedExDate: Date?
+        let recentAmounts: [Money]          // last 8 events, oldest first (mini chart)
+    }
+
     let asset: Asset
     private let fetchCandles: FetchCandlesUseCase
     private let fetchQuotes: FetchQuotesUseCase
@@ -14,6 +23,7 @@ final class AssetDetailViewModel {
     /// nil when no Finnhub key is configured — the next-earnings stat then shows "—"
     /// rather than erroring (see `CompositionRoot.makeDetailViewModel`).
     private let fetchEarnings: FetchEarningsCalendarUseCase?
+    private let dividendEventsRepository: DividendEventsRepository
     private let calendar: MarketCalendar
     private let now: () -> Date
 
@@ -28,12 +38,17 @@ final class AssetDetailViewModel {
     /// Earliest upcoming (or just-reported) earnings release for this asset in the next
     /// 30 days, or nil when keyless, none scheduled, or the fetch degrades to empty.
     private(set) var nextEarnings: EarningsEvent?
+    /// nil hides the Dividends card — crypto assets (never fetched), non-payers (zero
+    /// events in the trailing 2 years), and fetch failures all degrade here identically;
+    /// see `loadDividendInfo` for the full semantics.
+    private(set) var dividendInfo: DividendInfo?
 
     init(asset: Asset,
          fetchCandles: FetchCandlesUseCase,
          fetchQuotes: FetchQuotesUseCase,
          fetchPortfolio: FetchPortfolioUseCase,
          fetchEarnings: FetchEarningsCalendarUseCase? = nil,
+         dividendEventsRepository: DividendEventsRepository,
          calendar: MarketCalendar = MarketCalendar(),
          now: @escaping () -> Date = Date.init) {
         self.asset = asset
@@ -41,6 +56,7 @@ final class AssetDetailViewModel {
         self.fetchQuotes = fetchQuotes
         self.fetchPortfolio = fetchPortfolio
         self.fetchEarnings = fetchEarnings
+        self.dividendEventsRepository = dividendEventsRepository
         self.calendar = calendar
         self.now = now
     }
@@ -70,6 +86,7 @@ final class AssetDetailViewModel {
             loadState = .failed
         }
         await loadNextEarnings()
+        await loadDividendInfo()
     }
 
     /// A 30-day window from "today" in market-local terms — same shape as the Kotlin
@@ -88,6 +105,36 @@ final class AssetDetailViewModel {
             return
         } catch {
             // Unreachable: `nextEarnings` only ever throws `CancellationError`.
+        }
+    }
+
+    /// Fetches dividend events over a trailing-2-year window and derives `dividendInfo`.
+    /// Crypto is skipped WITHOUT fetching — dividends don't apply to it. Zero events in
+    /// the window (non-payer) and any fetch failure (including cancellation) both degrade
+    /// to nil identically: this stat is never worth surfacing as an error state. The yield
+    /// fraction guards against a zero/missing current price by degrading to 0 rather than
+    /// dividing by zero — same choice `IncomeViewModel` makes for its yield fields.
+    private func loadDividendInfo() async {
+        guard asset.kind != .crypto else { dividendInfo = nil; return }
+        let asOf = now()
+        let windowStart = asOf.addingTimeInterval(-730 * 86_400)
+        do {
+            let events = try await dividendEventsRepository.dividendEvents(for: asset.symbol, since: windowStart)
+            guard !events.isEmpty else { dividendInfo = nil; return }
+
+            let rate = DividendMath.trailingAnnualPerShare(events: events, asOf: asOf)
+            let price = quote?.price.amount ?? 0
+            let yieldFraction = price > 0 ? (rate.amount / price as NSDecimalNumber).doubleValue : 0
+            let recentAmounts = events.sorted { $0.exDate < $1.exDate }.suffix(8).map(\.amountPerShare)
+
+            dividendInfo = DividendInfo(
+                trailingAnnualRate: rate,
+                yieldFraction: yieldFraction,
+                nextEstimatedExDate: DividendMath.nextProjected(events: events)?.exDate,
+                recentAmounts: Array(recentAmounts)
+            )
+        } catch {
+            dividendInfo = nil
         }
     }
 

@@ -2,6 +2,13 @@ import SwiftUI
 import Charts
 import APTradeDomain
 
+private let dividendExDateFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US")
+    f.dateFormat = "MMM d, yyyy"
+    return f
+}()
+
 struct AssetDetailView: View {
     enum ChartStyle: String, CaseIterable { case area = "Area", candles = "Candles" }
     enum Indicator: String, CaseIterable, Identifiable {
@@ -54,6 +61,7 @@ struct AssetDetailView: View {
                         Task { await viewModel.select(tf) }
                     }
                     keyStats
+                    dividendSection
                     positionPanel
                     AssetNewsSection(viewModel: newsVM)
                 }
@@ -594,6 +602,81 @@ struct AssetDetailView: View {
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
         }
     }
+
+    // MARK: Dividends
+
+    /// Hidden entirely when `dividendInfo` is nil — crypto, non-payers, and degraded
+    /// fetches all present identically (no error state, no empty placeholder).
+    @ViewBuilder
+    private var dividendSection: some View {
+        if let info = viewModel.dividendInfo {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(tr(.assetDividendSection))
+                    .font(.system(size: 11, weight: .bold))
+                    .tracking(1.8)
+                    .foregroundStyle(Theme.textSecondary)
+
+                let columns = [GridItem(.flexible(), spacing: 24), GridItem(.flexible(), spacing: 24)]
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
+                    StatTile(label: tr(.assetDividendYield), value: percentText(info.yieldFraction))
+                    StatTile(label: tr(.assetDividendRate), value: info.trailingAnnualRate.formatted)
+                }
+
+                if let nextExDate = info.nextEstimatedExDate {
+                    HStack(spacing: 8) {
+                        Text(tr(.assetNextExDate).uppercased())
+                            .font(.system(size: 10, weight: .semibold))
+                            .tracking(1.0)
+                            .foregroundStyle(Theme.textTertiary)
+                        Spacer()
+                        Text(dividendExDateFormatter.string(from: nextExDate))
+                            .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(Theme.textPrimary)
+                        dividendEstBadge
+                    }
+                }
+
+                if !info.recentAmounts.isEmpty {
+                    dividendMiniChart(info.recentAmounts)
+                }
+            }
+            .padding(20)
+            .background(Theme.surface.opacity(0.5), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
+        }
+    }
+
+    private var dividendEstBadge: some View {
+        Text(tr(.incomeEstimatedBadge).uppercased())
+            .font(.system(size: 9, weight: .bold))
+            .tracking(0.4)
+            .foregroundStyle(Theme.gold)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Theme.gold.opacity(0.12), in: Capsule())
+            .overlay(Capsule().stroke(Theme.gold.opacity(0.28), lineWidth: 1))
+    }
+
+    /// A small bar mini-chart of the last (up to) 8 per-share amounts, oldest first —
+    /// `Sparkline`-style in spirit (no axes/labels/chrome, just the shape of the trend)
+    /// but rendered as bars since discrete per-payout amounts read better that way than
+    /// a continuous line.
+    private func dividendMiniChart(_ amounts: [Money]) -> some View {
+        let values = amounts.map { dbl($0) }
+        let maxValue = values.max() ?? 0
+        return HStack(alignment: .bottom, spacing: 4) {
+            ForEach(Array(values.enumerated()), id: \.offset) { _, value in
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(Theme.gold.opacity(0.7))
+                    .frame(height: maxValue > 0 ? max(3, 36 * value / maxValue) : 3)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .frame(height: 36)
+        .accessibilityHidden(true)
+    }
+
+    private func percentText(_ v: Double) -> String { String(format: "%.2f%%", v * 100) }
 
     // MARK: Trade buttons
 

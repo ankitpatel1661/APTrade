@@ -173,7 +173,8 @@ enum CompositionRoot {
             fetchCandles: FetchCandlesUseCase(repository: repo),
             fetchQuotes: FetchQuotesUseCase(repository: repo),
             fetchPortfolio: FetchPortfolioUseCase(store: portfolioStore),
-            fetchEarnings: fetchEarnings
+            fetchEarnings: fetchEarnings,
+            dividendEventsRepository: sharedDividendEventsRepository
         )
     }
 
