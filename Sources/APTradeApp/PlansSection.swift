@@ -269,6 +269,11 @@ private struct PieDetailScreen: View {
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.textTertiary)
             }
+            if detail.activity.contains(where: { $0.kind == .missedInsufficientCash }) {
+                Text(tr(.missedContribution))
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.textTertiary)
+            }
             if let schedule = detail.schedule {
                 scheduleCard(schedule)
             }

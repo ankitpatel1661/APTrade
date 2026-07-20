@@ -312,6 +312,7 @@ enum L10n {
         case manualAdjustmentNote = "Adjusted after a manual sale outside this pie."
         case missedContribution = "Contribution skipped — insufficient cash"
         case pieContributionsToggle = "Plan Contributions"
+        case pieContributionsSubtitle = "When a scheduled Plan contribution executes or is skipped"
         case notifPieExecutedTitle = "Contribution Complete"
         case notifPieExecutedBody = "%@ contribution has been executed"
         case notifPieSkippedTitle = "Contribution Skipped"
@@ -972,6 +973,10 @@ enum L10n {
                               .spanish: "Aportación omitida — efectivo insuficiente"],
         .pieContributionsToggle: [.english: "Plan Contributions", .german: "Plan-Beiträge",
                                   .italian: "Contributi del piano", .spanish: "Aportaciones del plan"],
+        .pieContributionsSubtitle: [.english: "When a scheduled Plan contribution executes or is skipped",
+                                    .german: "Wenn ein geplanter Plan-Beitrag ausgeführt oder übersprungen wird",
+                                    .italian: "Quando un contributo pianificato del piano viene eseguito o saltato",
+                                    .spanish: "Cuando una aportación programada del plan se ejecuta u omite"],
         .notifPieExecutedTitle: [.english: "Contribution Complete", .german: "Beitrag abgeschlossen",
                                  .italian: "Contributo completato", .spanish: "Aportación completada"],
         .notifPieExecutedBody: [.english: "%@ contribution has been executed",

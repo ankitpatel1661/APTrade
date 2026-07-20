@@ -68,6 +68,11 @@ enum CompositionRoot {
         // the open/close/digest scheduling and the earnings-day trading-day lookup.
         let calendar = MarketCalendar()
         let fetchEarnings = makeFetchEarningsUseCase()
+        // Shares the same `pieStore`/`portfolioStore` singletons the Plans UI reads and
+        // writes, so a coordinator-driven contribution is immediately reflected there.
+        let executeDueContributions = ExecuteDueContributions(
+            pieStore: pieStore, portfolioStore: portfolioStore, market: repo, calendar: calendar
+        )
         return MarketActivityCoordinator(
             planner: MarketActivityPlanner(calendar: calendar),
             stateStore: schedulerStateStore,
@@ -85,6 +90,7 @@ enum CompositionRoot {
                 // same treatment for the same reason.
                 (try? await fetchEarnings.ownedToday(day: day)) ?? []
             },
+            executeDueContributions: { now in await executeDueContributions(now: now) },
             calendar: calendar
         )
     }
