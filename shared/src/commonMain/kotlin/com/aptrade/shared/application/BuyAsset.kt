@@ -32,18 +32,20 @@ import kotlin.coroutines.cancellation.CancellationException
  *  portfolio, not the quote, so it stays inside the lock alongside the load/save it validates
  *  against.
  *
- *  *** THIS IS THE SAME [portfolioMutex] INSTANCE `ContributeToPie`/`ExecuteDueContributions`
- *  (and Task 8's `RebalancePie`) HOLD, TOO. *** Every pie-mutating use case performs its own
- *  load->validate->save cycle against this SAME [PortfolioStore] (contributions and
- *  rebalances buy/sell exactly like a manual trade, just tagged with a `pieId`) — so a manual
- *  buy/sell racing a pie contribution is the identical lost-update hazard this class's doc
- *  already describes for buy-vs-sell, just with a third (and, from Task 8, fourth) co-holder
- *  instead of two. `AppGraph` constructs exactly ONE `Mutex` and hands that SAME instance to
- *  [BuyAsset], [SellAsset], `ContributeToPie`, `ExecuteDueContributions`, and (Task 8)
- *  `RebalancePie` — see the shared commonTest
+ *  *** THIS IS THE SAME [portfolioMutex] INSTANCE `ContributeToPie`/`ExecuteDueContributions`/
+ *  `RebalancePie`/`ReconcilePieLedgers`/`SavePie`/`DeletePie` HOLD, TOO. *** Every pie-mutating
+ *  use case performs its own load->validate->save cycle against this SAME [PortfolioStore]
+ *  and/or [PieStore] (contributions and rebalances buy/sell exactly like a manual trade, just
+ *  tagged with a `pieId`; `SavePie`/`DeletePie`/`ReconcilePieLedgers` mutate the [PieStore] a
+ *  contribution or rebalance also reads-modifies-writes) — so a manual buy/sell racing a pie
+ *  mutation is the identical lost-update hazard this class's doc already describes for
+ *  buy-vs-sell, just with more co-holders. `AppGraph` constructs exactly ONE `Mutex` and hands
+ *  that SAME instance to [BuyAsset], [SellAsset], `ContributeToPie`, `ExecuteDueContributions`,
+ *  `RebalancePie`, `ReconcilePieLedgers`, `SavePie`, and `DeletePie` — see the shared commonTest
  *  `contributionRacingManualBuyThroughSharedMutexBothLandNoLostUpdate` (in
- *  `ContributeToPieTest`), which proves this the same way
- *  `racingBuyAndSellSharingOneMutexBothLandNoLostUpdate` proves the buy/sell case. */
+ *  `ContributeToPieTest`) and `savePieRacesMultiDayCatchUpThroughSharedMutexCannotInterleave
+ *  InsideADaysCriticalSection` (in `ExecuteDueContributionsTest`), which prove this the same
+ *  way `racingBuyAndSellSharingOneMutexBothLandNoLostUpdate` proves the buy/sell case. */
 class BuyAsset(
     private val repository: MarketDataRepository,
     private val store: PortfolioStore,
