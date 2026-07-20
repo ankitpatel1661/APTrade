@@ -81,4 +81,40 @@ class FilePortfolioStoreTest {
         )
         assertNull(FilePortfolioStore(file).load())
     }
+
+    // Task 5: pieId attribution — legacy JSON (pre-M7.2, hand-written, no "pieId" key)
+    // decodes with pieId == null; a tagged transaction round-trips through save/load.
+    @Test
+    fun legacyTransactionJsonWithoutPieIdDecodesWithNullPieId() = runTest {
+        val file = createTempDirectory("aptrade-test").resolve("portfolio.json")
+        file.writeText(
+            """{"cash":{"amount":"50000.50","currency":"USD"},"positions":[],"transactions":[{"id":"txn-001","symbol":"AAPL","side":"Buy","quantity":"10.5","price":{"amount":"150.25","currency":"USD"},"epochSeconds":1688169600}]}""",
+        )
+        val loaded = FilePortfolioStore(file).load()
+        assertEquals(1, loaded?.transactions?.size)
+        assertNull(loaded?.transactions?.get(0)?.pieId)
+        assertEquals("AAPL", loaded?.transactions?.get(0)?.symbol)
+    }
+
+    @Test
+    fun taggedTransactionPieIdRoundTripsThroughSaveAndLoad() = runTest {
+        val tagged = portfolio.copy(
+            transactions = portfolio.transactions + Transaction(
+                id = "txn-002",
+                symbol = "AAPL",
+                side = TradeSide.Sell,
+                quantity = BigDecimal.parseString("2"),
+                price = Money(BigDecimal.parseString("160"), "USD"),
+                epochSeconds = 1688256000,
+                pieId = "p1",
+            ),
+        )
+        val file = createTempDirectory("aptrade-test").resolve("portfolio.json")
+        val store = FilePortfolioStore(file)
+        store.save(tagged)
+        val loaded = store.load()
+        assertEquals(tagged, loaded)
+        assertEquals("p1", loaded?.transactions?.get(1)?.pieId)
+        assertNull(loaded?.transactions?.get(0)?.pieId)   // untagged fixture transaction stays untagged
+    }
 }

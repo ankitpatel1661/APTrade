@@ -333,4 +333,34 @@ class FileSettingsStoreTest {
         assertEquals(false, loaded.newsDigest)
         assertEquals(true, loaded.earningsReports)
     }
+
+    // --- Plan contributions (M7.2 Task 9) ---
+
+    @Test
+    fun `pieContributions defaults to true`() = runTest {
+        assertEquals(true, AppSettings().pieContributions)
+    }
+
+    @Test
+    fun `round-trips pieContributions false`() = runTest {
+        val file = tempFile()
+        val store = FileSettingsStore(file)
+        store.save(AppSettings(pieContributions = false))
+        assertEquals(false, store.load().pieContributions)
+    }
+
+    @Test
+    fun `old file without pieContributions key loads fine with it defaulting to true`() = runTest {
+        // Back-compat pin (same family as earningsReports/isDarkMode/security/language tests
+        // above): a settings.json written before the pie-contributions field existed has no
+        // "pieContributions" key at all. Lenient decode must still succeed and default the new
+        // flag to true rather than failing the whole-blob load.
+        val file = tempFile()
+        file.writeText("""{"accent":"Sapphire","newsDigest":false,"earningsReports":false}""")
+        val loaded = FileSettingsStore(file).load()
+        assertEquals(AccentTheme.Sapphire, loaded.accent)
+        assertEquals(false, loaded.newsDigest)
+        assertEquals(false, loaded.earningsReports)
+        assertEquals(true, loaded.pieContributions)
+    }
 }

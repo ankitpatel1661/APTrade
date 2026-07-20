@@ -28,7 +28,12 @@ import com.aptrade.shared.l10n.AppLanguage
  *  an unrequested language.
  *
  *  earningsReports (calendar increment) defaults on — a held/watched company reporting
- *  today is high-signal. */
+ *  today is high-signal.
+ *
+ *  pieContributions (M7.2 Task 9) defaults on, mirroring macOS `AppSettings.pieContributions`
+ *  — a scheduled Plan contribution executing or being skipped is high-signal in the same way
+ *  an earnings report is. It gates EXECUTION of due contributions (both the planner event and
+ *  launch catch-up), not just the notification — see `MarketActivityPlanner`. */
 data class AppSettings(
     val accent: AccentTheme = AccentTheme.ChampagneGold,
     val priceAlerts: Boolean = true,
@@ -36,6 +41,7 @@ data class AppSettings(
     val marketOpenClose: Boolean = false,
     val newsDigest: Boolean = true,
     val earningsReports: Boolean = true,
+    val pieContributions: Boolean = true,
     val emailNotifications: Boolean = false,
     val isDarkMode: Boolean = true,
     val biometricLogin: Boolean = true,

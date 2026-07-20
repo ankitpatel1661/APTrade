@@ -34,6 +34,7 @@ import com.aptrade.desktop.news.NewsViewModel
 import com.aptrade.desktop.portfolio.PortfolioPane
 import com.aptrade.desktop.portfolio.PortfolioViewModel
 import com.aptrade.desktop.portfolio.TradeDialog
+import com.aptrade.shared.application.ContributionOutcome
 import com.aptrade.desktop.infra.exportFileName
 import com.aptrade.desktop.infra.renderPortfolioPdf
 import com.aptrade.desktop.infra.saveBinaryFile
@@ -145,6 +146,24 @@ fun main() = application {
                 // always matches the day the 60s tick considers current.
                 val today = marketCalendar.tradingDay(System.currentTimeMillis() / 1000)
                 graph.fetchEarningsCalendar.ownedToday(today)
+            },
+            executeDueContributions = { now -> graph.executeDueContributions.execute(now) },
+            // Same L10n-here, coordinator-stays-ignorant split as notifyEarnings above: the
+            // coordinator hands back the typed ContributionOutcome it produced, and only this
+            // (UI-land) closure resolves the executed/skipped title+body via tr/trf.
+            notifyPieContribution = { outcome ->
+                when (outcome) {
+                    is ContributionOutcome.Executed ->
+                        graph.trayNotifier.notifyPieContribution(
+                            title = tr(L10n.Key.NotifPieExecutedTitle),
+                            body = trf(L10n.Key.NotifPieExecutedBody, outcome.pie.name),
+                        )
+                    is ContributionOutcome.SkippedInsufficientCash ->
+                        graph.trayNotifier.notifyPieContribution(
+                            title = tr(L10n.Key.NotifPieSkippedTitle),
+                            body = trf(L10n.Key.NotifPieSkippedBody, outcome.pie.name),
+                        )
+                }
             },
             fetchWatchlist = graph.fetchWatchlist,
             fetchMarketQuotes = graph.fetchMarketQuotes,

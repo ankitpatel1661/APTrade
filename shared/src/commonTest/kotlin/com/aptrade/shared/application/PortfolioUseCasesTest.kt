@@ -4,6 +4,8 @@ import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.Candle
 import com.aptrade.shared.domain.Money
+import com.aptrade.shared.domain.Pie
+import com.aptrade.shared.domain.PieSlice
 import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.domain.PricePoint
 import com.aptrade.shared.domain.Quote
@@ -60,6 +62,17 @@ private class GatedPortfolioStore : PortfolioStore {
         stored = portfolio
         saveCount++
     }
+}
+
+/** A trivial in-memory [PieStore] — this file's racing test only needs a single seeded [Pie]
+ *  round-tripped, not the persistence edge cases [ContributeToPieTest] already covers. Named
+ *  distinctly from other files' `FakePieStore`/`*FakePieStore` fakes — Kotlin private
+ *  top-level classes are file-scoped for visibility only, not name-mangled, so two files in
+ *  this same package both declaring `FakePieStore` collide at the class-name level. */
+private class ResetRaceFakePieStore(initial: List<Pie>) : PieStore {
+    var pies: List<Pie> = initial
+    override suspend fun load(): List<Pie> = pies
+    override suspend fun save(pies: List<Pie>) { this.pies = pies }
 }
 
 private class FakeMarketDataRepository(
@@ -169,7 +182,7 @@ class PortfolioUseCasesTest {
     fun resetSavesAndReturnsStarting() = runTest {
         val bought = Portfolio.starting().buying(aapl, BigDecimal.parseString("1"), Money.usd("100.00"), 1000L, "txn-1")
         val store = InMemoryPortfolioStore().apply { stored = bought }
-        val result = ResetPortfolio(store).execute()
+        val result = ResetPortfolio(store, Mutex()).execute()
         assertEquals(Portfolio.starting(), result)
         assertEquals(Portfolio.starting(), store.stored)
         assertEquals(1, store.saveCount)
@@ -418,5 +431,62 @@ class PortfolioUseCasesTest {
         assertEquals(2, store.saveCount)
         assertEquals(BigDecimal.parseString("12"), store.stored?.positionFor("AAPL")?.quantity)
         assertEquals(3, store.stored?.transactions?.size) // seed + buy + sell
+    }
+
+    // --- M7.2 final-review fix: ResetPortfolio now joins the SAME shared portfolioMutex
+    // every other portfolio/pie writer holds (see BuyAsset's co-holder doc, extended to list
+    // ResetPortfolio). Before this fix, a reset raced against an in-flight pie contribution
+    // (e.g. the coordinator's launch catch-up) could silently be overwritten, or leave a
+    // fresh portfolio saddled with a contribution's stale pie ledger claim. ---
+
+    @Test
+    fun resetRacingContributionThroughOneMutexNeitherTornNorLost() = runTest {
+        val slice = PieSlice(symbol = "AAPL", assetKind = AssetKind.Stock, targetWeightPP = BigDecimal.parseString("100"))
+        val pie = Pie.create(id = "pie-race", name = "Race Pie", slices = listOf(slice), schedule = null, createdDay = "2025-01-01")
+        val pieStore = ResetRaceFakePieStore(listOf(pie))
+        val store = GatedPortfolioStore()
+        store.stored = Portfolio.starting().buying(aapl, BigDecimal.parseString("5"), Money.usd("100.00"), 500L, "txn-seed")
+        val repository = FakeMarketDataRepository(
+            quotesBySymbol = mapOf("AAPL" to Quote("AAPL", Money.usd("100.00"), Money.usd("99.00"), 1.0)),
+        )
+        val sharedMutex = Mutex()
+        val resetPortfolio = ResetPortfolio(store, sharedMutex)
+        val contributeToPie = ContributeToPie(pieStore, store, repository, sharedMutex)
+
+        // The reset enters the mutex first, computes the fresh starting portfolio, then hangs
+        // inside store.save() on the gate — still holding sharedMutex the whole time (save()
+        // is called from inside withLock; ResetPortfolio has no load, so entering the lock and
+        // reaching save() happen in the same synchronous step).
+        val resetJob = launch { resetPortfolio.execute() }
+        runCurrent() // reset is now blocked inside store.save(), mutex held
+
+        // The contribution attempts to enter the SAME mutex the reset still holds. Without a
+        // lock SHARED between both use cases, it would load() the stale 5-share snapshot
+        // concurrently with the reset and whichever save() landed last would silently discard
+        // the other — either the reset "loses" (contribution's stale-based write survives) or
+        // the contribution "loses" (its buy vanishes under the fresh reset).
+        val contributeJob = launch { contributeToPie.execute("pie-race", Money.usd("100"), "2025-06-01", 1000L) }
+        runCurrent() // contribution is parked waiting on the mutex; it cannot have loaded yet
+
+        assertEquals(0, store.saveCount) // neither save has completed yet
+        assertEquals(BigDecimal.parseString("5"), store.stored?.positionFor("AAPL")?.quantity) // still the seed
+
+        store.firstSaveGate.complete(Unit) // release the reset's save; mutex releases after withLock returns
+        runCurrent()
+
+        resetJob.join()
+        contributeJob.join()
+
+        // Both writes landed, serialized: the reset's save completes and releases the mutex
+        // BEFORE the contribution's load() runs, so the contribution reloads the FRESH
+        // $100,000-cash starting portfolio (not the stale 5-share snapshot) and buys 1 AAPL
+        // ($100 / $100.00) on top of it — fresh-then-contributed, never a torn mix where the
+        // seed position survives alongside the contribution, and never a lost update where
+        // either write vanishes entirely.
+        assertEquals(2, store.saveCount)
+        val finalPortfolio = store.stored ?: error("expected a stored portfolio")
+        assertEquals(BigDecimal.parseString("1"), finalPortfolio.positionFor("AAPL")?.quantity)
+        assertEquals(Money.usd("100000").amount - BigDecimal.parseString("100.00"), finalPortfolio.cash.amount)
+        assertEquals(1, finalPortfolio.transactions.size) // only the contribution's buy; reset wiped the seed txn
     }
 }

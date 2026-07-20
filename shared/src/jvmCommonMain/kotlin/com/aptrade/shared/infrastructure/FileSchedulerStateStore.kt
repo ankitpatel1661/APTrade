@@ -17,8 +17,9 @@ import kotlin.io.path.readText
 
 /**
  * JSON-file scheduler markers (schedulerState.json) — the last-fired open/close status,
- * digest day, and earnings-check day, so `MarketActivityPlanner` never re-fires the same
- * event twice across relaunches. Same atomic/whole-blob idiom as `FileSettingsStore`: a
+ * digest day, earnings-check day, and contribution-check day, so `MarketActivityPlanner`
+ * never re-fires the same event twice across relaunches. Same atomic/whole-blob idiom as
+ * `FileSettingsStore`: a
  * missing, corrupt, or unmappable-enum file loads the whole-blob default rather than a
  * partial merge (a stale marker is harmless — it only risks one duplicate notification, so
  * falling back to "no markers yet" is the safe default).
@@ -37,6 +38,7 @@ class FileSchedulerStateStore(private val file: Path) : SchedulerStateStore {
         val lastStatus: String? = null,
         val lastDigestDay: String? = null,
         val lastEarningsDay: String? = null,
+        val lastContributionDay: String? = null,
     )
 
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
@@ -51,7 +53,12 @@ class FileSchedulerStateStore(private val file: Path) : SchedulerStateStore {
                 MarketStatus.entries.firstOrNull { it.name == dto.lastStatus }
                     ?: return@withContext SchedulerState() // unknown status name: whole-blob default
             }
-            SchedulerState(lastStatus = status, lastDigestDay = dto.lastDigestDay, lastEarningsDay = dto.lastEarningsDay)
+            SchedulerState(
+                lastStatus = status,
+                lastDigestDay = dto.lastDigestDay,
+                lastEarningsDay = dto.lastEarningsDay,
+                lastContributionDay = dto.lastContributionDay,
+            )
         } catch (e: SerializationException) {
             SchedulerState()
         } catch (e: IllegalArgumentException) {
@@ -65,6 +72,7 @@ class FileSchedulerStateStore(private val file: Path) : SchedulerStateStore {
             lastStatus = state.lastStatus?.name,
             lastDigestDay = state.lastDigestDay,
             lastEarningsDay = state.lastEarningsDay,
+            lastContributionDay = state.lastContributionDay,
         )
         val text = json.encodeToString(SchedulerStateDTO.serializer(), dto)
         val temp = Files.createTempFile(file.parent, "schedulerState", ".tmp")
