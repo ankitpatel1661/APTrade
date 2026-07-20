@@ -140,7 +140,8 @@ enum CompositionRoot {
             store: portfolioStore,
             fetchQuotes: FetchQuotesUseCase(repository: makeRepository()),
             renderer: DefaultPortfolioExportRenderer(),
-            accountName: "APTrade Portfolio"
+            accountName: "APTrade Portfolio",
+            dividendEventsRepository: sharedDividendEventsRepository
         )
     }
 
