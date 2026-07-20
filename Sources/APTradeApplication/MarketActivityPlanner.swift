@@ -8,6 +8,7 @@ public enum ScheduledNotification: Equatable, Sendable {
     case marketClosed
     case digestDue
     case earningsCheckDue
+    case contributionCheckDue
 }
 
 /// Persisted markers so scheduled notifications fire once per event rather than every
@@ -17,11 +18,13 @@ public struct SchedulerState: Codable, Equatable, Sendable {
     public var lastStatus: MarketStatus?
     public var lastDigestDay: String?
     public var lastEarningsDay: String?
+    public var lastContributionDay: String?
 
-    public init(lastStatus: MarketStatus? = nil, lastDigestDay: String? = nil, lastEarningsDay: String? = nil) {
+    public init(lastStatus: MarketStatus? = nil, lastDigestDay: String? = nil, lastEarningsDay: String? = nil, lastContributionDay: String? = nil) {
         self.lastStatus = lastStatus
         self.lastDigestDay = lastDigestDay
         self.lastEarningsDay = lastEarningsDay
+        self.lastContributionDay = lastContributionDay
     }
 }
 
@@ -68,6 +71,18 @@ public struct MarketActivityPlanner: Sendable {
             if state.lastEarningsDay != day, settings.earningsReports {
                 events.append(.earningsCheckDue)
                 newState.lastEarningsDay = day
+            }
+        }
+
+        // One contribution check per trading day, the first tick we observe the market
+        // open. Mirrors the earnings block exactly: the day marker only advances when we
+        // actually fire, so enabling the toggle later in the day still delivers that
+        // day's check.
+        if status == .open {
+            let day = calendar.tradingDay(of: now)
+            if state.lastContributionDay != day, settings.pieContributions {
+                events.append(.contributionCheckDue)
+                newState.lastContributionDay = day
             }
         }
 

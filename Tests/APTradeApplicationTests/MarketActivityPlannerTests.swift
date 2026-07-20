@@ -14,12 +14,14 @@ final class MarketActivityPlannerTests: XCTestCase {
     private func settings(
         marketOpenClose: Bool = false,
         newsDigest: Bool = false,
-        earningsReports: Bool = false
+        earningsReports: Bool = false,
+        pieContributions: Bool = false
     ) -> AppSettings {
         var s = AppSettings.default
         s.marketOpenClose = marketOpenClose
         s.newsDigest = newsDigest
         s.earningsReports = earningsReports
+        s.pieContributions = pieContributions
         return s
     }
 
@@ -89,5 +91,24 @@ final class MarketActivityPlannerTests: XCTestCase {
                                            settings: settings(earningsReports: false))
         XCTAssertFalse(events.contains(.earningsCheckDue))
         XCTAssertNil(state.lastEarningsDay, "so enabling later in the day still delivers it")
+    }
+
+    func test_contributionCheck_firesOncePerDay_whenEnabled() {
+        let now = et(2025, 6, 25, 10, 0)
+        let (first, state1) = planner.plan(now: now, state: SchedulerState(lastStatus: .open),
+                                           settings: settings(pieContributions: true))
+        XCTAssertTrue(first.contains(.contributionCheckDue))
+
+        let later = et(2025, 6, 25, 14, 0)
+        let (second, _) = planner.plan(now: later, state: state1, settings: settings(pieContributions: true))
+        XCTAssertFalse(second.contains(.contributionCheckDue), "already sent today")
+    }
+
+    func test_contributionCheck_suppressed_whenToggleOff() {
+        let now = et(2025, 6, 25, 10, 0)
+        let (events, state) = planner.plan(now: now, state: SchedulerState(lastStatus: .open),
+                                           settings: settings(pieContributions: false))
+        XCTAssertFalse(events.contains(.contributionCheckDue))
+        XCTAssertNil(state.lastContributionDay, "so enabling later in the day still delivers it")
     }
 }

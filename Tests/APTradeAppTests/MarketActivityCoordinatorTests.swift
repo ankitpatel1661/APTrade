@@ -41,6 +41,7 @@ private final class RecordingNotifier: MarketEventNotifier, @unchecked Sendable 
     func notifyEarnings(title: String, body: String) async {
         earningsNotifications.append((title, body))
     }
+    func notifyPieContribution(title: String, body: String) async {}
 }
 
 /// Box for a value written from inside a `@Sendable` closure and read back afterward —
