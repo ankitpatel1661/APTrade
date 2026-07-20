@@ -76,6 +76,7 @@ final class PieTests: XCTestCase {
         let schedule = ContributionSchedule(
             amount: Money(amount: 1000, currencyCode: "USD"),
             cadence: .monthly,
+            anchorDay: "2026-08-20",
             nextDueDay: "2026-08-20"
         )
 

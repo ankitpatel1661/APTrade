@@ -11,12 +11,53 @@ public enum PieCadence: String, Codable, CaseIterable, Sendable {
 public struct ContributionSchedule: Equatable, Codable, Sendable {
     public let amount: Money
     public let cadence: PieCadence
+    /// The schedule's ORIGINAL first due day, fixed for the schedule's entire lifetime
+    /// (set once, e.g. by the pie-creation wizard, to the initial `nextDueDay`, and
+    /// never advanced afterward). `PieSchedule.dueDays`/`nextDueDay` must always step
+    /// from THIS anchor, never from the moving `nextDueDay` cursor below — re-anchoring
+    /// on the cursor causes permanent monthly drift once Foundation clamps a step (e.g.
+    /// a schedule anchored on the 31st: cursor Jan 31 -> clamped to Feb 28 -> re-anchor
+    /// on Feb 28 -> next step Mar 28 forever, instead of the correct Mar 31). Stepping
+    /// from the fixed original anchor reproduces the correct Jan 31 -> Feb 28 -> Mar 31
+    /// sequence indefinitely.
+    public let anchorDay: String
+    /// The next due day still to be executed. Advances as contributions execute; always
+    /// a genuine `anchorDay`-cadence step (never independently derived).
     public let nextDueDay: String
 
-    public init(amount: Money, cadence: PieCadence, nextDueDay: String) {
+    public init(amount: Money, cadence: PieCadence, anchorDay: String, nextDueDay: String) {
         self.amount = amount
         self.cadence = cadence
+        self.anchorDay = anchorDay
         self.nextDueDay = nextDueDay
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case amount, cadence, anchorDay, nextDueDay
+    }
+
+    /// Custom decode: `anchorDay` defensively falls back to `nextDueDay` when the key is
+    /// missing. No persisted schedule predates `anchorDay` in practice (it's introduced
+    /// alongside its own first use), but decoding data written before this field existed
+    /// should still produce a usable schedule rather than fail outright.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let amount = try container.decode(Money.self, forKey: .amount)
+        let cadence = try container.decode(PieCadence.self, forKey: .cadence)
+        let nextDueDay = try container.decode(String.self, forKey: .nextDueDay)
+        let anchorDay = try container.decodeIfPresent(String.self, forKey: .anchorDay) ?? nextDueDay
+        self.amount = amount
+        self.cadence = cadence
+        self.anchorDay = anchorDay
+        self.nextDueDay = nextDueDay
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(amount, forKey: .amount)
+        try container.encode(cadence, forKey: .cadence)
+        try container.encode(anchorDay, forKey: .anchorDay)
+        try container.encode(nextDueDay, forKey: .nextDueDay)
     }
 }
 

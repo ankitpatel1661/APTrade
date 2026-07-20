@@ -61,7 +61,8 @@ final class ExecuteDueContributionsTests: XCTestCase {
     // MARK: (a) Two missed monthly days execute in ascending order, each at its own close
 
     func test_twoMissedMonthlyDays_executeInAscendingOrderAtEachDaysClose() async throws {
-        let schedule = ContributionSchedule(amount: usd("100"), cadence: .monthly, nextDueDay: "2025-04-01")
+        let schedule = ContributionSchedule(amount: usd("100"), cadence: .monthly,
+                                            anchorDay: "2025-04-01", nextDueDay: "2025-04-01")
         let pie = try Pie(id: "pie-a", name: "DCA Pie", slices: [sliceA, sliceB],
                           schedule: schedule, createdDay: "2025-01-01")
         let pieStore = FakePieStore()
@@ -106,7 +107,8 @@ final class ExecuteDueContributionsTests: XCTestCase {
     // MARK: (b) nextDueDay advanced to the first due day after now
 
     func test_nextDueDay_advancedToFirstDueDayAfterNow() async throws {
-        let schedule = ContributionSchedule(amount: usd("100"), cadence: .monthly, nextDueDay: "2025-04-01")
+        let schedule = ContributionSchedule(amount: usd("100"), cadence: .monthly,
+                                            anchorDay: "2025-04-01", nextDueDay: "2025-04-01")
         let pie = try Pie(id: "pie-b", name: "DCA Pie", slices: [sliceA, sliceB],
                           schedule: schedule, createdDay: "2025-01-01")
         let pieStore = FakePieStore()
@@ -128,7 +130,8 @@ final class ExecuteDueContributionsTests: XCTestCase {
     // MARK: (c) Insufficient cash on the second day -> first executes, second recorded missed
 
     func test_insufficientCashOnSecondDay_firstExecutesSecondRecordedMissed() async throws {
-        let schedule = ContributionSchedule(amount: usd("100"), cadence: .monthly, nextDueDay: "2025-04-01")
+        let schedule = ContributionSchedule(amount: usd("100"), cadence: .monthly,
+                                            anchorDay: "2025-04-01", nextDueDay: "2025-04-01")
         let pie = try Pie(id: "pie-c", name: "DCA Pie", slices: [sliceA, sliceB],
                           schedule: schedule, createdDay: "2025-01-01")
         let pieStore = FakePieStore()
@@ -162,7 +165,8 @@ final class ExecuteDueContributionsTests: XCTestCase {
     // MARK: (d) Missing close for one symbol on day 1 -> day 1 skipped silently, day 2 executes
 
     func test_missingCloseForOneSymbolOnDay1_skipsDay1SilentlyExecutesDay2() async throws {
-        let schedule = ContributionSchedule(amount: usd("100"), cadence: .monthly, nextDueDay: "2025-04-01")
+        let schedule = ContributionSchedule(amount: usd("100"), cadence: .monthly,
+                                            anchorDay: "2025-04-01", nextDueDay: "2025-04-01")
         let pie = try Pie(id: "pie-d", name: "DCA Pie", slices: [sliceA, sliceB],
                           schedule: schedule, createdDay: "2025-01-01")
         let pieStore = FakePieStore()
@@ -216,7 +220,8 @@ final class ExecuteDueContributionsTests: XCTestCase {
     // must not replay the already-executed historical days.
 
     func test_todayLiveQuoteThrowsAfterHistoricalDays_cursorAdvancesPastThem_noReplayOnRetry() async throws {
-        let schedule = ContributionSchedule(amount: usd("100"), cadence: .monthly, nextDueDay: "2025-04-01")
+        let schedule = ContributionSchedule(amount: usd("100"), cadence: .monthly,
+                                            anchorDay: "2025-04-01", nextDueDay: "2025-04-01")
         let pie = try Pie(id: "pie-f", name: "DCA Pie", slices: [sliceA, sliceB],
                           schedule: schedule, createdDay: "2025-01-01")
         let pieStore = FakePieStore()
@@ -270,5 +275,52 @@ final class ExecuteDueContributionsTests: XCTestCase {
                        ["2025-04-01", "2025-05-01", today], "only today's day newly executed")
         XCTAssertGreaterThan(pieStore.pies.first?.schedule?.nextDueDay ?? "", today,
                              "cursor now advances past today")
+    }
+
+    // MARK: (regression) Monthly cadence must not drift once a clamped step lands the
+    // cursor on a shorter day-of-month -- stepping must always be relative to the
+    // schedule's fixed original anchor, never the moving cursor.
+
+    func test_monthlyCadence_stepsFromFixedAnchorNotMovingCursor_noDrift() async throws {
+        // Anchored on the 31st. Jan 31 (Saturday) rolls to Feb 2; that due day has
+        // already executed by the time this test starts, and its cadence sibling --
+        // anchor + 1 month = Feb 28 (Foundation's clamp; also a Saturday) -- rolled to
+        // Monday Mar 2, is the current, not-yet-consumed cursor.
+        let schedule = ContributionSchedule(amount: usd("100"), cadence: .monthly,
+                                            anchorDay: "2026-01-31", nextDueDay: "2026-03-02")
+        let pie = try Pie(id: "pie-g", name: "DCA Pie", slices: [sliceA, sliceB],
+                          schedule: schedule, createdDay: "2026-01-01")
+        let pieStore = FakePieStore()
+        pieStore.pies = [pie]
+        let portfolioStore = FakePortfolioStore(.starting())
+        // The bug under test: re-anchoring stepping on the moving cursor (Feb 28,
+        // clamped from the 31st) would step by whole months from THAT day, losing the
+        // original 31st entirely (Mar 28, Apr 28, ... forever) instead of re-deriving
+        // each step fresh from the fixed Jan 31 anchor (-> Mar 31, Apr 30, ...).
+        let repo = makeRepo(
+            closesA: ["2026-03-02": "10", "2026-03-31": "20"],
+            closesB: ["2026-03-02": "10", "2026-03-31": "20"]
+        )
+
+        let sut = ExecuteDueContributions(pieStore: pieStore, portfolioStore: portfolioStore, market: repo, calendar: calendar)
+        let results = await sut(now: date("2026-04-01"))
+
+        XCTAssertEqual(results.count, 1)
+        let (resultPie, outcomes) = results[0]
+        XCTAssertEqual(outcomes.count, 2)
+        XCTAssertTrue(outcomes.allSatisfy { if case .executed = $0 { return true } else { return false } })
+
+        let contributionDays = resultPie.activity.filter { $0.kind == .contribution }.map(\.day)
+        XCTAssertEqual(contributionDays, ["2026-03-02", "2026-03-31"],
+                       "the second execution must be anchor-derived Mar 31, not cursor-derived Mar 28")
+        XCTAssertFalse(contributionDays.contains("2026-03-28"))
+
+        XCTAssertEqual(portfolioStore.portfolio.cash, usd("99800"))
+        // Correctness continues to hold going forward too: Jan 31 + 3 months = Apr 30
+        // (no clamp needed -- April has 30 days), re-derived fresh from the fixed
+        // anchor, not from Mar 31 + 1 month (which would coincidentally also be Apr 30
+        // here, but only because Mar has 31 days; the anchor is still what's driving it).
+        XCTAssertEqual(resultPie.schedule?.anchorDay, "2026-01-31", "anchor itself never changes")
+        XCTAssertEqual(resultPie.schedule?.nextDueDay, "2026-04-30")
     }
 }

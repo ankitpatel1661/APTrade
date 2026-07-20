@@ -263,13 +263,21 @@ public struct ExecuteDueContributions: Sendable {
         // so, exactly like `PieMathBacktest.dcaBacktest`, `nextDueDay`'s step-0 case
         // (which DOES treat the anchor as eligible) finds this first one, and `dueDays`
         // finds every later one from there.
+        //
+        // Every step below uses `schedule.anchorDay` (the schedule's fixed, ORIGINAL
+        // first due day) — never `schedule.nextDueDay` (the moving cursor) — as the
+        // cadence anchor. `nextDueDay`/`dueDays` step monthly cadences via
+        // `DateComponents(month:)` from the anchor, which Foundation clamps in shorter
+        // months (e.g. the 31st -> Feb 28); re-anchoring on a clamped cursor would
+        // permanently lose the original day-of-month. `schedule.nextDueDay` is still
+        // used as the window/cursor bound (`afterDay`) below — only the anchor changed.
         let firstDue = PieSchedule.nextDueDay(
-            anchorDay: schedule.nextDueDay, cadence: schedule.cadence, afterDay: dayBeforeCursor, calendar: calendar
+            anchorDay: schedule.anchorDay, cadence: schedule.cadence, afterDay: dayBeforeCursor, calendar: calendar
         )
         guard firstDue <= today else { return nil }
 
         let laterDueDays = PieSchedule.dueDays(
-            anchorDay: schedule.nextDueDay, cadence: schedule.cadence, afterDay: firstDue, throughDay: today,
+            anchorDay: schedule.anchorDay, cadence: schedule.cadence, afterDay: firstDue, throughDay: today,
             calendar: calendar
         )
         let dueDays = ([firstDue] + laterDueDays).sorted()
@@ -280,10 +288,10 @@ public struct ExecuteDueContributions: Sendable {
         var latestPie = pie
         for day in dueDays {
             // The cursor value once `day` is fully consumed — always derived from the
-            // ORIGINAL schedule anchor/cadence (never a shifting one), so it lands on
-            // exactly the next entry `dueDays` would itself have produced.
+            // fixed original anchor (never a shifting one), so it lands on exactly the
+            // next entry `dueDays` would itself have produced.
             let cursorAfterDay = PieSchedule.nextDueDay(
-                anchorDay: schedule.nextDueDay, cadence: schedule.cadence, afterDay: day, calendar: calendar
+                anchorDay: schedule.anchorDay, cadence: schedule.cadence, afterDay: day, calendar: calendar
             )
 
             if day == today {
@@ -296,11 +304,12 @@ public struct ExecuteDueContributions: Sendable {
                 // if a LATER pie in this run throws, this Pie's progress up through
                 // today is not lost.
                 latestPie = try advanceScheduleOnly(
-                    pieId: pie.id, to: cursorAfterDay, amount: schedule.amount, cadence: schedule.cadence
+                    pieId: pie.id, to: cursorAfterDay, amount: schedule.amount, anchorDay: schedule.anchorDay,
+                    cadence: schedule.cadence
                 )
             } else if let (outcome, updatedPie) = try executeAtClose(
                 pieId: pie.id, amount: schedule.amount, day: day, closesBySymbol: closesBySymbol,
-                newNextDueDay: cursorAfterDay, cadence: schedule.cadence
+                newNextDueDay: cursorAfterDay, anchorDay: schedule.anchorDay, cadence: schedule.cadence
             ) {
                 outcomes.append(outcome)
                 latestPie = updatedPie
@@ -310,7 +319,8 @@ public struct ExecuteDueContributions: Sendable {
                 // advances past it (its only persisted trace) so it is never
                 // reconsidered on a later run.
                 latestPie = try advanceScheduleOnly(
-                    pieId: pie.id, to: cursorAfterDay, amount: schedule.amount, cadence: schedule.cadence
+                    pieId: pie.id, to: cursorAfterDay, amount: schedule.amount, anchorDay: schedule.anchorDay,
+                    cadence: schedule.cadence
                 )
             }
         }
@@ -353,7 +363,7 @@ public struct ExecuteDueContributions: Sendable {
     ///   either way.
     private func executeAtClose(
         pieId: String, amount: Money, day: String, closesBySymbol: [String: [String: Money]],
-        newNextDueDay: String, cadence: PieCadence
+        newNextDueDay: String, anchorDay: String, cadence: PieCadence
     ) throws -> (outcome: ContributionOutcome, pie: Pie)? {
         let pies = pieStore.load()
         guard let pie = pies.first(where: { $0.id == pieId }) else { return nil }
@@ -372,7 +382,8 @@ public struct ExecuteDueContributions: Sendable {
         }
 
         let shares = PieMath.distribute(contribution: amount, currentValues: currentValues, targets: pie.slices)
-        let advancedSchedule = ContributionSchedule(amount: amount, cadence: cadence, nextDueDay: newNextDueDay)
+        let advancedSchedule = ContributionSchedule(amount: amount, cadence: cadence, anchorDay: anchorDay,
+                                                     nextDueDay: newNextDueDay)
 
         let portfolio = portfolioStore.load()
         guard amount.amount <= portfolio.cash.amount else {
@@ -415,10 +426,12 @@ public struct ExecuteDueContributions: Sendable {
     /// Persisting the cursor immediately here, rather than deferring it to the end of
     /// the due-day loop, is what makes a mid-run throw resumable without replaying
     /// already-consumed days.
-    private func advanceScheduleOnly(pieId: String, to nextDueDay: String, amount: Money, cadence: PieCadence) throws -> Pie {
+    private func advanceScheduleOnly(
+        pieId: String, to nextDueDay: String, amount: Money, anchorDay: String, cadence: PieCadence
+    ) throws -> Pie {
         let pies = pieStore.load()
         guard let pie = pies.first(where: { $0.id == pieId }) else { throw AppError.notFound }
-        let schedule = ContributionSchedule(amount: amount, cadence: cadence, nextDueDay: nextDueDay)
+        let schedule = ContributionSchedule(amount: amount, cadence: cadence, anchorDay: anchorDay, nextDueDay: nextDueDay)
         return try replace(pie, in: pies, schedule: schedule, activity: pie.activity)
     }
 
