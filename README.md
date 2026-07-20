@@ -486,6 +486,14 @@ logo/                       Brand assets
 APTrade Lite is the foundation. Planned toward the full platform:
 
 - Real authentication (Apple Sign In), biometric gating, and cloud sync (Supabase)
+- **Dividend & income engine (next: M8)** — dividend history, per-holding yield and
+  yield-on-cost, a forward 12-month income projection and payout calendar,
+  dividend-adjusted total return, and **DRIP inside Investment Plans**; also extends the
+  daily-history port past its current one-year ceiling so 3Y/5Y Plan backtests cover
+  their full range.
+- **Technical screener (M9)** — scan the bundled S&P 500 universe with the existing
+  `TechnicalIndicators` math (RSI thresholds, SMA/EMA crossovers, 52-week range position,
+  momentum), with results feeding watchlists and Plans.
 - **Windows parity — complete.** The `:desktopApp` Compose app now covers Watchlist +
   detail + palette (6a), a Portfolio tab with detail-screen indicators, performance/risk
   intelligence, and export (6b.1 + 6b.2), a News tab with per-symbol company news and
@@ -495,7 +503,26 @@ APTrade Lite is the foundation. Planned toward the full platform:
   language switcher plus chart/UX polish (6e). Still to come: **none** — macOS parity and
   localization are complete; the `:desktopApp` roadmap that opened at 6a is closed.
 
-Recently shipped: **holiday-aware `MarketCalendar` + S&P 500 earnings calendar** — a
+Recently shipped: **Investment Plans ("Pies") — Milestone 7, all four platforms** —
+target-weight investment baskets over the paper portfolio, shipped in three increments
+(M7.1 Swift/macOS + iPhone, M7.2 Kotlin shared core + Windows desktop, M7.3 Android).
+Every platform gets a **Plans** section in Portfolio: self-balancing contributions on
+weekly/biweekly/monthly schedules with a chosen start day, crash-safe **catch-up at
+historical closes** for contributions missed while the app was closed (per-day atomic
+cursor advancement — no replay, no double-spend), drift tracking with a >5pp badge,
+**manual rebalancing** with a net-zero preview honoring Confirm Trades, a create/edit
+**wizard** with an in-flow **DCA backtest** (invested-vs-value curves plus a lump-sum
+comparison), pie-tagged transaction attribution with ledger reconciliation against
+manual sells, an execution-gating **Plan Contributions** settings toggle, and native
+notifications for executed/skipped contributions. All pie and portfolio mutations are
+serialized — a `TradeSerializer` actor on the Swift side, the one shared `Mutex` (nine
+co-holders) on the Kotlin side. ~55 new L10n keys across EN/DE/IT/ES on both catalogs.
+Recorded platform divergences (Android bottom-sheet wizard + allocation bars,
+desktop `Dialog` modals, Android newest-first activity ordering) are noted in each
+app's section above. Suites at merge: macOS 400 / iOS 399 / shared 479 / desktop 265 /
+android 193.
+
+Before that: **holiday-aware `MarketCalendar` + S&P 500 earnings calendar** — a
 computed NYSE holiday and half-day calendar replaces the fixed one on both codebases
 (New Year's/MLK/Presidents/Good Friday/Memorial/Juneteenth/July 4th/Labor/Thanksgiving/
 Christmas with observed-weekend shifts, plus the day-before-July-4th, day-after-
