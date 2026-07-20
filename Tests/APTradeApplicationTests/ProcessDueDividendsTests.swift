@@ -284,4 +284,57 @@ final class ProcessDueDividendsTests: XCTestCase {
         XCTAssertEqual(portfolioStore.portfolio.transactions.filter { $0.side == .buy && $0.isDrip }.count, 0)
         XCTAssertEqual(portfolioStore.portfolio.cash, usd("100030"))
     }
+
+    // MARK: (j) Regression: reset portfolio x stale `dividendsFirstRunDay`.
+    //
+    // `dividendsFirstRunDay` is a per-INSTALL marker (set once, on this app's very first
+    // dividend-processing run) — it is never re-derived from the ledger. So if a user
+    // wipes/resets their portfolio (a fresh, empty transaction ledger) long after that
+    // marker was set, and then makes a brand-new buy, the marker is now "stale": it
+    // predates every transaction the new ledger will ever contain.
+    //
+    // WHY THIS IS SAFE: the backfill check (`eventDay < firstRunDay`) only decides
+    // whether a *credit-worthy* event is forced to cash instead of following the DRIP
+    // toggle. It never grants eligibility by itself — eligibility (Rule 3) is decided
+    // separately, from `sharesHeld` computed strictly-before the ex-date against the
+    // CURRENT (reset) ledger. A dividend event that predates the reset portfolio's only
+    // buy therefore always resolves to zero shares held on the fresh ledger and is
+    // skipped outright, regardless of what the stale marker says. And an event dated at
+    // or after the stale marker — which, because the ledger was reset long after the
+    // marker was set, is effectively every event the reset portfolio will ever see —
+    // correctly falls through to the live DRIP toggle rather than being force-credited
+    // as cash, because backfill-suppression was only ever meant to protect the first
+    // install run, not every later re-import. This test pins that interaction so the
+    // M8.2 Kotlin transcription reproduces it exactly.
+    func test_resetPortfolioWithStaleFirstRunDay_preBuyEventSkipped_postBuyEventFollowsDripToggle() async {
+        // Stale marker: set long before the portfolio was reset and rebought.
+        let stateStore = FakeDividendStateStore(SchedulerState(dividendsFirstRunDay: "2020-01-01"))
+        // Freshly-reset ledger: its only transaction is a NEW buy, dated well after the
+        // stale marker.
+        let portfolioStore = FakeDividendPortfolioStore(portfolio(symbol: "R", shares: "30", buyDay: "2025-01-01"))
+        let market = FakeDividendMarket()
+        market.dailyCloses["R"] = ["2025-03-15": usd("60")]
+        let dividends = FakeDividendRepo()
+        dividends.events["R"] = [
+            // (i) Predates the new ledger's only buy -> sharesHeld == 0 -> skipped,
+            // even though its ex-date trading day is also (long) after the stale marker.
+            DividendEvent(symbol: "R", exDate: day("2024-06-15"), amountPerShare: usd("1")),
+            // (ii) Postdates the new buy, and its day >= the stale firstRunDay, so it is
+            // NOT treated as backfill -> follows the live DRIP toggle (on) instead of
+            // being force-credited as cash.
+            DividendEvent(symbol: "R", exDate: day("2025-03-15"), amountPerShare: usd("2"))
+        ]
+        let sut = makeSUT(portfolioStore: portfolioStore, market: market, dividends: dividends,
+                          stateStore: stateStore, drip: true)
+
+        let outcomes = await sut(now: day("2025-06-01"))
+
+        // (i) The pre-buy event produced no outcome at all (skipped: zero shares held).
+        // (ii) The post-buy event reinvested (DRIP), not a forced cash credit: 30 shares
+        // x $2 = $60 cash, at a $60 close = 1.0 share exactly.
+        let expectedShares = Quantity(usd("60").amount / usd("60").amount)
+        XCTAssertEqual(outcomes, [.reinvested(symbol: "R", cash: usd("60"), shares: expectedShares, isBackfill: false)])
+        XCTAssertEqual(portfolioStore.portfolio.transactions.filter { $0.side == .dividend }.count, 1)
+        XCTAssertEqual(portfolioStore.portfolio.transactions.filter { $0.side == .buy && $0.isDrip }.count, 1)
+    }
 }
