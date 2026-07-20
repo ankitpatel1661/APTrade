@@ -103,6 +103,12 @@ public protocol BookmarkStore: Sendable {
     func save(_ articles: [NewsArticle])
 }
 
+/// Persists portfolio allocation strategies (Pies).
+public protocol PieStore: Sendable {
+    func load() -> [Pie]
+    func save(_ pies: [Pie])
+}
+
 /// Supplies upcoming/reported earnings releases for a date window. Methods throw on
 /// failure; `FetchEarningsCalendarUseCase` degrades failures to an empty list so the
 /// calendar's holiday banners still render when the network is down — cooperative
