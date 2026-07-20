@@ -338,6 +338,34 @@ enum L10n {
         case rebalanceOrdersEmpty = "Your pie is already balanced."
         case noSlicesYetHint = "Search above to add the first slice."
         case contributeSheetTitleFormat = "Contribute to %@"
+
+        // MARK: Income (M8.1 dividends)
+        case incomeSection = "Income"
+        case incomeProjectedAnnual = "Projected Annual Income"
+        case incomeReceivedYTD = "Received This Year"
+        case incomePortfolioYield = "Portfolio Yield"
+        case incomeYieldOnCost = "Yield on Cost"
+        case incomeMonthlyTitle = "Monthly Income"
+        case incomeUpcomingTitle = "Upcoming Dividends"
+        case incomePerHoldingTitle = "Income by Holding"
+        case incomeHistoryTitle = "Dividend History"
+        case incomeEstimatedBadge = "Est."
+        case incomeReinvestedBadge = "Reinvested"
+        case incomeNoDividends = "No dividend income yet. Dividends from your holdings will appear here automatically."
+        case incomeLastPayment = "Last Payment"
+        // MARK: Asset detail (dividends)
+        case assetDividendSection = "Dividends"
+        case assetDividendYield = "Dividend Yield"
+        case assetDividendRate = "Annual Rate"
+        case assetNextExDate = "Next Ex-Date (est.)"
+        // MARK: Settings (dividends)
+        case settingsDrip = "Reinvest Dividends (DRIP)"
+        case settingsDripFooter = "Automatically reinvest dividends into the paying asset. Off: dividends are credited as cash."
+        case settingsDividendNotif = "Dividend Payments"
+        // MARK: Notifications (dividends)
+        case notifDividendTitle = "Dividend Received"
+        case notifDividendCashBodyFmt = "%@ paid you %@"
+        case notifDividendDripBodyFmt = "%@ paid %@ — reinvested"
     }
 
     static let table: [Key: [AppLanguage: String]] = [
@@ -1037,6 +1065,68 @@ enum L10n {
                            .spanish: "Busca arriba para añadir el primer segmento."],
         .contributeSheetTitleFormat: [.english: "Contribute to %@", .german: "Einzahlen in %@",
                                       .italian: "Contribuisci a %@", .spanish: "Aportar a %@"],
+
+        // MARK: Income (M8.1 dividends)
+        .incomeSection: [.english: "Income", .german: "Einkommen",
+                         .italian: "Reddito", .spanish: "Ingresos"],
+        .incomeProjectedAnnual: [.english: "Projected Annual Income", .german: "Voraussichtliches Jahreseinkommen",
+                                 .italian: "Reddito annuo previsto", .spanish: "Ingresos anuales proyectados"],
+        .incomeReceivedYTD: [.english: "Received This Year", .german: "Dieses Jahr erhalten",
+                             .italian: "Ricevuto quest'anno", .spanish: "Recibido este año"],
+        .incomePortfolioYield: [.english: "Portfolio Yield", .german: "Portfoliorendite",
+                                .italian: "Rendimento del portafoglio", .spanish: "Rentabilidad de la cartera"],
+        .incomeYieldOnCost: [.english: "Yield on Cost", .german: "Rendite auf Kostenbasis",
+                             .italian: "Rendimento sul costo", .spanish: "Rentabilidad sobre el costo"],
+        .incomeMonthlyTitle: [.english: "Monthly Income", .german: "Monatliches Einkommen",
+                              .italian: "Reddito mensile", .spanish: "Ingresos mensuales"],
+        .incomeUpcomingTitle: [.english: "Upcoming Dividends", .german: "Anstehende Dividenden",
+                               .italian: "Prossimi dividendi", .spanish: "Próximos dividendos"],
+        .incomePerHoldingTitle: [.english: "Income by Holding", .german: "Einkommen nach Position",
+                                 .italian: "Reddito per posizione", .spanish: "Ingresos por posición"],
+        .incomeHistoryTitle: [.english: "Dividend History", .german: "Dividendenhistorie",
+                              .italian: "Storico dividendi", .spanish: "Historial de dividendos"],
+        .incomeEstimatedBadge: [.english: "Est.", .german: "Gesch.",
+                                .italian: "Stim.", .spanish: "Est."],
+        .incomeReinvestedBadge: [.english: "Reinvested", .german: "Reinvestiert",
+                                 .italian: "Reinvestito", .spanish: "Reinvertido"],
+        .incomeNoDividends: [.english: "No dividend income yet. Dividends from your holdings will appear here automatically.",
+                             .german: "Noch keine Dividendenerträge. Dividenden aus Ihren Positionen erscheinen hier automatisch.",
+                             .italian: "Ancora nessun reddito da dividendi. I dividendi delle tue posizioni appariranno qui automaticamente.",
+                             .spanish: "Aún no hay ingresos por dividendos. Los dividendos de tus posiciones aparecerán aquí automáticamente."],
+        .incomeLastPayment: [.english: "Last Payment", .german: "Letzte Zahlung",
+                             .italian: "Ultimo pagamento", .spanish: "Último pago"],
+
+        // MARK: Asset detail (dividends)
+        .assetDividendSection: [.english: "Dividends", .german: "Dividenden",
+                                .italian: "Dividendi", .spanish: "Dividendos"],
+        .assetDividendYield: [.english: "Dividend Yield", .german: "Dividendenrendite",
+                              .italian: "Rendimento da dividendo", .spanish: "Rentabilidad por dividendo"],
+        .assetDividendRate: [.english: "Annual Rate", .german: "Jährliche Rate",
+                             .italian: "Tasso annuo", .spanish: "Tasa anual"],
+        .assetNextExDate: [.english: "Next Ex-Date (est.)", .german: "Nächster Ex-Tag (gesch.)",
+                           .italian: "Prossima data ex (stim.)", .spanish: "Próxima fecha ex (est.)"],
+
+        // MARK: Settings (dividends)
+        .settingsDrip: [.english: "Reinvest Dividends (DRIP)", .german: "Dividenden reinvestieren (DRIP)",
+                        .italian: "Reinvesti dividendi (DRIP)", .spanish: "Reinvertir dividendos (DRIP)"],
+        .settingsDripFooter: [.english: "Automatically reinvest dividends into the paying asset. Off: dividends are credited as cash.",
+                              .german: "Dividenden automatisch in den ausschüttenden Wert reinvestieren. Aus: Dividenden werden als Bargeld gutgeschrieben.",
+                              .italian: "Reinveste automaticamente i dividendi nell'asset che li distribuisce. Disattivato: i dividendi vengono accreditati come liquidità.",
+                              .spanish: "Reinvierte automáticamente los dividendos en el activo que los reparte. Desactivado: los dividendos se abonan como efectivo."],
+        .settingsDividendNotif: [.english: "Dividend Payments", .german: "Dividendenzahlungen",
+                                 .italian: "Pagamenti dei dividendi", .spanish: "Pagos de dividendos"],
+
+        // MARK: Notifications (dividends)
+        .notifDividendTitle: [.english: "Dividend Received", .german: "Dividende erhalten",
+                              .italian: "Dividendo ricevuto", .spanish: "Dividendo recibido"],
+        .notifDividendCashBodyFmt: [.english: "%@ paid you %@",
+                                    .german: "%@ hat Ihnen %@ ausgezahlt",
+                                    .italian: "%@ ti ha pagato %@",
+                                    .spanish: "%@ te pagó %@"],
+        .notifDividendDripBodyFmt: [.english: "%@ paid %@ — reinvested",
+                                    .german: "%@ hat %@ ausgezahlt — reinvestiert",
+                                    .italian: "%@ ha pagato %@ — reinvestito",
+                                    .spanish: "%@ pagó %@ — reinvertido"],
     ]
 }
 
