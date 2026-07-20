@@ -4,9 +4,11 @@ import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.Candle
+import com.aptrade.shared.domain.DividendEvent
 import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.PricePoint
 import com.aptrade.shared.domain.Quote
+import com.ionspin.kotlin.bignum.decimal.BigDecimal
 
 object YahooQuoteMapper {
     fun quote(response: YahooChartResponse): Quote {
@@ -75,6 +77,28 @@ object YahooQuoteMapper {
         val meta = response.chart.result?.firstOrNull()?.meta ?: throw QuoteError.NotFound
         val name = meta.longName ?: meta.shortName ?: meta.symbol
         return Asset(symbol = meta.symbol, name = name, kind = kind(meta))
+    }
+
+    /**
+     * Parses `events.dividends` into ascending-by-exDate events. Cells with a null
+     * amount or date, or a non-positive amount, are dropped (never throw). Events
+     * strictly before [fromEpochSeconds] are filtered out. Currency from meta ("USD"
+     * fallback). Symbol from meta.symbol.
+     */
+    fun dividends(response: YahooChartResponse, fromEpochSeconds: Long): List<DividendEvent> {
+        val item = response.chart.result?.firstOrNull() ?: throw QuoteError.NotFound
+        val cells = item.events?.dividends ?: return emptyList()
+        val currency = item.meta.currency ?: "USD"
+        val symbol = item.meta.symbol
+        return cells.values
+            .mapNotNull { cell ->
+                val amount = cell.amount ?: return@mapNotNull null
+                val date = cell.date ?: return@mapNotNull null
+                if (amount.compareTo(BigDecimal.ZERO) <= 0) return@mapNotNull null
+                if (date < fromEpochSeconds) return@mapNotNull null
+                DividendEvent(symbol = symbol, exDateEpochSeconds = date, amountPerShare = Money(amount, currency))
+            }
+            .sortedBy { it.exDateEpochSeconds }
     }
 
     private fun kind(meta: YahooChartResponse.Meta): AssetKind = when (meta.instrumentType?.uppercase()) {
