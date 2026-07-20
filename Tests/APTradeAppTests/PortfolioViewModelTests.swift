@@ -35,7 +35,7 @@ final class PortfolioViewModelTests: XCTestCase {
         let vm = PortfolioViewModel(
             fetchPortfolio: FetchPortfolioUseCase(store: store),
             fetchQuotes: FetchQuotesUseCase(repository: repo),
-            resetPortfolio: ResetPortfolioUseCase(store: store),
+            resetPortfolio: ResetPortfolioUseCase(store: store, serializer: TradeSerializer()),
             recordSnapshot: RecordPortfolioSnapshotUseCase(store: historyStore),
             fetchHistory: FetchPortfolioHistoryUseCase(store: historyStore),
             clearHistory: ClearPortfolioHistoryUseCase(store: historyStore),
@@ -54,14 +54,14 @@ final class PortfolioViewModelTests: XCTestCase {
         let vm = PortfolioViewModel(
             fetchPortfolio: FetchPortfolioUseCase(store: store),
             fetchQuotes: FetchQuotesUseCase(repository: FixedRepo()),
-            resetPortfolio: ResetPortfolioUseCase(store: store),
+            resetPortfolio: ResetPortfolioUseCase(store: store, serializer: TradeSerializer()),
             recordSnapshot: RecordPortfolioSnapshotUseCase(store: historyStore),
             fetchHistory: FetchPortfolioHistoryUseCase(store: historyStore),
             clearHistory: ClearPortfolioHistoryUseCase(store: historyStore),
             fetchPerformance: FetchPortfolioPerformanceUseCase(repository: FixedRepo(), store: store)
         )
         await vm.onAppear()
-        vm.reset()
+        await vm.reset()
         XCTAssertTrue(vm.holdings.isEmpty)
         XCTAssertEqual(vm.portfolio.cash, Money(amount: 100_000))
     }

@@ -79,7 +79,7 @@ struct PortfolioView: View {
             .refreshable { await viewModel.refresh() }
             .confirmationDialog(tr(.resetPortfolioConfirm),
                                 isPresented: $showResetConfirm, titleVisibility: .visible) {
-                Button(tr(.reset), role: .destructive) { viewModel.reset() }
+                Button(tr(.reset), role: .destructive) { Task { await viewModel.reset() } }
                 Button(tr(.cancel), role: .cancel) {}
             }
         }

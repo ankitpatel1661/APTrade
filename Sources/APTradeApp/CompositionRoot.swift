@@ -106,7 +106,7 @@ enum CompositionRoot {
         return PortfolioViewModel(
             fetchPortfolio: FetchPortfolioUseCase(store: portfolioStore),
             fetchQuotes: FetchQuotesUseCase(repository: repo),
-            resetPortfolio: ResetPortfolioUseCase(store: portfolioStore),
+            resetPortfolio: ResetPortfolioUseCase(store: portfolioStore, serializer: tradeSerializer),
             recordSnapshot: RecordPortfolioSnapshotUseCase(store: portfolioHistoryStore),
             fetchHistory: FetchPortfolioHistoryUseCase(store: portfolioHistoryStore),
             clearHistory: ClearPortfolioHistoryUseCase(store: portfolioHistoryStore),
@@ -129,8 +129,8 @@ enum CompositionRoot {
         let repo = makeRepository()
         return TradeViewModel(
             asset: asset,
-            buy: BuyAssetUseCase(repository: repo, store: portfolioStore),
-            sell: SellAssetUseCase(repository: repo, store: portfolioStore),
+            buy: BuyAssetUseCase(repository: repo, store: portfolioStore, serializer: tradeSerializer),
+            sell: SellAssetUseCase(repository: repo, store: portfolioStore, serializer: tradeSerializer),
             fetchPortfolio: FetchPortfolioUseCase(store: portfolioStore),
             fetchQuotes: FetchQuotesUseCase(repository: repo),
             notifyOrderFill: NotifyOrderFillUseCase(notifier: orderFillNotifier, settings: settingsStore)

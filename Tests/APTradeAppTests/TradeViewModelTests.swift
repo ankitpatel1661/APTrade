@@ -41,8 +41,8 @@ final class TradeViewModelTests: XCTestCase {
         let repo = FixedRepo()
         return TradeViewModel(
             asset: aapl,
-            buy: BuyAssetUseCase(repository: repo, store: store),
-            sell: SellAssetUseCase(repository: repo, store: store),
+            buy: BuyAssetUseCase(repository: repo, store: store, serializer: TradeSerializer()),
+            sell: SellAssetUseCase(repository: repo, store: store, serializer: TradeSerializer()),
             fetchPortfolio: FetchPortfolioUseCase(store: store),
             fetchQuotes: FetchQuotesUseCase(repository: repo),
             notifyOrderFill: NotifyOrderFillUseCase(notifier: notifier, settings: settings)
