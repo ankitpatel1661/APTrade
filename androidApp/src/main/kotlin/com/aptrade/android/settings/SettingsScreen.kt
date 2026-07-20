@@ -314,8 +314,11 @@ private fun LanguagePage(language: AppLanguage, onSelectLanguage: (AppLanguage) 
  *  (Task 8) — all three gate `AndroidMarketActivityCoordinator`'s 60s tick (started in
  *  `MainActivity`), the same wiring desktop's `DesktopMarketActivityCoordinator` provides.
  *  Before Task 8 these three toggles were persisted-but-unwired; this is the intended scope
- *  of that task, not creep. [AppSettings.emailNotifications] is persisted-but-unwired by
- *  design on every platform (no email pipeline exists). */
+ *  of that task, not creep. [AppSettings.pieContributions] is ALSO now functional (M7.3
+ *  Task 3) — it gates BOTH the coordinator's launch-time due-contribution catch-up and its
+ *  `ContributionCheckDue` tick handler (execution, not just notification delivery — see
+ *  `AndroidMarketActivityCoordinator`'s KDoc). [AppSettings.emailNotifications] is
+ *  persisted-but-unwired by design on every platform (no email pipeline exists). */
 @Composable
 private fun NotificationsPage(settings: AppSettings, onUpdate: ((AppSettings) -> AppSettings) -> Unit) {
     SectionLabel(tr(L10n.Key.PushNotifications))
@@ -349,6 +352,12 @@ private fun NotificationsPage(settings: AppSettings, onUpdate: ((AppSettings) ->
         subtitle = tr(L10n.Key.EarningsReportsSubtitle),
         checked = settings.earningsReports,
         onCheckedChange = { checked -> onUpdate { it.copy(earningsReports = checked) } },
+    )
+    ToggleRow(
+        title = tr(L10n.Key.PieContributionsToggle),
+        subtitle = tr(L10n.Key.PieContributionsSubtitle),
+        checked = settings.pieContributions,
+        onCheckedChange = { checked -> onUpdate { it.copy(pieContributions = checked) } },
     )
     Spacer(Modifier.height(10.dp))
     // macOS/desktop reuse tr(.email) ("Email") for this section label — not a dedicated

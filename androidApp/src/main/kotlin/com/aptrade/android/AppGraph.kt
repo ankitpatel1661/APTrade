@@ -10,11 +10,13 @@ import com.aptrade.shared.application.AddToWatchlist
 import com.aptrade.shared.application.AlertNotifier
 import com.aptrade.shared.application.BuyAsset
 import com.aptrade.shared.application.ContributeToPie
+import com.aptrade.shared.application.ContributionOutcome
 import com.aptrade.shared.application.CreatePriceAlert
 import com.aptrade.shared.application.DeletePie
 import com.aptrade.shared.application.EarningsCalendarRepository
 import com.aptrade.shared.application.EmptyEarningsRepository
 import com.aptrade.shared.application.EvaluateAlerts
+import com.aptrade.shared.application.ExecuteDueContributions
 import com.aptrade.shared.application.FetchChartWindow
 import com.aptrade.shared.application.FetchEarningsCalendar
 import com.aptrade.shared.application.FetchHistory
@@ -283,6 +285,25 @@ object AppGraph {
             val today = marketCalendar.tradingDay(nowEpochSeconds())
             fetchEarningsCalendar.ownedToday(today)
         },
+        executeDueContributions = { now -> portfolio.executeDueContributions.execute(now) },
+        // Same L10n-here, coordinator-stays-ignorant split as notifyEarnings above: the
+        // coordinator hands back the typed ContributionOutcome it produced, and only this
+        // (wiring-site) closure resolves the executed/skipped title+body via tr/trf. Mirrors
+        // desktop Main.kt's notifyPieContribution closure verbatim.
+        notifyPieContribution = { outcome ->
+            when (outcome) {
+                is ContributionOutcome.Executed ->
+                    alertNotifier.notifyPieContribution(
+                        title = tr(L10n.Key.NotifPieExecutedTitle),
+                        body = trf(L10n.Key.NotifPieExecutedBody, outcome.pie.name),
+                    )
+                is ContributionOutcome.SkippedInsufficientCash ->
+                    alertNotifier.notifyPieContribution(
+                        title = tr(L10n.Key.NotifPieSkippedTitle),
+                        body = trf(L10n.Key.NotifPieSkippedBody, outcome.pie.name),
+                    )
+            }
+        },
         fetchWatchlist = fetchWatchlist,
         fetchMarketQuotes = fetchMarketQuotes,
         scope = scope,
@@ -367,13 +388,16 @@ class PortfolioGraph(
 
     // Investment Plans (Pies) — M7.3 Task 2. marketCalendar is stateless (see MarketCalendar's
     // KDoc) — its own instance here, scoped to this graph, shared by every pie use case below
-    // exactly like desktop AppGraph's single `marketCalendar` val. ExecuteDueContributions is
-    // Task 3's (coordinator wiring); not constructed yet.
+    // exactly like desktop AppGraph's single `marketCalendar` val.
     val marketCalendar = MarketCalendar()
     val loadPies = LoadPies(pieStore)
     val savePie = SavePie(pieStore, portfolioMutex)
     val deletePie = DeletePie(pieStore, portfolioMutex)
     val contributeToPie = ContributeToPie(pieStore, portfolioStore, repository, portfolioMutex)
+    // M7.3 Task 3: the coordinator's launch catch-up + ContributionCheckDue handler. Shares
+    // THE same portfolioMutex as every other mutating use case above, mirroring desktop
+    // AppGraph.kt:138 exactly.
+    val executeDueContributions = ExecuteDueContributions(pieStore, portfolioStore, repository, marketCalendar, portfolioMutex)
     val rebalancePie = RebalancePie(pieStore, portfolioStore, repository, portfolioMutex)
     val reconcilePieLedgers = ReconcilePieLedgers(pieStore, portfolioStore, portfolioMutex, marketCalendar)
     val simulateDCA = SimulateDCA(repository, marketCalendar)

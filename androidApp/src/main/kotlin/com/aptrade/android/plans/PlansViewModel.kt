@@ -258,7 +258,11 @@ class PlansViewModel(
             pieId = pie.id,
             name = pie.name,
             slices = sliceDetails,
-            activity = pie.activity,
+            // Newest-first — pre-sorted here (rather than in PlansScreen's activity list, a
+            // review-found carry-over from Task 2) so the UI model itself is display-ready and
+            // the view stays declarative-only, mirroring PieRowUi/PieSliceDetailUi's own
+            // "VM does the shaping" contract.
+            activity = pie.activity.sortedByDescending { it.day },
             schedule = pie.schedule,
             totalValue = totalMoney,
         )

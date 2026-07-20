@@ -440,7 +440,7 @@ private fun PieDetailContent(
         if (detail.activity.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 SectionHeader(tr(L10n.Key.ActivitySection))
-                for (entry in detail.activity.sortedByDescending { it.day }) PieActivityRow(entry)
+                for (entry in detail.activity) PieActivityRow(entry)
             }
         }
         state.errorMessage?.let {

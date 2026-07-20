@@ -318,6 +318,31 @@ class PlansViewModelTest {
         assertEquals(schedule, detail.schedule)
     }
 
+    /** Review carry-over from M7.3 Task 2: activity ordering (newest-first) belongs in the
+     *  VM's `buildDetail`, not the view's render loop — PlansScreen just iterates
+     *  `detail.activity` in whatever order the VM hands back. Proves the VM itself sorts by
+     *  descending `day`, regardless of the store's insertion order. */
+    @Test
+    fun openDetailSortsActivityNewestFirst() = runTest(dispatcher.scheduler) {
+        val activity = listOf(
+            PieActivityEntry(kind = PieActivityKind.Contribution, day = "2025-06-01", amount = usd("100")),
+            PieActivityEntry(kind = PieActivityKind.Contribution, day = "2025-07-01", amount = usd("50")),
+            PieActivityEntry(kind = PieActivityKind.Rebalance, day = "2025-06-15", amount = usd("0")),
+        )
+        val pie = Pie.create(id = "pie-1", name = "Growth", slices = listOf(sliceA, sliceB), schedule = null, createdDay = "2025-01-01", activity = activity)
+        val pieStore = FakePieStore(listOf(pie))
+        val portfolioStore = FakePortfolioStore(backingPortfolio("8", "2"))
+        val repo = repoWithQuotes("A" to quote("A", "10"), "B" to quote("B", "10"))
+
+        val vm = vm(pieStore, portfolioStore, repo)
+        vm.onAppear(); runCurrent()
+        vm.openDetail("pie-1"); runCurrent()
+
+        val detail = vm.state.value.detail
+        assertNotNull(detail)
+        assertEquals(listOf("2025-07-01", "2025-06-15", "2025-06-01"), detail.activity.map { it.day })
+    }
+
     // MARK: - nextContributionLabel is formatted via L10n
 
     @Test
