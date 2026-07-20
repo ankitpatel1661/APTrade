@@ -10,40 +10,62 @@ public struct FetchPortfolioUseCase: Sendable {
 public struct BuyAssetUseCase: Sendable {
     private let repository: MarketDataRepository
     private let store: PortfolioStore
-    public init(repository: MarketDataRepository, store: PortfolioStore) {
+    private let serializer: TradeSerializer
+    public init(repository: MarketDataRepository, store: PortfolioStore, serializer: TradeSerializer) {
         self.repository = repository
         self.store = store
+        self.serializer = serializer
     }
+    /// The whole load-modify-save sequence — including the quote fetch that prices the
+    /// buy — runs inside `serializer.run`, matching `ContributeToPie`'s pattern: a
+    /// manual trade and a pie mutation write the same `portfolioStore`, so both must
+    /// serialize against each other or one can silently clobber the other's save.
     public func callAsFunction(asset: Asset, quantity: Quantity) async throws -> Portfolio {
-        let quote = try await repository.quote(for: asset.symbol)
-        let updated = try store.load().buying(asset, quantity: quantity, at: quote.price)
-        store.save(updated)
-        return updated
+        try await serializer.run {
+            let quote = try await self.repository.quote(for: asset.symbol)
+            let updated = try self.store.load().buying(asset, quantity: quantity, at: quote.price)
+            self.store.save(updated)
+            return updated
+        }
     }
 }
 
 public struct SellAssetUseCase: Sendable {
     private let repository: MarketDataRepository
     private let store: PortfolioStore
-    public init(repository: MarketDataRepository, store: PortfolioStore) {
+    private let serializer: TradeSerializer
+    public init(repository: MarketDataRepository, store: PortfolioStore, serializer: TradeSerializer) {
         self.repository = repository
         self.store = store
+        self.serializer = serializer
     }
+    /// Serialized like `BuyAssetUseCase` — see its doc comment.
     public func callAsFunction(symbol: String, quantity: Quantity) async throws -> Portfolio {
-        let quote = try await repository.quote(for: symbol)
-        let updated = try store.load().selling(symbol, quantity: quantity, at: quote.price)
-        store.save(updated)
-        return updated
+        try await serializer.run {
+            let quote = try await self.repository.quote(for: symbol)
+            let updated = try self.store.load().selling(symbol, quantity: quantity, at: quote.price)
+            self.store.save(updated)
+            return updated
+        }
     }
 }
 
 public struct ResetPortfolioUseCase: Sendable {
     private let store: PortfolioStore
-    public init(store: PortfolioStore) { self.store = store }
-    public func callAsFunction() -> Portfolio {
-        let fresh = Portfolio.starting()
-        store.save(fresh)
-        return fresh
+    private let serializer: TradeSerializer
+    public init(store: PortfolioStore, serializer: TradeSerializer) {
+        self.store = store
+        self.serializer = serializer
+    }
+    /// Serialized like `BuyAssetUseCase` — a reset overwriting the portfolio while a
+    /// buy/sell/pie mutation is mid-flight would otherwise silently discard it (or vice
+    /// versa).
+    public func callAsFunction() async -> Portfolio {
+        await serializer.run {
+            let fresh = Portfolio.starting()
+            self.store.save(fresh)
+            return fresh
+        }
     }
 }
 

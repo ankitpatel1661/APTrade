@@ -183,8 +183,8 @@ final class PortfolioViewModel {
         }
     }
 
-    func reset() {
-        portfolio = resetPortfolio()
+    func reset() async {
+        portfolio = await resetPortfolio()
         quotes = [:]
         clearHistoryUseCase()
         history = []

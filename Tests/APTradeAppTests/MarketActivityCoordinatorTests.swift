@@ -36,10 +36,14 @@ private final class FakeMarketDataRepository: MarketDataRepository, @unchecked S
 private final class RecordingNotifier: MarketEventNotifier, @unchecked Sendable {
     private(set) var marketStatusEvents: [Bool] = []
     private(set) var earningsNotifications: [(title: String, body: String)] = []
+    private(set) var pieContributionNotifications: [(title: String, body: String)] = []
     func notifyMarketStatus(opened: Bool) async { marketStatusEvents.append(opened) }
     func notifyDigest(summary: String) async {}
     func notifyEarnings(title: String, body: String) async {
         earningsNotifications.append((title, body))
+    }
+    func notifyPieContribution(title: String, body: String) async {
+        pieContributionNotifications.append((title, body))
     }
 }
 
@@ -75,11 +79,23 @@ final class MarketActivityCoordinatorTests: XCTestCase {
                       session: session, epsEstimate: nil, epsActual: nil)
     }
 
+    /// Minimal valid Pie for notification-content assertions — slices/schedule details
+    /// don't matter to the coordinator, only `name` (read by the notification body).
+    private func pie(name: String) -> Pie {
+        try! Pie(
+            name: name,
+            slices: [PieSlice(symbol: "AAPL", assetKind: .stock, targetWeight: Percentage(value: 100))],
+            schedule: nil,
+            createdDay: "2025-06-01"
+        )
+    }
+
     private func makeCoordinator(
         state: SchedulerState,
         settings: AppSettings,
         notifier: RecordingNotifier,
-        fetchOwnedEarningsToday: @escaping @Sendable (String) async -> [EarningsEvent],
+        fetchOwnedEarningsToday: @escaping @Sendable (String) async -> [EarningsEvent] = { _ in [] },
+        executeDueContributions: @escaping @Sendable (Date) async -> [(pie: Pie, outcomes: [ContributionOutcome])] = { _ in [] },
         now: @escaping () -> Date
     ) -> MarketActivityCoordinator {
         MarketActivityCoordinator(
@@ -90,6 +106,7 @@ final class MarketActivityCoordinatorTests: XCTestCase {
             loadWatchlist: LoadWatchlistUseCase(store: FakeWatchlistStore()),
             fetchQuotes: FetchQuotesUseCase(repository: FakeMarketDataRepository()),
             fetchOwnedEarningsToday: fetchOwnedEarningsToday,
+            executeDueContributions: executeDueContributions,
             calendar: marketCalendar,
             now: now
         )
@@ -168,5 +185,90 @@ final class MarketActivityCoordinatorTests: XCTestCase {
 
         XCTAssertTrue(notifier.earningsNotifications.isEmpty, "failure -> no earnings notification")
         XCTAssertEqual(notifier.marketStatusEvents, [true], "loop survived: transition still delivered")
+    }
+
+    func test_contributionCheckDue_notifiesExecutedAndSkipped() async {
+        let now = et(2025, 6, 25, 10, 0) // open
+        let notifier = RecordingNotifier()
+        let executedPie = pie(name: "Core Growth")
+        let skippedPie = pie(name: "Dividend Income")
+        let portfolio = Portfolio(cash: Money(amount: 500))
+        let coordinator = makeCoordinator(
+            state: SchedulerState(lastStatus: .open), // no lastContributionDay yet -> due today
+            settings: AppSettings(marketOpenClose: false, newsDigest: false, earningsReports: false, pieContributions: true),
+            notifier: notifier,
+            executeDueContributions: { _ in
+                [
+                    (pie: executedPie, outcomes: [.executed(portfolio, executedPie)]),
+                    (pie: skippedPie, outcomes: [.skippedInsufficientCash(skippedPie)]),
+                ]
+            },
+            now: { now }
+        )
+
+        await coordinator.tick()
+
+        XCTAssertEqual(notifier.pieContributionNotifications.count, 2)
+        XCTAssertEqual(notifier.pieContributionNotifications[0].title, tr(.notifPieExecutedTitle))
+        XCTAssertEqual(notifier.pieContributionNotifications[0].body,
+                       String(format: tr(.notifPieExecutedBody), "Core Growth"))
+        XCTAssertEqual(notifier.pieContributionNotifications[1].title, tr(.notifPieSkippedTitle))
+        XCTAssertEqual(notifier.pieContributionNotifications[1].body,
+                       String(format: tr(.notifPieSkippedBody), "Dividend Income"))
+    }
+
+    func test_contributionCheckDue_disabledBySettings_notifiesNothing() async {
+        let now = et(2025, 6, 25, 10, 0) // open
+        let notifier = RecordingNotifier()
+        let calledCount = Box<Int>()
+        calledCount.value = 0
+        let unexpectedPie = pie(name: "Core Growth")
+        let coordinator = makeCoordinator(
+            state: SchedulerState(lastStatus: .open),
+            settings: AppSettings(marketOpenClose: false, newsDigest: false, earningsReports: false, pieContributions: false),
+            notifier: notifier,
+            executeDueContributions: { _ in
+                calledCount.value = (calledCount.value ?? 0) + 1
+                return [(pie: unexpectedPie, outcomes: [])]
+            },
+            now: { now }
+        )
+
+        await coordinator.tick()
+
+        XCTAssertTrue(notifier.pieContributionNotifications.isEmpty)
+        XCTAssertEqual(calledCount.value, 0, "the planner never emits contributionCheckDue when the toggle is off")
+    }
+
+    /// `run()`'s launch catch-up executes once before entering the tick loop, and does
+    /// so independent of market status — a Pie's backlog should settle immediately on
+    /// launch rather than waiting for the next market-open tick (see the coordinator's
+    /// `run()` doc comment).
+    func test_run_executesLaunchCatchUp_beforeFirstTick_regardlessOfMarketStatus() async {
+        let now = et(2025, 6, 25, 3, 0) // market closed at this hour
+        let notifier = RecordingNotifier()
+        let executedPie = pie(name: "Launch Catch-Up")
+        let portfolio = Portfolio(cash: Money(amount: 500))
+        let coordinator = makeCoordinator(
+            state: SchedulerState(), // fresh install: no seeded status yet
+            settings: AppSettings(marketOpenClose: false, newsDigest: false, earningsReports: false, pieContributions: true),
+            notifier: notifier,
+            executeDueContributions: { _ in
+                [(pie: executedPie, outcomes: [.executed(portfolio, executedPie)])]
+            },
+            now: { now }
+        )
+
+        let task = Task { await coordinator.run() }
+        // Give the launch catch-up (an async call with no delay) a chance to complete
+        // before cancelling — the tick loop itself sleeps for `interval` (default 60s)
+        // after its first iteration, so cancelling promptly does not race the catch-up.
+        try? await Task.sleep(for: .milliseconds(50))
+        task.cancel()
+        _ = await task.value
+
+        XCTAssertEqual(notifier.pieContributionNotifications.count, 1)
+        XCTAssertEqual(notifier.pieContributionNotifications[0].body,
+                       String(format: tr(.notifPieExecutedBody), "Launch Catch-Up"))
     }
 }

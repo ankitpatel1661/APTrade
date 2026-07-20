@@ -30,4 +30,13 @@ final class AppSettingsLanguageTests: XCTestCase {
         XCTAssertFalse(decoded.isDarkMode)               // existing field preserved
         XCTAssertFalse(decoded.confirmTrades)            // existing field preserved
     }
+
+    func test_legacyPayloadWithoutPieContributions_decodesToDefaultTrueAndKeepsOtherFields() throws {
+        // A payload saved before `pieContributions` existed: omits the key, sets a non-default elsewhere.
+        let legacy = #"{ "isDarkMode": false, "confirmTrades": false }"#.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: legacy)
+        XCTAssertTrue(decoded.pieContributions)         // absent → default (true)
+        XCTAssertFalse(decoded.isDarkMode)               // existing field preserved
+        XCTAssertFalse(decoded.confirmTrades)            // existing field preserved
+    }
 }

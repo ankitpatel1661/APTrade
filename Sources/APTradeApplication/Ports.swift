@@ -82,6 +82,7 @@ public protocol MarketEventNotifier: Sendable {
     func notifyMarketStatus(opened: Bool) async
     func notifyDigest(summary: String) async
     func notifyEarnings(title: String, body: String) async
+    func notifyPieContribution(title: String, body: String) async
 }
 
 /// Persists the scheduler's last-fired markers across launches.
@@ -101,6 +102,12 @@ public protocol NewsRepository: Sendable {
 public protocol BookmarkStore: Sendable {
     func load() -> [NewsArticle]
     func save(_ articles: [NewsArticle])
+}
+
+/// Persists portfolio allocation strategies (Pies).
+public protocol PieStore: Sendable {
+    func load() -> [Pie]
+    func save(_ pies: [Pie])
 }
 
 /// Supplies upcoming/reported earnings releases for a date window. Methods throw on

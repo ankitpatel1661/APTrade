@@ -14,6 +14,10 @@ final class VMFakeRepo: MarketDataRepository, @unchecked Sendable {
     var quotes: [String: Quote] = [:]
     var bad: Set<String> = []
     var histories: [String: [PricePoint]] = [:]
+    /// Canned response for `search(query:)` — the protocol default returns `[]`, so
+    /// tests that need real matches (e.g. `PieWizardViewModelTests`'s search-filtering
+    /// tests) populate this directly.
+    var searchResults: [Asset] = []
     func quote(for symbol: String) async throws -> Quote {
         if bad.contains(symbol) { throw AppError.network }
         guard let q = quotes[symbol] else { throw AppError.notFound }
@@ -21,6 +25,9 @@ final class VMFakeRepo: MarketDataRepository, @unchecked Sendable {
     }
     func history(for symbol: String, timeframe: Timeframe) async throws -> [PricePoint] {
         histories[symbol] ?? []
+    }
+    func search(query: String) async throws -> [Asset] {
+        searchResults
     }
 }
 

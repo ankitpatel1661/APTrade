@@ -17,14 +17,16 @@ public struct Transaction: Identifiable, Equatable, Codable, Sendable {
     public let quantity: Quantity
     public let price: Money
     public let date: Date
+    public let pieId: String?
 
     public init(id: UUID = UUID(), symbol: String, side: TradeSide,
-                quantity: Quantity, price: Money, date: Date) {
+                quantity: Quantity, price: Money, date: Date, pieId: String? = nil) {
         self.id = id
         self.symbol = symbol
         self.side = side
         self.quantity = quantity
         self.price = price
         self.date = date
+        self.pieId = pieId
     }
 }

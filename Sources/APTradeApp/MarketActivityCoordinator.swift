@@ -20,6 +20,12 @@ final class MarketActivityCoordinator {
     // whoever builds this closure (see `CompositionRoot.makeMarketActivityCoordinator`)
     // rather than here — the type system guarantees `tick()` can't propagate it.
     private let fetchOwnedEarningsToday: @Sendable (String) async -> [EarningsEvent]
+    // Non-throwing by design, exactly like `fetchOwnedEarningsToday` above:
+    // `ExecuteDueContributions.callAsFunction` already degrades a failing Pie to an
+    // empty outcomes list internally rather than throwing (see its doc comment), so
+    // there is nothing for this closure boundary to catch — it exists purely so tests
+    // can inject a fake without standing up real stores/market data.
+    private let executeDueContributions: @Sendable (Date) async -> [(pie: Pie, outcomes: [ContributionOutcome])]
     private let calendar: MarketCalendar
     private let interval: Duration
     private let now: () -> Date
@@ -31,6 +37,7 @@ final class MarketActivityCoordinator {
          loadWatchlist: LoadWatchlistUseCase,
          fetchQuotes: FetchQuotesUseCase,
          fetchOwnedEarningsToday: @escaping @Sendable (String) async -> [EarningsEvent],
+         executeDueContributions: @escaping @Sendable (Date) async -> [(pie: Pie, outcomes: [ContributionOutcome])],
          calendar: MarketCalendar = MarketCalendar(),
          interval: Duration = .seconds(60),
          now: @escaping () -> Date = Date.init) {
@@ -41,14 +48,21 @@ final class MarketActivityCoordinator {
         self.loadWatchlist = loadWatchlist
         self.fetchQuotes = fetchQuotes
         self.fetchOwnedEarningsToday = fetchOwnedEarningsToday
+        self.executeDueContributions = executeDueContributions
         self.calendar = calendar
         self.interval = interval
         self.now = now
     }
 
-    /// Ticks immediately, then every `interval` until the surrounding task is cancelled
-    /// (SwiftUI cancels it when the hosting view disappears).
+    /// Runs the launch catch-up once (so a Pie schedule that accrued due days while the
+    /// app was closed settles immediately, rather than waiting for the next market-open
+    /// tick — see `notifyContributionsDue`), then ticks immediately and every `interval`
+    /// until the surrounding task is cancelled (SwiftUI cancels it when the hosting view
+    /// disappears).
     func run() async {
+        if loadSettings().pieContributions {
+            await notifyContributionsDue()
+        }
         while !Task.isCancelled {
             await tick()
             try? await Task.sleep(for: interval)
@@ -67,6 +81,7 @@ final class MarketActivityCoordinator {
             case .marketClosed: await notifier.notifyMarketStatus(opened: false)
             case .digestDue: await notifier.notifyDigest(summary: await digestSummary())
             case .earningsCheckDue: await notifyEarningsDue()
+            case .contributionCheckDue: await notifyContributionsDue()
             }
         }
     }
@@ -86,6 +101,31 @@ final class MarketActivityCoordinator {
                 title: tr(.earningsTodayTitle),
                 body: label.isEmpty ? trimmingTrailingSeparator(body) : body
             )
+        }
+    }
+
+    /// Runs due-contribution catch-up and notifies once per outcome (executed or
+    /// skipped for insufficient cash), one Pie at a time. Each outcome carries its own
+    /// Pie snapshot — used directly (rather than the outer per-Pie result's `pie`) so
+    /// the name in the notification always matches the state the outcome actually
+    /// describes. Formats the body itself, mirroring `notifyEarningsDue`'s sanctioned
+    /// in-coordinator formatting.
+    private func notifyContributionsDue() async {
+        for (_, outcomes) in await executeDueContributions(now()) {
+            for outcome in outcomes {
+                switch outcome {
+                case .executed(_, let pie):
+                    await notifier.notifyPieContribution(
+                        title: tr(.notifPieExecutedTitle),
+                        body: String(format: tr(.notifPieExecutedBody), pie.name)
+                    )
+                case .skippedInsufficientCash(let pie):
+                    await notifier.notifyPieContribution(
+                        title: tr(.notifPieSkippedTitle),
+                        body: String(format: tr(.notifPieSkippedBody), pie.name)
+                    )
+                }
+            }
         }
     }
 

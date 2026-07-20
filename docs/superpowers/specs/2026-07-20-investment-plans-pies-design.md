@@ -114,6 +114,10 @@ A symbol MAY appear in multiple Pies and be held directly; ledgers keep attribut
 - Notifications: `contribution executed` and `contribution skipped` join the existing
   notifier ports (`MarketEventNotifier` family), gated by a new settings toggle
   (default on), delivered per-platform exactly like earnings-day notifications.
+- **Toggle semantics (adjudicated 2026-07-20, supersedes any narrower reading):** the
+  `pieContributions` toggle gates **execution itself** on both paths (planner event
+  emission and launch catch-up), not just notifications — toggle off acts as a global
+  pause switch for all scheduled Pies. Mirrors the earnings-toggle pattern.
 
 ## C. Persistence
 
