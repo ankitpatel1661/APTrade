@@ -130,7 +130,7 @@ object PieSchedule {
             }
             step += 1
         }
-        return results.toSortedSet().toList()
+        return results.distinct().sorted()
     }
 
     /**
