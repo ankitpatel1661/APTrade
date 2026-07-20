@@ -33,6 +33,7 @@ data class Portfolio(
         price: Money,
         epochSeconds: Long,
         id: String = generateTradeId(),
+        pieId: String? = null,
     ): Portfolio {
         if (quantity.isZero()) throw TradeError.InvalidQuantity
         val cost = price.amount * quantity
@@ -49,7 +50,7 @@ data class Portfolio(
             updated += Position(asset, quantity, price, Money(BigDecimal.ZERO, price.currencyCode))
         }
 
-        val txn = Transaction(id, asset.symbol, TradeSide.Buy, quantity, price, epochSeconds)
+        val txn = Transaction(id, asset.symbol, TradeSide.Buy, quantity, price, epochSeconds, pieId)
         return Portfolio(
             cash = Money(cash.amount - cost, cash.currencyCode),
             positions = updated,
@@ -63,6 +64,7 @@ data class Portfolio(
         price: Money,
         epochSeconds: Long,
         id: String = generateTradeId(),
+        pieId: String? = null,
     ): Portfolio {
         if (quantity.isZero()) throw TradeError.InvalidQuantity
         val index = positions.indexOfFirst { it.asset.symbol == symbol }
@@ -83,7 +85,7 @@ data class Portfolio(
             )
         }
 
-        val txn = Transaction(id, symbol, TradeSide.Sell, quantity, price, epochSeconds)
+        val txn = Transaction(id, symbol, TradeSide.Sell, quantity, price, epochSeconds, pieId)
         return Portfolio(
             cash = Money(cash.amount + proceeds, cash.currencyCode),
             positions = updated,

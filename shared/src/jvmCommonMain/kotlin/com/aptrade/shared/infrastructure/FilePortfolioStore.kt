@@ -53,6 +53,7 @@ class FilePortfolioStore(private val file: Path) : PortfolioStore {
         val quantity: String,
         val price: MoneyDTO,
         val epochSeconds: Long,
+        val pieId: String? = null,
     )
 
     @Serializable
@@ -97,7 +98,7 @@ class FilePortfolioStore(private val file: Path) : PortfolioStore {
                     amount = BigDecimal.parseString(txnDto.price.amount),
                     currencyCode = txnDto.price.currency,
                 )
-                Transaction(txnDto.id, txnDto.symbol, side, BigDecimal.parseString(txnDto.quantity), price, txnDto.epochSeconds)
+                Transaction(txnDto.id, txnDto.symbol, side, BigDecimal.parseString(txnDto.quantity), price, txnDto.epochSeconds, txnDto.pieId)
             }
 
             Portfolio(cash, positions, transactions)
@@ -128,6 +129,7 @@ class FilePortfolioStore(private val file: Path) : PortfolioStore {
                     quantity = txn.quantity.toStringExpanded(),
                     price = MoneyDTO(txn.price.amount.toStringExpanded(), txn.price.currencyCode),
                     epochSeconds = txn.epochSeconds,
+                    pieId = txn.pieId,
                 )
             },
         )
