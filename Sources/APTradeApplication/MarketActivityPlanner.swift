@@ -19,12 +19,20 @@ public struct SchedulerState: Codable, Equatable, Sendable {
     public var lastDigestDay: String?
     public var lastEarningsDay: String?
     public var lastContributionDay: String?
+    /// The last trading day a dividend check fired (planner gate; wired in Task 7).
+    public var lastDividendDay: String?
+    /// The trading day dividend processing first ran on this install. Events whose
+    /// ex-date trading day predates it are backfill and always credit as cash,
+    /// regardless of the DRIP toggle. Set once, on the first `ProcessDueDividends` run.
+    public var dividendsFirstRunDay: String?
 
-    public init(lastStatus: MarketStatus? = nil, lastDigestDay: String? = nil, lastEarningsDay: String? = nil, lastContributionDay: String? = nil) {
+    public init(lastStatus: MarketStatus? = nil, lastDigestDay: String? = nil, lastEarningsDay: String? = nil, lastContributionDay: String? = nil, lastDividendDay: String? = nil, dividendsFirstRunDay: String? = nil) {
         self.lastStatus = lastStatus
         self.lastDigestDay = lastDigestDay
         self.lastEarningsDay = lastEarningsDay
         self.lastContributionDay = lastContributionDay
+        self.lastDividendDay = lastDividendDay
+        self.dividendsFirstRunDay = dividendsFirstRunDay
     }
 }
 
