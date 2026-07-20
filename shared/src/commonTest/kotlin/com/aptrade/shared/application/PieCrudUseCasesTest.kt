@@ -4,6 +4,7 @@ import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.Pie
 import com.aptrade.shared.domain.PieSlice
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -55,7 +56,7 @@ class PieCrudUseCasesTest {
     fun savePieAppendsNewPieAndPersists() = runTest {
         val existing = listOf(pie("pie-1"))
         val store = FakePieStore(initial = existing)
-        val useCase = SavePie(store)
+        val useCase = SavePie(store, Mutex())
         val newPie = pie("pie-2")
 
         val result = useCase.execute(newPie)
@@ -71,7 +72,7 @@ class PieCrudUseCasesTest {
         val pieB = pie("pie-b")
         val pieC = pie("pie-c")
         val store = FakePieStore(initial = listOf(pieA, pieB, pieC))
-        val useCase = SavePie(store)
+        val useCase = SavePie(store, Mutex())
 
         // Replace the MIDDLE pie with a same-id pie that has a different name — the
         // updated pie must land at index 1, not be moved to the end.
@@ -90,7 +91,7 @@ class PieCrudUseCasesTest {
         val pieA = pie("pie-a")
         val pieB = pie("pie-b")
         val store = FakePieStore(initial = listOf(pieA, pieB))
-        val useCase = DeletePie(store)
+        val useCase = DeletePie(store, Mutex())
 
         val result = useCase.execute("pie-a")
 
@@ -102,7 +103,7 @@ class PieCrudUseCasesTest {
     fun deletePieWithUnknownIdIsANoOp() = runTest {
         val pieA = pie("pie-a")
         val store = FakePieStore(initial = listOf(pieA))
-        val useCase = DeletePie(store)
+        val useCase = DeletePie(store, Mutex())
 
         val result = useCase.execute("does-not-exist")
 

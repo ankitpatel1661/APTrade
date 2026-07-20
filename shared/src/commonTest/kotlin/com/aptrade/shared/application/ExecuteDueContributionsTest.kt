@@ -16,7 +16,10 @@ import com.aptrade.shared.domain.PricePoint
 import com.aptrade.shared.domain.Quote
 import com.aptrade.shared.domain.Timeframe
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -356,6 +359,60 @@ class ExecuteDueContributionsTest {
 
         assertEquals(listOf(usd("50"), usd("999")), resultPie.activity.map { it.amount })
     }
+
+    // MARK: (Task 8 carry-over A) A wizard-style SavePie racing a multi-day catch-up through
+    // ONE shared portfolioMutex must never land INSIDE a day's critical section -- only
+    // BETWEEN days. Unlike the deterministic simulated-save test above (which pins that a
+    // SUBSEQUENT day picks up an already-landed save), this test proves the mutex itself
+    // genuinely serializes the two callers, in the house controllable-suspension style (a
+    // store whose FIRST save() call parks on a gate) -- mirrors
+    // `PortfolioUseCasesTest.racingBuyAndSellSharingOneMutexBothLandNoLostUpdate` and
+    // `ContributeToPieTest.contributionRacingManualBuyThroughSharedMutexBothLandNoLostUpdate`.
+
+    @Test
+    fun savePieRacesMultiDayCatchUpThroughSharedMutexCannotInterleaveInsideADaysCriticalSection() = runTest {
+        val schedule = ContributionSchedule(usd("50"), PieCadence.Monthly, "2025-04-01", "2025-04-01")
+        val pie = Pie.create(id = "pie-race", name = "Race Pie", slices = listOf(sliceA, sliceB), schedule = schedule, createdDay = "2025-01-01")
+        val otherPie = Pie.create(id = "pie-other", name = "Other Pie", slices = listOf(sliceA, sliceB), schedule = null, createdDay = "2025-01-01")
+        val pieStore = GatedPieStore(listOf(pie))
+        val portfolioStore = CatchUpFakePortfolioStore(Portfolio.starting())
+        val repo = makeRepo(
+            closesA = mapOf("2025-04-01" to "10", "2025-05-01" to "20"),
+            closesB = mapOf("2025-04-01" to "10", "2025-05-01" to "20"),
+        )
+        val sharedMutex = Mutex()
+
+        val sut = ExecuteDueContributions(pieStore, portfolioStore, repo, calendar, sharedMutex)
+        val savePie = SavePie(pieStore, sharedMutex)
+
+        // Day 1 (April 1, NOT today) is priced from `closesBySymbol` -- no live-quote fetch,
+        // no other real suspension point before the day's `portfolioMutex.withLock` block
+        // calls `pieStore.save()` and hangs on the gate, still holding the lock.
+        val catchUpJob = launch { sut.execute(date("2025-05-15")) }
+        runCurrent() // day 1's critical section: loaded, computed, now hangs inside pieStore.save()
+
+        // SavePie attempts to enter the SAME mutex the catch-up's day-1 critical section still
+        // holds. It cannot proceed to its own load/save until that section's save() completes.
+        val saveJob = launch { savePie.execute(otherPie) }
+        runCurrent() // SavePie is parked waiting on the shared mutex -- it cannot have run yet
+
+        assertEquals(0, pieStore.saveCount, "neither day 1's in-flight save nor SavePie's own save has completed")
+        assertEquals(1, pieStore.pies.size, "SavePie must not have inserted otherPie yet -- still blocked behind day 1's critical section")
+
+        pieStore.firstSaveGate.complete(Unit) // release day 1's save
+        runCurrent()
+
+        catchUpJob.join()
+        saveJob.join()
+
+        // Both landed, with no lost update: day 1 AND day 2's contributions persisted (proving
+        // catch-up itself completed normally after the mutex was released), and the racing
+        // SavePie's insert also landed -- proving the shared mutex genuinely serialized
+        // SavePie against the in-flight catch-up rather than letting it race past mid-day.
+        assertTrue(pieStore.pies.any { it.id == "pie-other" }, "the racing SavePie's insert must have landed")
+        val racedPie = pieStore.pies.first { it.id == "pie-race" }
+        assertEquals(2, racedPie.activity.count { it.kind == PieActivityKind.Contribution }, "both due days must still have executed")
+    }
 }
 
 // -- Shared fakes for this file --
@@ -365,6 +422,28 @@ private class CatchUpFakePieStore(initial: List<Pie> = emptyList()) : PieStore {
     override suspend fun load(): List<Pie> = pies
     override suspend fun save(pies: List<Pie>) {
         this.pies = pies
+    }
+}
+
+/** A [PieStore] whose FIRST [save] call suspends on [firstSaveGate] until the test releases
+ *  it, so a test can force two coroutines to interleave -- mirrors `GatedPortfolioStore` in
+ *  `PortfolioUseCasesTest` and `ContribGatedPortfolioStore` in `ContributeToPieTest` (see
+ *  either's doc comment for the full rationale). Gating is keyed by CALL ORDER
+ *  (`callIndex`), not "count of saves that have completed". */
+private class GatedPieStore(initial: List<Pie>) : PieStore {
+    var pies: List<Pie> = initial
+        private set
+    var saveCount = 0
+        private set
+    val firstSaveGate = CompletableDeferred<Unit>()
+    private var callIndex = 0
+
+    override suspend fun load(): List<Pie> = pies
+    override suspend fun save(pies: List<Pie>) {
+        val myIndex = callIndex++
+        if (myIndex == 0) firstSaveGate.await()
+        this.pies = pies
+        saveCount++
     }
 }
 
