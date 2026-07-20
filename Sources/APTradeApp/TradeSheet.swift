@@ -162,6 +162,7 @@ struct TradeSheet: View {
         switch viewModel.side {
         case .buy: return String(format: tr(.availableCashFormat), viewModel.availableCash.formatted)
         case .sell: return String(format: tr(.sharesOwnedFormat), viewModel.sharesOwned.formatted)
+        case .dividend: return ""   // Not a user-selectable side in the trade sheet.
         }
     }
 

@@ -563,7 +563,7 @@ private struct TransactionRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Text(tx.side == .buy ? tr(.buyChip) : tr(.sellChip))
+            Text(sideLabel)
                 .font(.system(size: 10, weight: .bold)).tracking(0.8)
                 .foregroundStyle(sideColor)
                 .frame(width: 44, height: 22)
@@ -594,7 +594,21 @@ private struct TransactionRow: View {
         }
     }
 
-    private var sideColor: Color { tx.side == .buy ? Theme.up : Theme.down }
+    private var sideLabel: String {
+        switch tx.side {
+        case .buy: return tr(.buyChip)
+        case .sell: return tr(.sellChip)
+        case .dividend: return tr(.activityDividend)
+        }
+    }
+
+    private var sideColor: Color {
+        switch tx.side {
+        case .buy: return Theme.up
+        case .sell: return Theme.down
+        case .dividend: return Theme.gold
+        }
+    }
 
     private var amount: Money {
         Money(amount: tx.price.amount * tx.quantity.amount, currencyCode: tx.price.currencyCode)

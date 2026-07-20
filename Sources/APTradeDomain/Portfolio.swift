@@ -41,7 +41,7 @@ public struct Portfolio: Equatable, Codable, Sendable {
     }
 
     public func buying(_ asset: Asset, quantity: Quantity, at price: Money,
-                       on date: Date = Date(), pieId: String? = nil) throws -> Portfolio {
+                       on date: Date = Date(), pieId: String? = nil, isDrip: Bool = false) throws -> Portfolio {
         guard !quantity.isZero else { throw TradeError.invalidQuantity }
         let cost = price.amount * quantity.amount
         guard cash.amount >= cost else { throw TradeError.insufficientFunds }
@@ -67,10 +67,27 @@ public struct Portfolio: Equatable, Codable, Sendable {
         }
 
         let txn = Transaction(symbol: asset.symbol, side: .buy,
-                              quantity: quantity, price: price, date: date, pieId: pieId)
+                              quantity: quantity, price: price, date: date, pieId: pieId, isDrip: isDrip)
         return Portfolio(
             cash: Money(amount: cash.amount - cost, currencyCode: cash.currencyCode),
             positions: updated,
+            transactions: transactions + [txn]
+        )
+    }
+
+    /// Credits a dividend payout: cash increases by `shares × amountPerShare` and a
+    /// `.dividend` transaction is appended. Positions and cost basis are untouched —
+    /// this is a cash event, not a trade. Pure.
+    public func receivingDividend(_ symbol: String, amountPerShare: Money,
+                                  shares: Quantity, on exDate: Date) throws -> Portfolio {
+        guard !shares.isZero, amountPerShare.amount > 0 else { throw TradeError.invalidQuantity }
+        let credit = amountPerShare.amount * shares.amount
+
+        let txn = Transaction(symbol: symbol, side: .dividend,
+                              quantity: shares, price: amountPerShare, date: exDate)
+        return Portfolio(
+            cash: Money(amount: cash.amount + credit, currencyCode: cash.currencyCode),
+            positions: positions,
             transactions: transactions + [txn]
         )
     }

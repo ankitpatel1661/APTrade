@@ -139,6 +139,7 @@ enum L10n {
         case noHoldingsHint = "Open an asset and tap Buy to start a simulated position."
         case buyChip = "BUY"
         case sellChip = "SELL"
+        case activityDividend = "DIVIDEND"
 
         // MARK: Performance metrics
         case totalReturn = "Total Return"
@@ -612,6 +613,8 @@ enum L10n {
                    .italian: "ACQUISTO", .spanish: "COMPRA"],
         .sellChip: [.english: "SELL", .german: "VERKAUF",
                     .italian: "VENDITA", .spanish: "VENTA"],
+        .activityDividend: [.english: "DIVIDEND", .german: "DIVIDENDE",
+                            .italian: "DIVIDENDO", .spanish: "DIVIDENDO"],
 
         // MARK: Performance metrics
         .totalReturn: [.english: "Total Return", .german: "Gesamtrendite",
