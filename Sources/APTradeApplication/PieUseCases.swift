@@ -167,6 +167,245 @@ public struct ContributeToPie: Sendable {
     }
 }
 
+/// Manual rebalance: prices a Pie's current ledger against live quotes and derives the
+/// trades needed to restore its target allocation (`PieMath.rebalancePlan`), then
+/// optionally executes them.
+public struct RebalancePie: Sendable {
+    private let pieStore: PieStore
+    private let portfolioStore: PortfolioStore
+    private let market: MarketDataRepository
+
+    public init(pieStore: PieStore, portfolioStore: PortfolioStore, market: MarketDataRepository) {
+        self.pieStore = pieStore
+        self.portfolioStore = portfolioStore
+        self.market = market
+    }
+
+    /// The orders `execute` would place, priced at live quotes. Read-only — fetches
+    /// quotes but never touches either store.
+    public func preview(pieId: String) async throws -> [RebalanceOrder] {
+        try await plan(pieId: pieId).orders
+    }
+
+    /// Executes the previewed orders: all sells first (freeing cash), then all buys,
+    /// each tagged `pieId`. Sell quantities are clamped to the pie's own ledger
+    /// quantity for that symbol (a pie only rebalances what it owns) and, defensively,
+    /// to the portfolio's actually-held quantity (in case the ledger has drifted ahead
+    /// of a manual sell that `ReconcilePieLedgers` hasn't yet clamped). The pie's ledger
+    /// is updated for every filled order and a `rebalance` activity entry — its amount
+    /// the total value bought (equivalently sold, since orders net to zero) — is
+    /// appended.
+    public func execute(pieId: String, day: String, now: Date) async throws -> (Portfolio, Pie) {
+        let (pies, pie, quotes, orders) = try await plan(pieId: pieId)
+
+        var portfolio = portfolioStore.load()
+        var ledger = pie.ledger
+
+        for order in orders where order.side == .sell {
+            guard let quote = quotes[order.symbol] else { throw AppError.notFound }
+            let rawQuantity = order.amount.amount / quote.price.amount
+            let ledgerQuantity = ledger.first(where: { $0.symbol == order.symbol })?.quantity.amount ?? 0
+            let heldQuantity = portfolio.position(for: order.symbol)?.quantity.amount ?? 0
+            let quantity = min(rawQuantity, ledgerQuantity, heldQuantity)
+            guard quantity > 0 else { continue }
+
+            portfolio = try portfolio.selling(order.symbol, quantity: Quantity(quantity), at: quote.price,
+                                              on: now, pieId: pieId)
+            apply(delta: -quantity, symbol: order.symbol, to: &ledger)
+        }
+
+        for order in orders where order.side == .buy {
+            guard let quote = quotes[order.symbol] else { throw AppError.notFound }
+            let quantity = order.amount.amount / quote.price.amount
+            guard quantity > 0 else { continue }
+
+            let kind = pie.slices.first(where: { $0.symbol == order.symbol })?.assetKind ?? .stock
+            let asset = Asset(symbol: order.symbol, name: order.symbol, kind: kind)
+            portfolio = try portfolio.buying(asset, quantity: Quantity(quantity), at: quote.price,
+                                             on: now, pieId: pieId)
+            apply(delta: quantity, symbol: order.symbol, to: &ledger)
+        }
+
+        let tradedAmount = orders.filter { $0.side == .buy }.reduce(Decimal(0)) { $0 + $1.amount.amount }
+        let currencyCode = orders.first?.amount.currencyCode ?? portfolio.cash.currencyCode
+        let rebalanced = PieActivityEntry(kind: .rebalance, day: day,
+                                          amount: Money(amount: tradedAmount, currencyCode: currencyCode))
+        let updatedPie = try replace(pie, in: pies, ledger: ledger, activity: pie.activity + [rebalanced])
+
+        portfolioStore.save(portfolio)
+        return (portfolio, updatedPie)
+    }
+
+    /// Increments or decrements `symbol`'s ledger quantity by `delta`, creating the
+    /// entry if it doesn't already exist. `Quantity`'s init clamps negative results to
+    /// zero, so an over-large sell can never drive the ledger negative.
+    private func apply(delta: Decimal, symbol: String, to ledger: inout [PieLedgerEntry]) {
+        let current = ledger.first(where: { $0.symbol == symbol })?.quantity.amount ?? 0
+        let updated = PieLedgerEntry(symbol: symbol, quantity: Quantity(current + delta))
+        if let index = ledger.firstIndex(where: { $0.symbol == symbol }) {
+            ledger[index] = updated
+        } else {
+            ledger.append(updated)
+        }
+    }
+
+    /// Fetches a live quote for every slice symbol, prices the pie's current ledger
+    /// against them, and derives the rebalance plan — shared by `preview` and `execute`
+    /// so both price against the exact same set of live quotes in one fetch.
+    private func plan(pieId: String) async throws -> (pies: [Pie], pie: Pie, quotes: [String: Quote], orders: [RebalanceOrder]) {
+        let pies = pieStore.load()
+        guard let pie = pies.first(where: { $0.id == pieId }) else {
+            throw AppError.notFound
+        }
+
+        var quotes: [String: Quote] = [:]
+        for slice in pie.slices {
+            quotes[slice.symbol] = try await market.quote(for: slice.symbol)
+        }
+
+        var currentValues: [String: Money] = [:]
+        for slice in pie.slices {
+            guard let quote = quotes[slice.symbol] else { throw AppError.notFound }
+            let quantity = pie.quantity(of: slice.symbol)
+            currentValues[slice.symbol] = Money(amount: quantity.amount * quote.price.amount,
+                                                currencyCode: quote.price.currencyCode)
+        }
+
+        let orders = PieMath.rebalancePlan(currentValues: currentValues, targets: pie.slices)
+        return (pies, pie, quotes, orders)
+    }
+
+    /// Rebuilds `pie` with the given overrides via `Pie`'s validating init (rethrows —
+    /// slices pass through unchanged so validation always succeeds here), replaces it
+    /// within `pies`, and persists the full list. Mirrors `ContributeToPie`'s identical
+    /// private helper (duplicated rather than shared — a small pure rebuild-and-save
+    /// step isn't worth introducing a shared dependency between the two use cases).
+    private func replace(_ pie: Pie, in pies: [Pie], ledger: [PieLedgerEntry],
+                         activity: [PieActivityEntry]) throws -> Pie {
+        let updated = try Pie(id: pie.id, name: pie.name, slices: pie.slices, schedule: pie.schedule,
+                              createdDay: pie.createdDay, ledger: ledger, activity: activity)
+        var all = pies
+        if let index = all.firstIndex(where: { $0.id == pie.id }) {
+            all[index] = updated
+        } else {
+            all.append(updated)
+        }
+        pieStore.save(all)
+        return updated
+    }
+}
+
+/// Manual-sell clamp: keeps every Pie's ledger honest against what the portfolio
+/// actually holds. A symbol sold manually outside a Pie (e.g. from the portfolio
+/// screen) can leave one or more Pies' ledgers claiming more shares than the portfolio
+/// still owns; this reconciles every over-claimed symbol back down to the held
+/// quantity, recording who lost how much.
+///
+/// Synchronous and store-only — no market data is touched, since reconciliation only
+/// compares recorded quantities, never prices.
+public struct ReconcilePieLedgers: Sendable {
+    private let pieStore: PieStore
+    private let portfolioStore: PortfolioStore
+
+    public init(pieStore: PieStore, portfolioStore: PortfolioStore) {
+        self.pieStore = pieStore
+        self.portfolioStore = portfolioStore
+    }
+
+    /// Clamps every pie ledger entry to the actually-held portfolio quantity for that
+    /// symbol. When multiple Pies claim the same over-subscribed symbol, the clamp is
+    /// applied largest-ledger-first: smaller claims are preserved in full and the
+    /// largest claimant absorbs the shortfall (walking to the next-largest if even a
+    /// fully-zeroed largest claimant isn't enough). Ties break lexicographically by pie
+    /// id — the lexicographically first id clamps first. Only pies whose ledger
+    /// actually changed gain a `manualAdjustment` activity entry; saves the full pie
+    /// list once.
+    public func callAsFunction() -> [Pie] {
+        let pies = pieStore.load()
+        let portfolio = portfolioStore.load()
+        let today = MarketCalendar().tradingDay(of: Date())
+
+        // symbol -> pieId -> current ledger quantity (mutated in place as clamps apply).
+        var quantities: [String: [String: Decimal]] = [:]
+        var symbols: Set<String> = []
+        for pie in pies {
+            for entry in pie.ledger where entry.quantity.amount > 0 {
+                quantities[entry.symbol, default: [:]][pie.id] = entry.quantity.amount
+                symbols.insert(entry.symbol)
+            }
+        }
+
+        var clampedPieIds: Set<String> = []
+
+        for symbol in symbols {
+            guard var claims = quantities[symbol] else { continue }
+            let totalClaimed = claims.values.reduce(Decimal(0), +)
+            let heldQuantity = portfolio.position(for: symbol)?.quantity.amount ?? 0
+            guard totalClaimed > heldQuantity else { continue }
+
+            // Smallest claim first (full allocation preserved); ties give priority to
+            // the lexicographically LATER pie id here, so the lexicographically FIRST
+            // id lands last in this walk — exactly where the remaining budget runs out
+            // first, making it the one clamped.
+            let ordered = claims.keys.sorted { a, b in
+                let qa = claims[a] ?? 0
+                let qb = claims[b] ?? 0
+                if qa == qb { return a > b }
+                return qa < qb
+            }
+
+            var remaining = heldQuantity
+            for pieId in ordered {
+                let claim = claims[pieId] ?? 0
+                if remaining >= claim {
+                    remaining -= claim
+                } else {
+                    let clampedQuantity = max(0, remaining)
+                    if clampedQuantity != claim {
+                        claims[pieId] = clampedQuantity
+                        clampedPieIds.insert(pieId)
+                    }
+                    remaining = 0
+                }
+            }
+            quantities[symbol] = claims
+        }
+
+        guard !clampedPieIds.isEmpty else { return pies }
+
+        var updatedPies: [Pie] = []
+        for pie in pies {
+            guard clampedPieIds.contains(pie.id) else {
+                updatedPies.append(pie)
+                continue
+            }
+
+            var newLedger = pie.ledger
+            for index in newLedger.indices {
+                let symbol = newLedger[index].symbol
+                if let clamped = quantities[symbol]?[pie.id] {
+                    newLedger[index] = PieLedgerEntry(symbol: symbol, quantity: Quantity(clamped))
+                }
+            }
+
+            let adjustment = PieActivityEntry(kind: .manualAdjustment, day: today, amount: nil)
+            // `Pie`'s validating init only rejects malformed slices (empty, duplicate,
+            // mis-summed weights) — none of which this ledger-only rebuild can trigger,
+            // since `slices` passes through unchanged from an already-valid Pie.
+            guard let updated = try? Pie(id: pie.id, name: pie.name, slices: pie.slices, schedule: pie.schedule,
+                                        createdDay: pie.createdDay, ledger: newLedger,
+                                        activity: pie.activity + [adjustment]) else {
+                updatedPies.append(pie)
+                continue
+            }
+            updatedPies.append(updated)
+        }
+
+        pieStore.save(updatedPies)
+        return updatedPies
+    }
+}
+
 /// Catch-up engine: executes scheduled Pie contributions that were missed because the
 /// app wasn't running on their due day(s). For each due day strictly after the Pie's
 /// schedule cursor (`schedule.nextDueDay`) through today, contributes at that day's
