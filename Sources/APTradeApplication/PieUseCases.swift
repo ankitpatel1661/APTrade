@@ -205,6 +205,14 @@ public struct RebalancePie: Sendable {
             guard let quote = quotes[order.symbol] else { throw AppError.notFound }
             let rawQuantity = order.amount.amount / quote.price.amount
             let ledgerQuantity = ledger.first(where: { $0.symbol == order.symbol })?.quantity.amount ?? 0
+            // `heldQuantity` is the portfolio-WIDE position for this symbol, per spec —
+            // not this pie's slice of it. If another pie also claims the symbol, this
+            // clamp alone can't see that cross-pie contention (only the portfolio total
+            // vs. THIS pie's ledger), so a narrow drift window exists between a manual
+            // sell and the next `ReconcilePieLedgers` run where two pies could both
+            // still believe they own shares the portfolio no longer has. That's the
+            // clamp `ReconcilePieLedgers` exists to rebound; this one only guards
+            // against this single pie outrunning the portfolio's total holding.
             let heldQuantity = portfolio.position(for: order.symbol)?.quantity.amount ?? 0
             let quantity = min(rawQuantity, ledgerQuantity, heldQuantity)
             guard quantity > 0 else { continue }
@@ -306,10 +314,15 @@ public struct RebalancePie: Sendable {
 public struct ReconcilePieLedgers: Sendable {
     private let pieStore: PieStore
     private let portfolioStore: PortfolioStore
+    private let calendar: MarketCalendar
+    private let now: @Sendable () -> Date
 
-    public init(pieStore: PieStore, portfolioStore: PortfolioStore) {
+    public init(pieStore: PieStore, portfolioStore: PortfolioStore,
+               calendar: MarketCalendar = MarketCalendar(), now: @escaping @Sendable () -> Date = { Date() }) {
         self.pieStore = pieStore
         self.portfolioStore = portfolioStore
+        self.calendar = calendar
+        self.now = now
     }
 
     /// Clamps every pie ledger entry to the actually-held portfolio quantity for that
@@ -323,7 +336,7 @@ public struct ReconcilePieLedgers: Sendable {
     public func callAsFunction() -> [Pie] {
         let pies = pieStore.load()
         let portfolio = portfolioStore.load()
-        let today = MarketCalendar().tradingDay(of: Date())
+        let today = calendar.tradingDay(of: now())
 
         // symbol -> pieId -> current ledger quantity (mutated in place as clamps apply).
         var quantities: [String: [String: Decimal]] = [:]

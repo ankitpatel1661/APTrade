@@ -182,7 +182,13 @@ final class ReconcilePieLedgersTests: XCTestCase {
         )
         let portfolioStore = StubPortfolioStore(portfolio)
 
-        let sut = ReconcilePieLedgers(pieStore: pieStore, portfolioStore: portfolioStore)
+        // Fixed clock, injected — proves the activity day is stamped from `now`/`calendar`,
+        // not the wall clock, so this assertion is deterministic regardless of when the
+        // test suite actually runs.
+        let fixedDay = "2025-03-15"
+        let fixedNow = try XCTUnwrap(PieSchedule.date(fromDay: fixedDay, calendar: MarketCalendar()))
+
+        let sut = ReconcilePieLedgers(pieStore: pieStore, portfolioStore: portfolioStore, now: { fixedNow })
         let result = sut()
 
         let resultPie1 = result.first { $0.id == "pie1" }
@@ -193,6 +199,7 @@ final class ReconcilePieLedgersTests: XCTestCase {
 
         XCTAssertTrue(resultPie1?.activity.contains { $0.kind == .manualAdjustment } ?? false)
         XCTAssertFalse(resultPie2?.activity.contains { $0.kind == .manualAdjustment } ?? true)
+        XCTAssertEqual(resultPie1?.activity.first { $0.kind == .manualAdjustment }?.day, fixedDay)
 
         // Persisted.
         XCTAssertEqual(pieStore.pies.first { $0.id == "pie1" }?.quantity(of: "A"), Quantity(Decimal(2)))
