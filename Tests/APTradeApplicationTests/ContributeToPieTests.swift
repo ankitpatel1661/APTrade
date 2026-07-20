@@ -4,9 +4,13 @@ import APTradeDomain
 
 private final class FakePortfolioStore: PortfolioStore, @unchecked Sendable {
     var portfolio: Portfolio
+    var saveCallCount = 0
     init(_ portfolio: Portfolio) { self.portfolio = portfolio }
     func load() -> Portfolio { portfolio }
-    func save(_ portfolio: Portfolio) { self.portfolio = portfolio }
+    func save(_ portfolio: Portfolio) {
+        self.portfolio = portfolio
+        saveCallCount += 1
+    }
 }
 
 final class ContributeToPieTests: XCTestCase {
@@ -55,8 +59,10 @@ final class ContributeToPieTests: XCTestCase {
         XCTAssertEqual(resultPie.activity.first?.day, "2025-06-01")
         XCTAssertEqual(resultPie.activity.first?.amount, usd("100"))
 
-        // Both stores persisted.
+        // Both stores persisted — exactly one save each (pins single-save semantics,
+        // not one save per buy).
         XCTAssertEqual(portfolioStore.portfolio.cash, usd("99900"))
+        XCTAssertEqual(portfolioStore.saveCallCount, 1)
         XCTAssertEqual(pieStore.pies.first?.id, "pie-1")
         XCTAssertEqual(pieStore.pies.first?.quantity(of: "A"), Quantity(Decimal(5)))
     }
@@ -79,9 +85,11 @@ final class ContributeToPieTests: XCTestCase {
             XCTFail("expected .skippedInsufficientCash"); return
         }
 
-        // Portfolio completely untouched.
+        // Portfolio completely untouched — and never even saved (whole-skip, not
+        // save-with-no-changes).
         XCTAssertEqual(portfolioStore.portfolio, startingPortfolio)
         XCTAssertEqual(portfolioStore.portfolio.transactions.count, 0)
+        XCTAssertEqual(portfolioStore.saveCallCount, 0)
 
         // Pie gains a missedInsufficientCash entry, ledger unchanged.
         XCTAssertEqual(resultPie.activity.count, 1)
