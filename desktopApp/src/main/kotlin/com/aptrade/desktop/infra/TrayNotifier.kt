@@ -119,4 +119,16 @@ class TrayNotifier(private val trayState: TrayState) : AlertNotifier {
     suspend fun notifyEarnings(title: String, body: String) {
         trayState.sendNotification(Notification(title, body))
     }
+
+    /**
+     * Delivers a pie-contribution notification (executed or skipped for insufficient cash).
+     *
+     * Mechanical twin of [notifyEarnings]: both [title] and [body] arrive pre-localized —
+     * `Main.kt` resolves `L10n.Key.NotifPieExecutedTitle`/`NotifPieExecutedBody` or
+     * `NotifPieSkippedTitle`/`NotifPieSkippedBody` via `tr`/`trf` before calling in, so this
+     * class performs no formatting of its own here either.
+     */
+    suspend fun notifyPieContribution(title: String, body: String) {
+        trayState.sendNotification(Notification(title, body))
+    }
 }

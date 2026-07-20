@@ -1,9 +1,11 @@
 package com.aptrade.desktop
 
 import com.aptrade.desktop.infra.AppSettings
+import com.aptrade.shared.application.ContributionOutcome
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchWatchlist
 import com.aptrade.shared.application.MarketActivityPlanner
+import com.aptrade.shared.application.PieRunResult
 import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.SchedulerState
 import com.aptrade.shared.application.SchedulerStateStore
@@ -12,8 +14,11 @@ import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.EarningsEvent
 import com.aptrade.shared.domain.EarningsSession
 import com.aptrade.shared.domain.Money
+import com.aptrade.shared.domain.Pie
+import com.aptrade.shared.domain.PieSlice
 import com.aptrade.shared.domain.Quote
 import com.aptrade.shared.domain.WatchlistEntry
+import com.ionspin.kotlin.bignum.decimal.BigDecimal
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -51,6 +56,13 @@ class DesktopMarketActivityCoordinatorTest {
     private fun quote(symbol: String, price: String, change: Double) =
         Quote(symbol, Money.usd(price), Money.usd(price), change)
 
+    private fun pieFixture(name: String = "Core Growth") = Pie.create(
+        name = name,
+        slices = listOf(PieSlice("AAPL", AssetKind.Stock, BigDecimal.parseString("100"))),
+        schedule = null,
+        createdDay = "2024-01-01",
+    )
+
     private fun coordinator(
         stateStore: SchedulerStateStore,
         settings: AppSettings = AppSettings(marketOpenClose = true, newsDigest = true),
@@ -60,6 +72,8 @@ class DesktopMarketActivityCoordinatorTest {
         notifyDigest: suspend (String) -> Unit = {},
         notifyEarnings: suspend (EarningsEvent) -> Unit = {},
         fetchTodaysOwnEarnings: suspend () -> List<EarningsEvent> = { emptyList() },
+        executeDueContributions: suspend (Long) -> List<PieRunResult> = { emptyList() },
+        notifyPieContribution: suspend (ContributionOutcome) -> Unit = {},
         nowEpochSeconds: () -> Long,
         scope: kotlinx.coroutines.CoroutineScope,
     ): DesktopMarketActivityCoordinator {
@@ -72,6 +86,8 @@ class DesktopMarketActivityCoordinatorTest {
             notifyDigest = notifyDigest,
             notifyEarnings = notifyEarnings,
             fetchTodaysOwnEarnings = fetchTodaysOwnEarnings,
+            executeDueContributions = executeDueContributions,
+            notifyPieContribution = notifyPieContribution,
             fetchWatchlist = FetchWatchlist(watchlistStore, emptyList()),
             fetchMarketQuotes = FetchMarketQuotes(repo),
             scope = scope,
@@ -296,5 +312,111 @@ class DesktopMarketActivityCoordinatorTest {
         coordinator.start(); runCurrent()
 
         assertTrue(notified.isEmpty())
+    }
+
+    // MARK: - Pie contributions (M7.2 Task 12)
+
+    @Test
+    fun launchCatchUpFiresOnceBeforeTheFirstTickWhenPieContributionsEnabled() = runTest {
+        // Market CLOSED at this instant (mondayNineAmClosed), so the tick loop's own
+        // `ContributionCheckDue` path (gated on `status == OPEN`) never fires here — isolating
+        // this assertion to the launch catch-up alone (Global Constraints correction 6: the
+        // launch-catch-up path is gated ONLY on `settings.pieContributions`, not market status).
+        val stateStore = InMemorySchedulerStateStore(initial = SchedulerState(lastStatus = com.aptrade.shared.domain.MarketStatus.CLOSED))
+        val pie = pieFixture()
+        val outcome: ContributionOutcome = ContributionOutcome.SkippedInsufficientCash(pie)
+        var catchUpCallCount = 0
+        val notified = mutableListOf<ContributionOutcome>()
+        val coordinator = coordinator(
+            stateStore = stateStore,
+            settings = AppSettings(marketOpenClose = false, newsDigest = false, pieContributions = true),
+            executeDueContributions = { catchUpCallCount += 1; listOf(PieRunResult(pie, listOf(outcome))) },
+            notifyPieContribution = { o -> notified += o },
+            nowEpochSeconds = { mondayNineAmClosed },
+            scope = backgroundScope,
+        )
+
+        coordinator.start(); runCurrent()
+
+        assertEquals(1, catchUpCallCount)
+        assertEquals(listOf(outcome), notified)
+    }
+
+    @Test
+    fun launchCatchUpNeverRunsWhenPieContributionsDisabled() = runTest {
+        val stateStore = InMemorySchedulerStateStore(initial = SchedulerState(lastStatus = com.aptrade.shared.domain.MarketStatus.OPEN))
+        var catchUpCallCount = 0
+        val notified = mutableListOf<ContributionOutcome>()
+        val coordinator = coordinator(
+            stateStore = stateStore,
+            settings = AppSettings(marketOpenClose = false, newsDigest = false, pieContributions = false),
+            executeDueContributions = { catchUpCallCount += 1; listOf(PieRunResult(pieFixture(), listOf(ContributionOutcome.SkippedInsufficientCash(pieFixture())))) },
+            notifyPieContribution = { o -> notified += o },
+            nowEpochSeconds = { mondayTenAmOpen },
+            scope = backgroundScope,
+        )
+
+        coordinator.start(); runCurrent()
+
+        // Neither the launch catch-up NOR the first tick's ContributionCheckDue path (the
+        // planner itself never emits the event when `pieContributionsEnabled` is false) ever
+        // calls the catch-up engine.
+        assertEquals(0, catchUpCallCount)
+        assertTrue(notified.isEmpty())
+    }
+
+    @Test
+    fun contributionCheckDueOnTheFirstOpenTickExecutesCatchUpAndNotifiesPerOutcome() = runTest {
+        // No prior lastContributionDay recorded, market OPEN at this instant: both the launch
+        // catch-up (unconditional on `pieContributions`) AND the tick's `ContributionCheckDue`
+        // handler (fired on the first tick that observes the market open) call
+        // `executeDueContributions` — mirroring real behavior where the SECOND call finds
+        // nothing left due (the first call already advanced past it) and returns no results.
+        val stateStore = InMemorySchedulerStateStore(initial = SchedulerState(lastStatus = com.aptrade.shared.domain.MarketStatus.OPEN))
+        val pie = pieFixture()
+        val outcome: ContributionOutcome = ContributionOutcome.SkippedInsufficientCash(pie)
+        var catchUpCallCount = 0
+        val notified = mutableListOf<ContributionOutcome>()
+        val coordinator = coordinator(
+            stateStore = stateStore,
+            settings = AppSettings(marketOpenClose = false, newsDigest = false, pieContributions = true),
+            executeDueContributions = { _ ->
+                catchUpCallCount += 1
+                if (catchUpCallCount == 1) listOf(PieRunResult(pie, listOf(outcome))) else emptyList()
+            },
+            notifyPieContribution = { o -> notified += o },
+            nowEpochSeconds = { mondayTenAmOpen },
+            scope = backgroundScope,
+        )
+
+        coordinator.start(); runCurrent()
+
+        assertEquals(2, catchUpCallCount)      // launch catch-up + the first tick's ContributionCheckDue
+        assertEquals(listOf(outcome), notified) // only the first (due-work) call produced an outcome
+        assertEquals(1, stateStore.saveCallCount)
+    }
+
+    @Test
+    fun contributionCatchUpFailureDropsOnlyThisTickAndTheLoopSurvives() = runTest {
+        // Regression guard mirroring earningsFetchFailureDropsOnlyEarningsAndTheLoopSurvives:
+        // an uncaught failure from executeDueContributions must not kill the tick coroutine.
+        val stateStore = InMemorySchedulerStateStore(initial = SchedulerState(lastStatus = com.aptrade.shared.domain.MarketStatus.OPEN))
+        val statusEvents = mutableListOf<Boolean>()
+        var now = mondayTenAmOpen
+        val coordinator = coordinator(
+            stateStore = stateStore,
+            settings = AppSettings(marketOpenClose = true, newsDigest = false, pieContributions = true),
+            notifyMarketStatus = { opened -> statusEvents += opened },
+            executeDueContributions = { throw QuoteError.Network("down") },
+            nowEpochSeconds = { now },
+            scope = backgroundScope,
+        )
+
+        coordinator.start(); runCurrent()
+        assertEquals(1, stateStore.saveCallCount)  // tick completed despite the catch-up failure
+
+        now = mondayNineAmClosed + 24 * 3_600      // next day pre-open -> market closed
+        advanceTimeBy(60_001); runCurrent()
+        assertEquals(listOf(false), statusEvents)  // loop survived: transition still delivered
     }
 }

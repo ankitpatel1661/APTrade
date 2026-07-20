@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /** One wedge of the allocation donut: `fraction` is 0.0–1.0 of the whole. */
@@ -27,11 +28,17 @@ private const val START_ANGLE_DEGREES = -90f
 @Composable
 fun DonutChart(
     slices: List<DonutSlice>,
+    // Named `diameter` (not `size`) to avoid shadowing `DrawScope.size` inside the Canvas
+    // lambda below. Lets callers reuse this component at other sizes — the Plans list card's
+    // 52dp mini-donut and the pie detail header's 130dp target-weight donut (M7.2 Task 12,
+    // mirroring PlansSection.swift's `DonutChart(slices:, size:)` calls) — without touching
+    // the 150dp default every Portfolio allocation call site relies on.
+    diameter: Dp = 150.dp,
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit = {},
 ) {
-    Box(modifier.size(150.dp)) {
-        Canvas(Modifier.size(150.dp)) {
+    Box(modifier.size(diameter)) {
+        Canvas(Modifier.size(diameter)) {
             val outerRadius = size.minDimension / 2f
             val ringWidth = (1f - INNER_RADIUS_RATIO) * outerRadius
             val midRadius = outerRadius * (1f + INNER_RADIUS_RATIO) / 2f

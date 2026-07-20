@@ -9,6 +9,8 @@ import com.aptrade.desktop.infra.FileSettingsStore
 import com.aptrade.desktop.infra.FileWatchlistStore
 import com.aptrade.desktop.infra.FinnhubKeyConfig
 import com.aptrade.desktop.infra.TrayNotifier
+import com.aptrade.desktop.plans.PieWizardViewModel
+import com.aptrade.desktop.plans.PlansViewModel
 import com.aptrade.shared.infrastructure.resolveConfigDir
 import com.aptrade.shared.application.AddToWatchlist
 import com.aptrade.shared.application.AlertStore
@@ -33,24 +35,37 @@ import com.aptrade.shared.application.FetchSearch
 import com.aptrade.shared.application.FetchWatchlist
 import com.aptrade.shared.application.LoadAlerts
 import com.aptrade.shared.application.LoadBookmarks
+import com.aptrade.shared.application.ContributeToPie
+import com.aptrade.shared.application.DeletePie
+import com.aptrade.shared.application.ExecuteDueContributions
+import com.aptrade.shared.application.LoadPies
 import com.aptrade.shared.application.MarketActivityPlanner
 import com.aptrade.shared.application.MarketDataRepository
 import com.aptrade.shared.application.NewsRepository
+import com.aptrade.shared.application.PieStore
 import com.aptrade.shared.application.PortfolioStore
+import com.aptrade.shared.application.RebalancePie
+import com.aptrade.shared.application.ReconcilePieLedgers
 import com.aptrade.shared.application.RemoveFromWatchlist
 import com.aptrade.shared.application.RemovePriceAlert
 import com.aptrade.shared.application.ResetPortfolio
+import com.aptrade.shared.application.SavePie
 import com.aptrade.shared.application.SchedulerStateStore
 import com.aptrade.shared.application.SellAsset
+import com.aptrade.shared.application.SimulateDCA
 import com.aptrade.shared.application.ToggleBookmark
 import com.aptrade.shared.application.WatchlistStore
 import com.aptrade.shared.domain.AssetKind
+import com.aptrade.shared.domain.MarketCalendar
+import com.aptrade.shared.domain.Pie
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.domain.WatchlistEntry
+import com.aptrade.shared.infrastructure.FilePieStore
 import com.aptrade.shared.infrastructure.FilePortfolioStore
 import com.aptrade.shared.infrastructure.FinnhubEarningsRepository
 import com.aptrade.shared.infrastructure.FinnhubNewsRepository
 import com.aptrade.shared.infrastructure.YahooMarketDataRepository
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -65,6 +80,11 @@ class AppGraph(
     val bookmarkStore: BookmarkStore = FileBookmarkStore(resolveConfigDir().resolve("bookmarks.json")),
     alertStore: AlertStore = FileAlertStore(resolveConfigDir().resolve("alerts.json")),
     val schedulerStateStore: SchedulerStateStore = FileSchedulerStateStore(resolveConfigDir().resolve("schedulerState.json")),
+    // Investment Plans (Pies) persistence (M7.2 Task 12) — same whole-blob JSON-file shape as
+    // every other store here. Public (like settingsStore/bookmarkStore) since the Plans UI
+    // reads it directly for the edit wizard's raw-Pie lookup (mirrors macOS's
+    // `CompositionRoot.pieStore.load()` — see PlansPane.kt).
+    val pieStore: PieStore = FilePieStore(resolveConfigDir().resolve("pies.json")),
     // Constructed once here (not via rememberTrayState() in Main.kt) so the SAME instance
     // backs both the Tray composable (which renders the OS tray icon) and TrayNotifier
     // (which posts to it) — one tray, one notifier, one process, matching every other
@@ -102,6 +122,58 @@ class AppGraph(
     val resetPortfolio = ResetPortfolio(portfolioStore)
     val fetchPortfolioPerformance = FetchPortfolioPerformance(repository, portfolioStore)
     val fetchPerformanceReport = FetchPerformanceReport(repository, fetchPortfolioPerformance)
+
+    // Investment Plans (Pies) — M7.2 Task 12. Every mutating pie use case shares the SAME
+    // portfolioMutex above (Global Constraint #8 / BuyAsset's doc contract, extended below):
+    // pie contributions/rebalances/reconciliation and plain buy/sell all read-modify-write the
+    // same portfolioStore, so one shared lock is what makes them mutually exclusive rather than
+    // only exclusive within their own use case. marketCalendar is stateless (see MarketCalendar's
+    // KDoc) — one instance, shared by every pie use case and both Plans view models below, the
+    // same way `graph.fetchEarningsCalendar` shares one calendar-reading closure.
+    val marketCalendar = MarketCalendar()
+    val loadPies = LoadPies(pieStore)
+    val savePie = SavePie(pieStore, portfolioMutex)
+    val deletePie = DeletePie(pieStore, portfolioMutex)
+    val contributeToPie = ContributeToPie(pieStore, portfolioStore, repository, portfolioMutex)
+    val executeDueContributions = ExecuteDueContributions(pieStore, portfolioStore, repository, marketCalendar, portfolioMutex)
+    val rebalancePie = RebalancePie(pieStore, portfolioStore, repository, portfolioMutex)
+    val reconcilePieLedgers = ReconcilePieLedgers(pieStore, portfolioStore, portfolioMutex, marketCalendar)
+    val simulateDCA = SimulateDCA(repository, marketCalendar)
+
+    /** Builds a fresh [PlansViewModel] bound to [scope] — mirrors macOS's
+     *  `CompositionRoot.makePlansViewModel()` factory (there is no persistent, graph-owned VM
+     *  instance; each caller, e.g. `PlansPane`, owns its own scope/instance lifetime). */
+    fun makePlansViewModel(
+        scope: CoroutineScope,
+        nowEpochSeconds: () -> Long = { System.currentTimeMillis() / 1000 },
+    ): PlansViewModel = PlansViewModel(
+        loadPies = loadPies,
+        deletePieUseCase = deletePie,
+        contributeToPie = contributeToPie,
+        rebalancePie = rebalancePie,
+        reconcileLedgers = reconcilePieLedgers,
+        fetchMarketQuotes = fetchMarketQuotes,
+        calendar = marketCalendar,
+        scope = scope,
+        nowEpochSeconds = nowEpochSeconds,
+    )
+
+    /** Builds a fresh [PieWizardViewModel] bound to [scope], optionally pre-seeded from
+     *  [existingPie] for an edit — mirrors macOS's
+     *  `CompositionRoot.makePieWizardViewModel(existingPie:)` factory. */
+    fun makePieWizardViewModel(
+        existingPie: Pie? = null,
+        scope: CoroutineScope,
+        nowEpochSeconds: () -> Long = { System.currentTimeMillis() / 1000 },
+    ): PieWizardViewModel = PieWizardViewModel(
+        existingPie = existingPie,
+        savePie = savePie,
+        simulateDCA = simulateDCA,
+        searchAssets = fetchSearch,
+        calendar = marketCalendar,
+        scope = scope,
+        nowEpochSeconds = nowEpochSeconds,
+    )
 
     // Null when no Finnhub key is configured; the news UI reads [keyMissing] to show a
     // "no key configured" state rather than attempting requests that would all fail.

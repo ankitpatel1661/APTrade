@@ -509,6 +509,15 @@ private fun NotificationsPage(
         checked = settings.earningsReports,
         onCheckedChange = { checked -> onUpdate { it.copy(earningsReports = checked) } },
     )
+    // Gates EXECUTION of due Plan contributions (both the planner-event and launch-catch-up
+    // paths in DesktopMarketActivityCoordinator), not just this notification — see
+    // AppSettings.pieContributions' doc comment and Global Constraints correction 6.
+    ToggleRow(
+        title = tr(L10n.Key.PieContributionsToggle),
+        subtitle = tr(L10n.Key.PieContributionsSubtitle),
+        checked = settings.pieContributions,
+        onCheckedChange = { checked -> onUpdate { it.copy(pieContributions = checked) } },
+    )
     Spacer(Modifier.height(10.dp))
     // macOS reuses tr(.email) ("Email") for this section label too (RootView.swift:426) —
     // not a dedicated EMAIL-section Key. Mirrored here rather than adding a duplicate Key.
