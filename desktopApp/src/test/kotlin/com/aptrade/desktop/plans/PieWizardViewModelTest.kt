@@ -102,11 +102,59 @@ class PieWizardViewModelTest {
         assertEquals(BigDecimal.parseString("100"), vm.state.value.weightSumPP)
         assertTrue(vm.state.value.canSave)
 
+        // With A+B already at 100, a new slice's weight clamps to the zero remainder —
+        // the sum can no longer overshoot (see setWeightClampsToRemainingBudgetTotalNeverExceeds100).
         vm.addSlice(Asset("C", "C", AssetKind.Stock))
         vm.setWeight("C", BigDecimal.parseString("5"))
+        assertEquals(BigDecimal.parseString("100"), vm.state.value.weightSumPP)
 
-        assertEquals(BigDecimal.parseString("105"), vm.state.value.weightSumPP)
+        // An under-100 sum still blocks saving: canSave demands EXACTLY 100.
+        vm.setWeight("B", BigDecimal.parseString("30"))
+        assertEquals(BigDecimal.parseString("90"), vm.state.value.weightSumPP)
         assertFalse(vm.state.value.canSave, "sum must be EXACTLY 100 for canSave")
+    }
+
+    // MARK: - setWeight clamping: total can never exceed 100
+
+    @Test
+    fun setWeightClampsToRemainingBudgetTotalNeverExceeds100() = runTest {
+        val vm = vm(pieStore = FakePieStore(), repo = FakeMarketDataRepository(), scope = backgroundScope)
+        for (symbol in listOf("AAPL", "NVDA", "MSFT", "AMZN")) {
+            vm.addSlice(Asset(symbol, symbol, AssetKind.Stock))
+        }
+        vm.setWeight("AAPL", BigDecimal.parseString("10"))
+        vm.setWeight("NVDA", BigDecimal.parseString("20"))
+        vm.setWeight("MSFT", BigDecimal.parseString("35"))
+
+        // Others hold 65pp, so AMZN's ceiling is 35 — a request for 40 clamps.
+        vm.setWeight("AMZN", BigDecimal.parseString("40"))
+        assertEquals(BigDecimal.parseString("35"), vm.state.value.slices.first { it.symbol == "AMZN" }.targetWeightPP)
+        assertEquals(BigDecimal.parseString("100"), vm.state.value.weightSumPP)
+
+        // Repeated overshoot stays pinned at the ceiling.
+        vm.setWeight("AMZN", BigDecimal.parseString("50"))
+        assertEquals(BigDecimal.parseString("35"), vm.state.value.slices.first { it.symbol == "AMZN" }.targetWeightPP)
+        assertEquals(BigDecimal.parseString("100"), vm.state.value.weightSumPP)
+
+        // Raising an EXISTING slice is clamped by the same budget: with the other
+        // three at 90pp, AAPL cannot go past its current 10.
+        vm.setWeight("AAPL", BigDecimal.parseString("50"))
+        assertEquals(BigDecimal.parseString("10"), vm.state.value.slices.first { it.symbol == "AAPL" }.targetWeightPP)
+        assertEquals(BigDecimal.parseString("100"), vm.state.value.weightSumPP)
+
+        // Lowering one slice frees budget for another.
+        vm.setWeight("MSFT", BigDecimal.parseString("15"))
+        vm.setWeight("AMZN", BigDecimal.parseString("55"))
+        assertEquals(BigDecimal.parseString("55"), vm.state.value.slices.first { it.symbol == "AMZN" }.targetWeightPP)
+        assertEquals(BigDecimal.parseString("100"), vm.state.value.weightSumPP)
+    }
+
+    @Test
+    fun setWeightNegativeClampsToZero() = runTest {
+        val vm = vm(pieStore = FakePieStore(), repo = FakeMarketDataRepository(), scope = backgroundScope)
+        vm.addSlice(Asset("AAPL", "AAPL", AssetKind.Stock))
+        vm.setWeight("AAPL", BigDecimal.parseString("-5"))
+        assertEquals(BigDecimal.ZERO, vm.state.value.slices.first { it.symbol == "AAPL" }.targetWeightPP)
     }
 
     @Test
