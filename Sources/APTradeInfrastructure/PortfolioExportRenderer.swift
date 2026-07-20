@@ -138,7 +138,9 @@ private struct PDFExportRenderer {
             ("Cash", ExportFormatting.currency(export.cash, code: code)),
             ("Holdings Value", ExportFormatting.currency(export.holdingsValue, code: code)),
             ("Day P&L", ExportFormatting.signedCurrency(export.dayChange, code: code)),
-            ("Unrealized P&L", ExportFormatting.signedCurrency(export.unrealizedPnL, code: code))
+            ("Unrealized P&L", ExportFormatting.signedCurrency(export.unrealizedPnL, code: code)),
+            ("Dividends Received (YTD)", ExportFormatting.currency(export.dividendsReceivedYTD, code: code)),
+            ("Projected Annual Income", ExportFormatting.currency(export.projectedAnnualIncome, code: code))
         ]
         for (label, value) in summary {
             let row = NSMutableAttributedString()
@@ -297,6 +299,8 @@ private struct XLSXExportRenderer {
             [.text("Holdings Value (\(code))"), .number(ExportFormatting.double(export.holdingsValue))],
             [.text("Day P&L (\(code))"), .number(ExportFormatting.double(export.dayChange))],
             [.text("Unrealized P&L (\(code))"), .number(ExportFormatting.double(export.unrealizedPnL))],
+            [.text("Dividends Received (YTD) (\(code))"), .number(ExportFormatting.double(export.dividendsReceivedYTD))],
+            [.text("Projected Annual Income (\(code))"), .number(ExportFormatting.double(export.projectedAnnualIncome))],
             [],
             [.text("Symbol"), .text("Name"), .text("Kind"), .text("Quantity"),
              .text("Avg Cost"), .text("Last Price"), .text("Market Value"),
@@ -397,7 +401,9 @@ private struct DOCXExportRenderer {
             ("Cash", ExportFormatting.currency(export.cash, code: code)),
             ("Holdings Value", ExportFormatting.currency(export.holdingsValue, code: code)),
             ("Day P&L", ExportFormatting.signedCurrency(export.dayChange, code: code)),
-            ("Unrealized P&L", ExportFormatting.signedCurrency(export.unrealizedPnL, code: code))
+            ("Unrealized P&L", ExportFormatting.signedCurrency(export.unrealizedPnL, code: code)),
+            ("Dividends Received (YTD)", ExportFormatting.currency(export.dividendsReceivedYTD, code: code)),
+            ("Projected Annual Income", ExportFormatting.currency(export.projectedAnnualIncome, code: code))
         ]
         for (label, value) in summary {
             body += summaryParagraph(label: label, value: value)

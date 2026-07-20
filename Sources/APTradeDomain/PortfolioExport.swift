@@ -37,6 +37,12 @@ public struct PortfolioExport: Sendable, Equatable {
     public let holdingsValue: Decimal
     public let dayChange: Decimal
     public let unrealizedPnL: Decimal
+    /// Sum of `.dividend` ledger transactions (quantity × price-per-share) whose date
+    /// falls in the current UTC calendar year as of `generatedAt`.
+    public let dividendsReceivedYTD: Decimal
+    /// Forward-looking annual dividend income from `DividendMath.projectedAnnualIncome`,
+    /// or `0` when the caller had no dividend-events data to project from.
+    public let projectedAnnualIncome: Decimal
     public let holdings: [Holding]
 
     public struct Holding: Sendable, Equatable {
@@ -70,7 +76,9 @@ public struct PortfolioExport: Sendable, Equatable {
 
     public init(generatedAt: Date, accountName: String, currencyCode: String,
                 totalValue: Decimal, cash: Decimal, holdingsValue: Decimal,
-                dayChange: Decimal, unrealizedPnL: Decimal, holdings: [Holding]) {
+                dayChange: Decimal, unrealizedPnL: Decimal,
+                dividendsReceivedYTD: Decimal = 0, projectedAnnualIncome: Decimal = 0,
+                holdings: [Holding]) {
         self.generatedAt = generatedAt
         self.accountName = accountName
         self.currencyCode = currencyCode
@@ -79,6 +87,8 @@ public struct PortfolioExport: Sendable, Equatable {
         self.holdingsValue = holdingsValue
         self.dayChange = dayChange
         self.unrealizedPnL = unrealizedPnL
+        self.dividendsReceivedYTD = dividendsReceivedYTD
+        self.projectedAnnualIncome = projectedAnnualIncome
         self.holdings = holdings
     }
 }
@@ -88,7 +98,7 @@ public extension PortfolioExport {
     /// cost basis when a quote is missing, mirroring `Portfolio.valuation`). Holdings are
     /// ordered by market value, largest first.
     init(portfolio: Portfolio, quotes: [String: Quote], accountName: String,
-         generatedAt: Date = Date()) {
+         generatedAt: Date = Date(), projectedAnnualIncome: Decimal = 0) {
         let valuation = portfolio.valuation(quotes: quotes)
         let total = valuation.totalValue.amount
         let totalDouble = (total as NSDecimalNumber).doubleValue
@@ -124,7 +134,20 @@ public extension PortfolioExport {
             holdingsValue: valuation.holdingsValue.amount,
             dayChange: valuation.dayChange.amount,
             unrealizedPnL: valuation.unrealizedPnL.amount,
+            dividendsReceivedYTD: Self.dividendsReceivedYTD(transactions: portfolio.transactions, asOf: generatedAt),
+            projectedAnnualIncome: projectedAnnualIncome,
             holdings: rows
         )
+    }
+
+    /// Sum of `.dividend` transactions (quantity × price-per-share) dated within the same
+    /// UTC calendar year as `asOf`. Pure ledger arithmetic — no quotes, no networking.
+    private static func dividendsReceivedYTD(transactions: [Transaction], asOf: Date) -> Decimal {
+        var utcCalendar = Calendar(identifier: .gregorian)
+        utcCalendar.timeZone = TimeZone.gmt
+        let currentYear = utcCalendar.component(.year, from: asOf)
+        return transactions
+            .filter { $0.side == .dividend && utcCalendar.component(.year, from: $0.date) == currentYear }
+            .reduce(Decimal(0)) { $0 + $1.quantity.amount * $1.price.amount }
     }
 }

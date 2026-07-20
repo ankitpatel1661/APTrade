@@ -40,17 +40,41 @@ private final class DetailFakeEarningsCalendarRepository: EarningsCalendarReposi
     }
 }
 
+/// Spy fake for `DividendEventsRepository` — records call count/args and returns a
+/// fixed events list or throws a fixed error, so tests can both assert on outcomes
+/// (nil vs. computed `DividendInfo`) and on whether the repository was ever invoked
+/// (the crypto-skip case must never call it).
+private final class SpyDividendEventsRepository: DividendEventsRepository, @unchecked Sendable {
+    var eventsToReturn: [DividendEvent] = []
+    var error: (any Error)?
+    private(set) var callCount = 0
+    private(set) var lastSymbol: String?
+    private(set) var lastSince: Date?
+
+    func dividendEvents(for symbol: String, since: Date) async throws -> [DividendEvent] {
+        callCount += 1
+        lastSymbol = symbol
+        lastSince = since
+        if let error { throw error }
+        return eventsToReturn
+    }
+}
+
 @MainActor
 final class AssetDetailViewModelTests: XCTestCase {
     let asset = Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock)
 
-    func makeVM(_ repo: DetailFakeRepo, fetchEarnings: FetchEarningsCalendarUseCase? = nil) -> AssetDetailViewModel {
+    func makeVM(_ repo: DetailFakeRepo, fetchEarnings: FetchEarningsCalendarUseCase? = nil,
+                dividendEventsRepository: DividendEventsRepository = SpyDividendEventsRepository(),
+                asset: Asset? = nil, now: @escaping () -> Date = Date.init) -> AssetDetailViewModel {
         let store = MemoryStore(Portfolio(cash: Money(amount: 10_000)))
-        return AssetDetailViewModel(asset: asset,
+        return AssetDetailViewModel(asset: asset ?? self.asset,
                              fetchCandles: FetchCandlesUseCase(repository: repo),
                              fetchQuotes: FetchQuotesUseCase(repository: repo),
                              fetchPortfolio: FetchPortfolioUseCase(store: store),
-                             fetchEarnings: fetchEarnings)
+                             fetchEarnings: fetchEarnings,
+                             dividendEventsRepository: dividendEventsRepository,
+                             now: now)
     }
 
     func test_load_setsQuoteAndPoints_loaded() async {
@@ -98,5 +122,92 @@ final class AssetDetailViewModelTests: XCTestCase {
         let vm = makeVM(DetailFakeRepo(), fetchEarnings: nil)
         await vm.load()
         XCTAssertNil(vm.nextEarnings)
+    }
+
+    // MARK: - Dividend info
+
+    /// (a) A payer with events in the trailing window gets a computed `DividendInfo`:
+    /// rate = trailing 365d per-share sum, yield = rate / current quote price.
+    func test_load_payerWithEvents_computesDividendInfo() async throws {
+        let repo = DetailFakeRepo()
+        repo.historyByTf[.oneDay] = [PricePoint(date: Date(timeIntervalSince1970: 0), close: Money(amount: 10))]
+        let now = Date(timeIntervalSince1970: 1_700_000_000) // fixed "today" for the events below
+        let dividendRepo = SpyDividendEventsRepository()
+        dividendRepo.eventsToReturn = [
+            DividendEvent(symbol: "AAPL", exDate: now.addingTimeInterval(-90 * 86_400), amountPerShare: Money(amount: 0.24)),
+            DividendEvent(symbol: "AAPL", exDate: now.addingTimeInterval(-180 * 86_400), amountPerShare: Money(amount: 0.23)),
+            DividendEvent(symbol: "AAPL", exDate: now.addingTimeInterval(-270 * 86_400), amountPerShare: Money(amount: 0.23)),
+            DividendEvent(symbol: "AAPL", exDate: now.addingTimeInterval(-360 * 86_400), amountPerShare: Money(amount: 0.22)),
+        ]
+        let vm = makeVM(repo, dividendEventsRepository: dividendRepo, now: { now })
+        await vm.load()
+
+        // DetailFakeRepo always quotes price = 10.
+        let expectedRate = DividendMath.trailingAnnualPerShare(events: dividendRepo.eventsToReturn, asOf: now)
+        let info = try XCTUnwrap(vm.dividendInfo)
+        XCTAssertEqual(info.trailingAnnualRate, expectedRate)
+        XCTAssertEqual(info.yieldFraction, (expectedRate.amount / 10 as NSDecimalNumber).doubleValue, accuracy: 0.0001)
+        XCTAssertEqual(info.recentAmounts, dividendRepo.eventsToReturn.sorted { $0.exDate < $1.exDate }.map(\.amountPerShare))
+        XCTAssertEqual(dividendRepo.callCount, 1)
+    }
+
+    /// (b) Crypto assets never fetch dividend events — `dividendInfo` degrades to nil
+    /// without the repository ever being called.
+    func test_load_cryptoAsset_dividendInfoNilWithoutFetching() async {
+        let repo = DetailFakeRepo()
+        let cryptoAsset = Asset(symbol: "BTC-USD", name: "Bitcoin", kind: .crypto)
+        let dividendRepo = SpyDividendEventsRepository()
+        let vm = makeVM(repo, dividendEventsRepository: dividendRepo, asset: cryptoAsset)
+        await vm.load()
+        XCTAssertNil(vm.dividendInfo)
+        XCTAssertEqual(dividendRepo.callCount, 0)
+    }
+
+    /// (c) Zero dividend events in the trailing-2-year window → nil (non-payer, section hidden).
+    func test_load_noEvents_dividendInfoNil() async {
+        let repo = DetailFakeRepo()
+        let dividendRepo = SpyDividendEventsRepository()
+        dividendRepo.eventsToReturn = []
+        let vm = makeVM(repo, dividendEventsRepository: dividendRepo)
+        await vm.load()
+        XCTAssertNil(vm.dividendInfo)
+    }
+
+    /// (d) A dividend-events fetch failure degrades to nil — never an error state — and
+    /// leaves the rest of the detail load (quote/candles) unaffected.
+    func test_load_dividendFetchFailure_dividendInfoNilOtherStateUnaffected() async {
+        let repo = DetailFakeRepo()
+        repo.historyByTf[.oneDay] = [PricePoint(date: Date(timeIntervalSince1970: 0), close: Money(amount: 5))]
+        let dividendRepo = SpyDividendEventsRepository()
+        dividendRepo.error = AppError.network
+        let vm = makeVM(repo, dividendEventsRepository: dividendRepo)
+        await vm.load()
+        XCTAssertNil(vm.dividendInfo)
+        XCTAssertEqual(vm.loadState, .loaded)
+        XCTAssertEqual(vm.quote?.symbol, "AAPL")
+    }
+
+    /// Regression: a payer whose last event within the fetch window is old enough that
+    /// `lastEvent.exDate + cadenceInterval` lands before "now" must NOT surface a past date
+    /// under the "Est." badge. `nextEstimatedExDate` should hide (nil) while the rest of
+    /// `DividendInfo` (rate/yield/recentAmounts) still shows — mirrors
+    /// `IncomeViewModel.buildUpcoming`'s `projected.exDate > asOf` guard.
+    func test_load_projectedNextExDateInPast_hidesDateButKeepsOtherFields() async throws {
+        let repo = DetailFakeRepo()
+        repo.historyByTf[.oneDay] = [PricePoint(date: Date(timeIntervalSince1970: 0), close: Money(amount: 10))]
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let dividendRepo = SpyDividendEventsRepository()
+        // Annual cadence (365-day gap), last event ~700 days ago: projected next ex-date
+        // = lastEvent + 365d = now - 335d, i.e. still in the past relative to `now`.
+        dividendRepo.eventsToReturn = [
+            DividendEvent(symbol: "AAPL", exDate: now.addingTimeInterval(-700 * 86_400), amountPerShare: Money(amount: 0.20)),
+            DividendEvent(symbol: "AAPL", exDate: now.addingTimeInterval(-1065 * 86_400), amountPerShare: Money(amount: 0.20)),
+        ]
+        let vm = makeVM(repo, dividendEventsRepository: dividendRepo, now: { now })
+        await vm.load()
+
+        let info = try XCTUnwrap(vm.dividendInfo)
+        XCTAssertNil(info.nextEstimatedExDate)
+        XCTAssertEqual(info.recentAmounts, dividendRepo.eventsToReturn.sorted { $0.exDate < $1.exDate }.map(\.amountPerShare))
     }
 }

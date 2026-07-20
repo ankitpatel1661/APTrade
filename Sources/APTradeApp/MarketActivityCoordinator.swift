@@ -26,6 +26,12 @@ final class MarketActivityCoordinator {
     // there is nothing for this closure boundary to catch — it exists purely so tests
     // can inject a fake without standing up real stores/market data.
     private let executeDueContributions: @Sendable (Date) async -> [(pie: Pie, outcomes: [ContributionOutcome])]
+    // Non-throwing by design, exactly like `executeDueContributions` above:
+    // `ProcessDueDividends.callAsFunction` already degrades any per-symbol failure
+    // internally rather than throwing (see its doc comment), so there is nothing for
+    // this closure boundary to catch — it exists purely so tests can inject a fake
+    // without standing up real stores/market data.
+    private let processDueDividends: @Sendable (Date) async -> [DividendOutcome]
     private let calendar: MarketCalendar
     private let interval: Duration
     private let now: () -> Date
@@ -38,6 +44,7 @@ final class MarketActivityCoordinator {
          fetchQuotes: FetchQuotesUseCase,
          fetchOwnedEarningsToday: @escaping @Sendable (String) async -> [EarningsEvent],
          executeDueContributions: @escaping @Sendable (Date) async -> [(pie: Pie, outcomes: [ContributionOutcome])],
+         processDueDividends: @escaping @Sendable (Date) async -> [DividendOutcome],
          calendar: MarketCalendar = MarketCalendar(),
          interval: Duration = .seconds(60),
          now: @escaping () -> Date = Date.init) {
@@ -49,6 +56,7 @@ final class MarketActivityCoordinator {
         self.fetchQuotes = fetchQuotes
         self.fetchOwnedEarningsToday = fetchOwnedEarningsToday
         self.executeDueContributions = executeDueContributions
+        self.processDueDividends = processDueDividends
         self.calendar = calendar
         self.interval = interval
         self.now = now
@@ -63,6 +71,9 @@ final class MarketActivityCoordinator {
         if loadSettings().pieContributions {
             await notifyContributionsDue()
         }
+        // Dividend crediting is never settings-gated (see `notifyDividendsDue`'s doc
+        // comment) — the catch-up always runs at launch, unlike the Pie catch-up above.
+        await notifyDividendsDue()
         while !Task.isCancelled {
             await tick()
             try? await Task.sleep(for: interval)
@@ -82,6 +93,7 @@ final class MarketActivityCoordinator {
             case .digestDue: await notifier.notifyDigest(summary: await digestSummary())
             case .earningsCheckDue: await notifyEarningsDue()
             case .contributionCheckDue: await notifyContributionsDue()
+            case .dividendCheckDue: await notifyDividendsDue()
             }
         }
     }
@@ -127,6 +139,56 @@ final class MarketActivityCoordinator {
                 }
             }
         }
+    }
+
+    /// Runs the dividend-crediting engine and notifies, IF the user has
+    /// `dividendNotifications` enabled. Crediting itself is ALWAYS on — this closure runs
+    /// unconditionally (see `run()`'s launch catch-up and `tick()`'s `.dividendCheckDue`
+    /// case) because a dividend payout is bookkeeping truth (cash owed to the user), not
+    /// an optional notification; only the notification below is settings-gated.
+    ///
+    /// **Backfill collapsing.** A first-run backfill can credit an established
+    /// portfolio's entire dividend history in one pass — 20, 100, or more events. Notifying
+    /// once per outcome there would fire a notification burst at first launch. So
+    /// non-backfill (live) outcomes still notify individually, exactly as before, but
+    /// backfill outcomes are tallied and collapsed into a single summary notification
+    /// (count + total cash) emitted after the per-outcome ones. Zero backfill outcomes
+    /// means no summary at all.
+    private func notifyDividendsDue() async {
+        let outcomes = await processDueDividends(now())
+        guard loadSettings().dividendNotifications else { return }
+
+        var backfillCount = 0
+        var totalBackfillCash = Money(amount: 0)
+        for outcome in outcomes {
+            switch outcome {
+            case .credited(let symbol, let cash, let isBackfill):
+                if isBackfill {
+                    backfillCount += 1
+                    totalBackfillCash = totalBackfillCash + cash
+                } else {
+                    await notifier.notifyDividend(
+                        title: tr(.notifDividendTitle),
+                        body: String(format: tr(.notifDividendCashBodyFmt), symbol, cash.formatted)
+                    )
+                }
+            case .reinvested(let symbol, let cash, _, let isBackfill):
+                if isBackfill {
+                    backfillCount += 1
+                    totalBackfillCash = totalBackfillCash + cash
+                } else {
+                    await notifier.notifyDividend(
+                        title: tr(.notifDividendTitle),
+                        body: String(format: tr(.notifDividendDripBodyFmt), symbol, cash.formatted)
+                    )
+                }
+            }
+        }
+        guard backfillCount > 0 else { return }
+        await notifier.notifyDividend(
+            title: tr(.notifDividendTitle),
+            body: String(format: tr(.notifDividendBackfillBodyFmt), String(backfillCount), totalBackfillCash.formatted)
+        )
     }
 
     /// Builds the digest body from the watchlist's biggest movers today.

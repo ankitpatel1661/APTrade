@@ -10,6 +10,10 @@ public struct AppSettings: Equatable, Codable, Sendable {
     public var emailNotifications: Bool
     public var earningsReports: Bool
     public var pieContributions: Bool
+    public var dividendNotifications: Bool
+
+    // Dividends
+    public var dripEnabled: Bool
 
     // Security & privacy
     public var biometricLogin: Bool
@@ -32,6 +36,8 @@ public struct AppSettings: Equatable, Codable, Sendable {
         emailNotifications: Bool = false,
         earningsReports: Bool = true,
         pieContributions: Bool = true,
+        dividendNotifications: Bool = true,
+        dripEnabled: Bool = false,
         biometricLogin: Bool = true,
         requireAuthOnLaunch: Bool = true,
         confirmTrades: Bool = true,
@@ -47,6 +53,8 @@ public struct AppSettings: Equatable, Codable, Sendable {
         self.emailNotifications = emailNotifications
         self.earningsReports = earningsReports
         self.pieContributions = pieContributions
+        self.dividendNotifications = dividendNotifications
+        self.dripEnabled = dripEnabled
         self.biometricLogin = biometricLogin
         self.requireAuthOnLaunch = requireAuthOnLaunch
         self.confirmTrades = confirmTrades
@@ -68,6 +76,8 @@ public struct AppSettings: Equatable, Codable, Sendable {
         emailNotifications = try c.decodeIfPresent(Bool.self, forKey: .emailNotifications) ?? d.emailNotifications
         earningsReports = try c.decodeIfPresent(Bool.self, forKey: .earningsReports) ?? d.earningsReports
         pieContributions = try c.decodeIfPresent(Bool.self, forKey: .pieContributions) ?? d.pieContributions
+        dividendNotifications = try c.decodeIfPresent(Bool.self, forKey: .dividendNotifications) ?? d.dividendNotifications
+        dripEnabled = try c.decodeIfPresent(Bool.self, forKey: .dripEnabled) ?? d.dripEnabled
         biometricLogin = try c.decodeIfPresent(Bool.self, forKey: .biometricLogin) ?? d.biometricLogin
         requireAuthOnLaunch = try c.decodeIfPresent(Bool.self, forKey: .requireAuthOnLaunch) ?? d.requireAuthOnLaunch
         confirmTrades = try c.decodeIfPresent(Bool.self, forKey: .confirmTrades) ?? d.confirmTrades

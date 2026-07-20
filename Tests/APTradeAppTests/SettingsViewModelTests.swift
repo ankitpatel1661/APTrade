@@ -52,4 +52,26 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(vm.finnhubKey, "")
         XCTAssertEqual(persistedValue, "")
     }
+
+    func test_togglingDripEnabled_persistsAndSurvivesReload() {
+        let store = InMemorySettingsStore()
+        let vm1 = SettingsViewModel(loadSettings: LoadSettingsUseCase(store: store), saveSettings: SaveSettingsUseCase(store: store))
+        XCTAssertFalse(vm1.settings.dripEnabled)
+
+        vm1.settings.dripEnabled = true
+
+        let vm2 = SettingsViewModel(loadSettings: LoadSettingsUseCase(store: store), saveSettings: SaveSettingsUseCase(store: store))
+        XCTAssertTrue(vm2.settings.dripEnabled)
+    }
+
+    func test_togglingDividendNotifications_persistsAndSurvivesReload() {
+        let store = InMemorySettingsStore()
+        let vm1 = SettingsViewModel(loadSettings: LoadSettingsUseCase(store: store), saveSettings: SaveSettingsUseCase(store: store))
+        XCTAssertTrue(vm1.settings.dividendNotifications)
+
+        vm1.settings.dividendNotifications = false
+
+        let vm2 = SettingsViewModel(loadSettings: LoadSettingsUseCase(store: store), saveSettings: SaveSettingsUseCase(store: store))
+        XCTAssertFalse(vm2.settings.dividendNotifications)
+    }
 }

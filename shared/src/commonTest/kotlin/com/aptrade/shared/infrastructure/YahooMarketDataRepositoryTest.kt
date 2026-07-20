@@ -145,4 +145,39 @@ class YahooMarketDataRepositoryTest {
         val ex = assertFailsWith<QuoteError> { repo.search("apple") }
         assertTrue(ex is QuoteError.Network)
     }
+
+    @Test
+    fun fetchesDividendEventsWithMaxRangeMonthlyIntervalAndDivEvents() = runTest {
+        val body = """
+            {"chart":{"result":[{"meta":{"symbol":"AAPL","currency":"USD"},
+            "events":{"dividends":{"1000":{"amount":0.24,"date":1000}}}}]}}
+        """.trimIndent()
+        var capturedUrl: String? = null
+        val client = HttpClient(MockEngine { request ->
+            capturedUrl = request.url.toString()
+            respond(
+                content = body,
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }) { installYahoo() }
+        val repo = YahooMarketDataRepository(client)
+
+        val events = repo.dividendEvents("AAPL", fromEpochSeconds = 0L)
+
+        assertTrue(capturedUrl!!.contains("range=max"))
+        assertTrue(capturedUrl!!.contains("interval=1mo"))
+        assertTrue(capturedUrl!!.contains("events=div"))
+        assertEquals(1, events.size)
+        assertEquals("AAPL", events[0].symbol)
+        assertEquals(1000L, events[0].exDateEpochSeconds)
+        assertEquals(Money(BigDecimal.parseString("0.24"), "USD"), events[0].amountPerShare)
+    }
+
+    @Test
+    fun mapsDividendEventsHttp429ToRateLimited() = runTest {
+        val repo = YahooMarketDataRepository(clientReturning(HttpStatusCode.TooManyRequests, ""))
+        val ex = assertFailsWith<QuoteError> { repo.dividendEvents("AAPL", fromEpochSeconds = 0L) }
+        assertTrue(ex is QuoteError.RateLimited)
+    }
 }

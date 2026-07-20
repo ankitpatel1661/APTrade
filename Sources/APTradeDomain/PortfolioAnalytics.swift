@@ -25,6 +25,8 @@ public extension Portfolio {
                 let heldAvg = averageCost[symbol] ?? transaction.price.amount
                 realized += (transaction.price.amount - heldAvg) * tradeQty
                 quantity[symbol] = (quantity[symbol] ?? 0) - tradeQty
+            case .dividend:
+                break   // Cash event only — does not affect quantity, cost basis, or realized P&L.
             }
         }
         return Money(amount: realized, currencyCode: cash.currencyCode)

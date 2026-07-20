@@ -39,4 +39,29 @@ final class AppSettingsLanguageTests: XCTestCase {
         XCTAssertFalse(decoded.isDarkMode)               // existing field preserved
         XCTAssertFalse(decoded.confirmTrades)            // existing field preserved
     }
+
+    func test_legacyPayloadWithoutDividendFields_decodesToDefaultsAndKeepsOtherFields() throws {
+        // A payload saved before `dripEnabled`/`dividendNotifications` existed: omits both keys.
+        let legacy = #"{ "isDarkMode": false, "confirmTrades": false }"#.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: legacy)
+        XCTAssertFalse(decoded.dripEnabled)              // absent → default (false)
+        XCTAssertTrue(decoded.dividendNotifications)     // absent → default (true)
+        XCTAssertFalse(decoded.isDarkMode)               // existing field preserved
+        XCTAssertFalse(decoded.confirmTrades)            // existing field preserved
+    }
+
+    func test_default_dividendFieldsHaveExpectedDefaults() {
+        XCTAssertFalse(AppSettings.default.dripEnabled)
+        XCTAssertTrue(AppSettings.default.dividendNotifications)
+    }
+
+    func test_codableRoundTrip_preservesDividendFields() throws {
+        var s = AppSettings.default
+        s.dripEnabled = true
+        s.dividendNotifications = false
+        let data = try JSONEncoder().encode(s)
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: data)
+        XCTAssertTrue(decoded.dripEnabled)
+        XCTAssertFalse(decoded.dividendNotifications)
+    }
 }

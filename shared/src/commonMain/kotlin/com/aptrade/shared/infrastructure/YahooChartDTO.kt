@@ -62,6 +62,17 @@ data class YahooChartResponse(val chart: Chart) {
         val meta: Meta,
         val timestamp: List<Long>? = null,
         val indicators: Indicators? = null,
+        val events: Events? = null,
+    )
+
+    @Serializable
+    data class Events(val dividends: Map<String, DividendCell>? = null)
+
+    @Serializable
+    data class DividendCell(
+        @Serializable(with = BigDecimalWireSerializer::class)
+        val amount: BigDecimal? = null,
+        val date: Long? = null,
     )
 
     @Serializable

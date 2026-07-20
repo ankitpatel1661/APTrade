@@ -53,6 +53,8 @@ final class TradeViewModel {
             return cost <= availableCash.amount
         case .sell:
             return quantity.amount <= sharesOwned.amount
+        case .dividend:
+            return false   // Not a user-selectable side in the trade sheet.
         }
     }
 
@@ -72,6 +74,8 @@ final class TradeViewModel {
             guard let price = quote?.price, price.amount > 0 else { return }
             let maxQty = availableCash.amount / price.amount
             quantityText = Quantity(maxQty).formatted
+        case .dividend:
+            break   // Not a user-selectable side in the trade sheet.
         }
     }
 
@@ -88,6 +92,8 @@ final class TradeViewModel {
                 portfolio = try await buy(asset: asset, quantity: quantity)
             case .sell:
                 portfolio = try await sell(symbol: asset.symbol, quantity: quantity)
+            case .dividend:
+                return   // Not a user-selectable side in the trade sheet.
             }
             didComplete = true
             if let filledAmount {

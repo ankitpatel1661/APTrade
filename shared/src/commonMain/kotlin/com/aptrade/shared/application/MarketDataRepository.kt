@@ -2,6 +2,7 @@ package com.aptrade.shared.application
 
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.Candle
+import com.aptrade.shared.domain.DividendEvent
 import com.aptrade.shared.domain.PricePoint
 import com.aptrade.shared.domain.Quote
 import com.aptrade.shared.domain.Timeframe
@@ -29,4 +30,12 @@ interface MarketDataRepository {
     suspend fun candles(symbol: String, timeframe: Timeframe): List<Candle>
     suspend fun profile(symbol: String): Asset
     suspend fun search(query: String): List<Asset>
+
+    /**
+     * Dividend events for [symbol] on/after [fromEpochSeconds]. Default implementation
+     * returns an empty list so existing [MarketDataRepository] implementations (stubs,
+     * fakes) compile unchanged; only [com.aptrade.shared.infrastructure.YahooMarketDataRepository]
+     * overrides it with a real fetch.
+     */
+    suspend fun dividendEvents(symbol: String, fromEpochSeconds: Long): List<DividendEvent> = emptyList()
 }

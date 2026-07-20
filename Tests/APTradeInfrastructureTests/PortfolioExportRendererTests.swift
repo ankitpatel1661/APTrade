@@ -1,4 +1,5 @@
 import XCTest
+import PDFKit
 import APTradeDomain
 @testable import APTradeInfrastructure
 
@@ -15,6 +16,8 @@ final class PortfolioExportRendererTests: XCTestCase {
             holdingsValue: 52_685.96,
             dayChange: -823.57,
             unrealizedPnL: -150.67,
+            dividendsReceivedYTD: 412.18,
+            projectedAnnualIncome: 895.40,
             holdings: [
                 .init(symbol: "MSFT", name: "Microsoft Corporation", kind: "stock",
                       quantity: 90, averageCost: 365.46, lastPrice: 365.46,
@@ -45,6 +48,33 @@ final class PortfolioExportRendererTests: XCTestCase {
         XCTAssertGreaterThan(data.count, 200)
         XCTAssertEqual(data.prefix(4), Data([0x50, 0x4b, 0x03, 0x04]), "docx must be a ZIP (PK\\x03\\x04)")
         try write(data, ext: "docx")
+    }
+
+    func test_pdf_containsDividendIncomeRows() throws {
+        let data = try renderer.render(sampleExport(), as: .pdf)
+        guard let document = PDFDocument(data: data), let text = document.string else {
+            return XCTFail("PDF should be parseable by PDFKit")
+        }
+        XCTAssertTrue(text.contains("Dividends Received (YTD)"), "PDF should show the YTD dividends row label")
+        XCTAssertTrue(text.contains("Projected Annual Income"), "PDF should show the projected income row label")
+        XCTAssertTrue(text.contains("$412.18"), "PDF should show the formatted YTD dividends value")
+        XCTAssertTrue(text.contains("$895.40"), "PDF should show the formatted projected income value")
+    }
+
+    func test_xlsx_containsDividendIncomeRows() throws {
+        let data = try renderer.render(sampleExport(), as: .excel)
+        XCTAssertNotNil(data.range(of: Data("Dividends Received (YTD)".utf8)),
+                        "xlsx should embed a YTD dividends row (stored, uncompressed XML)")
+        XCTAssertNotNil(data.range(of: Data("Projected Annual Income".utf8)),
+                        "xlsx should embed a projected income row (stored, uncompressed XML)")
+    }
+
+    func test_docx_containsDividendIncomeRows() throws {
+        let data = try renderer.render(sampleExport(), as: .word)
+        XCTAssertNotNil(data.range(of: Data("Dividends Received (YTD)".utf8)),
+                        "docx should embed a YTD dividends row (stored, uncompressed XML)")
+        XCTAssertNotNil(data.range(of: Data("Projected Annual Income".utf8)),
+                        "docx should embed a projected income row (stored, uncompressed XML)")
     }
 
     func test_emptyPortfolio_stillRendersEveryFormat() throws {

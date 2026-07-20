@@ -1,3 +1,4 @@
+import Foundation
 import APTradeDomain
 
 public protocol MarketDataRepository: Sendable {
@@ -83,6 +84,7 @@ public protocol MarketEventNotifier: Sendable {
     func notifyDigest(summary: String) async
     func notifyEarnings(title: String, body: String) async
     func notifyPieContribution(title: String, body: String) async
+    func notifyDividend(title: String, body: String) async
 }
 
 /// Persists the scheduler's last-fired markers across launches.
@@ -117,4 +119,9 @@ public protocol PieStore: Sendable {
 /// and is rethrown.
 public protocol EarningsCalendarRepository: Sendable {
     func earnings(fromDay: String, toDay: String) async throws -> [EarningsEvent]
+}
+
+/// Supplies historical dividend events for a symbol, ascending by ex-date.
+public protocol DividendEventsRepository: Sendable {
+    func dividendEvents(for symbol: String, since: Date) async throws -> [DividendEvent]
 }

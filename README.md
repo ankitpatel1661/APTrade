@@ -15,7 +15,7 @@ An ultra-premium **native investing platform across four OSes** — a SwiftUI fl
 ![Swift](https://img.shields.io/badge/Swift-6.0-D4A94E?logo=swift)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Multiplatform-D4A94E?logo=kotlin)
 ![Architecture](https://img.shields.io/badge/architecture-Clean-D4A94E)
-![Tests](https://img.shields.io/badge/macOS%20tests-400%20passing-46C98A)
+![Tests](https://img.shields.io/badge/macOS%20tests-464%20passing-46C98A)
 
 </div>
 
@@ -95,6 +95,15 @@ Every app carries: a live watchlist, asset detail with candlestick/area charts a
 - **Settings-gated notifications** — a dedicated **Plan Contributions** toggle (Notifications settings) governs both the scheduled auto-contribution run and its "contribution executed / skipped" notifications, mirroring the earnings-day toggle.
 - **Platform status:** live on all four platforms — macOS, iPhone, Windows desktop (M7.2), and Android (M7.3).
 
+### Dividend & Income Engine
+- **Automatic dividend crediting** — a scheduled engine (riding the same market-activity planner as the other daily checks, plus a launch-time catch-up) detects due ex-dates from a Yahoo-backed dividend-events feed and credits the payout as cash, or reinvests it via **DRIP** at that day's close (falling back to cash if a close price is unavailable). Shares held are reconstructed **strictly before** the ex-date from the same transaction ledger the rest of the app uses, and a (symbol, ex-date day) dedup guard means re-running the same day never double-credits.
+- **First-class ledger entries** — every payout posts as a genuine `.dividend` transaction (DRIP reinvestments post as a normal `.buy` flagged `isDrip`), so the existing activity ledger, realized-P&L, and performance reconstruction see it with no special-casing.
+- **Income section** — a fifth view in the Portfolio sub-switcher: summary cards (received YTD, projected 12-month income, portfolio yield, yield-on-cost), a monthly bar chart of received-vs-projected income, an upcoming-payouts list, a per-holding income/yield-on-cost breakdown, and full payment history — all degrading gracefully per-symbol (never portfolio-wide) if a dividend-events fetch fails.
+- **Asset detail dividend info** — dividend yield, derived trailing annual rate, and an estimated next ex-date on any dividend-paying holding; hidden entirely for crypto and non-payers.
+- **Reinvest Dividends (DRIP)** toggle in Account Settings, and a **Dividend Payments** toggle in Notifications settings gating the "payment received / reinvested" alert — crediting itself is never gated, since a payout is bookkeeping truth, not an optional notification.
+- **Export rows** — every portfolio statement (PDF / Excel / Word) carries **Dividends Received (YTD)** and **Projected Annual Income** alongside the existing summary rows.
+- **Platform status:** shipped on macOS + iPhone (M8.1); Windows desktop (M8.2) and Android (M8.3) pending — the underlying Yahoo dividend-events fetch already lives in the shared Kotlin core, so those increments are UI wiring, not new data plumbing.
+
 ### Settings & appearance
 - A unified, persisted **settings** layer — every preference (notification toggles, security/privacy, trade confirmation, theme, accent) flows through one store with a forward-compatible decoder.
 - **Selectable accents** — Champagne Gold, Rose Gold, Sapphire, Amethyst, and Platinum re-tint the whole brand ramp **including the logo/wordmark artwork** (gold pixels are remapped onto the chosen accent); **dark / light** mode toggle.
@@ -128,9 +137,9 @@ Strict **Clean Architecture**. Dependencies point inward only; the domain knows 
 └─────────────────────────────────────────────┘
 ```
 
-- **Domain** — `Asset`, `Quote`, `Money`, `Percentage`, `Quantity`, `Portfolio`, `Position`, `Candle`, `PricePoint`, `PriceAlert`, `NewsArticle`, `NewsCategory`, `AppSettings`, `AccentTheme`, `AppLanguage`, `MarketCalendar`, `EarningsEvent`, `Timeframe`, `Pie`, `PieSlice`, `ContributionSchedule`, plus pure calculations: `TechnicalIndicators` (SMA/EMA/RSI/Bollinger/MACD), portfolio performance reconstruction, realized-P&L, `PieMath`/`PieSchedule`/`PieBacktest` (target-weight distribution, cadence due-day math, DCA-vs-lump-sum backtesting), and the `PortfolioExport` model. No framework imports.
-- **Application** — use cases (quotes, history, **candles**, search, watchlist, buy/sell, portfolio snapshots, **performance reconstruction**, **export**, **news**, **bookmarks**, alerts, settings, market-activity planning, **earnings calendar**, **Pie contribution / rebalance / backtest**) orchestrating over ports: `MarketDataRepository`, `WatchlistStore`, `PortfolioStore`, `PortfolioHistoryStore`, `AlertStore`, `AlertNotifier`, `OrderFillNotifier`, `MarketEventNotifier`, `SettingsStore`, `SchedulerStateStore`, `PortfolioExportRenderer`, `NewsRepository`, `BookmarkStore`, `EarningsCalendarRepository`, `PieStore`.
-- **Infrastructure** — `SharedCoreMarketDataRepository` (quotes, history, OHLC candles, profile, and search via the shared Kotlin core), `CachingMarketDataRepository`, `FinnhubNewsRepository` (with an `EmptyNewsRepository` no-key fallback), `FinnhubEarningsRepository` (with an `EmptyEarningsRepository` no-key fallback), `AppConfig` (reads the Finnhub key from `~/.config/aptrade/config.json`), `UserNotificationAlertNotifier`, `UserDefaults`-backed stores (incl. bookmarks and `UserDefaultsPieStore`), and a dependency-free **export renderer** (Core Graphics PDF + a hand-rolled ZIP writer producing OOXML `.xlsx` / `.docx`).
+- **Domain** — `Asset`, `Quote`, `Money`, `Percentage`, `Quantity`, `Portfolio`, `Position`, `Candle`, `PricePoint`, `PriceAlert`, `NewsArticle`, `NewsCategory`, `AppSettings`, `AccentTheme`, `AppLanguage`, `MarketCalendar`, `EarningsEvent`, `Timeframe`, `Pie`, `PieSlice`, `ContributionSchedule`, `DividendEvent`, plus pure calculations: `TechnicalIndicators` (SMA/EMA/RSI/Bollinger/MACD), portfolio performance reconstruction, realized-P&L, `PieMath`/`PieSchedule`/`PieBacktest` (target-weight distribution, cadence due-day math, DCA-vs-lump-sum backtesting), `DividendMath` (strictly-before shares-held reconstruction, trailing-annual rate, cadence inference, projected income), and the `PortfolioExport` model. No framework imports.
+- **Application** — use cases (quotes, history, **candles**, search, watchlist, buy/sell, portfolio snapshots, **performance reconstruction**, **export**, **news**, **bookmarks**, alerts, settings, market-activity planning, **earnings calendar**, **Pie contribution / rebalance / backtest**, **dividend processing**) orchestrating over ports: `MarketDataRepository`, `WatchlistStore`, `PortfolioStore`, `PortfolioHistoryStore`, `AlertStore`, `AlertNotifier`, `OrderFillNotifier`, `MarketEventNotifier`, `SettingsStore`, `SchedulerStateStore`, `PortfolioExportRenderer`, `NewsRepository`, `BookmarkStore`, `EarningsCalendarRepository`, `PieStore`, `DividendEventsRepository`.
+- **Infrastructure** — `SharedCoreMarketDataRepository` (quotes, history, OHLC candles, profile, search, and dividend events via the shared Kotlin core), `CachingMarketDataRepository`, `FinnhubNewsRepository` (with an `EmptyNewsRepository` no-key fallback), `FinnhubEarningsRepository` (with an `EmptyEarningsRepository` no-key fallback), `AppConfig` (reads the Finnhub key from `~/.config/aptrade/config.json`), `UserNotificationAlertNotifier`, `UserDefaults`-backed stores (incl. bookmarks and `UserDefaultsPieStore`), and a dependency-free **export renderer** (Core Graphics PDF + a hand-rolled ZIP writer producing OOXML `.xlsx` / `.docx`).
 - **Presentation** — declarative SwiftUI views with thin `@Observable` view models; a `MarketActivityCoordinator` runs the notification scheduler; `ThemeManager` and `LocalizationManager` drive live theme/accent and language switching; a typed `L10n` catalog backs `tr(_:)` localization; all dependencies wired in `CompositionRoot`.
 
 Built throughout on Swift 6 concurrency — `async/await`, `actor` isolation, and `Sendable` types. Business policy (e.g. the market-hours scheduler) is kept as **pure, fully tested functions**, with clocks and I/O injected at the edges.
@@ -175,7 +184,7 @@ The app ships as a bare SwiftPM executable. Launching the built binary directly 
 DEVELOPER_DIR=/Applications/Xcode.app swift test
 ```
 
-> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **400 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction, the all-priced gate + benchmark head-trim), the market calendar and earnings calendar, use cases, the market-activity planner (incl. earnings-check and Pie-contribution-check scheduling), alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the Finnhub earnings mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, the view models, and Investment Plans (`PieMath` distribution/drift, `PieSchedule` cadence math, `PieBacktest` DCA-vs-lump-sum, contribution/rebalance use cases and catch-up, the `UserDefaultsPieStore`, and the coordinator's contribution notifications).
+> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **464 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction, the all-priced gate + benchmark head-trim), the market calendar and earnings calendar, use cases, the market-activity planner (incl. earnings-check and Pie-contribution-check scheduling), alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the Finnhub earnings mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, the view models, Investment Plans (`PieMath` distribution/drift, `PieSchedule` cadence math, `PieBacktest` DCA-vs-lump-sum, contribution/rebalance use cases and catch-up, the `UserDefaultsPieStore`, and the coordinator's contribution notifications), and the dividend & income engine (`DividendMath` shares-held/trailing-rate/cadence math, `ProcessDueDividends` backfill/dedup/DRIP-with-cash-fallback, the Income view model, and the export renderer's two new income rows).
 
 ### Building the shared Kotlin core
 
@@ -486,11 +495,15 @@ logo/                       Brand assets
 APTrade Lite is the foundation. Planned toward the full platform:
 
 - Real authentication (Apple Sign In), biometric gating, and cloud sync (Supabase)
-- **Dividend & income engine (next: M8)** — dividend history, per-holding yield and
-  yield-on-cost, a forward 12-month income projection and payout calendar,
-  dividend-adjusted total return, and **DRIP inside Investment Plans**; also extends the
-  daily-history port past its current one-year ceiling so 3Y/5Y Plan backtests cover
-  their full range.
+- **Dividend & income engine (M8) — M8.1 shipped.** A Yahoo-backed dividend-events feed
+  (shared Kotlin core) drives an automatic crediting engine on macOS + iPhone: ex-date
+  detection with strictly-before shares-held reconstruction, cash or **DRIP** reinvestment
+  (cash fallback if a close is missing), backfill + dedup so re-runs never double-credit,
+  first-class `.dividend`/`isDrip` ledger transactions (so realized-P&L and performance
+  reconstruction include dividend income automatically — no separate "dividend-adjusted"
+  calculation needed), a five-surface **Income** view, asset-detail dividend info, and two
+  new export summary rows. Still to come: **M8.2** (Kotlin engine + Windows desktop UI)
+  and **M8.3** (Android).
 - **Technical screener (M9)** — scan the bundled S&P 500 universe with the existing
   `TechnicalIndicators` math (RSI thresholds, SMA/EMA crossovers, 52-week range position,
   momentum), with results feeding watchlists and Plans.

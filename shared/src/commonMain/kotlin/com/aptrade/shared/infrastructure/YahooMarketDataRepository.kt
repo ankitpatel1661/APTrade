@@ -4,6 +4,7 @@ import com.aptrade.shared.application.MarketDataRepository
 import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.Candle
+import com.aptrade.shared.domain.DividendEvent
 import com.aptrade.shared.domain.PricePoint
 import com.aptrade.shared.domain.Quote
 import com.aptrade.shared.domain.Timeframe
@@ -58,6 +59,11 @@ class YahooMarketDataRepository internal constructor(
     override suspend fun search(query: String): List<Asset> =
         YahooSearchMapper.assets(fetchSearchResponse(query))
 
+    override suspend fun dividendEvents(symbol: String, fromEpochSeconds: Long): List<DividendEvent> {
+        val response = fetchChart(symbol, range = "max", interval = "1mo", events = "div")
+        return YahooQuoteMapper.dividends(response, fromEpochSeconds)
+    }
+
     private suspend fun fetchSearchResponse(query: String): YahooSearchResponse {
         val response = try {
             client.get("https://query1.finance.yahoo.com/v1/finance/search") {
@@ -86,13 +92,19 @@ class YahooMarketDataRepository internal constructor(
         }
     }
 
-    private suspend fun fetchChart(symbol: String, range: String, interval: String): YahooChartResponse {
+    private suspend fun fetchChart(
+        symbol: String,
+        range: String,
+        interval: String,
+        events: String? = null,
+    ): YahooChartResponse {
         val response = try {
             client.get("https://query1.finance.yahoo.com/v8/finance/chart/$symbol") {
                 header("User-Agent", "Mozilla/5.0")
                 url {
                     parameters.append("range", range)
                     parameters.append("interval", interval)
+                    if (events != null) parameters.append("events", events)
                 }
             }
         } catch (e: CancellationException) {

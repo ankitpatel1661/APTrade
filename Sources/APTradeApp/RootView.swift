@@ -431,6 +431,9 @@ public struct RootView: View {
             .padding(.horizontal, 20)
             .padding(.top, 20)
 
+            toggleRow(icon: "arrow.triangle.2.circlepath", title: tr(.settingsDrip),
+                      subtitle: tr(.settingsDripFooter), isOn: $settingsVM.settings.dripEnabled)
+
             #if os(iOS)
             // Finnhub key entry — iOS only: the sandboxed config.json isn't user-reachable,
             // so the key is entered here instead of the macOS file-drop flow. Saving writes
@@ -491,6 +494,8 @@ public struct RootView: View {
                               subtitle: tr(.earningsReportsSubtitle), isOn: $settingsVM.settings.earningsReports)
                     toggleRow(icon: "chart.pie.fill", title: tr(.pieContributionsToggle),
                               subtitle: tr(.pieContributionsSubtitle), isOn: $settingsVM.settings.pieContributions)
+                    toggleRow(icon: "banknote", title: tr(.settingsDividendNotif),
+                              subtitle: tr(.settingsDividendNotifSubtitle), isOn: $settingsVM.settings.dividendNotifications)
                     toggleRow(icon: "newspaper", title: tr(.dailyNewsDigest),
                               subtitle: tr(.dailyNewsDigestSubtitle), isOn: $settingsVM.settings.newsDigest)
 

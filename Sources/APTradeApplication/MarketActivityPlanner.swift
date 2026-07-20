@@ -9,6 +9,7 @@ public enum ScheduledNotification: Equatable, Sendable {
     case digestDue
     case earningsCheckDue
     case contributionCheckDue
+    case dividendCheckDue
 }
 
 /// Persisted markers so scheduled notifications fire once per event rather than every
@@ -19,12 +20,20 @@ public struct SchedulerState: Codable, Equatable, Sendable {
     public var lastDigestDay: String?
     public var lastEarningsDay: String?
     public var lastContributionDay: String?
+    /// The last trading day a dividend check fired (planner gate; wired in Task 7).
+    public var lastDividendDay: String?
+    /// The trading day dividend processing first ran on this install. Events whose
+    /// ex-date trading day predates it are backfill and always credit as cash,
+    /// regardless of the DRIP toggle. Set once, on the first `ProcessDueDividends` run.
+    public var dividendsFirstRunDay: String?
 
-    public init(lastStatus: MarketStatus? = nil, lastDigestDay: String? = nil, lastEarningsDay: String? = nil, lastContributionDay: String? = nil) {
+    public init(lastStatus: MarketStatus? = nil, lastDigestDay: String? = nil, lastEarningsDay: String? = nil, lastContributionDay: String? = nil, lastDividendDay: String? = nil, dividendsFirstRunDay: String? = nil) {
         self.lastStatus = lastStatus
         self.lastDigestDay = lastDigestDay
         self.lastEarningsDay = lastEarningsDay
         self.lastContributionDay = lastContributionDay
+        self.lastDividendDay = lastDividendDay
+        self.dividendsFirstRunDay = dividendsFirstRunDay
     }
 }
 
@@ -83,6 +92,18 @@ public struct MarketActivityPlanner: Sendable {
             if state.lastContributionDay != day, settings.pieContributions {
                 events.append(.contributionCheckDue)
                 newState.lastContributionDay = day
+            }
+        }
+
+        // One dividend check per trading day, the first tick we observe the market open.
+        // Unlike the blocks above, this is NOT gated by any settings toggle: dividend
+        // crediting is bookkeeping truth (cash owed to the user), not an optional
+        // notification, so it always fires regardless of user preferences.
+        if status == .open {
+            let day = calendar.tradingDay(of: now)
+            if state.lastDividendDay != day {
+                events.append(.dividendCheckDue)
+                newState.lastDividendDay = day
             }
         }
 

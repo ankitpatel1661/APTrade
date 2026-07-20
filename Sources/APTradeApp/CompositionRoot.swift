@@ -15,9 +15,12 @@ enum CompositionRoot {
     /// One shared KMP-backed repository instance for the process lifetime. Its `init`
     /// builds a Ktor `HttpClient(Darwin)` under the hood, which owns its own connection
     /// pool; constructing a fresh instance per `makeRepository()` call would allocate a
-    /// new pool (and a new never-closed client) for every ViewModel factory.
-    private static let sharedCoreRepository: MarketDataRepository =
-        SharedCoreMarketDataRepository()
+    /// new pool (and a new never-closed client) for every ViewModel factory. Held at its
+    /// concrete type so both the `MarketDataRepository` and `DividendEventsRepository`
+    /// facets below can be exposed without a force-cast.
+    private static let sharedCoreRepositoryInstance = SharedCoreMarketDataRepository()
+    private static var sharedCoreRepository: MarketDataRepository { sharedCoreRepositoryInstance }
+    private static var sharedDividendEventsRepository: DividendEventsRepository { sharedCoreRepositoryInstance }
 
     static func makeRepository() -> MarketDataRepository {
         // All market-data calls are served by the shared Kotlin core.
@@ -79,6 +82,21 @@ enum CompositionRoot {
             pieStore: pieStore, portfolioStore: portfolioStore, market: repo, calendar: calendar,
             serializer: tradeSerializer
         )
+        // Shares the same `portfolioStore`/`tradeSerializer` singletons as the rest of the
+        // app so a coordinator-driven dividend credit/reinvestment is immediately
+        // reflected in the Portfolio and Income tabs. `sharedDividendEventsRepository`
+        // is the same shared Kotlin-core instance's dividend-events facet the Income tab
+        // reads (see its doc comment above).
+        // Captured into a local so the `@Sendable` (non-async) `isDripEnabled` closure
+        // below doesn't reference the MainActor-isolated `settingsStore` static property
+        // directly — `SettingsStore` is itself `Sendable`, so the local copy captures
+        // cleanly without hopping actors.
+        let settingsStoreForDrip = settingsStore
+        let processDueDividends = ProcessDueDividends(
+            portfolioStore: portfolioStore, market: repo, dividends: sharedDividendEventsRepository,
+            stateStore: schedulerStateStore, calendar: calendar, serializer: tradeSerializer,
+            isDripEnabled: { LoadSettingsUseCase(store: settingsStoreForDrip)().dripEnabled }
+        )
         return MarketActivityCoordinator(
             planner: MarketActivityPlanner(calendar: calendar),
             stateStore: schedulerStateStore,
@@ -97,6 +115,7 @@ enum CompositionRoot {
                 (try? await fetchEarnings.ownedToday(day: day)) ?? []
             },
             executeDueContributions: { now in await executeDueContributions(now: now) },
+            processDueDividends: { now in await processDueDividends(now: now) },
             calendar: calendar
         )
     }
@@ -121,7 +140,8 @@ enum CompositionRoot {
             store: portfolioStore,
             fetchQuotes: FetchQuotesUseCase(repository: makeRepository()),
             renderer: DefaultPortfolioExportRenderer(),
-            accountName: "APTrade Portfolio"
+            accountName: "APTrade Portfolio",
+            dividendEventsRepository: sharedDividendEventsRepository
         )
     }
 
@@ -170,7 +190,8 @@ enum CompositionRoot {
             fetchCandles: FetchCandlesUseCase(repository: repo),
             fetchQuotes: FetchQuotesUseCase(repository: repo),
             fetchPortfolio: FetchPortfolioUseCase(store: portfolioStore),
-            fetchEarnings: fetchEarnings
+            fetchEarnings: fetchEarnings,
+            dividendEventsRepository: sharedDividendEventsRepository
         )
     }
 
@@ -213,6 +234,20 @@ enum CompositionRoot {
             // The wizard's slice-search step reuses the same asset search the command
             // palette and watchlist use — one more `SearchAssetsUseCase` over the shared repo.
             searchAssets: SearchAssetsUseCase(repository: repo)
+        )
+    }
+
+    /// Drives the Portfolio tab's Income section: dividend summary cards, monthly bars,
+    /// upcoming payouts, per-holding breakdown, and history. Reads the same shared
+    /// `portfolioStore` the rest of the Portfolio tab uses so a dividend transaction
+    /// posted elsewhere is immediately reflected here, plus the shared Kotlin-core
+    /// repository's dividend-events facet for projections.
+    static func makeIncomeViewModel() -> IncomeViewModel {
+        let repo = makeRepository()
+        return IncomeViewModel(
+            fetchPortfolio: FetchPortfolioUseCase(store: portfolioStore),
+            fetchQuotes: FetchQuotesUseCase(repository: repo),
+            dividendEventsRepository: sharedDividendEventsRepository
         )
     }
 
