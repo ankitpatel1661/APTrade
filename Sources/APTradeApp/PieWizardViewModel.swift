@@ -18,8 +18,22 @@ public final class PieWizardViewModel {
     public var scheduleAmountText: String {
         didSet { recomputeValidation() }
     }
-    public var cadence: PieCadence
+    public var cadence: PieCadence {
+        // A cadence change flips `willCreateNewSchedule` (see `buildSchedule`), which
+        // changes whether `scheduleStartDay` is even consulted for `canSave` — so a
+        // cadence change must re-run validation exactly like the other schedule fields.
+        didSet { recomputeValidation() }
+    }
     public var scheduleEnabled: Bool {
+        didSet { recomputeValidation() }
+    }
+    /// The day (`yyyy-MM-dd`) a NEW or re-anchored schedule's first contribution should
+    /// land on. Defaults to today's trading day at init; when editing an already-scheduled
+    /// pie, pre-fills from the existing `anchorDay` for display — but per `buildSchedule`'s
+    /// rule, that pre-filled value is only actually HONORED when a new schedule is being
+    /// (re)created (new pie, previously-unscheduled, or a cadence change), never on a
+    /// cadence-unchanged edit, which preserves the existing anchor/cursor untouched.
+    public var scheduleStartDay: String {
         didSet { recomputeValidation() }
     }
 
@@ -65,14 +79,27 @@ public final class PieWizardViewModel {
             self.scheduleEnabled = true
             self.scheduleAmountText = Self.text(for: schedule.amount)
             self.cadence = schedule.cadence
+            self.scheduleStartDay = schedule.anchorDay
         } else {
             self.scheduleEnabled = false
             self.scheduleAmountText = ""
             self.cadence = .monthly
+            self.scheduleStartDay = calendar.tradingDay(of: now())
         }
         // Property observers don't fire for a type's own assignments inside its own
         // initializer, so the initial validation state has to be computed explicitly.
         recomputeValidation()
+    }
+
+    /// `scheduleStartDay` as a `Date`, for the schedule step's `DatePicker`. Conversion
+    /// lives here (not the view) so `PieWizardView` stays purely declarative — get parses
+    /// via `PieSchedule.date(fromDay:calendar:)` (falling back to `now()` on a momentarily
+    /// unparseable value, which a `DatePicker`-driven field should never actually produce);
+    /// set re-derives the trading-day string via `calendar.tradingDay(of:)`, which also
+    /// re-triggers `scheduleStartDay`'s own validation via its `didSet`.
+    public var scheduleStartDate: Date {
+        get { PieSchedule.date(fromDay: scheduleStartDay, calendar: calendar) ?? now() }
+        set { scheduleStartDay = calendar.tradingDay(of: newValue) }
     }
 
     public func addSlice(asset: Asset) {
@@ -173,26 +200,26 @@ public final class PieWizardViewModel {
     /// drift described there):
     ///
     /// - New pie, or an existing pie that previously had NO schedule: start a fresh
-    ///   schedule, `anchorDay` = the initial `nextDueDay` computed from today.
+    ///   schedule, `anchorDay` = the user-chosen `scheduleStartDay` (F2), rolled to a
+    ///   trading day.
     /// - Existing pie that already has a schedule, cadence UNCHANGED: preserve
     ///   `anchorDay` AND the `nextDueDay` cursor exactly — only `amount` may differ.
+    ///   `scheduleStartDay` is NOT consulted on this path (see its doc comment).
     /// - Existing pie that already has a schedule, cadence CHANGED: start a fresh
-    ///   schedule anchored on today — a new rhythm legitimately restarts the cycle.
+    ///   schedule anchored on `scheduleStartDay` — a new rhythm legitimately restarts
+    ///   the cycle.
     private func buildSchedule(amount: Money) -> ContributionSchedule {
         if let previous = existingPie?.schedule, previous.cadence == cadence {
             return ContributionSchedule(amount: amount, cadence: cadence,
                                         anchorDay: previous.anchorDay, nextDueDay: previous.nextDueDay)
         }
 
-        let today = calendar.tradingDay(of: now())
-        // The schedule's `anchorDay` is fixed to the INITIAL `nextDueDay` computed from
-        // today. `PieSchedule.nextDueDay`'s step-0 case treats the anchor itself
-        // (`today`) as eligible when it's strictly after `afterDay`, so passing
-        // yesterday lets today itself become the very first due day.
-        let firstDue = PieSchedule.nextDueDay(
-            anchorDay: today, cadence: cadence, afterDay: dayBefore(today), calendar: calendar
-        )
-        return ContributionSchedule(amount: amount, cadence: cadence, anchorDay: firstDue, nextDueDay: firstDue)
+        // A NEW schedule anchors on the user-chosen start day (defaults to today, but the
+        // wizard lets it be moved into the future), rolled forward to the next trading day
+        // if it lands on a weekend/holiday — `canSave`'s `isValidScheduleStartDay` check
+        // already guarantees this parses and is not in the past.
+        let anchor = PieSchedule.rollToTradingDay(scheduleStartDay, calendar: calendar)
+        return ContributionSchedule(amount: amount, cadence: cadence, anchorDay: anchor, nextDueDay: anchor)
     }
 
     // MARK: - Validation
@@ -202,7 +229,14 @@ public final class PieWizardViewModel {
         let uniqueSymbols = Set(slices.map(\.symbol)).count == slices.count
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let amountValid = !scheduleEnabled || parsedScheduleAmount != nil
-        canSave = !slices.isEmpty && uniqueSymbols && !trimmedName.isEmpty && weightSumPP == 100 && amountValid
+        // `scheduleStartDay` only needs to be valid when it will actually be USED to
+        // build a schedule (see `buildSchedule`'s doc comment): a cadence-unchanged edit
+        // of an already-scheduled pie preserves the existing anchor/cursor untouched and
+        // never reads `scheduleStartDay` at all, so an unrelated (e.g. long-past)
+        // pre-filled value there must never block saving that edit.
+        let startDayValid = !willCreateNewSchedule || isValidScheduleStartDay
+        canSave = !slices.isEmpty && uniqueSymbols && !trimmedName.isEmpty && weightSumPP == 100
+            && amountValid && startDayValid
     }
 
     private var parsedScheduleAmount: Money? {
@@ -210,22 +244,24 @@ public final class PieWizardViewModel {
         return Money(amount: value)
     }
 
+    /// `true` when saving would build a NEW schedule anchor from `scheduleStartDay`
+    /// (see `buildSchedule`): a new pie, an existing pie that had no schedule, or a
+    /// cadence change on an already-scheduled pie. `false` for a cadence-unchanged edit,
+    /// which preserves the existing anchor/cursor and ignores `scheduleStartDay` entirely.
+    private var willCreateNewSchedule: Bool {
+        guard scheduleEnabled else { return false }
+        guard let previous = existingPie?.schedule else { return true }
+        return previous.cadence != cadence
+    }
+
+    /// `scheduleStartDay` must parse as a real calendar day and be no earlier than
+    /// today's trading day — a schedule cannot be anchored in the past.
+    private var isValidScheduleStartDay: Bool {
+        guard PieSchedule.date(fromDay: scheduleStartDay, calendar: calendar) != nil else { return false }
+        return scheduleStartDay >= calendar.tradingDay(of: now())
+    }
+
     private static func text(for money: Money) -> String {
         NSDecimalNumber(decimal: money.amount).stringValue
-    }
-
-    /// The calendar day immediately before `day`. Mirrors `PieMathBacktest`'s and
-    /// `ExecuteDueContributions`'s identical private helper (duplicated rather than
-    /// shared — a small pure day-math step isn't worth a cross-layer dependency here).
-    private func dayBefore(_ day: String) -> String {
-        guard let date = PieSchedule.date(fromDay: day, calendar: calendar) else { return day }
-        guard let previous = Self.parsingCalendar.date(byAdding: .day, value: -1, to: date) else { return day }
-        return calendar.tradingDay(of: previous)
-    }
-
-    private static var parsingCalendar: Calendar {
-        var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = TimeZone(identifier: "America/New_York") ?? .gmt
-        return cal
     }
 }

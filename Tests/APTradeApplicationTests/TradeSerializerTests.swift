@@ -100,6 +100,14 @@ final class TradeSerializerTests: XCTestCase {
                 await log.append("slot2-ran")
             }
         }
+        // A bounded real-time gap: `Task { }` creation order does not itself guarantee
+        // enqueue order into the serializer (two freshly-spawned Tasks can race to reach
+        // their first `await` on different threads), so this gives slot 2 a generous
+        // window to have actually entered the serializer's FIFO queue before slot 3 is
+        // created — otherwise this test's own ordering assumption (not the
+        // serializer's actual guarantee) would be what's racy.
+        try await Task.sleep(for: .milliseconds(50))
+
         // Slot 3: enqueued behind slot 2. Must still complete despite slot 2's caller
         // cancelling — proves a cancelled queued waiter doesn't wedge the FIFO chain.
         let slot3 = Task {

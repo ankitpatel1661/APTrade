@@ -219,19 +219,116 @@ final class PieWizardViewModelTests: XCTestCase {
         let pieStore = MemoryPieStore()
         pieStore.pies = [existing]
         let vm = makeVM(existingPie: existing, pieStore: pieStore, repo: VMFakeRepo())
+        let today = calendar.tradingDay(of: fixedNow)
         vm.cadence = .weekly // a new rhythm legitimately restarts the schedule
+        // F2: a cadence change re-anchors on `scheduleStartDay`, not unconditionally on
+        // today — the field pre-filled from the OLD anchor ("2025-01-03", now in the
+        // past), so the user must (re)choose a day; here that choice is today, matching
+        // this test's original (pre-F2) expectation.
+        vm.scheduleStartDay = today
 
         let saved = await vm.save()
 
         XCTAssertTrue(saved)
-        let today = calendar.tradingDay(of: fixedNow)
-        let expectedFirstDue = PieSchedule.nextDueDay(
-            anchorDay: today, cadence: .weekly, afterDay: "1900-01-01", calendar: calendar
-        )
+        let expectedFirstDue = PieSchedule.rollToTradingDay(today, calendar: calendar)
         let updated = pieStore.pies.first?.schedule
         XCTAssertEqual(updated?.anchorDay, expectedFirstDue)
         XCTAssertEqual(updated?.nextDueDay, expectedFirstDue)
         XCTAssertNotEqual(updated?.anchorDay, "2025-01-03", "a cadence change must re-anchor, not keep the old anchor")
+        XCTAssertEqual(updated?.cadence, .weekly)
+    }
+
+    // MARK: - F2: scheduleStartDay
+
+    func test_scheduleStartDay_defaultsToTodaysTradingDay() {
+        let vm = makeVM(pieStore: MemoryPieStore(), repo: VMFakeRepo())
+        XCTAssertEqual(vm.scheduleStartDay, calendar.tradingDay(of: fixedNow))
+    }
+
+    func test_save_newSchedule_futureSaturdayStart_rollsToMondayAnchor() async {
+        let pieStore = MemoryPieStore()
+        let vm = makeVM(pieStore: pieStore, repo: VMFakeRepo())
+        vm.name = "Scheduled Pie"
+        vm.slices = [sliceA, sliceB]
+        vm.scheduleEnabled = true
+        vm.scheduleAmountText = "50"
+        // 2025-07-19 is a Saturday; the next trading day is Monday 2025-07-21.
+        vm.scheduleStartDay = "2025-07-19"
+        XCTAssertTrue(vm.canSave, "a future Saturday is still >= today, so it must remain valid")
+
+        let saved = await vm.save()
+
+        XCTAssertTrue(saved)
+        XCTAssertEqual(pieStore.pies.first?.schedule?.anchorDay, "2025-07-21")
+        XCTAssertEqual(pieStore.pies.first?.schedule?.nextDueDay, "2025-07-21")
+    }
+
+    func test_scheduleStartDay_pastDay_blocksCanSave() {
+        let vm = makeVM(pieStore: MemoryPieStore(), repo: VMFakeRepo())
+        vm.name = "Scheduled Pie"
+        vm.slices = [sliceA, sliceB]
+        vm.scheduleEnabled = true
+        vm.scheduleAmountText = "50"
+        XCTAssertTrue(vm.canSave, "precondition: valid before touching the start day")
+
+        vm.scheduleStartDay = "2020-01-01" // long past
+        XCTAssertFalse(vm.canSave, "a past start day must block save")
+
+        vm.scheduleStartDay = calendar.tradingDay(of: fixedNow)
+        XCTAssertTrue(vm.canSave, "restoring a valid (today) start day unblocks save again")
+    }
+
+    func test_scheduleStartDay_malformed_blocksCanSave() {
+        let vm = makeVM(pieStore: MemoryPieStore(), repo: VMFakeRepo())
+        vm.name = "Scheduled Pie"
+        vm.slices = [sliceA, sliceB]
+        vm.scheduleEnabled = true
+        vm.scheduleAmountText = "50"
+
+        vm.scheduleStartDay = "not-a-date"
+        XCTAssertFalse(vm.canSave)
+    }
+
+    func test_save_scheduledPie_cadenceUnchangedEdit_ignoresScheduleStartDay() async {
+        let schedule = ContributionSchedule(amount: usd(50), cadence: .monthly, anchorDay: "2025-01-03", nextDueDay: "2025-05-02")
+        let existing = try! Pie(id: "p1", name: "Pie", slices: [sliceA, sliceB], schedule: schedule, createdDay: "2025-01-01")
+        let pieStore = MemoryPieStore()
+        pieStore.pies = [existing]
+        let vm = makeVM(existingPie: existing, pieStore: pieStore, repo: VMFakeRepo())
+
+        // The field pre-fills from the existing (now long-past) anchor, which would be
+        // an INVALID start day on its own — but cadence is unchanged, so it must never
+        // be consulted, and canSave/save must both succeed regardless.
+        XCTAssertEqual(vm.scheduleStartDay, "2025-01-03", "precondition: pre-filled from the existing anchor")
+        XCTAssertTrue(vm.canSave, "a cadence-unchanged edit must not be blocked by the pre-filled (past) start day")
+        vm.scheduleAmountText = "80" // an ordinary amount-only edit
+
+        let saved = await vm.save()
+
+        XCTAssertTrue(saved)
+        let updated = pieStore.pies.first?.schedule
+        XCTAssertEqual(updated?.anchorDay, "2025-01-03", "cadence-unchanged edit preserves the existing anchor untouched")
+        XCTAssertEqual(updated?.nextDueDay, "2025-05-02")
+        XCTAssertEqual(updated?.amount, usd(80))
+    }
+
+    func test_save_scheduledPie_cadenceChange_reAnchorsOnChosenDay() async {
+        let schedule = ContributionSchedule(amount: usd(50), cadence: .monthly, anchorDay: "2025-01-03", nextDueDay: "2025-05-02")
+        let existing = try! Pie(id: "p1", name: "Pie", slices: [sliceA, sliceB], schedule: schedule, createdDay: "2025-01-01")
+        let pieStore = MemoryPieStore()
+        pieStore.pies = [existing]
+        let vm = makeVM(existingPie: existing, pieStore: pieStore, repo: VMFakeRepo())
+        vm.cadence = .weekly
+        // The user explicitly picks a future start day distinct from both the old
+        // anchor and today.
+        vm.scheduleStartDay = "2025-07-19" // a Saturday -> rolls to Monday 2025-07-21
+
+        let saved = await vm.save()
+
+        XCTAssertTrue(saved)
+        let updated = pieStore.pies.first?.schedule
+        XCTAssertEqual(updated?.anchorDay, "2025-07-21")
+        XCTAssertEqual(updated?.nextDueDay, "2025-07-21")
         XCTAssertEqual(updated?.cadence, .weekly)
     }
 

@@ -270,6 +270,24 @@ struct PieWizardView: View {
                     .pickerStyle(.segmented)
                     .labelsHidden()
                 }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(tr(.scheduleStartDay).uppercased())
+                        .font(.system(size: 10, weight: .bold)).tracking(1.0)
+                        .foregroundStyle(Theme.textTertiary)
+                    // Conversion between the VM's `yyyy-MM-dd` day string and `Date`
+                    // lives on `PieWizardViewModel.scheduleStartDate` — this view only
+                    // binds to it declaratively.
+                    DatePicker(tr(.scheduleStartDay), selection: $viewModel.scheduleStartDate,
+                              displayedComponents: .date)
+                        #if os(iOS)
+                        .datePickerStyle(.compact)
+                        #else
+                        .datePickerStyle(.graphical)
+                        #endif
+                        .labelsHidden()
+                        .tint(Theme.gold)
+                }
             }
         }
         .padding(24)

@@ -326,6 +326,7 @@ enum L10n {
         case recurringContributionToggle = "Recurring contribution"
         case contributionAmountLabel = "Amount"
         case cadenceLabel = "Cadence"
+        case scheduleStartDay = "Start day"
         case stepSlicesTitle = "Slices"
         case stepScheduleTitle = "Schedule"
         case next = "Next"
@@ -1005,6 +1006,8 @@ enum L10n {
                                    .italian: "Importo", .spanish: "Importe"],
         .cadenceLabel: [.english: "Cadence", .german: "Rhythmus",
                         .italian: "Frequenza", .spanish: "Frecuencia"],
+        .scheduleStartDay: [.english: "Start day", .german: "Startdatum",
+                            .italian: "Data di inizio", .spanish: "Fecha de inicio"],
         .stepSlicesTitle: [.english: "Slices", .german: "Slices",
                            .italian: "Fette", .spanish: "Segmentos"],
         .stepScheduleTitle: [.english: "Schedule", .german: "Zeitplan",
