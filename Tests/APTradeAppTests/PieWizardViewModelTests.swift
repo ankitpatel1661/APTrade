@@ -177,6 +177,83 @@ final class PieWizardViewModelTests: XCTestCase {
         XCTAssertEqual(schedule?.cadence, .weekly)
     }
 
+    // MARK: - Editing an existing SCHEDULED pie must not silently re-anchor the cadence
+
+    func test_save_scheduledPie_nameOnlyEdit_preservesScheduleByteIdentical() async {
+        let schedule = ContributionSchedule(amount: usd(50), cadence: .monthly, anchorDay: "2025-01-03", nextDueDay: "2025-05-02")
+        let existing = try! Pie(id: "p1", name: "Old Name", slices: [sliceA, sliceB], schedule: schedule, createdDay: "2025-01-01")
+        let pieStore = MemoryPieStore()
+        pieStore.pies = [existing]
+        let vm = makeVM(existingPie: existing, pieStore: pieStore, repo: VMFakeRepo())
+        vm.name = "New Name" // the only change
+
+        let saved = await vm.save()
+
+        XCTAssertTrue(saved)
+        XCTAssertEqual(pieStore.pies.first?.name, "New Name")
+        XCTAssertEqual(pieStore.pies.first?.schedule, schedule, "schedule must be byte-identical after a name-only edit")
+    }
+
+    func test_save_scheduledPie_amountOnlyEdit_preservesAnchorAndCursor_updatesAmount() async {
+        let schedule = ContributionSchedule(amount: usd(50), cadence: .monthly, anchorDay: "2025-01-03", nextDueDay: "2025-05-02")
+        let existing = try! Pie(id: "p1", name: "Pie", slices: [sliceA, sliceB], schedule: schedule, createdDay: "2025-01-01")
+        let pieStore = MemoryPieStore()
+        pieStore.pies = [existing]
+        let vm = makeVM(existingPie: existing, pieStore: pieStore, repo: VMFakeRepo())
+        vm.scheduleAmountText = "75" // the only change
+
+        let saved = await vm.save()
+
+        XCTAssertTrue(saved)
+        let updated = pieStore.pies.first?.schedule
+        XCTAssertEqual(updated?.anchorDay, "2025-01-03", "anchor must survive an amount-only edit")
+        XCTAssertEqual(updated?.nextDueDay, "2025-05-02", "the schedule cursor must survive an amount-only edit")
+        XCTAssertEqual(updated?.amount, usd(75))
+        XCTAssertEqual(updated?.cadence, .monthly)
+    }
+
+    func test_save_scheduledPie_cadenceChange_startsFreshAnchorFromToday() async {
+        let schedule = ContributionSchedule(amount: usd(50), cadence: .monthly, anchorDay: "2025-01-03", nextDueDay: "2025-05-02")
+        let existing = try! Pie(id: "p1", name: "Pie", slices: [sliceA, sliceB], schedule: schedule, createdDay: "2025-01-01")
+        let pieStore = MemoryPieStore()
+        pieStore.pies = [existing]
+        let vm = makeVM(existingPie: existing, pieStore: pieStore, repo: VMFakeRepo())
+        vm.cadence = .weekly // a new rhythm legitimately restarts the schedule
+
+        let saved = await vm.save()
+
+        XCTAssertTrue(saved)
+        let today = calendar.tradingDay(of: fixedNow)
+        let expectedFirstDue = PieSchedule.nextDueDay(
+            anchorDay: today, cadence: .weekly, afterDay: "1900-01-01", calendar: calendar
+        )
+        let updated = pieStore.pies.first?.schedule
+        XCTAssertEqual(updated?.anchorDay, expectedFirstDue)
+        XCTAssertEqual(updated?.nextDueDay, expectedFirstDue)
+        XCTAssertNotEqual(updated?.anchorDay, "2025-01-03", "a cadence change must re-anchor, not keep the old anchor")
+        XCTAssertEqual(updated?.cadence, .weekly)
+    }
+
+    func test_save_existingPieWithoutSchedule_enablingSchedule_startsFreshFromToday() async {
+        let existing = try! Pie(id: "p1", name: "Pie", slices: [sliceA, sliceB], schedule: nil, createdDay: "2025-01-01")
+        let pieStore = MemoryPieStore()
+        pieStore.pies = [existing]
+        let vm = makeVM(existingPie: existing, pieStore: pieStore, repo: VMFakeRepo())
+        vm.scheduleEnabled = true
+        vm.cadence = .weekly
+        vm.scheduleAmountText = "20"
+
+        let saved = await vm.save()
+
+        XCTAssertTrue(saved)
+        let today = calendar.tradingDay(of: fixedNow)
+        let expectedFirstDue = PieSchedule.nextDueDay(
+            anchorDay: today, cadence: .weekly, afterDay: "1900-01-01", calendar: calendar
+        )
+        XCTAssertEqual(pieStore.pies.first?.schedule?.anchorDay, expectedFirstDue)
+        XCTAssertEqual(pieStore.pies.first?.schedule?.nextDueDay, expectedFirstDue)
+    }
+
     func test_save_updatesExistingPie_preservesIdLedgerAndCreatedDay() async {
         let ledger = [PieLedgerEntry(symbol: "A", quantity: Quantity(3))]
         let existing = try! Pie(id: "existing-1", name: "Old Name", slices: [sliceA, sliceB], schedule: nil,

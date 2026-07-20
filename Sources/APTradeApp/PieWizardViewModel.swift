@@ -111,17 +111,7 @@ public final class PieWizardViewModel {
 
         var schedule: ContributionSchedule?
         if scheduleEnabled, let amount = parsedScheduleAmount {
-            let today = calendar.tradingDay(of: now())
-            // The schedule's `anchorDay` is fixed to the INITIAL `nextDueDay` computed
-            // from today (see `ContributionSchedule.anchorDay`'s doc comment on why every
-            // later cadence step must be derived from this fixed anchor, never a moving
-            // cursor). `PieSchedule.nextDueDay`'s step-0 case treats the anchor itself
-            // (`today`) as eligible when it's strictly after `afterDay`, so passing
-            // yesterday lets today itself become the very first due day.
-            let firstDue = PieSchedule.nextDueDay(
-                anchorDay: today, cadence: cadence, afterDay: dayBefore(today), calendar: calendar
-            )
-            schedule = ContributionSchedule(amount: amount, cadence: cadence, anchorDay: firstDue, nextDueDay: firstDue)
+            schedule = buildSchedule(amount: amount)
         }
 
         do {
@@ -139,6 +129,36 @@ public final class PieWizardViewModel {
         } catch {
             return false
         }
+    }
+
+    /// Decides the `ContributionSchedule` to save, per this rule (fixes a bug where any
+    /// edit — even a name-only one — silently re-anchored a pie's cadence, corrupting
+    /// `ContributionSchedule.anchorDay`'s "fixed for the schedule's entire lifetime"
+    /// invariant, since `PieSchedule`'s monthly stepping must always derive from that
+    /// one original anchor to avoid the Jan 31 -> Feb 28 -> Mar 28 (should be Mar 31)
+    /// drift described there):
+    ///
+    /// - New pie, or an existing pie that previously had NO schedule: start a fresh
+    ///   schedule, `anchorDay` = the initial `nextDueDay` computed from today.
+    /// - Existing pie that already has a schedule, cadence UNCHANGED: preserve
+    ///   `anchorDay` AND the `nextDueDay` cursor exactly — only `amount` may differ.
+    /// - Existing pie that already has a schedule, cadence CHANGED: start a fresh
+    ///   schedule anchored on today — a new rhythm legitimately restarts the cycle.
+    private func buildSchedule(amount: Money) -> ContributionSchedule {
+        if let previous = existingPie?.schedule, previous.cadence == cadence {
+            return ContributionSchedule(amount: amount, cadence: cadence,
+                                        anchorDay: previous.anchorDay, nextDueDay: previous.nextDueDay)
+        }
+
+        let today = calendar.tradingDay(of: now())
+        // The schedule's `anchorDay` is fixed to the INITIAL `nextDueDay` computed from
+        // today. `PieSchedule.nextDueDay`'s step-0 case treats the anchor itself
+        // (`today`) as eligible when it's strictly after `afterDay`, so passing
+        // yesterday lets today itself become the very first due day.
+        let firstDue = PieSchedule.nextDueDay(
+            anchorDay: today, cadence: cadence, afterDay: dayBefore(today), calendar: calendar
+        )
+        return ContributionSchedule(amount: amount, cadence: cadence, anchorDay: firstDue, nextDueDay: firstDue)
     }
 
     // MARK: - Validation

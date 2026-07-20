@@ -282,6 +282,7 @@ enum L10n {
         // MARK: Plans (investment pies)
         case pieInsufficientCash = "Not enough cash for this contribution."
         case nextContributionFormat = "Next: %@"
+        case pieInvalidAmount = "Enter an amount greater than zero."
     }
 
     static let table: [Key: [AppLanguage: String]] = [
@@ -849,6 +850,10 @@ enum L10n {
                                .spanish: "No hay suficiente efectivo para esta aportación."],
         .nextContributionFormat: [.english: "Next: %@", .german: "Nächste: %@",
                                   .italian: "Prossimo: %@", .spanish: "Próximo: %@"],
+        .pieInvalidAmount: [.english: "Enter an amount greater than zero.",
+                            .german: "Geben Sie einen Betrag größer als null ein.",
+                            .italian: "Inserisci un importo maggiore di zero.",
+                            .spanish: "Ingresa un importe mayor que cero."],
     ]
 }
 

@@ -20,6 +20,19 @@ private final class MemoryStore: PortfolioStore, @unchecked Sendable {
     func save(_ portfolio: Portfolio) { self.portfolio = portfolio }
 }
 
+/// Counts `quote(for:)` calls so a test can assert a use case was never even attempted
+/// (as opposed to attempted-and-failed).
+private final class QuoteSpyRepo: MarketDataRepository, @unchecked Sendable {
+    var quoteCallCount = 0
+    var quotes: [String: Quote] = [:]
+    func quote(for symbol: String) async throws -> Quote {
+        quoteCallCount += 1
+        guard let q = quotes[symbol] else { throw AppError.notFound }
+        return q
+    }
+    func history(for symbol: String, timeframe: Timeframe) async throws -> [PricePoint] { [] }
+}
+
 @MainActor
 final class PlansViewModelTests: XCTestCase {
     private let sliceA = PieSlice(symbol: "A", assetKind: .stock, targetWeight: Percentage(value: 50))
@@ -28,7 +41,7 @@ final class PlansViewModelTests: XCTestCase {
 
     private func usd(_ amount: Decimal) -> Money { Money(amount: amount) }
 
-    private func makeVM(pieStore: MemoryPieStore, portfolioStore: MemoryStore, repo: VMFakeRepo) -> PlansViewModel {
+    private func makeVM(pieStore: MemoryPieStore, portfolioStore: MemoryStore, repo: any MarketDataRepository) -> PlansViewModel {
         LocalizationManager.shared.language = .english
         let now = fixedNow // captured as a value below — avoids capturing non-Sendable `self`
         return PlansViewModel(
@@ -305,5 +318,62 @@ final class PlansViewModelTests: XCTestCase {
         await vm.onAppear()
 
         XCTAssertEqual(vm.rows.first?.nextContributionLabel, "Next: Jul 25")
+    }
+
+    // MARK: - contributeNow guards non-positive amounts before calling the use case
+
+    func test_contributeNow_zeroOrNegativeAmount_setsErrorAndNeverCallsUseCase() async throws {
+        let pie = try Pie(id: "pie-1", name: "Growth", slices: [sliceA, sliceB], schedule: nil, createdDay: "2025-01-01")
+        let pieStore = MemoryPieStore()
+        pieStore.pies = [pie]
+        let portfolioStore = MemoryStore(.starting())
+        let repo = QuoteSpyRepo()
+        repo.quotes["A"] = Quote(symbol: "A", price: usd(10), previousClose: usd(10))
+        repo.quotes["B"] = Quote(symbol: "B", price: usd(10), previousClose: usd(10))
+
+        let vm = makeVM(pieStore: pieStore, portfolioStore: portfolioStore, repo: repo)
+        await vm.onAppear()
+        repo.quoteCallCount = 0 // reset the count run up by onAppear's own row-building fetch
+
+        await vm.contributeNow(id: "pie-1", amount: usd(0))
+        XCTAssertEqual(vm.errorMessage, "Enter an amount greater than zero.")
+        XCTAssertEqual(repo.quoteCallCount, 0, "ContributeToPie must never run for a non-positive amount")
+        XCTAssertTrue(pieStore.pies.first?.activity.isEmpty ?? false, "no activity entry for a rejected contribution")
+
+        await vm.contributeNow(id: "pie-1", amount: usd(-5))
+        XCTAssertEqual(vm.errorMessage, "Enter an amount greater than zero.")
+        XCTAssertEqual(repo.quoteCallCount, 0)
+        XCTAssertTrue(pieStore.pies.first?.activity.isEmpty ?? false)
+    }
+
+    // MARK: - Stale rebalance preview is cleared on navigation away
+
+    func test_openDetail_clearsStaleRebalancePreview() async throws {
+        // A: 7 shares @ $10 = $70 (target 50%), B: 3 shares @ $10 = $30 (target 50%) -> drifted, so
+        // requestRebalance produces a non-empty preview.
+        let ledger = [
+            PieLedgerEntry(symbol: "A", quantity: Quantity(7)),
+            PieLedgerEntry(symbol: "B", quantity: Quantity(3)),
+        ]
+        let pie1 = try Pie(id: "pie-1", name: "Drifted", slices: [sliceA, sliceB], schedule: nil,
+                          createdDay: "2025-01-01", ledger: ledger)
+        let sliceC = PieSlice(symbol: "C", assetKind: .stock, targetWeight: Percentage(value: 100))
+        let pie2 = try Pie(id: "pie-2", name: "Other", slices: [sliceC], schedule: nil, createdDay: "2025-01-01")
+        let pieStore = MemoryPieStore()
+        pieStore.pies = [pie1, pie2]
+        let portfolioStore = MemoryStore(backingPortfolio(quantityA: 7, quantityB: 3))
+        let repo = VMFakeRepo()
+        repo.quotes["A"] = Quote(symbol: "A", price: usd(10), previousClose: usd(10))
+        repo.quotes["B"] = Quote(symbol: "B", price: usd(10), previousClose: usd(10))
+        repo.quotes["C"] = Quote(symbol: "C", price: usd(10), previousClose: usd(10))
+
+        let vm = makeVM(pieStore: pieStore, portfolioStore: portfolioStore, repo: repo)
+        await vm.onAppear()
+        await vm.requestRebalance(id: "pie-1")
+        XCTAssertNotNil(vm.rebalancePreview)
+
+        await vm.openDetail(id: "pie-2")
+
+        XCTAssertNil(vm.rebalancePreview, "a stale preview from a different pie must not linger after navigating away")
     }
 }

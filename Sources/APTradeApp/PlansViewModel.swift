@@ -125,6 +125,7 @@ public final class PlansViewModel {
     }
 
     public func openDetail(id: String) async {
+        rebalancePreview = nil // a preview from a different pie must never linger
         guard let pie = loadPies().first(where: { $0.id == id }) else {
             detail = nil
             return
@@ -134,6 +135,11 @@ public final class PlansViewModel {
 
     public func contributeNow(id: String, amount: Money) async {
         errorMessage = nil
+        rebalancePreview = nil
+        guard amount.amount > 0 else {
+            errorMessage = tr(.pieInvalidAmount)
+            return
+        }
         let day = calendar.tradingDay(of: now())
         do {
             let outcome = try await contributeToPie(pieId: id, amount: amount, day: day, now: now())
@@ -177,6 +183,7 @@ public final class PlansViewModel {
     }
 
     public func deletePie(id: String) async {
+        rebalancePreview = nil
         _ = deletePieUseCase(id: id)
         if detail?.pieId == id { detail = nil }
         await reloadRows()
