@@ -18,7 +18,7 @@ notifications, and dividend info on every asset detail screen.
 | Decision | Choice |
 | --- | --- |
 | Dividend cash handling | **Global DRIP toggle** (default off). Off → dividends credit portfolio cash. On → auto-reinvest into the paying asset. |
-| Data source | **Yahoo**, same provider as quotes/candles. Chart endpoint `events=div` for history; quote payload trailing dividend rate/yield for projection. No API key. |
+| Data source | **Yahoo**, same provider as quotes/candles. Chart endpoint `events=div` for history. Trailing dividend rate/yield are **derived from the trailing 365 days of fetched events** (the chart meta carries no dividend fields, and the Yahoo endpoint that does requires cookie/crumb auth). No API key. |
 | Surfaces | Income dashboard, dividend history feed, upcoming dividends + notifications, dividend info on asset detail. |
 | Backfill | **Full backfill**: on first run, credit every dividend since each position was opened, reconstructed from the transaction ledger. Backfill is always cash, never DRIP. |
 | Recording | **First-class transactions**: dividends live in the existing transaction ledger, not a parallel store. |
@@ -68,7 +68,8 @@ New domain entity (both stacks):
 ### Income math (pure domain, no I/O)
 
 - `sharesHeld(symbol, at:)` — ledger reconstruction (strictly-before semantics).
-- Projected annual income per holding = trailing annual dividend rate × shares.
+- Trailing annual dividend per share = sum of event amounts in the trailing 365 days.
+- Projected annual income per holding = trailing annual dividend per share × shares.
 - Portfolio yield = projected income / market value; yield on cost = projected income / cost basis.
 - **Cadence inference** from historical event spacing: ~30d monthly, ~91d quarterly,
   ~182d semi-annual, ~365d annual. Next projected event = last ex-date + cadence,
@@ -77,10 +78,11 @@ New domain entity (both stacks):
 
 ## Data layer (shared Kotlin core — written once, bridged everywhere)
 
-- `YahooMarketDataRepository.fetchDividendEvents(symbol, from)` — same chart endpoint with
-  `events=div`; parse `events.dividends` map into `DividendEvent`s. New DTO fields + mapper.
-- Quote mapper extended with nullable `trailingAnnualDividendRate` and
-  `trailingAnnualDividendYield`.
+- `MarketDataRepository.dividendEvents(symbol, fromEpochSeconds)` — same chart endpoint
+  with `events=div` over `range=max` (the events payload is tiny); parse the
+  `events.dividends` map into `DividendEvent`s. New DTO fields + mapper.
+- Trailing annual dividend rate/yield are **derived** in domain math from the trailing
+  365 days of events — no quote-mapper change (chart meta has no dividend fields).
 - New use case `FetchDividendEvents`.
 - Swift consumes both through the existing xcframework bridge
   (`SharedCoreMarketDataRepository`); never guess bridged names — verify in the generated header.
@@ -93,11 +95,12 @@ New domain entity (both stacks):
   manual trades, and Pie contributions can never race.
 - **Planner:** a dividend-check event joins `MarketActivityPlanner` alongside the
   contribution check — runs on launch and daily thereafter.
-- **Cursor:** scheduler state store gains `lastDividendCheck` (epoch seconds). Normal runs
-  fetch a trailing window with **7-day grace overlap**; first run (`lastDividendCheck`
-  absent) fetches back to the earliest transaction (full backfill). The cursor advances
-  only when every held symbol checks successfully; a partial failure leaves it untouched
-  so the next run re-covers the window (the `(symbol, exDate)` dedup makes replays safe).
+- **Scheduling state:** no fetch cursor — every check fetches each held symbol's full
+  event history (`range=max`, tiny payload) and the `(symbol, exDate)` ledger dedup is
+  the sole idempotency mechanism, so replays and partial failures are always safe.
+  `SchedulerState` gains `lastDividendDay` (once-per-trading-day planner marker, same
+  pattern as the contribution check) and `dividendsFirstRunDay` (set on the first
+  check; events with ex-date before it are backfill and always credit as cash).
 - **`DividendNotifier`** port → native notifications per platform.
 
 ## Settings
@@ -116,8 +119,8 @@ New domain entity (both stacks):
 
 ## Error handling
 
-- Network failure during a check → silent skip; retried next cycle (cursor not advanced
-  on partial failure).
+- Network failure during a check → that symbol is skipped silently and re-covered on the
+  next check (full-history fetch + ledger dedup make retries free).
 - Malformed Yahoo events → dropped with a log, never crash the check.
 - DRIP close-price failure → cash-credit fallback (rule 5).
 - Offline first run → backfill simply happens on the first successful check.
