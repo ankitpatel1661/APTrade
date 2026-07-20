@@ -31,24 +31,32 @@ public final class PieWizardViewModel {
     /// history or fails outright (mirrors `SimulateDCA`'s own non-throwing degrade-to-nil).
     public private(set) var backtest: BacktestReport?
 
+    /// Debounced asset-search results for the slice-editor step, already filtered to
+    /// exclude symbols that are already slices. Populated by `updateSearchQuery`.
+    public private(set) var searchResults: [Asset] = []
+
     /// The Pie being edited, or `nil` when creating a new one. Supplies the id, ledger,
     /// activity log, and creation day that `save()` must carry through unchanged.
     private let existingPie: Pie?
     private let savePie: SavePie
     private let simulateDCA: SimulateDCA
+    private let searchAssets: SearchAssetsUseCase
     private let calendar: MarketCalendar
     private let now: () -> Date
+    private var searchTask: Task<Void, Never>?
 
     public init(
         existingPie: Pie? = nil,
         savePie: SavePie,
         simulateDCA: SimulateDCA,
+        searchAssets: SearchAssetsUseCase,
         calendar: MarketCalendar = MarketCalendar(),
         now: @escaping () -> Date = Date.init
     ) {
         self.existingPie = existingPie
         self.savePie = savePie
         self.simulateDCA = simulateDCA
+        self.searchAssets = searchAssets
         self.calendar = calendar
         self.now = now
         self.name = existingPie?.name ?? ""
@@ -70,10 +78,36 @@ public final class PieWizardViewModel {
     public func addSlice(asset: Asset) {
         guard !slices.contains(where: { $0.symbol == asset.symbol }) else { return }
         slices.append(PieSlice(symbol: asset.symbol, assetKind: asset.kind, targetWeight: Percentage(value: 0)))
+        clearSearch()
     }
 
     public func removeSlice(symbol: String) {
         slices.removeAll { $0.symbol == symbol }
+    }
+
+    /// Debounced (250ms) autocomplete for the slice-editor step's search field, reusing
+    /// the same `SearchAssetsUseCase` the watchlist/command palette use. Cancels any
+    /// in-flight search on each keystroke (mirrors `WatchlistViewModel.updateQuery`'s
+    /// identical debounce/cancel pattern) and excludes symbols already added as slices,
+    /// so a result never invites a duplicate `addSlice` no-op.
+    public func updateSearchQuery(_ text: String) {
+        searchTask?.cancel()
+        let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { searchResults = []; return }
+        searchTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled, let self else { return }
+            let results = (try? await self.searchAssets(query: query)) ?? []
+            guard !Task.isCancelled else { return }
+            self.searchResults = results.filter { asset in !self.slices.contains { $0.symbol == asset.symbol } }
+        }
+    }
+
+    /// Cancels any in-flight search and clears the results — called after a slice is
+    /// added (the query text becomes stale) or when the view wants to dismiss the list.
+    public func clearSearch() {
+        searchTask?.cancel()
+        searchResults = []
     }
 
     public func setWeight(symbol: String, pp: Decimal) {

@@ -35,6 +35,7 @@ final class PieWizardViewModelTests: XCTestCase {
             existingPie: existingPie,
             savePie: SavePie(store: pieStore),
             simulateDCA: SimulateDCA(market: repo, calendar: calendar),
+            searchAssets: SearchAssetsUseCase(repository: repo),
             calendar: calendar,
             now: { now }
         )
@@ -334,5 +335,48 @@ final class PieWizardViewModelTests: XCTestCase {
         await vm.runBacktest(years: 1)
 
         XCTAssertNil(vm.backtest)
+    }
+
+    // MARK: - updateSearchQuery: debounced search, excluding already-added slices
+
+    func test_updateSearchQuery_excludesAlreadyAddedSlices() async throws {
+        let repo = VMFakeRepo()
+        repo.searchResults = [
+            Asset(symbol: "A", name: "A Corp", kind: .stock),
+            Asset(symbol: "C", name: "C Corp", kind: .stock),
+        ]
+        let vm = makeVM(pieStore: MemoryPieStore(), repo: repo)
+        vm.addSlice(asset: Asset(symbol: "A", name: "A Corp", kind: .stock))
+
+        vm.updateSearchQuery("corp")
+        try await Task.sleep(for: .milliseconds(400)) // past the 250ms debounce
+
+        XCTAssertEqual(vm.searchResults.map(\.symbol), ["C"], "an already-added symbol (A) must be excluded")
+    }
+
+    func test_updateSearchQuery_emptyQuery_clearsResultsSynchronously() async throws {
+        let repo = VMFakeRepo()
+        repo.searchResults = [Asset(symbol: "A", name: "A Corp", kind: .stock)]
+        let vm = makeVM(pieStore: MemoryPieStore(), repo: repo)
+
+        vm.updateSearchQuery("a")
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertFalse(vm.searchResults.isEmpty, "precondition: the debounced search must have populated results")
+
+        vm.updateSearchQuery("") // no debounce wait needed — an empty query clears immediately
+        XCTAssertTrue(vm.searchResults.isEmpty)
+    }
+
+    func test_addSlice_clearsSearchResults() async throws {
+        let repo = VMFakeRepo()
+        repo.searchResults = [Asset(symbol: "A", name: "A Corp", kind: .stock)]
+        let vm = makeVM(pieStore: MemoryPieStore(), repo: repo)
+
+        vm.updateSearchQuery("a")
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertFalse(vm.searchResults.isEmpty, "precondition: the debounced search must have populated results")
+
+        vm.addSlice(asset: Asset(symbol: "A", name: "A Corp", kind: .stock))
+        XCTAssertTrue(vm.searchResults.isEmpty, "adding a slice must clear the now-stale search results")
     }
 }

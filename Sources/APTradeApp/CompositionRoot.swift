@@ -194,14 +194,11 @@ enum CompositionRoot {
         return PieWizardViewModel(
             existingPie: existingPie,
             savePie: SavePie(store: pieStore),
-            simulateDCA: SimulateDCA(market: repo, calendar: MarketCalendar())
+            simulateDCA: SimulateDCA(market: repo, calendar: MarketCalendar()),
+            // The wizard's slice-search step reuses the same asset search the command
+            // palette and watchlist use — one more `SearchAssetsUseCase` over the shared repo.
+            searchAssets: SearchAssetsUseCase(repository: repo)
         )
-    }
-
-    /// The wizard's slice-search step reuses the same asset search the command palette
-    /// and watchlist use — one more `SearchAssetsUseCase` instance over the shared repo.
-    static func makeSearchAssetsUseCase() -> SearchAssetsUseCase {
-        SearchAssetsUseCase(repository: makeRepository())
     }
 
     static func makeNewsViewModel() -> NewsViewModel {

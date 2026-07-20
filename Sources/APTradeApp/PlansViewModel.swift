@@ -71,14 +71,19 @@ public final class PlansViewModel {
         public let slices: [SliceDetail]
         public let activity: [PieActivityEntry]
         public let schedule: ContributionSchedule?
+        /// Sum of every slice's `currentValue` — the same total `buildRow`'s `currentValue`
+        /// derives for this pie's list card, so the detail screen's headline figure and the
+        /// list card never disagree.
+        public let totalValue: Money
 
         public init(pieId: String, name: String, slices: [SliceDetail],
-                   activity: [PieActivityEntry], schedule: ContributionSchedule?) {
+                   activity: [PieActivityEntry], schedule: ContributionSchedule?, totalValue: Money) {
             self.pieId = pieId
             self.name = name
             self.slices = slices
             self.activity = activity
             self.schedule = schedule
+            self.totalValue = totalValue
         }
     }
 
@@ -216,7 +221,11 @@ public final class PlansViewModel {
     private func buildDetail(for pie: Pie) async -> PieDetail {
         let quotes = await fetchQuotes(symbols: pie.slices.map(\.symbol))
         let currentValues = currentValues(for: pie, quotes: quotes)
-        let totalValue = currentValues.values.reduce(Decimal(0)) { $0 + $1.amount }
+        // Same reduction `buildRow` uses for this pie's list-card `currentValue` — one
+        // source of truth for "how much is this pie worth" shared by the list and detail,
+        // rather than the view re-deriving its own (currency-unsafe) raw-Decimal sum.
+        let totalMoney = currentValues.values.reduce(Money(amount: 0)) { $0 + $1 }
+        let totalValue = totalMoney.amount
         let driftBySymbol = PieMath.drift(currentValues: currentValues, targets: pie.slices)
         let sliceDetails = pie.slices.map { slice -> PieDetail.SliceDetail in
             let value = currentValues[slice.symbol] ?? Money(amount: 0)
@@ -232,7 +241,8 @@ public final class PlansViewModel {
                 currentValue: value
             )
         }
-        return PieDetail(pieId: pie.id, name: pie.name, slices: sliceDetails, activity: pie.activity, schedule: pie.schedule)
+        return PieDetail(pieId: pie.id, name: pie.name, slices: sliceDetails, activity: pie.activity,
+                         schedule: pie.schedule, totalValue: totalMoney)
     }
 
     /// Prices `pie`'s ledger against `quotes`; a symbol with no successful quote is

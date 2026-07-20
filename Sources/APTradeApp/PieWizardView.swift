@@ -14,7 +14,6 @@ struct PieWizardView: View {
     @State private var viewModel: PieWizardViewModel
     @State private var step: Step = .name
     @State private var searchQuery = ""
-    @State private var searchResults: [Asset] = []
     @State private var backtestYears = 1
     @Environment(\.dismiss) private var dismiss
 
@@ -113,7 +112,7 @@ struct PieWizardView: View {
     private var slicesStep: some View {
         VStack(alignment: .leading, spacing: 16) {
             searchField
-            if !searchResults.isEmpty {
+            if !viewModel.searchResults.isEmpty {
                 searchResultsList
             }
             HStack {
@@ -141,7 +140,6 @@ struct PieWizardView: View {
             weightSumFooter
         }
         .padding(24)
-        .task(id: searchQuery) { await runSearch() }
     }
 
     private var searchField: some View {
@@ -151,6 +149,10 @@ struct PieWizardView: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
                 .foregroundStyle(Theme.textPrimary)
+                // The view only forwards the text change; `PieWizardViewModel` owns the
+                // debounce, the `SearchAssetsUseCase` call, cancellation, and the
+                // already-added-slice exclusion (see `updateSearchQuery`).
+                .onChange(of: searchQuery) { _, text in viewModel.updateSearchQuery(text) }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 11)
@@ -160,11 +162,10 @@ struct PieWizardView: View {
 
     private var searchResultsList: some View {
         VStack(spacing: 0) {
-            ForEach(searchResults, id: \.symbol) { asset in
+            ForEach(viewModel.searchResults, id: \.symbol) { asset in
                 Button {
                     viewModel.addSlice(asset: asset)
                     searchQuery = ""
-                    searchResults = []
                 } label: {
                     HStack(spacing: 10) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -231,22 +232,6 @@ struct PieWizardView: View {
                 .font(.system(size: 14, weight: .bold).monospacedDigit())
                 .foregroundStyle(viewModel.weightSumPP == 100 ? Theme.up : Theme.down)
         }
-    }
-
-    /// Debounced (250ms) asset search reusing the same `SearchAssetsUseCase` the command
-    /// palette and watchlist search use — `.task(id: searchQuery)` cancels the previous
-    /// in-flight search automatically whenever the query text changes.
-    private func runSearch() async {
-        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else {
-            searchResults = []
-            return
-        }
-        try? await Task.sleep(nanoseconds: 250_000_000)
-        guard !Task.isCancelled else { return }
-        let results = (try? await CompositionRoot.makeSearchAssetsUseCase()(query: query)) ?? []
-        guard !Task.isCancelled else { return }
-        searchResults = results.filter { asset in !viewModel.slices.contains { $0.symbol == asset.symbol } }
     }
 
     // MARK: - Step 3: Schedule

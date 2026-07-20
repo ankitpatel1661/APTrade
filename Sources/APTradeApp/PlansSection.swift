@@ -300,16 +300,10 @@ private struct PieDetailScreen: View {
                 Text(detail.name)
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(Theme.textPrimary)
-                SuperscriptPrice(money: totalValue(detail), size: 24, weight: .semibold)
+                SuperscriptPrice(money: detail.totalValue, size: 24, weight: .semibold)
             }
             Spacer()
         }
-    }
-
-    private func totalValue(_ detail: PlansViewModel.PieDetail) -> Money {
-        guard let currency = detail.slices.first?.currentValue.currencyCode else { return Money(amount: 0) }
-        let total = detail.slices.reduce(Decimal(0)) { $0 + $1.currentValue.amount }
-        return Money(amount: total, currencyCode: currency)
     }
 
     private func scheduleCard(_ schedule: ContributionSchedule) -> some View {
