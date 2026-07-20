@@ -37,43 +37,55 @@ public struct LoadPies: Sendable {
 
 public struct SavePie: Sendable {
     private let store: PieStore
+    private let serializer: TradeSerializer
 
-    public init(store: PieStore) {
+    public init(store: PieStore, serializer: TradeSerializer) {
         self.store = store
+        self.serializer = serializer
     }
 
-    /// Create a new Pie or replace an existing one with the same id.
+    /// Create a new Pie or replace an existing one with the same id. The whole
+    /// load-modify-save sequence runs inside `serializer.run` so a wizard save can never
+    /// interleave with (and clobber, or be clobbered by) a concurrent contribution,
+    /// rebalance, or catch-up write to the same store.
     ///
     /// - Parameter pie: The Pie to save.
     /// - Returns: The complete list of Pies after the save operation.
-    public func callAsFunction(_ pie: Pie) -> [Pie] {
-        var pies = store.load()
-        if let index = pies.firstIndex(where: { $0.id == pie.id }) {
-            pies[index] = pie
-        } else {
-            pies.append(pie)
+    public func callAsFunction(_ pie: Pie) async -> [Pie] {
+        await serializer.run {
+            var pies = store.load()
+            if let index = pies.firstIndex(where: { $0.id == pie.id }) {
+                pies[index] = pie
+            } else {
+                pies.append(pie)
+            }
+            store.save(pies)
+            return pies
         }
-        store.save(pies)
-        return pies
     }
 }
 
 public struct DeletePie: Sendable {
     private let store: PieStore
+    private let serializer: TradeSerializer
 
-    public init(store: PieStore) {
+    public init(store: PieStore, serializer: TradeSerializer) {
         self.store = store
+        self.serializer = serializer
     }
 
-    /// Delete a Pie by id. No-op if the id is not found.
+    /// Delete a Pie by id. No-op if the id is not found. Serialized like `SavePie` — see
+    /// its doc comment.
     ///
     /// - Parameter id: The id of the Pie to delete.
     /// - Returns: The complete list of Pies after the delete operation.
-    public func callAsFunction(id: String) -> [Pie] {
-        let pies = store.load()
-        let filtered = pies.filter { $0.id != id }
-        store.save(filtered)
-        return filtered
+    public func callAsFunction(id: String) async -> [Pie] {
+        await serializer.run {
+            let pies = store.load()
+            let filtered = pies.filter { $0.id != id }
+            store.save(filtered)
+            return filtered
+        }
     }
 }
 
@@ -106,17 +118,32 @@ public struct ContributeToPie: Sendable {
     private let pieStore: PieStore
     private let portfolioStore: PortfolioStore
     private let market: MarketDataRepository
+    private let serializer: TradeSerializer
 
-    public init(pieStore: PieStore, portfolioStore: PortfolioStore, market: MarketDataRepository) {
+    public init(pieStore: PieStore, portfolioStore: PortfolioStore, market: MarketDataRepository,
+               serializer: TradeSerializer) {
         self.pieStore = pieStore
         self.portfolioStore = portfolioStore
         self.market = market
+        self.serializer = serializer
     }
 
     /// - Parameters:
     ///   - day: Stamps the pie's activity entry (`contribution` or `missedInsufficientCash`).
     ///   - now: Stamps the date of any resulting transactions.
     public func callAsFunction(pieId: String, amount: Money, day: String, now: Date) async throws -> ContributionOutcome {
+        try await serializer.run {
+            try await self.execute(pieId: pieId, amount: amount, day: day, now: now)
+        }
+    }
+
+    /// The core load-modify-save sequence, WITHOUT acquiring `serializer` itself — for
+    /// callers (namely `ExecuteDueContributions`) that already hold the serializer's
+    /// lock for a broader per-day critical section and must not re-acquire it
+    /// (`TradeSerializer` is a strict, non-reentrant mutex; acquiring it twice from
+    /// within the same held critical section would deadlock forever). `callAsFunction`
+    /// above is the only public, self-locking entry point for ordinary callers.
+    func execute(pieId: String, amount: Money, day: String, now: Date) async throws -> ContributionOutcome {
         let pies = pieStore.load()
         guard let pie = pies.first(where: { $0.id == pieId }) else {
             throw AppError.notFound
@@ -196,15 +223,21 @@ public struct RebalancePie: Sendable {
     private let pieStore: PieStore
     private let portfolioStore: PortfolioStore
     private let market: MarketDataRepository
+    private let serializer: TradeSerializer
 
-    public init(pieStore: PieStore, portfolioStore: PortfolioStore, market: MarketDataRepository) {
+    public init(pieStore: PieStore, portfolioStore: PortfolioStore, market: MarketDataRepository,
+               serializer: TradeSerializer) {
         self.pieStore = pieStore
         self.portfolioStore = portfolioStore
         self.market = market
+        self.serializer = serializer
     }
 
     /// The orders `execute` would place, priced at live quotes. Read-only — fetches
-    /// quotes but never touches either store.
+    /// quotes but never touches either store. Deliberately NOT serialized: a preview
+    /// mutates nothing, so there is nothing for `TradeSerializer` to protect here, and
+    /// gating it behind the same lock would only make the UI's live preview wait on
+    /// unrelated mutations.
     public func preview(pieId: String) async throws -> [RebalanceOrder] {
         try await plan(pieId: pieId).orders
     }
@@ -218,6 +251,17 @@ public struct RebalancePie: Sendable {
     /// the total value bought (equivalently sold, since orders net to zero) — is
     /// appended.
     public func execute(pieId: String, day: String, now: Date) async throws -> (Portfolio, Pie) {
+        try await serializer.run {
+            try await self.executeLocked(pieId: pieId, day: day, now: now)
+        }
+    }
+
+    /// The core reload-price-trade-save sequence, run inside `serializer.run` by
+    /// `execute` above — including the `plan(pieId:)` call, so the live quotes that
+    /// price this rebalance are fetched under the same lock as the trades and the save,
+    /// not against a snapshot a concurrent mutation could invalidate before this
+    /// finishes.
+    private func executeLocked(pieId: String, day: String, now: Date) async throws -> (Portfolio, Pie) {
         let (pies, pie, quotes, orders) = try await plan(pieId: pieId)
 
         var portfolio = portfolioStore.load()
@@ -331,20 +375,25 @@ public struct RebalancePie: Sendable {
 /// still owns; this reconciles every over-claimed symbol back down to the held
 /// quantity, recording who lost how much.
 ///
-/// Synchronous and store-only — no market data is touched, since reconciliation only
-/// compares recorded quantities, never prices.
+/// Store-only — no market data is touched, since reconciliation only compares recorded
+/// quantities, never prices. The whole read-clamp-save sequence still runs inside
+/// `serializer.run`, since it reads and writes the same `pieStore`/`portfolioStore` a
+/// concurrent contribution, rebalance, or catch-up write could otherwise interleave with.
 public struct ReconcilePieLedgers: Sendable {
     private let pieStore: PieStore
     private let portfolioStore: PortfolioStore
     private let calendar: MarketCalendar
     private let now: @Sendable () -> Date
+    private let serializer: TradeSerializer
 
     public init(pieStore: PieStore, portfolioStore: PortfolioStore,
-               calendar: MarketCalendar = MarketCalendar(), now: @escaping @Sendable () -> Date = { Date() }) {
+               calendar: MarketCalendar = MarketCalendar(), now: @escaping @Sendable () -> Date = { Date() },
+               serializer: TradeSerializer) {
         self.pieStore = pieStore
         self.portfolioStore = portfolioStore
         self.calendar = calendar
         self.now = now
+        self.serializer = serializer
     }
 
     /// Clamps every pie ledger entry to the actually-held portfolio quantity for that
@@ -355,7 +404,11 @@ public struct ReconcilePieLedgers: Sendable {
     /// id — the lexicographically first id clamps first. Only pies whose ledger
     /// actually changed gain a `manualAdjustment` activity entry; saves the full pie
     /// list once.
-    public func callAsFunction() -> [Pie] {
+    public func callAsFunction() async -> [Pie] {
+        await serializer.run { self.reconcile() }
+    }
+
+    private func reconcile() -> [Pie] {
         let pies = pieStore.load()
         let portfolio = portfolioStore.load()
         let today = calendar.tradingDay(of: now())
@@ -491,12 +544,15 @@ public struct ExecuteDueContributions: Sendable {
     private let portfolioStore: PortfolioStore
     private let market: MarketDataRepository
     private let calendar: MarketCalendar
+    private let serializer: TradeSerializer
 
-    public init(pieStore: PieStore, portfolioStore: PortfolioStore, market: MarketDataRepository, calendar: MarketCalendar) {
+    public init(pieStore: PieStore, portfolioStore: PortfolioStore, market: MarketDataRepository,
+               calendar: MarketCalendar, serializer: TradeSerializer) {
         self.pieStore = pieStore
         self.portfolioStore = portfolioStore
         self.market = market
         self.calendar = calendar
+        self.serializer = serializer
     }
 
     /// Runs catch-up for every scheduled Pie. Pies without a `schedule`, or whose
@@ -557,49 +613,94 @@ public struct ExecuteDueContributions: Sendable {
         let dueDays = ([firstDue] + laterDueDays).sorted()
 
         let closesBySymbol = try await historicalCloses(for: pie.slices.map(\.symbol), excluding: today, in: dueDays)
+        // Reused across every day below rather than constructed per-day — `execute`
+        // (its lock-free core) is stateless aside from its injected dependencies, so one
+        // instance is equivalent to many, and this avoids reallocating it per iteration.
+        let contributeToPie = ContributeToPie(pieStore: pieStore, portfolioStore: portfolioStore, market: market,
+                                              serializer: serializer)
 
         var outcomes: [ContributionOutcome] = []
         var latestPie = pie
-        for day in dueDays {
-            // The cursor value once `day` is fully consumed — always derived from the
-            // fixed original anchor (never a shifting one), so it lands on exactly the
-            // next entry `dueDays` would itself have produced.
-            let cursorAfterDay = PieSchedule.nextDueDay(
-                anchorDay: schedule.anchorDay, cadence: schedule.cadence, afterDay: day, calendar: calendar
-            )
 
-            if day == today {
-                let outcome = try await ContributeToPie(pieStore: pieStore, portfolioStore: portfolioStore, market: market)(
-                    pieId: pie.id, amount: schedule.amount, day: day, now: now
+        for day in dueDays {
+            // Each due day is its OWN `serializer.run` — one atomic critical section per
+            // day, not one for the whole multi-day catch-up. This is what lets a
+            // wizard-style `SavePie` (or any other mutation) interleave BETWEEN days —
+            // never within one — and is why every field read below comes from a FRESH
+            // reload inside the closure, not from `schedule`/`pie` captured at the top
+            // of this function: if a concurrent save landed while a previous day in this
+            // very loop was executing, this day must see it (a stale-schedule clobber is
+            // exactly the bug this closes). The day that's actively running when a
+            // concurrent save lands is never itself affected, since it already captured
+            // its own fresh snapshot before the save could acquire the lock behind it.
+            let step: DueDayStep = try await serializer.run {
+                let pies = self.pieStore.load()
+                guard let freshPie = pies.first(where: { $0.id == pie.id }), let freshSchedule = freshPie.schedule
+                else {
+                    // The pie was deleted, or unscheduled, by an interleaved save —
+                    // stop this pie's catch-up cleanly rather than acting on a schedule
+                    // that no longer exists.
+                    return .stopped
+                }
+
+                let cursorAfterDay = PieSchedule.nextDueDay(
+                    anchorDay: freshSchedule.anchorDay, cadence: freshSchedule.cadence, afterDay: day,
+                    calendar: self.calendar
                 )
-                outcomes.append(outcome)
-                // ContributeToPie already persisted the ledger/activity change; this
-                // persists the cursor advance as its own immediate follow-up write —
-                // if a LATER pie in this run throws, this Pie's progress up through
-                // today is not lost.
-                latestPie = try advanceScheduleOnly(
-                    pieId: pie.id, to: cursorAfterDay, amount: schedule.amount, anchorDay: schedule.anchorDay,
-                    cadence: schedule.cadence
-                )
-            } else if let (outcome, updatedPie) = try executeAtClose(
-                pieId: pie.id, amount: schedule.amount, day: day, closesBySymbol: closesBySymbol,
-                newNextDueDay: cursorAfterDay, anchorDay: schedule.anchorDay, cadence: schedule.cadence
-            ) {
+
+                if day == today {
+                    let outcome = try await contributeToPie.execute(
+                        pieId: pie.id, amount: freshSchedule.amount, day: day, now: now
+                    )
+                    // `execute` already persisted the ledger/activity change; this
+                    // persists the cursor advance as its own immediate follow-up write,
+                    // still inside the SAME critical section — if a later pie (or day)
+                    // throws, this Pie's progress up through today is not lost.
+                    let updated = try self.advanceScheduleOnly(
+                        pieId: pie.id, to: cursorAfterDay, amount: freshSchedule.amount,
+                        anchorDay: freshSchedule.anchorDay, cadence: freshSchedule.cadence
+                    )
+                    return .stepped(outcome: outcome, pie: updated)
+                } else if let (outcome, updatedPie) = try self.executeAtClose(
+                    pieId: pie.id, amount: freshSchedule.amount, day: day, closesBySymbol: closesBySymbol,
+                    newNextDueDay: cursorAfterDay, anchorDay: freshSchedule.anchorDay, cadence: freshSchedule.cadence
+                ) {
+                    return .stepped(outcome: outcome, pie: updatedPie)
+                } else {
+                    // At least one slice symbol is missing a close on `day`: no buy, no
+                    // activity entry — but the day is still consumed, so the cursor
+                    // still advances past it (its only persisted trace) so it is never
+                    // reconsidered on a later run.
+                    let updated = try self.advanceScheduleOnly(
+                        pieId: pie.id, to: cursorAfterDay, amount: freshSchedule.amount,
+                        anchorDay: freshSchedule.anchorDay, cadence: freshSchedule.cadence
+                    )
+                    return .advancedOnly(pie: updated)
+                }
+            }
+
+            switch step {
+            case .stopped:
+                return (pie: latestPie, outcomes: outcomes)
+            case .stepped(let outcome, let updatedPie):
                 outcomes.append(outcome)
                 latestPie = updatedPie
-            } else {
-                // At least one slice symbol is missing a close on `day`: no buy, no
-                // activity entry — but the day is still consumed, so the cursor still
-                // advances past it (its only persisted trace) so it is never
-                // reconsidered on a later run.
-                latestPie = try advanceScheduleOnly(
-                    pieId: pie.id, to: cursorAfterDay, amount: schedule.amount, anchorDay: schedule.anchorDay,
-                    cadence: schedule.cadence
-                )
+            case .advancedOnly(let updatedPie):
+                latestPie = updatedPie
             }
         }
 
         return (pie: latestPie, outcomes: outcomes)
+    }
+
+    /// One due day's outcome, returned from inside a single `serializer.run` block (see
+    /// `catchUp`) so the surrounding loop can react to it once the lock has been released.
+    private enum DueDayStep: Sendable {
+        /// The pie (or its schedule) no longer existed on reload — an interleaved save
+        /// deleted or unscheduled it. This pie's catch-up stops here.
+        case stopped
+        case stepped(outcome: ContributionOutcome, pie: Pie)
+        case advancedOnly(pie: Pie)
     }
 
     /// `closes[symbol][day]`, fetched once per symbol and reused across every

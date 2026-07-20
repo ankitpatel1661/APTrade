@@ -44,7 +44,7 @@ final class RebalancePieTests: XCTestCase {
         let portfolioStore = FakePortfolioStore(portfolio)
         let repo = makeRepo(priceA: "10", priceB: "10")
 
-        let sut = RebalancePie(pieStore: pieStore, portfolioStore: portfolioStore, market: repo)
+        let sut = RebalancePie(pieStore: pieStore, portfolioStore: portfolioStore, market: repo, serializer: TradeSerializer())
         let orders = try await sut.preview(pieId: "pie-1")
 
         let expected = PieMath.rebalancePlan(
@@ -79,7 +79,7 @@ final class RebalancePieTests: XCTestCase {
         let portfolioStore = FakePortfolioStore(startingPortfolio)
         let repo = makeRepo(priceA: "10", priceB: "10")
 
-        let sut = RebalancePie(pieStore: pieStore, portfolioStore: portfolioStore, market: repo)
+        let sut = RebalancePie(pieStore: pieStore, portfolioStore: portfolioStore, market: repo, serializer: TradeSerializer())
         let (resultPortfolio, resultPie) = try await sut.execute(pieId: "pie-2", day: "2025-06-01", now: Date())
 
         // Cash unchanged within a cent (sold $20 of A, bought $20 of B).
@@ -131,7 +131,7 @@ final class RebalancePieTests: XCTestCase {
         let portfolioStore = FakePortfolioStore(noCashPortfolio)
         let repo = makeRepo(priceA: "10", priceB: "10")
 
-        let sut = RebalancePie(pieStore: pieStore, portfolioStore: portfolioStore, market: repo)
+        let sut = RebalancePie(pieStore: pieStore, portfolioStore: portfolioStore, market: repo, serializer: TradeSerializer())
         let (resultPortfolio, _) = try await sut.execute(pieId: "pie-3", day: "2025-06-01", now: Date())
 
         XCTAssertEqual(resultPortfolio.cash.amount, Decimal(0), accuracy: 0.01)
@@ -145,7 +145,7 @@ final class RebalancePieTests: XCTestCase {
         let portfolioStore = FakePortfolioStore(.starting())
         let repo = FakeRepo()
 
-        let sut = RebalancePie(pieStore: pieStore, portfolioStore: portfolioStore, market: repo)
+        let sut = RebalancePie(pieStore: pieStore, portfolioStore: portfolioStore, market: repo, serializer: TradeSerializer())
         do {
             _ = try await sut.preview(pieId: "missing")
             XCTFail("expected throw")
@@ -164,7 +164,7 @@ final class ReconcilePieLedgersTests: XCTestCase {
     // MARK: (d) portfolio holds 3 A; pie1 ledger 4, pie2 ledger 1 -> pie1 clamps to 2
     // (largest first), pie2 keeps 1; only pie1 gains manualAdjustment.
 
-    func test_reconcile_largestLedgerClampsFirst() throws {
+    func test_reconcile_largestLedgerClampsFirst() async throws {
         let pie1 = try Pie(id: "pie1", name: "Pie 1", slices: [sliceA], schedule: nil,
                           createdDay: "2025-01-01",
                           ledger: [PieLedgerEntry(symbol: "A", quantity: Quantity(Decimal(4)))])
@@ -188,8 +188,8 @@ final class ReconcilePieLedgersTests: XCTestCase {
         let fixedDay = "2025-03-15"
         let fixedNow = try XCTUnwrap(PieSchedule.date(fromDay: fixedDay, calendar: MarketCalendar()))
 
-        let sut = ReconcilePieLedgers(pieStore: pieStore, portfolioStore: portfolioStore, now: { fixedNow })
-        let result = sut()
+        let sut = ReconcilePieLedgers(pieStore: pieStore, portfolioStore: portfolioStore, now: { fixedNow }, serializer: TradeSerializer())
+        let result = await sut()
 
         let resultPie1 = result.first { $0.id == "pie1" }
         let resultPie2 = result.first { $0.id == "pie2" }
@@ -207,7 +207,7 @@ final class ReconcilePieLedgersTests: XCTestCase {
 
     // MARK: (e) No over-claim -> no clamp, no activity.
 
-    func test_reconcile_noOverClaim_noActivity() throws {
+    func test_reconcile_noOverClaim_noActivity() async throws {
         let pie1 = try Pie(id: "pie1", name: "Pie 1", slices: [sliceA], schedule: nil,
                           createdDay: "2025-01-01",
                           ledger: [PieLedgerEntry(symbol: "A", quantity: Quantity(Decimal(2)))])
@@ -222,8 +222,8 @@ final class ReconcilePieLedgersTests: XCTestCase {
         )
         let portfolioStore = StubPortfolioStore(portfolio)
 
-        let sut = ReconcilePieLedgers(pieStore: pieStore, portfolioStore: portfolioStore)
-        let result = sut()
+        let sut = ReconcilePieLedgers(pieStore: pieStore, portfolioStore: portfolioStore, serializer: TradeSerializer())
+        let result = await sut()
 
         XCTAssertEqual(result.first?.quantity(of: "A"), Quantity(Decimal(2)))
         XCTAssertTrue(result.first?.activity.isEmpty ?? false)
@@ -231,7 +231,7 @@ final class ReconcilePieLedgersTests: XCTestCase {
 
     // MARK: Tie-break: equal ledgers -> lexicographically first pie id clamps first.
 
-    func test_reconcile_tieBreak_lexicographicallyFirstClampsFirst() throws {
+    func test_reconcile_tieBreak_lexicographicallyFirstClampsFirst() async throws {
         let pieA = try Pie(id: "pieA", name: "Pie A", slices: [sliceA], schedule: nil,
                           createdDay: "2025-01-01",
                           ledger: [PieLedgerEntry(symbol: "A", quantity: Quantity(Decimal(3)))])
@@ -249,8 +249,8 @@ final class ReconcilePieLedgersTests: XCTestCase {
         )
         let portfolioStore = StubPortfolioStore(portfolio)
 
-        let sut = ReconcilePieLedgers(pieStore: pieStore, portfolioStore: portfolioStore)
-        let result = sut()
+        let sut = ReconcilePieLedgers(pieStore: pieStore, portfolioStore: portfolioStore, serializer: TradeSerializer())
+        let result = await sut()
 
         let resultA = result.first { $0.id == "pieA" }
         let resultB = result.first { $0.id == "pieB" }

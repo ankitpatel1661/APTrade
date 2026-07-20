@@ -33,7 +33,7 @@ final class PieWizardViewModelTests: XCTestCase {
         let now = fixedNow // captured as a value below — avoids capturing non-Sendable `self`
         return PieWizardViewModel(
             existingPie: existingPie,
-            savePie: SavePie(store: pieStore),
+            savePie: SavePie(store: pieStore, serializer: TradeSerializer()),
             simulateDCA: SimulateDCA(market: repo, calendar: calendar),
             searchAssets: SearchAssetsUseCase(repository: repo),
             calendar: calendar,

@@ -73,7 +73,7 @@ final class ExecuteDueContributionsTests: XCTestCase {
             closesB: ["2025-04-01": "10", "2025-05-01": "20"]
         )
 
-        let sut = ExecuteDueContributions(pieStore: pieStore, portfolioStore: portfolioStore, market: repo, calendar: calendar)
+        let sut = ExecuteDueContributions(pieStore: pieStore, portfolioStore: portfolioStore, market: repo, calendar: calendar, serializer: TradeSerializer())
         let results = await sut(now: date("2025-05-15"))
 
         XCTAssertEqual(results.count, 1)
@@ -119,7 +119,7 @@ final class ExecuteDueContributionsTests: XCTestCase {
             closesB: ["2025-04-01": "10", "2025-05-01": "20"]
         )
 
-        let sut = ExecuteDueContributions(pieStore: pieStore, portfolioStore: portfolioStore, market: repo, calendar: calendar)
+        let sut = ExecuteDueContributions(pieStore: pieStore, portfolioStore: portfolioStore, market: repo, calendar: calendar, serializer: TradeSerializer())
         let results = await sut(now: date("2025-05-15"))
 
         // June 1 2025 is a Sunday -> rolls to Monday June 2.
@@ -143,7 +143,7 @@ final class ExecuteDueContributionsTests: XCTestCase {
             closesB: ["2025-04-01": "10", "2025-05-01": "20"]
         )
 
-        let sut = ExecuteDueContributions(pieStore: pieStore, portfolioStore: portfolioStore, market: repo, calendar: calendar)
+        let sut = ExecuteDueContributions(pieStore: pieStore, portfolioStore: portfolioStore, market: repo, calendar: calendar, serializer: TradeSerializer())
         let results = await sut(now: date("2025-05-15"))
 
         XCTAssertEqual(results.count, 1)
@@ -178,7 +178,7 @@ final class ExecuteDueContributionsTests: XCTestCase {
             closesB: ["2025-05-01": "20"]
         )
 
-        let sut = ExecuteDueContributions(pieStore: pieStore, portfolioStore: portfolioStore, market: repo, calendar: calendar)
+        let sut = ExecuteDueContributions(pieStore: pieStore, portfolioStore: portfolioStore, market: repo, calendar: calendar, serializer: TradeSerializer())
         let results = await sut(now: date("2025-05-15"))
 
         XCTAssertEqual(results.count, 1)
@@ -206,7 +206,7 @@ final class ExecuteDueContributionsTests: XCTestCase {
         let portfolioStore = FakePortfolioStore(.starting())
         let repo = makeRepo(closesA: [:], closesB: [:])
 
-        let sut = ExecuteDueContributions(pieStore: pieStore, portfolioStore: portfolioStore, market: repo, calendar: calendar)
+        let sut = ExecuteDueContributions(pieStore: pieStore, portfolioStore: portfolioStore, market: repo, calendar: calendar, serializer: TradeSerializer())
         let results = await sut(now: date("2025-05-15"))
 
         XCTAssertTrue(results.isEmpty)
@@ -237,7 +237,7 @@ final class ExecuteDueContributionsTests: XCTestCase {
         // of it have already executed.
         let today = "2025-06-02"
 
-        let sut = ExecuteDueContributions(pieStore: pieStore, portfolioStore: portfolioStore, market: repo, calendar: calendar)
+        let sut = ExecuteDueContributions(pieStore: pieStore, portfolioStore: portfolioStore, market: repo, calendar: calendar, serializer: TradeSerializer())
 
         // Run 1: April 1 and May 1 execute at their historical closes; today's live
         // quote throws, degrading this Pie's outcomes to empty -- but the two
@@ -302,7 +302,7 @@ final class ExecuteDueContributionsTests: XCTestCase {
             closesB: ["2026-03-02": "10", "2026-03-31": "20"]
         )
 
-        let sut = ExecuteDueContributions(pieStore: pieStore, portfolioStore: portfolioStore, market: repo, calendar: calendar)
+        let sut = ExecuteDueContributions(pieStore: pieStore, portfolioStore: portfolioStore, market: repo, calendar: calendar, serializer: TradeSerializer())
         let results = await sut(now: date("2026-04-01"))
 
         XCTAssertEqual(results.count, 1)
@@ -322,5 +322,92 @@ final class ExecuteDueContributionsTests: XCTestCase {
         // here, but only because Mar has 31 days; the anchor is still what's driving it).
         XCTAssertEqual(resultPie.schedule?.anchorDay, "2026-01-31", "anchor itself never changes")
         XCTAssertEqual(resultPie.schedule?.nextDueDay, "2026-04-30")
+    }
+
+    // MARK: (F1/F4 regression) A wizard-style SavePie "racing" a multi-day catch-up must
+    // not clobber the day actively in flight, and every SUBSEQUENT day in the same
+    // catch-up run must pick up the saved schedule. Modeled deterministically (rather
+    // than via a real thread race) by having the fake PieStore apply the "concurrent
+    // save" the moment it observes day 1's contribution already persisted — exactly the
+    // reload-per-day semantics `catchUp` is required to have, regardless of the precise
+    // internal load-call pattern that produces it.
+
+    func test_savePieRacesMultiDayCatchUp_inFlightDayUnaffected_subsequentDaysUseSavedSchedule() async throws {
+        let schedule = ContributionSchedule(amount: usd("50"), cadence: .monthly,
+                                            anchorDay: "2025-04-01", nextDueDay: "2025-04-01")
+        let pie = try Pie(id: "pie-race", name: "Race Pie", slices: [sliceA, sliceB],
+                          schedule: schedule, createdDay: "2025-01-01")
+        let pieStore = InterleavedSavePieStore(pies: [pie], pieId: "pie-race", triggerDay: "2025-04-01") { racedPie in
+            guard let existing = racedPie.schedule else { return racedPie }
+            // Models a wizard-style amount-only edit (cadence unchanged -> anchor/cursor
+            // preserved, per `PieWizardViewModel.buildSchedule`'s own rule) landing the
+            // instant day 1 (April 1) has been consumed.
+            let updatedSchedule = ContributionSchedule(amount: self.usd("999"), cadence: existing.cadence,
+                                                       anchorDay: existing.anchorDay, nextDueDay: existing.nextDueDay)
+            return (try? Pie(id: racedPie.id, name: racedPie.name, slices: racedPie.slices, schedule: updatedSchedule,
+                             createdDay: racedPie.createdDay, ledger: racedPie.ledger, activity: racedPie.activity))
+                ?? racedPie
+        }
+        let portfolioStore = FakePortfolioStore(.starting())
+        let repo = makeRepo(
+            closesA: ["2025-04-01": "10", "2025-05-01": "20"],
+            closesB: ["2025-04-01": "10", "2025-05-01": "20"]
+        )
+
+        let sut = ExecuteDueContributions(pieStore: pieStore, portfolioStore: portfolioStore, market: repo,
+                                          calendar: calendar, serializer: TradeSerializer())
+        let results = await sut(now: date("2025-05-15"))
+
+        XCTAssertEqual(results.count, 1)
+        let (resultPie, outcomes) = results[0]
+        XCTAssertEqual(outcomes.count, 2)
+
+        // Day 1 (April 1): the day actively in flight when the "save" lands must not be
+        // clobbered — it executes at the ORIGINAL $50 amount.
+        guard case .executed = outcomes[0] else { XCTFail("day 1 expected .executed"); return }
+        XCTAssertEqual(resultPie.activity.first?.kind, .contribution)
+        XCTAssertEqual(resultPie.activity.first?.amount, usd("50"), "the in-flight day must use its own fresh snapshot, not the racing save")
+
+        // Day 2 (May 1): a SUBSEQUENT day in the same run must pick up the saved schedule.
+        guard case .executed = outcomes[1] else { XCTFail("day 2 expected .executed"); return }
+        XCTAssertEqual(resultPie.activity.last?.kind, .contribution)
+        XCTAssertEqual(resultPie.activity.last?.amount, usd("999"), "subsequent days must reload and use the SAVED schedule")
+
+        XCTAssertEqual(resultPie.activity.map(\.amount), [usd("50"), usd("999")])
+    }
+}
+
+/// Simulates a wizard-style `SavePie` landing exactly once the day it "races" against
+/// has already been persisted — deterministic (no real thread race needed) while still
+/// exercising the same reload-per-day contract a genuine concurrent save would rely on.
+/// `load()` inspects whatever the store currently holds (post any REAL `save()` calls
+/// from the catch-up under test) and, the first time it sees `triggerDay`'s contribution
+/// already recorded for `pieId`, applies `simulateSave` and keeps that pie "saved" from
+/// then on.
+private final class InterleavedSavePieStore: PieStore, @unchecked Sendable {
+    private var pies: [Pie]
+    private let pieId: String
+    private let triggerDay: String
+    private let simulateSave: (Pie) -> Pie
+    private var applied = false
+
+    init(pies: [Pie], pieId: String, triggerDay: String, simulateSave: @escaping (Pie) -> Pie) {
+        self.pies = pies
+        self.pieId = pieId
+        self.triggerDay = triggerDay
+        self.simulateSave = simulateSave
+    }
+
+    func load() -> [Pie] {
+        if !applied,
+           pies.first(where: { $0.id == pieId })?.activity.contains(where: { $0.day == triggerDay }) == true {
+            applied = true
+            pies = pies.map { $0.id == pieId ? simulateSave($0) : $0 }
+        }
+        return pies
+    }
+
+    func save(_ pies: [Pie]) {
+        self.pies = pies
     }
 }

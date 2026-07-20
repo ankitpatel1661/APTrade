@@ -44,6 +44,11 @@ enum CompositionRoot {
     /// A single shared Pie store so the Plans list, detail, and wizard all read and
     /// write the same persisted set of pies (mirrors `portfolioStore`'s sharing rationale).
     static let pieStore: PieStore = UserDefaultsPieStore()
+    /// One shared `TradeSerializer` for the process lifetime — every mutating pie/portfolio
+    /// use case (contribute, rebalance execute, save, delete, reconcile, catch-up) is
+    /// injected with THIS instance, so they all serialize against each other rather than
+    /// each getting their own independent (and therefore ineffective) lock.
+    static let tradeSerializer = TradeSerializer()
 
     static func makeSettingsViewModel() -> SettingsViewModel {
         SettingsViewModel(
@@ -71,7 +76,8 @@ enum CompositionRoot {
         // Shares the same `pieStore`/`portfolioStore` singletons the Plans UI reads and
         // writes, so a coordinator-driven contribution is immediately reflected there.
         let executeDueContributions = ExecuteDueContributions(
-            pieStore: pieStore, portfolioStore: portfolioStore, market: repo, calendar: calendar
+            pieStore: pieStore, portfolioStore: portfolioStore, market: repo, calendar: calendar,
+            serializer: tradeSerializer
         )
         return MarketActivityCoordinator(
             planner: MarketActivityPlanner(calendar: calendar),
@@ -185,10 +191,13 @@ enum CompositionRoot {
         let repo = makeRepository()
         return PlansViewModel(
             loadPies: LoadPies(store: pieStore),
-            deletePie: DeletePie(store: pieStore),
-            contributeToPie: ContributeToPie(pieStore: pieStore, portfolioStore: portfolioStore, market: repo),
-            rebalancePie: RebalancePie(pieStore: pieStore, portfolioStore: portfolioStore, market: repo),
-            reconcileLedgers: ReconcilePieLedgers(pieStore: pieStore, portfolioStore: portfolioStore),
+            deletePie: DeletePie(store: pieStore, serializer: tradeSerializer),
+            contributeToPie: ContributeToPie(pieStore: pieStore, portfolioStore: portfolioStore, market: repo,
+                                             serializer: tradeSerializer),
+            rebalancePie: RebalancePie(pieStore: pieStore, portfolioStore: portfolioStore, market: repo,
+                                       serializer: tradeSerializer),
+            reconcileLedgers: ReconcilePieLedgers(pieStore: pieStore, portfolioStore: portfolioStore,
+                                                  serializer: tradeSerializer),
             fetchQuotes: FetchQuotesUseCase(repository: repo)
         )
     }
@@ -199,7 +208,7 @@ enum CompositionRoot {
         let repo = makeRepository()
         return PieWizardViewModel(
             existingPie: existingPie,
-            savePie: SavePie(store: pieStore),
+            savePie: SavePie(store: pieStore, serializer: tradeSerializer),
             simulateDCA: SimulateDCA(market: repo, calendar: MarketCalendar()),
             // The wizard's slice-search step reuses the same asset search the command
             // palette and watchlist use — one more `SearchAssetsUseCase` over the shared repo.

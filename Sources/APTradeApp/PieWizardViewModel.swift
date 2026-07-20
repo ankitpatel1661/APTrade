@@ -158,7 +158,7 @@ public final class PieWizardViewModel {
                 ledger: existingPie?.ledger ?? [],
                 activity: existingPie?.activity ?? []
             )
-            _ = savePie(pie)
+            _ = await savePie(pie)
             return true
         } catch {
             return false

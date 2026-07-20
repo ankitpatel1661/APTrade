@@ -125,7 +125,7 @@ public final class PlansViewModel {
     /// rows, so a manual sell made outside a Pie can never show stale, over-claimed
     /// values here (see `ReconcilePieLedgers`'s cross-pie drift note).
     public func onAppear() async {
-        _ = reconcileLedgers()
+        _ = await reconcileLedgers()
         await reloadRows()
     }
 
@@ -189,7 +189,7 @@ public final class PlansViewModel {
 
     public func deletePie(id: String) async {
         rebalancePreview = nil
-        _ = deletePieUseCase(id: id)
+        _ = await deletePieUseCase(id: id)
         if detail?.pieId == id { detail = nil }
         await reloadRows()
     }

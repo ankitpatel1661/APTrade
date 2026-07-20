@@ -44,12 +44,16 @@ final class PlansViewModelTests: XCTestCase {
     private func makeVM(pieStore: MemoryPieStore, portfolioStore: MemoryStore, repo: any MarketDataRepository) -> PlansViewModel {
         LocalizationManager.shared.language = .english
         let now = fixedNow // captured as a value below — avoids capturing non-Sendable `self`
+        let serializer = TradeSerializer()
         return PlansViewModel(
             loadPies: LoadPies(store: pieStore),
-            deletePie: DeletePie(store: pieStore),
-            contributeToPie: ContributeToPie(pieStore: pieStore, portfolioStore: portfolioStore, market: repo),
-            rebalancePie: RebalancePie(pieStore: pieStore, portfolioStore: portfolioStore, market: repo),
-            reconcileLedgers: ReconcilePieLedgers(pieStore: pieStore, portfolioStore: portfolioStore, now: { now }),
+            deletePie: DeletePie(store: pieStore, serializer: serializer),
+            contributeToPie: ContributeToPie(pieStore: pieStore, portfolioStore: portfolioStore, market: repo,
+                                             serializer: serializer),
+            rebalancePie: RebalancePie(pieStore: pieStore, portfolioStore: portfolioStore, market: repo,
+                                       serializer: serializer),
+            reconcileLedgers: ReconcilePieLedgers(pieStore: pieStore, portfolioStore: portfolioStore, now: { now },
+                                                  serializer: serializer),
             fetchQuotes: FetchQuotesUseCase(repository: repo),
             now: { now }
         )

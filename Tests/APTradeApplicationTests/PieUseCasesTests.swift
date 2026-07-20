@@ -40,51 +40,51 @@ final class PieUseCasesTests: XCTestCase {
 
     // MARK: - SavePie
 
-    func test_SavePie_insertsNew() throws {
+    func test_SavePie_insertsNew() async throws {
         let pie1 = try makePie(id: "pie-1", name: "Pie 1")
         let pie2 = try makePie(id: "pie-2", name: "Pie 2")
         let store = FakePieStore()
         store.pies = [pie1]
 
-        let savePie = SavePie(store: store)
-        let result = savePie(pie2)
+        let savePie = SavePie(store: store, serializer: TradeSerializer())
+        let result = await savePie(pie2)
 
         XCTAssertEqual(result.count, 2)
         XCTAssertTrue(result.contains { $0.id == "pie-1" })
         XCTAssertTrue(result.contains { $0.id == "pie-2" })
     }
 
-    func test_SavePie_replacesExistingId() throws {
+    func test_SavePie_replacesExistingId() async throws {
         let pie1 = try makePie(id: "pie-1", name: "Original Name")
         let pie1Updated = try makePie(id: "pie-1", name: "Updated Name")
         let store = FakePieStore()
         store.pies = [pie1]
 
-        let savePie = SavePie(store: store)
-        let result = savePie(pie1Updated)
+        let savePie = SavePie(store: store, serializer: TradeSerializer())
+        let result = await savePie(pie1Updated)
 
         XCTAssertEqual(result.count, 1)
         XCTAssertEqual(result[0].name, "Updated Name")
     }
 
-    func test_SavePie_multipleOperations() throws {
+    func test_SavePie_multipleOperations() async throws {
         let pie1 = try makePie(id: "pie-1", name: "Pie 1")
         let pie2 = try makePie(id: "pie-2", name: "Pie 2")
         let pie1Updated = try makePie(id: "pie-1", name: "Pie 1 Updated")
 
         let store = FakePieStore()
-        let savePie = SavePie(store: store)
+        let savePie = SavePie(store: store, serializer: TradeSerializer())
 
         // Insert pie1
-        var result = savePie(pie1)
+        var result = await savePie(pie1)
         XCTAssertEqual(result.count, 1)
 
         // Insert pie2
-        result = savePie(pie2)
+        result = await savePie(pie2)
         XCTAssertEqual(result.count, 2)
 
         // Replace pie1 in-place (must stay at index 0, not remove+append)
-        result = savePie(pie1Updated)
+        result = await savePie(pie1Updated)
         XCTAssertEqual(result.count, 2)
         XCTAssertEqual(result[0].id, "pie-1", "replaced pie must stay at original position (index 0)")
         XCTAssertEqual(result[0].name, "Pie 1 Updated")
@@ -93,38 +93,38 @@ final class PieUseCasesTests: XCTestCase {
 
     // MARK: - DeletePie
 
-    func test_DeletePie_removesById() throws {
+    func test_DeletePie_removesById() async throws {
         let pie1 = try makePie(id: "pie-1", name: "Pie 1")
         let pie2 = try makePie(id: "pie-2", name: "Pie 2")
         let store = FakePieStore()
         store.pies = [pie1, pie2]
 
-        let deletePie = DeletePie(store: store)
-        let result = deletePie(id: "pie-1")
+        let deletePie = DeletePie(store: store, serializer: TradeSerializer())
+        let result = await deletePie(id: "pie-1")
 
         XCTAssertEqual(result.count, 1)
         XCTAssertEqual(result[0].id, "pie-2")
     }
 
-    func test_DeletePie_unknownId_noOp() throws {
+    func test_DeletePie_unknownId_noOp() async throws {
         let pie1 = try makePie(id: "pie-1", name: "Pie 1")
         let store = FakePieStore()
         store.pies = [pie1]
 
-        let deletePie = DeletePie(store: store)
-        let result = deletePie(id: "unknown")
+        let deletePie = DeletePie(store: store, serializer: TradeSerializer())
+        let result = await deletePie(id: "unknown")
 
         XCTAssertEqual(result.count, 1)
         XCTAssertEqual(result[0].id, "pie-1")
     }
 
-    func test_DeletePie_allRemoved_returnsEmpty() throws {
+    func test_DeletePie_allRemoved_returnsEmpty() async throws {
         let pie1 = try makePie(id: "pie-1", name: "Pie 1")
         let store = FakePieStore()
         store.pies = [pie1]
 
-        let deletePie = DeletePie(store: store)
-        let result = deletePie(id: "pie-1")
+        let deletePie = DeletePie(store: store, serializer: TradeSerializer())
+        let result = await deletePie(id: "pie-1")
 
         XCTAssertEqual(result, [])
     }
