@@ -726,3 +726,98 @@ public struct ExecuteDueContributions: Sendable {
         return cal
     }
 }
+
+/// Dollar-cost-averaging (DCA) simulation: fetches daily historical closes for a Pie's
+/// slices over a given timeframe and runs a backtest to show projected portfolio growth
+/// under a scheduled contribution plan.
+///
+/// Fetches one year of daily history per slice symbol using
+/// `MarketDataRepository.history(for:timeframe:.oneYear)`. The `years` parameter
+/// (1, 3, or 5) determines the backtest window: `startDay = now minus years calendar years`,
+/// `endDay = today's trading day`. For `years > 1`, the fetched history may not cover the
+/// full span (the history port's longest timeframe is `.oneYear`); `PieMathBacktest`'s
+/// missing-close semantics handle the gap gracefully — early due days simply skip if their
+/// close is absent, and the report shows only what's coverable. A future M8 extension to
+/// the history port may lift this limitation; do NOT extend `MarketDataRepository` yourself.
+///
+/// Network failure on ANY symbol → returns `nil` (never throws — mirrors
+/// `FetchEarningsCalendarUseCase`'s degrade pattern). Cooperative cancellation
+/// (`CancellationError`) is the one exception and is rethrown.
+public struct SimulateDCA: Sendable {
+    private let market: MarketDataRepository
+    private let calendar: MarketCalendar
+
+    public init(market: MarketDataRepository, calendar: MarketCalendar) {
+        self.market = market
+        self.calendar = calendar
+    }
+
+    /// Fetches daily history for each slice symbol over `years` and runs
+    /// `PieMathBacktest.dcaBacktest`. Returns `nil` if insufficient history prevents
+    /// any execution (every due day missing a close) or on network failure. Propagates
+    /// `CancellationError` without degrading (mirroring `FetchEarningsCalendarUseCase`).
+    ///
+    /// - Parameters:
+    ///   - slices: Target allocation for the Pie being simulated.
+    ///   - amount: Contribution amount on each due day.
+    ///   - cadence: Contribution frequency.
+    ///   - years: Backtest window in calendar years (1, 3, or 5).
+    ///   - now: Reference date for computing the window and trading day of today.
+    /// - Returns: A backtest report, or `nil` if no due day is executable or any
+    ///   network failure occurs (except `CancellationError`, which is rethrown).
+    /// - Throws: `CancellationError` if the task is cancelled.
+    public func callAsFunction(
+        slices: [PieSlice],
+        amount: Money,
+        cadence: PieCadence,
+        years: Int,
+        now: Date
+    ) async throws -> BacktestReport? {
+        do {
+            return try await simulateOrThrow(slices: slices, amount: amount, cadence: cadence, years: years, now: now)
+        } catch let error as CancellationError {
+            throw error
+        } catch {
+            return nil
+        }
+    }
+
+    /// Inner implementation that throws on error, wrapped by `callAsFunction` to
+    /// degrade non-cancellation errors to `nil`.
+    private func simulateOrThrow(
+        slices: [PieSlice],
+        amount: Money,
+        cadence: PieCadence,
+        years: Int,
+        now: Date
+    ) async throws -> BacktestReport? {
+        // Compute window: startDay = now - years, endDay = today
+        guard years > 0 else { return nil }
+        let dateComponents = DateComponents(year: -years)
+        let startDate = Calendar.current.date(byAdding: dateComponents, to: now) ?? now
+        let startDay = calendar.tradingDay(of: startDate)
+        let endDay = calendar.tradingDay(of: now)
+
+        // Fetch history for each slice symbol once
+        var dailyCloses: [String: [String: Money]] = [:]
+        for slice in slices {
+            let points = try await market.history(for: slice.symbol, timeframe: .oneYear)
+            var byDay: [String: Money] = [:]
+            for point in points {
+                byDay[calendar.tradingDay(of: point.date)] = point.close
+            }
+            dailyCloses[slice.symbol] = byDay
+        }
+
+        // Run backtest
+        return PieMathBacktest.dcaBacktest(
+            slices: slices,
+            amount: amount,
+            cadence: cadence,
+            startDay: startDay,
+            endDay: endDay,
+            dailyCloses: dailyCloses,
+            calendar: calendar
+        )
+    }
+}
