@@ -56,6 +56,7 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aptrade.android.AppGraph
 import com.aptrade.android.l10n.tr
+import com.aptrade.android.plans.PlansSection
 import com.aptrade.android.ui.chart.ChartLegend
 import com.aptrade.android.ui.chart.CrosshairTooltip
 import com.aptrade.android.ui.chart.DualLineChart
@@ -74,13 +75,14 @@ import java.util.Locale
 /** The holding row a [TradeSheet] is opened against, plus the side the user tapped. */
 private data class TradeTarget(val row: HoldingRowUi, val side: TradeSide)
 
-/** The four content sections switched below the summary header — desktop parity
- *  ([com.aptrade.desktop.portfolio.PortfolioPane]'s `PortfolioSection`), plus Performance as a
- *  fourth switchable tab (desktop keeps its chart block always visible above the switcher;
- *  Android instead folds it into the switcher itself so only one section — chart or list — is
- *  on screen at a time, matching this screen's existing single-LazyColumn, one-thing-at-a-time
- *  layout). Order and labels match desktop's set exactly (same four L10n keys). */
-private enum class PortfolioSection { Holdings, Allocation, Activity, Performance }
+/** The five content sections switched below the summary header — desktop parity
+ *  ([com.aptrade.desktop.portfolio.PortfolioPane]'s `PortfolioSection`, which added `Plans` the
+ *  same way for M7.3), plus Performance as a fifth switchable tab (desktop keeps its chart
+ *  block always visible above the switcher; Android instead folds it into the switcher itself
+ *  so only one section — chart or list — is on screen at a time, matching this screen's
+ *  existing single-LazyColumn, one-thing-at-a-time layout). Order and labels match desktop's
+ *  set exactly (same five L10n keys). */
+private enum class PortfolioSection { Holdings, Allocation, Activity, Plans, Performance }
 
 /** [PortfolioSection]'s display label. A plain function (not an enum property) so it calls
  *  [tr] fresh on every read — recomposes correctly when the active language changes, mirroring
@@ -89,6 +91,7 @@ private fun PortfolioSection.label(): String = when (this) {
     PortfolioSection.Holdings -> tr(L10n.Key.HoldingsSection)
     PortfolioSection.Allocation -> tr(L10n.Key.AllocationSection)
     PortfolioSection.Activity -> tr(L10n.Key.ActivitySection)
+    PortfolioSection.Plans -> tr(L10n.Key.PlansSection)
     PortfolioSection.Performance -> tr(L10n.Key.PerformanceSection)
 }
 
@@ -222,6 +225,9 @@ private fun PortfolioContent(
                                         HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                                     }
                                 }
+                            }
+                            PortfolioSection.Plans -> {
+                                item { PlansSection(confirmTrades = confirmTrades) }
                             }
                             PortfolioSection.Performance -> {
                                 item {

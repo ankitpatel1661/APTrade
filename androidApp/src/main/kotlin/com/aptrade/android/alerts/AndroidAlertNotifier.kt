@@ -44,6 +44,11 @@ internal const val DAILY_DIGEST_CHANNEL_ID = "daily_digest"
  *  `TrayNotifier.notifyEarnings` parity). */
 internal const val EARNINGS_CHANNEL_ID = "earnings_reports"
 
+/** The channel every pie-contribution (executed/skipped) notification posts to (M7.3
+ *  Task 3 — desktop `TrayNotifier.notifyPieContribution` parity). Mechanical twin of
+ *  [EARNINGS_CHANNEL_ID]: separate channel per notification kind, same reasoning. */
+internal const val PLAN_CONTRIBUTIONS_CHANNEL_ID = "plan_contributions"
+
 // --- Pure formatters -------------------------------------------------------------
 //
 // Transcribed verbatim from desktop's TrayNotifier (`desktopApp/.../infra/TrayNotifier.kt`),
@@ -108,6 +113,7 @@ class AndroidAlertNotifier(private val context: Context) : AlertNotifier {
     private var marketStatusChannelCreated = false
     private var dailyDigestChannelCreated = false
     private var earningsChannelCreated = false
+    private var planContributionsChannelCreated = false
 
     private fun ensureChannel() {
         if (channelCreated || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -162,6 +168,17 @@ class AndroidAlertNotifier(private val context: Context) : AlertNotifier {
         )
         notificationManager.createNotificationChannel(channel)
         earningsChannelCreated = true
+    }
+
+    private fun ensurePlanContributionsChannel() {
+        if (planContributionsChannelCreated || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val channel = NotificationChannel(
+            PLAN_CONTRIBUTIONS_CHANNEL_ID,
+            tr(L10n.Key.PieContributionsToggle),
+            NotificationManager.IMPORTANCE_DEFAULT,
+        )
+        notificationManager.createNotificationChannel(channel)
+        planContributionsChannelCreated = true
     }
 
     private fun hasNotificationPermission(): Boolean =
@@ -273,6 +290,33 @@ class AndroidAlertNotifier(private val context: Context) : AlertNotifier {
         if (!hasNotificationPermission()) return
 
         val notification = NotificationCompat.Builder(context, EARNINGS_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setColor(ContextCompat.getColor(context, R.color.notification_accent))
+            .setContentTitle(title)
+            .setContentText(body)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+        notificationManager.notify(body.hashCode(), notification)
+    }
+
+    /**
+     * Delivers a pie-contribution (executed/skipped) notification (M7.3 Task 3) — the
+     * Android counterpart to desktop's `TrayNotifier.notifyPieContribution`. Mechanical
+     * twin of [notifyEarnings]: both [title] and [body] arrive pre-localized — the
+     * `AppGraph.marketActivityCoordinator` factory resolves `L10n.Key.NotifPieExecutedTitle`/
+     * `NotifPieExecutedBody` or `NotifPieSkippedTitle`/`NotifPieSkippedBody` via `tr`/`trf`
+     * before calling in, so this method performs no formatting of its own, just the
+     * notification post. The notification id is keyed off [body] (which embeds the pie
+     * name), same reasoning as [notifyEarnings]'s id: a single tick can deliver multiple
+     * distinct contribution outcomes (one per due pie) that must not clobber each other
+     * in the tray.
+     */
+    suspend fun notifyPieContribution(title: String, body: String) {
+        ensurePlanContributionsChannel()
+        if (!hasNotificationPermission()) return
+
+        val notification = NotificationCompat.Builder(context, PLAN_CONTRIBUTIONS_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(ContextCompat.getColor(context, R.color.notification_accent))
             .setContentTitle(title)

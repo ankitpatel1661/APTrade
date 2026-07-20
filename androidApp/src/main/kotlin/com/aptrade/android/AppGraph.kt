@@ -9,10 +9,14 @@ import com.aptrade.android.l10n.trf
 import com.aptrade.shared.application.AddToWatchlist
 import com.aptrade.shared.application.AlertNotifier
 import com.aptrade.shared.application.BuyAsset
+import com.aptrade.shared.application.ContributeToPie
+import com.aptrade.shared.application.ContributionOutcome
 import com.aptrade.shared.application.CreatePriceAlert
+import com.aptrade.shared.application.DeletePie
 import com.aptrade.shared.application.EarningsCalendarRepository
 import com.aptrade.shared.application.EmptyEarningsRepository
 import com.aptrade.shared.application.EvaluateAlerts
+import com.aptrade.shared.application.ExecuteDueContributions
 import com.aptrade.shared.application.FetchChartWindow
 import com.aptrade.shared.application.FetchEarningsCalendar
 import com.aptrade.shared.application.FetchHistory
@@ -26,15 +30,21 @@ import com.aptrade.shared.application.FetchSearch
 import com.aptrade.shared.application.FetchWatchlist
 import com.aptrade.shared.application.LoadAlerts
 import com.aptrade.shared.application.LoadBookmarks
+import com.aptrade.shared.application.LoadPies
 import com.aptrade.shared.application.MarketActivityPlanner
 import com.aptrade.shared.application.MarketDataRepository
 import com.aptrade.shared.application.NewsRepository
+import com.aptrade.shared.application.PieStore
 import com.aptrade.shared.application.PortfolioStore
+import com.aptrade.shared.application.RebalancePie
+import com.aptrade.shared.application.ReconcilePieLedgers
 import com.aptrade.shared.application.RemoveFromWatchlist
 import com.aptrade.shared.application.RemovePriceAlert
 import com.aptrade.shared.application.ResetPortfolio
+import com.aptrade.shared.application.SavePie
 import com.aptrade.shared.application.SchedulerStateStore
 import com.aptrade.shared.application.SellAsset
+import com.aptrade.shared.application.SimulateDCA
 import com.aptrade.shared.application.ToggleBookmark
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.MarketCalendar
@@ -42,6 +52,7 @@ import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.domain.WatchlistEntry
 import com.aptrade.shared.infrastructure.FileAlertStore
 import com.aptrade.shared.infrastructure.FileBookmarkStore
+import com.aptrade.shared.infrastructure.FilePieStore
 import com.aptrade.shared.infrastructure.FilePortfolioStore
 import com.aptrade.shared.infrastructure.FileSchedulerStateStore
 import com.aptrade.shared.infrastructure.FileSettingsStore
@@ -98,12 +109,18 @@ object AppGraph {
     }
 
     /** Portfolio use cases, built lazily from the [filesDir] provided by [initialize].
-     *  Shares the single process-wide [repository]. */
+     *  Shares the single process-wide [repository]. Also carries the Investment Plans (Pies)
+     *  use cases (M7.3 Task 2) — see [PortfolioGraph]'s KDoc for why they live here rather
+     *  than as their own top-level AppGraph vals. */
     val portfolio: PortfolioGraph by lazy {
         val dir = requireNotNull(filesDir) {
             "AppGraph.initialize(context) must be called before accessing AppGraph.portfolio"
         }
-        PortfolioGraph(repository, FilePortfolioStore(File(dir, "portfolio.json").toPath()))
+        PortfolioGraph(
+            repository,
+            FilePortfolioStore(File(dir, "portfolio.json").toPath()),
+            FilePieStore(configDir().resolve("pies.json")),
+        )
     }
 
     /** App-private config directory (`filesDir/aptrade`), mirroring the desktop
@@ -268,6 +285,25 @@ object AppGraph {
             val today = marketCalendar.tradingDay(nowEpochSeconds())
             fetchEarningsCalendar.ownedToday(today)
         },
+        executeDueContributions = { now -> portfolio.executeDueContributions.execute(now) },
+        // Same L10n-here, coordinator-stays-ignorant split as notifyEarnings above: the
+        // coordinator hands back the typed ContributionOutcome it produced, and only this
+        // (wiring-site) closure resolves the executed/skipped title+body via tr/trf. Mirrors
+        // desktop Main.kt's notifyPieContribution closure verbatim.
+        notifyPieContribution = { outcome ->
+            when (outcome) {
+                is ContributionOutcome.Executed ->
+                    alertNotifier.notifyPieContribution(
+                        title = tr(L10n.Key.NotifPieExecutedTitle),
+                        body = trf(L10n.Key.NotifPieExecutedBody, outcome.pie.name),
+                    )
+                is ContributionOutcome.SkippedInsufficientCash ->
+                    alertNotifier.notifyPieContribution(
+                        title = tr(L10n.Key.NotifPieSkippedTitle),
+                        body = trf(L10n.Key.NotifPieSkippedBody, outcome.pie.name),
+                    )
+            }
+        },
         fetchWatchlist = fetchWatchlist,
         fetchMarketQuotes = fetchMarketQuotes,
         scope = scope,
@@ -321,10 +357,20 @@ internal fun buildNotifyOrderFill(
     }
 
 /** The portfolio slice of the composition root: everything that depends on the
- *  [PortfolioStore]. Groups the trade + read + performance use cases sharing one store. */
+ *  [PortfolioStore]. Groups the trade + read + performance use cases sharing one store, plus
+ *  (M7.3 Task 2) the Investment Plans (Pies) use cases — every mutating one shares the SAME
+ *  [portfolioMutex] as [buyAsset]/[sellAsset]/[resetPortfolio] below, mirroring desktop
+ *  `AppGraph.kt:119-141`: pie contributions/rebalances/reconciliation and plain buy/sell all
+ *  read-modify-write the same [portfolioStore], so one shared lock is what makes them mutually
+ *  exclusive rather than only exclusive within their own use case. Pie use cases are grouped
+ *  HERE (rather than as top-level `AppGraph` vals, as `loadPies`/`savePie`/etc. are on desktop)
+ *  because [portfolioMutex] is only constructible where [portfolioStore] is in scope, and this
+ *  class is that scope on Android (`AppGraph.portfolioMutex` has no equivalent — the desktop
+ *  `AppGraph` is a single flat class, this one splits the portfolio-dependent slice out). */
 class PortfolioGraph(
     repository: MarketDataRepository,
     portfolioStore: PortfolioStore,
+    pieStore: PieStore,
 ) {
     val fetchPortfolio = FetchPortfolio(portfolioStore)
 
@@ -339,4 +385,20 @@ class PortfolioGraph(
     val resetPortfolio = ResetPortfolio(portfolioStore, portfolioMutex)
     val fetchPortfolioPerformance = FetchPortfolioPerformance(repository, portfolioStore)
     val fetchPerformanceReport = FetchPerformanceReport(repository, fetchPortfolioPerformance)
+
+    // Investment Plans (Pies) — M7.3 Task 2. marketCalendar is stateless (see MarketCalendar's
+    // KDoc) — its own instance here, scoped to this graph, shared by every pie use case below
+    // exactly like desktop AppGraph's single `marketCalendar` val.
+    val marketCalendar = MarketCalendar()
+    val loadPies = LoadPies(pieStore)
+    val savePie = SavePie(pieStore, portfolioMutex)
+    val deletePie = DeletePie(pieStore, portfolioMutex)
+    val contributeToPie = ContributeToPie(pieStore, portfolioStore, repository, portfolioMutex)
+    // M7.3 Task 3: the coordinator's launch catch-up + ContributionCheckDue handler. Shares
+    // THE same portfolioMutex as every other mutating use case above, mirroring desktop
+    // AppGraph.kt:138 exactly.
+    val executeDueContributions = ExecuteDueContributions(pieStore, portfolioStore, repository, marketCalendar, portfolioMutex)
+    val rebalancePie = RebalancePie(pieStore, portfolioStore, repository, portfolioMutex)
+    val reconcilePieLedgers = ReconcilePieLedgers(pieStore, portfolioStore, portfolioMutex, marketCalendar)
+    val simulateDCA = SimulateDCA(repository, marketCalendar)
 }

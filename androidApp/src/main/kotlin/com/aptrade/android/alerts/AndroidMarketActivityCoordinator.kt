@@ -1,9 +1,11 @@
 package com.aptrade.android.alerts
 
 import com.aptrade.android.ui.formatPercent
+import com.aptrade.shared.application.ContributionOutcome
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchWatchlist
 import com.aptrade.shared.application.MarketActivityPlanner
+import com.aptrade.shared.application.PieRunResult
 import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.ScheduledNotification
 import com.aptrade.shared.application.SchedulerStateStore
@@ -48,6 +50,15 @@ class AndroidMarketActivityCoordinator(
     // L10n, matching desktop's shape exactly.
     private val notifyEarnings: suspend (event: EarningsEvent) -> Unit,
     private val fetchTodaysOwnEarnings: suspend () -> List<EarningsEvent>,
+    // Pie contributions (M7.3 Task 3, mirroring desktop's M7.2 Task 12). [executeDueContributions]
+    // is the non-throwing, per-pie-degrading catch-up engine (`ExecuteDueContributions.execute`,
+    // wrapped as a plain suspend closure — same "typed use case behind a closure" shape
+    // [fetchTodaysOwnEarnings] already establishes). [notifyPieContribution] mirrors
+    // [notifyEarnings]'s "raw typed event -> Unit closure, no L10n access here" shape exactly:
+    // AppGraph's `marketActivityCoordinator` factory resolves the executed/skipped title+body
+    // via `tr`/`trf` and calls into `AndroidAlertNotifier.notifyPieContribution`.
+    private val executeDueContributions: suspend (nowEpochSeconds: Long) -> List<PieRunResult>,
+    private val notifyPieContribution: suspend (outcome: ContributionOutcome) -> Unit,
     private val fetchWatchlist: FetchWatchlist,
     private val fetchMarketQuotes: FetchMarketQuotes,
     private val scope: CoroutineScope,
@@ -56,12 +67,48 @@ class AndroidMarketActivityCoordinator(
 ) {
     private var job: Job? = null
 
+    /**
+     * Starts the 60s tick loop AND, once, a launch-time due-contribution catch-up — GATED on
+     * `settings.pieContributions` on BOTH paths (Global Constraints correction 6: the toggle
+     * gates EXECUTION, not just notification delivery). The launch catch-up runs once, before
+     * the first tick, so contributions missed while the app wasn't running (possibly several
+     * days' worth) execute immediately at startup rather than waiting for the market to next
+     * open. The tick loop's own `ContributionCheckDue` handler (fired once per trading day,
+     * mirroring `EarningsCheckDue`) then covers same-day due contributions for an app that's
+     * already running when the market opens. Direct port of
+     * `DesktopMarketActivityCoordinator.start()`.
+     */
     fun start() {
         if (job != null) return
         job = scope.launch {
+            runContributionCatchUpIfEnabled()
             while (isActive) {
                 tick()
                 delay(intervalMillis)
+            }
+        }
+    }
+
+    /** Runs [executeDueContributions] and notifies per outcome, but only when the user's
+     *  `pieContributions` setting is on — shared by [start]'s launch catch-up and [tick]'s
+     *  `ContributionCheckDue` handler so both execution paths honor the SAME gate (see [start]'s
+     *  doc comment). Non-throwing: [executeDueContributions] itself already degrades per-pie
+     *  failures internally, but this wraps the call defensively too (mirrors the
+     *  `EarningsCheckDue` handler's "never drop the whole tick" guard below) since any other
+     *  closure passed in here could still throw. Direct port of desktop's
+     *  `runContributionCatchUpIfEnabled`. */
+    private suspend fun runContributionCatchUpIfEnabled() {
+        if (!loadSettings().pieContributions) return
+        val results = try {
+            executeDueContributions(nowEpochSeconds())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emptyList()
+        }
+        for (result in results) {
+            for (outcome in result.outcomes) {
+                notifyPieContribution(outcome)
             }
         }
     }
@@ -74,6 +121,7 @@ class AndroidMarketActivityCoordinator(
             marketOpenCloseEnabled = settings.marketOpenClose,
             newsDigestEnabled = settings.newsDigest,
             earningsReportsEnabled = settings.earningsReports,
+            pieContributionsEnabled = settings.pieContributions,
         )
         stateStore.save(newState)
         for (event in events) {
@@ -103,12 +151,14 @@ class AndroidMarketActivityCoordinator(
                     }
                 }
                 ScheduledNotification.ContributionCheckDue -> {
-                    // No-op for now: M7.2 Task 9 only adds the planner event (mirroring
-                    // EarningsCheckDue's shape) so the sealed `when` above stays exhaustive.
-                    // Real due-contribution catch-up + notification wiring is Android's
-                    // M7.3 pie-contributions increment (this app is untouched by M7.2
-                    // otherwise), gated by settings.pieContributions per Global Constraints
-                    // correction 6 (desktop's Task 12 precedent).
+                    // The planner only fires this event when `pieContributionsEnabled` was
+                    // already true for THIS tick's `plan()` call, but `settings` here is the
+                    // same snapshot read at the top of this tick — re-checking would be
+                    // redundant. Both execution paths (this handler and `start()`'s launch
+                    // catch-up) route through the SAME gated helper so the toggle's semantics
+                    // never drift between them (Global Constraints correction 6). Direct port
+                    // of desktop's `ContributionCheckDue` handler (M7.2 Task 12).
+                    runContributionCatchUpIfEnabled()
                 }
             }
         }
