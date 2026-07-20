@@ -2,8 +2,8 @@ import XCTest
 @testable import APTradeDomain
 
 final class PortfolioDividendTests: XCTestCase {
-    private func usd(_ s: String) -> Money { Money(amount: Decimal(string: s)!) }
-    private func qty(_ s: String) -> Quantity { Quantity(Decimal(string: s)!) }
+    private func usd(_ s: String) -> Money { Money(amount: Decimal(string: s) ?? 0) }
+    private func qty(_ s: String) -> Quantity { Quantity(Decimal(string: s) ?? 0) }
     private let aapl = Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock)
     private let date = Date(timeIntervalSince1970: 0)
 

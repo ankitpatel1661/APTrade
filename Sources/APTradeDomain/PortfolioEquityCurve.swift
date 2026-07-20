@@ -37,13 +37,21 @@ public extension Portfolio {
             // Holdings as of `date`: net buys/sells up to and including it.
             var qty: [String: Decimal] = [:]
             for t in sortedTxns where t.date <= date {
-                qty[t.symbol, default: 0] += (t.side == .buy ? t.quantity.amount : -t.quantity.amount)
+                switch t.side {
+                case .buy: qty[t.symbol, default: 0] += t.quantity.amount
+                case .sell: qty[t.symbol, default: 0] -= t.quantity.amount
+                case .dividend: break   // Cash event only — never changes share counts.
+                }
             }
             // Cash as of `date`: current cash with later trade cashflows reversed.
             var cashAt = cash.amount
             for t in sortedTxns where t.date > date {
                 let flow = t.price.amount * t.quantity.amount
-                cashAt += (t.side == .buy ? flow : -flow)   // undo a later buy (+) / sell (−)
+                switch t.side {
+                case .buy: cashAt += flow     // undo a later buy (+)
+                case .sell: cashAt -= flow    // undo a later sell (−)
+                case .dividend: cashAt -= flow // undo a later dividend credit (−)
+                }
             }
 
             let hasHoldings = qty.contains { $0.value != 0 }
