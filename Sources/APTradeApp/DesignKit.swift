@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 #if canImport(AppKit)
 import AppKit
 #elseif canImport(UIKit)
@@ -413,6 +414,41 @@ struct TimeframeBar: View {
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: selection)
+    }
+}
+
+// MARK: - Donut chart
+
+/// One colored slice in a `DonutChart`.
+struct DonutSlice: Identifiable {
+    let id: String
+    let value: Double
+    let color: Color
+
+    init(id: String, value: Double, color: Color) {
+        self.id = id
+        self.value = value
+        self.color = color
+    }
+}
+
+/// A reusable donut ring (Swift Charts `SectorMark`) — shared by the Portfolio tab's
+/// Allocation donut and the Plans tab's target-weight rings, so both draw from one
+/// chart builder rather than duplicating the `SectorMark` setup.
+struct DonutChart: View {
+    let slices: [DonutSlice]
+    var innerRadiusRatio: Double = 0.64
+    var size: CGFloat = 150
+
+    var body: some View {
+        Chart(slices) { slice in
+            SectorMark(angle: .value("Value", slice.value),
+                       innerRadius: .ratio(innerRadiusRatio), angularInset: 1.5)
+                .cornerRadius(3)
+                .foregroundStyle(slice.color)
+        }
+        .chartLegend(.hidden)
+        .frame(width: size, height: size)
     }
 }
 

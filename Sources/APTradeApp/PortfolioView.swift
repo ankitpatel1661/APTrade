@@ -1,10 +1,9 @@
 import SwiftUI
-import Charts
 import APTradeDomain
 
 struct PortfolioView: View {
     enum Section: String, CaseIterable {
-        case holdings = "Holdings", allocation = "Allocation", activity = "Activity", performance = "Performance"
+        case holdings = "Holdings", allocation = "Allocation", activity = "Activity", performance = "Performance", plans = "Plans"
 
         @MainActor
         var title: String {
@@ -13,6 +12,7 @@ struct PortfolioView: View {
             case .allocation: return tr(.allocationSection)
             case .activity: return tr(.activitySection)
             case .performance: return tr(.performanceSection)
+            case .plans: return tr(.plansSection)
             }
         }
     }
@@ -55,11 +55,12 @@ struct PortfolioView: View {
                             .padding(.bottom, 16)
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
-                    if !viewModel.holdings.isEmpty {
-                        sectionPicker
-                            .padding(.horizontal, 24)
-                            .padding(.bottom, 8)
-                    }
+                    // Always visible (not gated on holdings): Plans is reachable even before
+                    // a user owns anything — a Pie's first contribution is what buys the
+                    // holdings in the first place, so the picker can't wait on them existing.
+                    sectionPicker
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 8)
                     Divider().overlay(Theme.hairline)
                     content
                 }
@@ -293,7 +294,10 @@ struct PortfolioView: View {
 
     @ViewBuilder
     private var content: some View {
-        if viewModel.holdings.isEmpty {
+        // The Holdings tab keeps its own dedicated empty state; the other tabs (Plans
+        // especially) must stay reachable with zero holdings, so only Holdings itself
+        // gates on emptiness here.
+        if viewModel.holdings.isEmpty && section == .holdings {
             emptyState
         } else {
             switch section {
@@ -301,6 +305,7 @@ struct PortfolioView: View {
             case .allocation: allocationView
             case .activity: activityView
             case .performance: PerformanceSection(viewModel: performanceVM)
+            case .plans: PlansSection()
             }
         }
     }
@@ -364,14 +369,9 @@ struct PortfolioView: View {
     }
 
     private var allocationDonut: some View {
-        Chart(viewModel.allocationByKind) { slice in
-            SectorMark(angle: .value("Value", slice.value),
-                       innerRadius: .ratio(0.64), angularInset: 1.5)
-                .cornerRadius(3)
-                .foregroundStyle(kindColor(slice.id))
-        }
-        .chartLegend(.hidden)
-        .frame(width: 150, height: 150)
+        DonutChart(slices: viewModel.allocationByKind.map {
+            DonutSlice(id: $0.id, value: $0.value, color: kindColor($0.id))
+        })
         .overlay {
             VStack(spacing: 2) {
                 Text(tr(.holdingsLabel)).font(.system(size: 8, weight: .bold)).tracking(1.2)

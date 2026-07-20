@@ -41,6 +41,9 @@ enum CompositionRoot {
     static let settingsStore: SettingsStore = UserDefaultsSettingsStore()
     static let schedulerStateStore: SchedulerStateStore = UserDefaultsSchedulerStateStore()
     static let bookmarkStore: BookmarkStore = UserDefaultsBookmarkStore()
+    /// A single shared Pie store so the Plans list, detail, and wizard all read and
+    /// write the same persisted set of pies (mirrors `portfolioStore`'s sharing rationale).
+    static let pieStore: PieStore = UserDefaultsPieStore()
 
     static func makeSettingsViewModel() -> SettingsViewModel {
         SettingsViewModel(
@@ -167,6 +170,38 @@ enum CompositionRoot {
 
     static func makeCommandPaletteViewModel() -> CommandPaletteViewModel {
         CommandPaletteViewModel(searchAssets: SearchAssetsUseCase(repository: makeRepository()))
+    }
+
+    /// Drives the Plans tab: the Pie list, detail sheet, one-off contributions, and
+    /// manual rebalancing. Mirrors `makePortfolioViewModel`'s wiring — same shared
+    /// `portfolioStore`, a dedicated `pieStore`, and a fresh `MarketDataRepository`.
+    static func makePlansViewModel() -> PlansViewModel {
+        let repo = makeRepository()
+        return PlansViewModel(
+            loadPies: LoadPies(store: pieStore),
+            deletePie: DeletePie(store: pieStore),
+            contributeToPie: ContributeToPie(pieStore: pieStore, portfolioStore: portfolioStore, market: repo),
+            rebalancePie: RebalancePie(pieStore: pieStore, portfolioStore: portfolioStore, market: repo),
+            reconcileLedgers: ReconcilePieLedgers(pieStore: pieStore, portfolioStore: portfolioStore),
+            fetchQuotes: FetchQuotesUseCase(repository: repo)
+        )
+    }
+
+    /// Drives the pie creation/edit wizard. Pass `existingPie` to edit a Pie in place;
+    /// omit it to create a new one.
+    static func makePieWizardViewModel(existingPie: Pie? = nil) -> PieWizardViewModel {
+        let repo = makeRepository()
+        return PieWizardViewModel(
+            existingPie: existingPie,
+            savePie: SavePie(store: pieStore),
+            simulateDCA: SimulateDCA(market: repo, calendar: MarketCalendar())
+        )
+    }
+
+    /// The wizard's slice-search step reuses the same asset search the command palette
+    /// and watchlist use — one more `SearchAssetsUseCase` instance over the shared repo.
+    static func makeSearchAssetsUseCase() -> SearchAssetsUseCase {
+        SearchAssetsUseCase(repository: makeRepository())
     }
 
     static func makeNewsViewModel() -> NewsViewModel {

@@ -283,6 +283,52 @@ enum L10n {
         case pieInsufficientCash = "Not enough cash for this contribution."
         case nextContributionFormat = "Next: %@"
         case pieInvalidAmount = "Enter an amount greater than zero."
+
+        // MARK: Plans UI (Task 14)
+        case plansSection = "Plans"
+        case plansEmptyTitle = "No investment pies yet"
+        case plansEmptyHint = "Create a pie to auto-invest across a target allocation."
+        case createPlan = "Create Pie"
+        case editPlan = "Edit Pie"
+        case deletePlan = "Delete Pie"
+        case deletePlanConfirm = "Delete this pie? This won't sell any holdings."
+        case sliceWeights = "Slice Weights"
+        case equalSplit = "Equal Split"
+        case weightSumLabel = "Total weight"
+        case scheduleSection = "Contribution Schedule"
+        case cadenceWeekly = "Weekly"
+        case cadenceBiweekly = "Biweekly"
+        case cadenceMonthly = "Monthly"
+        case nextContribution = "Next contribution"
+        case contributeNow = "Contribute Now"
+        case rebalanceNow = "Rebalance Now"
+        case rebalancePreviewTitle = "Rebalance Preview"
+        case driftLabel = "Drift"
+        case backtestTitle = "Backtest"
+        case backtestInvested = "Invested"
+        case backtestValue = "Value"
+        case backtestLumpSum = "Lump sum"
+        case backtestInsufficient = "Not enough price history to run this backtest."
+        case manualAdjustmentNote = "Adjusted after a manual sale outside this pie."
+
+        case pieNameLabel = "Pie Name"
+        case pieNamePlaceholder = "e.g. Core Growth"
+        case searchAssetsToAddPlaceholder = "Search assets to add…"
+        case targetWeightLabel = "Target"
+        case actualWeightLabel = "Actual"
+        case recurringContributionToggle = "Recurring contribution"
+        case contributionAmountLabel = "Amount"
+        case cadenceLabel = "Cadence"
+        case stepSlicesTitle = "Slices"
+        case stepScheduleTitle = "Schedule"
+        case next = "Next"
+        case back = "Back"
+        case runBacktest = "Run Backtest"
+        case confirmRebalanceTitle = "Confirm Rebalance"
+        case confirmRebalanceMessageFormat = "Place %d orders to rebalance this pie?"
+        case rebalanceOrdersEmpty = "Your pie is already balanced."
+        case noSlicesYetHint = "Search above to add the first slice."
+        case contributeSheetTitleFormat = "Contribute to %@"
     }
 
     static let table: [Key: [AppLanguage: String]] = [
@@ -854,6 +900,108 @@ enum L10n {
                             .german: "Geben Sie einen Betrag größer als null ein.",
                             .italian: "Inserisci un importo maggiore di zero.",
                             .spanish: "Ingresa un importe mayor que cero."],
+
+        // MARK: Plans UI (Task 14) — DE/IT/ES provisional, pending Task 15 native review.
+        .plansSection: [.english: "Plans", .german: "Pläne",
+                        .italian: "Piani", .spanish: "Planes"],
+        .plansEmptyTitle: [.english: "No investment pies yet", .german: "Noch keine Investment-Pies",
+                           .italian: "Nessuna pie di investimento", .spanish: "Aún no hay pies de inversión"],
+        .plansEmptyHint: [.english: "Create a pie to auto-invest across a target allocation.",
+                          .german: "Erstelle einen Pie, um automatisch nach einer Zielallokation zu investieren.",
+                          .italian: "Crea una pie per investire automaticamente secondo un'allocazione target.",
+                          .spanish: "Crea un pie para invertir automáticamente según una asignación objetivo."],
+        .createPlan: [.english: "Create Pie", .german: "Pie erstellen",
+                     .italian: "Crea pie", .spanish: "Crear pie"],
+        .editPlan: [.english: "Edit Pie", .german: "Pie bearbeiten",
+                   .italian: "Modifica pie", .spanish: "Editar pie"],
+        .deletePlan: [.english: "Delete Pie", .german: "Pie löschen",
+                     .italian: "Elimina pie", .spanish: "Eliminar pie"],
+        .deletePlanConfirm: [.english: "Delete this pie? This won't sell any holdings.",
+                             .german: "Diesen Pie löschen? Bestände werden dadurch nicht verkauft.",
+                             .italian: "Eliminare questa pie? Le posizioni non verranno vendute.",
+                             .spanish: "¿Eliminar este pie? Esto no venderá ninguna posición."],
+        .sliceWeights: [.english: "Slice Weights", .german: "Slice-Gewichte",
+                        .italian: "Pesi delle fette", .spanish: "Pesos de los segmentos"],
+        .equalSplit: [.english: "Equal Split", .german: "Gleichmäßig aufteilen",
+                     .italian: "Suddividi equamente", .spanish: "Repartir por igual"],
+        .weightSumLabel: [.english: "Total weight", .german: "Gesamtgewicht",
+                          .italian: "Peso totale", .spanish: "Peso total"],
+        .scheduleSection: [.english: "Contribution Schedule", .german: "Beitragsplan",
+                           .italian: "Piano di contribuzione", .spanish: "Calendario de aportaciones"],
+        .cadenceWeekly: [.english: "Weekly", .german: "Wöchentlich",
+                         .italian: "Settimanale", .spanish: "Semanal"],
+        .cadenceBiweekly: [.english: "Biweekly", .german: "Zweiwöchentlich",
+                           .italian: "Ogni due settimane", .spanish: "Quincenal"],
+        .cadenceMonthly: [.english: "Monthly", .german: "Monatlich",
+                          .italian: "Mensile", .spanish: "Mensual"],
+        .nextContribution: [.english: "Next contribution", .german: "Nächster Beitrag",
+                            .italian: "Prossimo contributo", .spanish: "Próxima aportación"],
+        .contributeNow: [.english: "Contribute Now", .german: "Jetzt einzahlen",
+                         .italian: "Contribuisci ora", .spanish: "Aportar ahora"],
+        .rebalanceNow: [.english: "Rebalance Now", .german: "Jetzt rebalancieren",
+                        .italian: "Ribilancia ora", .spanish: "Reequilibrar ahora"],
+        .rebalancePreviewTitle: [.english: "Rebalance Preview", .german: "Rebalancing-Vorschau",
+                                 .italian: "Anteprima ribilanciamento", .spanish: "Vista previa del reequilibrio"],
+        .driftLabel: [.english: "Drift", .german: "Abweichung",
+                     .italian: "Scostamento", .spanish: "Desviación"],
+        .backtestTitle: [.english: "Backtest", .german: "Backtest",
+                         .italian: "Backtest", .spanish: "Backtest"],
+        .backtestInvested: [.english: "Invested", .german: "Investiert",
+                            .italian: "Investito", .spanish: "Invertido"],
+        .backtestValue: [.english: "Value", .german: "Wert",
+                         .italian: "Valore", .spanish: "Valor"],
+        .backtestLumpSum: [.english: "Lump sum", .german: "Einmalanlage",
+                           .italian: "Investimento unico", .spanish: "Pago único"],
+        .backtestInsufficient: [.english: "Not enough price history to run this backtest.",
+                                .german: "Nicht genügend Kursdaten für diesen Backtest.",
+                                .italian: "Storico dei prezzi insufficiente per questo backtest.",
+                                .spanish: "No hay suficiente historial de precios para este backtest."],
+        .manualAdjustmentNote: [.english: "Adjusted after a manual sale outside this pie.",
+                                .german: "Angepasst nach einem manuellen Verkauf außerhalb dieses Pies.",
+                                .italian: "Rettificato dopo una vendita manuale al di fuori di questa pie.",
+                                .spanish: "Ajustado tras una venta manual fuera de este pie."],
+        .pieNameLabel: [.english: "Pie Name", .german: "Pie-Name",
+                        .italian: "Nome della pie", .spanish: "Nombre del pie"],
+        .pieNamePlaceholder: [.english: "e.g. Core Growth", .german: "z. B. Core Growth",
+                              .italian: "es. Core Growth", .spanish: "p. ej. Core Growth"],
+        .searchAssetsToAddPlaceholder: [.english: "Search assets to add…", .german: "Werte zum Hinzufügen suchen…",
+                                        .italian: "Cerca asset da aggiungere…", .spanish: "Buscar activos para añadir…"],
+        .targetWeightLabel: [.english: "Target", .german: "Ziel",
+                             .italian: "Target", .spanish: "Objetivo"],
+        .actualWeightLabel: [.english: "Actual", .german: "Ist",
+                             .italian: "Attuale", .spanish: "Actual"],
+        .recurringContributionToggle: [.english: "Recurring contribution", .german: "Wiederkehrender Beitrag",
+                                       .italian: "Contributo ricorrente", .spanish: "Aportación recurrente"],
+        .contributionAmountLabel: [.english: "Amount", .german: "Betrag",
+                                   .italian: "Importo", .spanish: "Importe"],
+        .cadenceLabel: [.english: "Cadence", .german: "Rhythmus",
+                        .italian: "Frequenza", .spanish: "Frecuencia"],
+        .stepSlicesTitle: [.english: "Slices", .german: "Slices",
+                           .italian: "Fette", .spanish: "Segmentos"],
+        .stepScheduleTitle: [.english: "Schedule", .german: "Zeitplan",
+                             .italian: "Pianificazione", .spanish: "Calendario"],
+        .next: [.english: "Next", .german: "Weiter",
+               .italian: "Avanti", .spanish: "Siguiente"],
+        .back: [.english: "Back", .german: "Zurück",
+               .italian: "Indietro", .spanish: "Atrás"],
+        .runBacktest: [.english: "Run Backtest", .german: "Backtest starten",
+                       .italian: "Avvia backtest", .spanish: "Ejecutar backtest"],
+        .confirmRebalanceTitle: [.english: "Confirm Rebalance", .german: "Rebalancing bestätigen",
+                                 .italian: "Conferma ribilanciamento", .spanish: "Confirmar reequilibrio"],
+        .confirmRebalanceMessageFormat: [.english: "Place %d orders to rebalance this pie?",
+                                         .german: "%d Aufträge zur Rebalancierung dieses Pies aufgeben?",
+                                         .italian: "Inviare %d ordini per ribilanciare questa pie?",
+                                         .spanish: "¿Colocar %d órdenes para reequilibrar este pie?"],
+        .rebalanceOrdersEmpty: [.english: "Your pie is already balanced.",
+                                .german: "Dieser Pie ist bereits ausbalanciert.",
+                                .italian: "Questa pie è già bilanciata.",
+                                .spanish: "Este pie ya está equilibrado."],
+        .noSlicesYetHint: [.english: "Search above to add the first slice.",
+                           .german: "Oben suchen, um den ersten Slice hinzuzufügen.",
+                           .italian: "Cerca sopra per aggiungere la prima fetta.",
+                           .spanish: "Busca arriba para añadir el primer segmento."],
+        .contributeSheetTitleFormat: [.english: "Contribute to %@", .german: "Einzahlen in %@",
+                                      .italian: "Contribuisci a %@", .spanish: "Aportar a %@"],
     ]
 }
 
