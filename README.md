@@ -15,7 +15,7 @@ An ultra-premium **native investing platform across four OSes** — a SwiftUI fl
 ![Swift](https://img.shields.io/badge/Swift-6.0-D4A94E?logo=swift)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Multiplatform-D4A94E?logo=kotlin)
 ![Architecture](https://img.shields.io/badge/architecture-Clean-D4A94E)
-![Tests](https://img.shields.io/badge/macOS%20tests-386%20passing-46C98A)
+![Tests](https://img.shields.io/badge/macOS%20tests-400%20passing-46C98A)
 
 </div>
 
@@ -93,6 +93,7 @@ Every app carries: a live watchlist, asset detail with candlestick/area charts a
 - **Drift tracking and manual rebalance** — every slice shows target vs. actual weight and drift; a rebalance preview lists the exact buy/sell orders before you confirm, honoring the **Confirm Trades** setting the same way a manual trade does.
 - **In-wizard DCA backtest** while building a plan — a dollar-cost-average simulation over real historical closes, shown alongside a lump-sum comparison so the schedule's trade-off is visible before you commit.
 - **Settings-gated notifications** — a dedicated **Plan Contributions** toggle (Notifications settings) governs both the scheduled auto-contribution run and its "contribution executed / skipped" notifications, mirroring the earnings-day toggle.
+- **Platform status:** live on macOS, iPhone, and Windows desktop (M7.2); Android Plans support is targeted for the next increment (M7.3).
 
 ### Settings & appearance
 - A unified, persisted **settings** layer — every preference (notification toggles, security/privacy, trade confirmation, theme, accent) flows through one store with a forward-compatible decoder.
@@ -174,7 +175,7 @@ The app ships as a bare SwiftPM executable. Launching the built binary directly 
 DEVELOPER_DIR=/Applications/Xcode.app swift test
 ```
 
-> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **386 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction, the all-priced gate + benchmark head-trim), the market calendar and earnings calendar, use cases, the market-activity planner (incl. earnings-check and Pie-contribution-check scheduling), alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the Finnhub earnings mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, the view models, and Investment Plans (`PieMath` distribution/drift, `PieSchedule` cadence math, `PieBacktest` DCA-vs-lump-sum, contribution/rebalance use cases and catch-up, the `UserDefaultsPieStore`, and the coordinator's contribution notifications).
+> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **400 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction, the all-priced gate + benchmark head-trim), the market calendar and earnings calendar, use cases, the market-activity planner (incl. earnings-check and Pie-contribution-check scheduling), alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the Finnhub earnings mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, the view models, and Investment Plans (`PieMath` distribution/drift, `PieSchedule` cadence math, `PieBacktest` DCA-vs-lump-sum, contribution/rebalance use cases and catch-up, the `UserDefaultsPieStore`, and the coordinator's contribution notifications).
 
 ### Building the shared Kotlin core
 
@@ -429,6 +430,15 @@ clarification, no signature change) — Android's `FetchCandles`-based path is u
 Portfolio holding-row **BUY/SELL** buttons are now **always visible at 35% opacity**,
 brightening to full on hover, reserving their layout space permanently — a **recorded
 divergence** from macOS, which still hover-reveals its buy/sell affordance.
+
+**Investment Plans (Pies)** reach the desktop app at parity (`:desktopApp`, M7.2): a **Plans**
+section in the Portfolio tab lists pies with per-slice drift badges, a 4-step creation
+wizard (including an in-wizard DCA-vs-lump-sum backtest) builds and edits them, contributions
+run on weekly/biweekly/monthly schedules with launch-time and daily catch-up for days accrued
+while the app was closed, and a rebalance preview lists the exact buy/sell orders before
+confirming, honoring **Confirm Trades** the same as a manual trade — all on the same shared
+Kotlin core (`PieMath`, `PieSchedule`, `PieBacktest`, contribution/rebalance use cases) as
+the macOS reference. Android Plans support is targeted for the next increment (M7.3).
 
 ## Project Structure
 
