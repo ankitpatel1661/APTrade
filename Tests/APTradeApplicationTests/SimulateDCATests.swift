@@ -6,6 +6,7 @@ private final class FakeMarketData: MarketDataRepository, @unchecked Sendable {
     private let historyBySymbol: [String: [PricePoint]]
     private(set) var historyFetchCount = 0
     var failureError: (any Error)?
+    var failureBySymbol: [String: any Error] = [:]
 
     init(historyBySymbol: [String: [PricePoint]] = [:]) {
         self.historyBySymbol = historyBySymbol
@@ -17,6 +18,9 @@ private final class FakeMarketData: MarketDataRepository, @unchecked Sendable {
 
     func history(for symbol: String, timeframe: Timeframe) async throws -> [PricePoint] {
         historyFetchCount += 1
+        if let error = failureBySymbol[symbol] {
+            throw error
+        }
         if let error = failureError {
             throw error
         }
@@ -124,14 +128,14 @@ final class SimulateDCATests: XCTestCase {
     }
 
     func test_simulateDCA_onFailureForOneSymbol_returnsNil() async throws {
-        // Provide history for AAPL but fail for BTC
+        // Provide history for AAPL but fail for BTC (per-symbol failure)
         let points = (0..<252).map { i in
             let date = Date(timeIntervalSince1970: 1_609_459_200 + TimeInterval(i * 86400))
             return PricePoint(date: date, close: Money(amount: Decimal(150 + i), currencyCode: "USD"))
         }
 
-        let market = FakeMarketData(historyBySymbol: ["AAPL": points])
-        market.failureError = AppError.network
+        let market = FakeMarketData(historyBySymbol: ["AAPL": points, "BTC": points])
+        market.failureBySymbol["BTC"] = AppError.network
         let simulate = SimulateDCA(market: market, calendar: calendar)
 
         let slices = [slice1, slice2]
@@ -142,12 +146,12 @@ final class SimulateDCATests: XCTestCase {
 
         let report = try await simulate(slices: slices, amount: amount, cadence: cadence, years: years, now: now)
 
-        XCTAssertNil(report)
+        XCTAssertNil(report, "any symbol failure should cause degrade to nil")
     }
 
-    // MARK: - Cancellation: CancellationError Propagates
+    // MARK: - Cancellation: CancellationError Degrades to Nil
 
-    func test_simulateDCA_onCancellation_propagatesError() async throws {
+    func test_simulateDCA_onCancellation_degradesToNil() async throws {
         let market = FakeMarketData()
         market.failureError = CancellationError()
         let simulate = SimulateDCA(market: market, calendar: calendar)
@@ -158,35 +162,32 @@ final class SimulateDCATests: XCTestCase {
         let years = 1
         let now = Date()
 
-        do {
-            _ = try await simulate(slices: slices, amount: amount, cadence: cadence, years: years, now: now)
-            XCTFail("expected CancellationError to propagate")
-        } catch {
-            XCTAssertTrue(error is CancellationError)
-        }
+        let report = try await simulate(slices: slices, amount: amount, cadence: cadence, years: years, now: now)
+        XCTAssertNil(report, "cancellation should degrade to nil like any other error")
     }
 
     // MARK: - Edge Cases
 
     func test_simulateDCA_withInsufficientHistory_returnsNilFromBacktest() async throws {
-        // Provide only a few days of history (not enough for any contributions)
+        // One symbol has full history, but BTC has NO history
         let startDate = Date(timeIntervalSince1970: 1_609_459_200)
-        let points = [
-            PricePoint(date: startDate, close: Money(amount: 100, currencyCode: "USD")),
-        ]
+        let points = (0..<252).map { i in
+            let date = Calendar.current.date(byAdding: .day, value: i, to: startDate) ?? Date()
+            return PricePoint(date: date, close: Money(amount: Decimal(150 + i), currencyCode: "USD"))
+        }
 
-        let market = FakeMarketData(historyBySymbol: ["AAPL": points, "BTC": points])
+        let market = FakeMarketData(historyBySymbol: ["AAPL": points, "BTC": []])
         let simulate = SimulateDCA(market: market, calendar: calendar)
 
         let slices = [slice1, slice2]
         let amount = Money(amount: 1000, currencyCode: "USD")
         let cadence = PieCadence.monthly
         let years = 1
-        let now = Date(timeIntervalSince1970: 1_609_459_200 + 86400)
+        let now = Date(timeIntervalSince1970: 1_641_038_400) // 2022-01-01
 
         let report = try await simulate(slices: slices, amount: amount, cadence: cadence, years: years, now: now)
 
-        // dcaBacktest returns nil if no due day is executable
+        // dcaBacktest returns nil if no due day is executable (missing closes for ANY symbol)
         XCTAssertNil(report)
     }
 
