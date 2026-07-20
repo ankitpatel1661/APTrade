@@ -62,11 +62,57 @@ final class PieWizardViewModelTests: XCTestCase {
         XCTAssertEqual(vm.weightSumPP, 100)
         XCTAssertTrue(vm.canSave)
 
+        // With A+B already at 100, a new slice's weight clamps to the zero remainder —
+        // the sum can no longer overshoot (see test_setWeight_clampsToRemainingBudget…).
         vm.addSlice(asset: Asset(symbol: "C", name: "C", kind: .stock))
         vm.setWeight(symbol: "C", pp: 5)
+        XCTAssertEqual(vm.weightSumPP, 100)
 
-        XCTAssertEqual(vm.weightSumPP, 105)
+        // An under-100 sum still blocks saving: canSave demands EXACTLY 100.
+        vm.setWeight(symbol: "B", pp: 30)
+        XCTAssertEqual(vm.weightSumPP, 90)
         XCTAssertFalse(vm.canSave, "sum must be EXACTLY 100 for canSave")
+    }
+
+    // MARK: - setWeight clamping: total can never exceed 100
+
+    func test_setWeight_clampsToRemainingBudget_totalNeverExceeds100() {
+        let vm = makeVM(pieStore: MemoryPieStore(), repo: VMFakeRepo())
+        for symbol in ["AAPL", "NVDA", "MSFT", "AMZN"] {
+            vm.addSlice(asset: Asset(symbol: symbol, name: symbol, kind: .stock))
+        }
+        vm.setWeight(symbol: "AAPL", pp: 10)
+        vm.setWeight(symbol: "NVDA", pp: 20)
+        vm.setWeight(symbol: "MSFT", pp: 35)
+
+        // Others hold 65pp, so AMZN's ceiling is 35 — a request for 40 clamps.
+        vm.setWeight(symbol: "AMZN", pp: 40)
+        XCTAssertEqual(vm.slices.first { $0.symbol == "AMZN" }?.targetWeight.value, 35)
+        XCTAssertEqual(vm.weightSumPP, 100)
+
+        // Repeated overshoot stays pinned at the ceiling.
+        vm.setWeight(symbol: "AMZN", pp: 50)
+        XCTAssertEqual(vm.slices.first { $0.symbol == "AMZN" }?.targetWeight.value, 35)
+        XCTAssertEqual(vm.weightSumPP, 100)
+
+        // Raising an EXISTING slice is clamped by the same budget: with the other
+        // three at 90pp, AAPL cannot go past its current 10.
+        vm.setWeight(symbol: "AAPL", pp: 50)
+        XCTAssertEqual(vm.slices.first { $0.symbol == "AAPL" }?.targetWeight.value, 10)
+        XCTAssertEqual(vm.weightSumPP, 100)
+
+        // Lowering one slice frees budget for another.
+        vm.setWeight(symbol: "MSFT", pp: 15)
+        vm.setWeight(symbol: "AMZN", pp: 55)
+        XCTAssertEqual(vm.slices.first { $0.symbol == "AMZN" }?.targetWeight.value, 55)
+        XCTAssertEqual(vm.weightSumPP, 100)
+    }
+
+    func test_setWeight_negativeClampsToZero() {
+        let vm = makeVM(pieStore: MemoryPieStore(), repo: VMFakeRepo())
+        vm.addSlice(asset: Asset(symbol: "AAPL", name: "AAPL", kind: .stock))
+        vm.setWeight(symbol: "AAPL", pp: -5)
+        XCTAssertEqual(vm.slices.first { $0.symbol == "AAPL" }?.targetWeight.value, 0)
     }
 
     func test_canSave_false_whenNameEmpty() {
