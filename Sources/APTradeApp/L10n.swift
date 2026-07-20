@@ -362,6 +362,7 @@ enum L10n {
         case settingsDrip = "Reinvest Dividends (DRIP)"
         case settingsDripFooter = "Automatically reinvest dividends into the paying asset. Off: dividends are credited as cash."
         case settingsDividendNotif = "Dividend Payments"
+        case settingsDividendNotifSubtitle = "When a dividend payment is received or reinvested"
         // MARK: Notifications (dividends)
         case notifDividendTitle = "Dividend Received"
         case notifDividendCashBodyFmt = "%@ paid you %@"
@@ -1115,6 +1116,10 @@ enum L10n {
                               .spanish: "Reinvierte automáticamente los dividendos en el activo que los reparte. Desactivado: los dividendos se abonan como efectivo."],
         .settingsDividendNotif: [.english: "Dividend Payments", .german: "Dividendenzahlungen",
                                  .italian: "Pagamenti dei dividendi", .spanish: "Pagos de dividendos"],
+        .settingsDividendNotifSubtitle: [.english: "When a dividend payment is received or reinvested",
+                                         .german: "Wenn eine Dividendenzahlung eingeht oder reinvestiert wird",
+                                         .italian: "Quando viene ricevuto o reinvestito un pagamento di dividendi",
+                                         .spanish: "Cuando se recibe o se reinvierte un pago de dividendos"],
 
         // MARK: Notifications (dividends)
         .notifDividendTitle: [.english: "Dividend Received", .german: "Dividende erhalten",
