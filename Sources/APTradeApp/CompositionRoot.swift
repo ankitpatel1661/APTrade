@@ -15,9 +15,12 @@ enum CompositionRoot {
     /// One shared KMP-backed repository instance for the process lifetime. Its `init`
     /// builds a Ktor `HttpClient(Darwin)` under the hood, which owns its own connection
     /// pool; constructing a fresh instance per `makeRepository()` call would allocate a
-    /// new pool (and a new never-closed client) for every ViewModel factory.
-    private static let sharedCoreRepository: MarketDataRepository =
-        SharedCoreMarketDataRepository()
+    /// new pool (and a new never-closed client) for every ViewModel factory. Held at its
+    /// concrete type so both the `MarketDataRepository` and `DividendEventsRepository`
+    /// facets below can be exposed without a force-cast.
+    private static let sharedCoreRepositoryInstance = SharedCoreMarketDataRepository()
+    private static var sharedCoreRepository: MarketDataRepository { sharedCoreRepositoryInstance }
+    private static var sharedDividendEventsRepository: DividendEventsRepository { sharedCoreRepositoryInstance }
 
     static func makeRepository() -> MarketDataRepository {
         // All market-data calls are served by the shared Kotlin core.
@@ -213,6 +216,20 @@ enum CompositionRoot {
             // The wizard's slice-search step reuses the same asset search the command
             // palette and watchlist use — one more `SearchAssetsUseCase` over the shared repo.
             searchAssets: SearchAssetsUseCase(repository: repo)
+        )
+    }
+
+    /// Drives the Portfolio tab's Income section: dividend summary cards, monthly bars,
+    /// upcoming payouts, per-holding breakdown, and history. Reads the same shared
+    /// `portfolioStore` the rest of the Portfolio tab uses so a dividend transaction
+    /// posted elsewhere is immediately reflected here, plus the shared Kotlin-core
+    /// repository's dividend-events facet for projections.
+    static func makeIncomeViewModel() -> IncomeViewModel {
+        let repo = makeRepository()
+        return IncomeViewModel(
+            fetchPortfolio: FetchPortfolioUseCase(store: portfolioStore),
+            fetchQuotes: FetchQuotesUseCase(repository: repo),
+            dividendEventsRepository: sharedDividendEventsRepository
         )
     }
 

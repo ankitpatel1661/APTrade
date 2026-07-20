@@ -3,7 +3,7 @@ import APTradeDomain
 
 struct PortfolioView: View {
     enum Section: String, CaseIterable {
-        case holdings = "Holdings", allocation = "Allocation", activity = "Activity", performance = "Performance", plans = "Plans"
+        case holdings = "Holdings", allocation = "Allocation", activity = "Activity", performance = "Performance", plans = "Plans", income = "Income"
 
         @MainActor
         var title: String {
@@ -13,6 +13,7 @@ struct PortfolioView: View {
             case .activity: return tr(.activitySection)
             case .performance: return tr(.performanceSection)
             case .plans: return tr(.plansSection)
+            case .income: return tr(.incomeSection)
             }
         }
     }
@@ -306,6 +307,7 @@ struct PortfolioView: View {
             case .activity: activityView
             case .performance: PerformanceSection(viewModel: performanceVM)
             case .plans: PlansSection()
+            case .income: IncomeSection()
             }
         }
     }
