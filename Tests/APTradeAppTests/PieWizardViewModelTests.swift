@@ -13,6 +13,13 @@ private final class MemoryPieStore: PieStore, @unchecked Sendable {
     }
 }
 
+private final class MemoryPortfolioStore: PortfolioStore, @unchecked Sendable {
+    var portfolio: Portfolio
+    init(_ portfolio: Portfolio) { self.portfolio = portfolio }
+    func load() -> Portfolio { portfolio }
+    func save(_ portfolio: Portfolio) { self.portfolio = portfolio }
+}
+
 @MainActor
 final class PieWizardViewModelTests: XCTestCase {
     private let calendar = MarketCalendar()
@@ -475,5 +482,86 @@ final class PieWizardViewModelTests: XCTestCase {
 
         vm.addSlice(asset: Asset(symbol: "A", name: "A Corp", kind: .stock))
         XCTAssertTrue(vm.searchResults.isEmpty, "adding a slice must clear the now-stale search results")
+    }
+
+    // MARK: - F3: removing a slice drops its now-orphaned ledger entry at save-time
+
+    func test_save_removingSlice_dropsOrphanedLedgerEntry_activityAndSurvivingEntryUntouched() async {
+        let ledger = [
+            PieLedgerEntry(symbol: "A", quantity: Quantity(5)),
+            PieLedgerEntry(symbol: "B", quantity: Quantity(3)),
+        ]
+        let activity = [PieActivityEntry(kind: .contribution, day: "2025-01-01", amount: usd(100))]
+        let existing = try! Pie(id: "p1", name: "Pie", slices: [sliceA, sliceB], schedule: nil,
+                                createdDay: "2025-01-01", ledger: ledger, activity: activity)
+        let pieStore = MemoryPieStore()
+        pieStore.pies = [existing]
+        let vm = makeVM(existingPie: existing, pieStore: pieStore, repo: VMFakeRepo())
+
+        vm.removeSlice(symbol: "B")
+        vm.equalSplit() // re-normalize the sole remaining slice to 100%
+
+        let saved = await vm.save()
+
+        XCTAssertTrue(saved)
+        let updated = pieStore.pies.first
+        XCTAssertEqual(updated?.ledger.map(\.symbol), ["A"], "the orphaned B ledger entry must be dropped")
+        XCTAssertEqual(updated?.quantity(of: "A"), Quantity(5), "the surviving slice's ledger entry is untouched")
+        XCTAssertEqual(updated?.activity, activity, "activity history (the audit log) must be left untouched")
+    }
+
+    // MARK: - F3 (reviewer scenario): a dead ledger claim, once filtered at save-time,
+    // must no longer wrongly clamp a different pie's legitimate claim to the same symbol.
+
+    func test_save_removingSlice_thenReconcile_otherPieNoLongerWronglyClamped() async throws {
+        // Pie A: has an AAPL slice with a 3-share ledger claim, plus an unrelated MSFT
+        // slice. This edit REMOVES the AAPL slice entirely, leaving its ledger entry
+        // "dead" once F3's filter applies.
+        let sliceAAPL = PieSlice(symbol: "AAPL", assetKind: .stock, targetWeight: Percentage(value: 50))
+        let sliceMSFT = PieSlice(symbol: "MSFT", assetKind: .stock, targetWeight: Percentage(value: 50))
+        let pieALedger = [
+            PieLedgerEntry(symbol: "AAPL", quantity: Quantity(3)),
+            PieLedgerEntry(symbol: "MSFT", quantity: Quantity(3)),
+        ]
+        let pieA = try Pie(id: "pieA", name: "Pie A", slices: [sliceAAPL, sliceMSFT], schedule: nil,
+                           createdDay: "2025-01-01", ledger: pieALedger)
+
+        // Pie B: legitimately claims 12 AAPL shares, untouched by this edit.
+        let pieBSlice = PieSlice(symbol: "AAPL", assetKind: .stock, targetWeight: Percentage(value: 100))
+        let pieB = try Pie(id: "pieB", name: "Pie B", slices: [pieBSlice], schedule: nil,
+                           createdDay: "2025-01-01",
+                           ledger: [PieLedgerEntry(symbol: "AAPL", quantity: Quantity(12))])
+
+        let pieStore = MemoryPieStore()
+        pieStore.pies = [pieA, pieB]
+
+        // Edit pie A: drop the AAPL slice (keep MSFT). Per F3, saving must drop the
+        // now-orphaned 3-AAPL ledger claim rather than carry it forward as a dead claim.
+        let vm = makeVM(existingPie: pieA, pieStore: pieStore, repo: VMFakeRepo())
+        vm.removeSlice(symbol: "AAPL")
+        vm.equalSplit()
+        let saved = await vm.save()
+        XCTAssertTrue(saved)
+        XCTAssertNil(pieStore.pies.first(where: { $0.id == "pieA" })?.ledger.first(where: { $0.symbol == "AAPL" }),
+                     "pie A's dead AAPL claim must be dropped at save-time")
+
+        // Portfolio: originally held 15 AAPL (3 + 12, matching both pies' original
+        // claims); a manual sell (outside any pie) drops the actual holding to 10.
+        let portfolio = Portfolio(cash: usd(0), positions: [
+            Position(asset: Asset(symbol: "AAPL", name: "AAPL", kind: .stock), quantity: Quantity(10),
+                    averageCost: usd(10), realizedPnL: usd(0))
+        ], transactions: [])
+        let portfolioStore = MemoryPortfolioStore(portfolio)
+
+        let reconcile = ReconcilePieLedgers(pieStore: pieStore, portfolioStore: portfolioStore, serializer: TradeSerializer())
+        let result = await reconcile()
+
+        // Without F3's fix, pie A's still-present 3-share dead claim would make the
+        // largest-clamps-first walk wrongly reduce pie B's legitimate 12-share claim to
+        // 7 (preserving A's 3 in full first). With the dead claim filtered at save-time,
+        // pie B is the only remaining claimant and correctly receives the FULL 10 held.
+        let resultB = result.first { $0.id == "pieB" }
+        XCTAssertEqual(resultB?.quantity(of: "AAPL"), Quantity(10),
+                       "pie B must receive the full 10 held shares, not be wrongly clamped to 7 by A's dead claim")
     }
 }

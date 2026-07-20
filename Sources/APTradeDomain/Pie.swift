@@ -120,6 +120,17 @@ public enum PieError: Error, Equatable {
 /// and records activity (contributions, rebalances, etc.) for auditability.
 ///
 /// Construction validates: slices non-empty, symbols unique, and weights sum to exactly 100.
+///
+/// **`ledger` is NOT validated against `slices`.** A ledger entry MAY reference a symbol
+/// that isn't (or is no longer) one of `slices` — this is a deliberately permitted,
+/// transient state, not an invariant violation: `ReconcilePieLedgers`' clamp walk and
+/// decoding legacy/pre-edit data both rebuild a `Pie` with its `slices` passed through
+/// unchanged while only `ledger`/`activity` are touched, and a slice removed via the
+/// pie-edit wizard intentionally leaves the ledger momentarily out of sync with `slices`
+/// until the wizard's own save-time filter (`PieWizardViewModel.save()`) drops the
+/// orphaned entries. Consumers must not assume every `ledger` entry has a matching slice —
+/// look up `slices` explicitly (e.g. via `quantity(of:)` for a KNOWN slice symbol) rather
+/// than assuming `ledger`'s symbol set is a subset of `slices`'.
 public struct Pie: Equatable, Codable, Sendable, Identifiable {
     public let id: String
     public let name: String

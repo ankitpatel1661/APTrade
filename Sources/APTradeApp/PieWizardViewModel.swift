@@ -176,13 +176,23 @@ public final class PieWizardViewModel {
         }
 
         do {
+            let survivingSymbols = Set(slices.map(\.symbol))
+            // A slice removed in this edit leaves its ledger entry (and only its ledger
+            // entry — activity history is left untouched, an immutable audit log) with
+            // nothing left to attribute to: the pie no longer targets that symbol at all,
+            // so carrying the stale claim forward would let it silently keep counting
+            // toward this pie's totals/reconciliation forever. Dropping it here reverts
+            // those shares to plain, unattributed manual holdings in the portfolio —
+            // consistent with the attribution model, where a pie's ledger is a CLAIM on
+            // a portfolio position, not the position itself; the portfolio is untouched.
+            let survivingLedger = (existingPie?.ledger ?? []).filter { survivingSymbols.contains($0.symbol) }
             let pie = try Pie(
                 id: existingPie?.id ?? UUID().uuidString,
                 name: name,
                 slices: slices,
                 schedule: schedule,
                 createdDay: existingPie?.createdDay ?? calendar.tradingDay(of: now()),
-                ledger: existingPie?.ledger ?? [],
+                ledger: survivingLedger,
                 activity: existingPie?.activity ?? []
             )
             _ = await savePie(pie)
