@@ -186,6 +186,82 @@ class FilePieStoreTest {
     }
 
     @Test
+    fun unrecognizedAssetKindMidListDiscardsWholeLoadWithoutTouchingFile() = runTest {
+        // Well-formed JSON throughout — the 2nd of 3 pies has an assetKind Kotlin's
+        // AssetKind can't map. Mid-list placement proves the whole array is scanned (not
+        // just the first element) before the whole-blob fallback kicks in.
+        val file = tempFile()
+        file.writeText(
+            """
+            [
+              {
+                "id": "pie-1", "name": "Fine", "schedule": null, "createdDay": "2026-07-20",
+                "slices": [{"symbol": "AAPL", "assetKind": "Stock", "targetWeight": {"value": "100"}}],
+                "ledger": [], "activity": []
+              },
+              {
+                "id": "pie-2", "name": "Bad Kind", "schedule": null, "createdDay": "2026-07-20",
+                "slices": [{"symbol": "XAU", "assetKind": "Commodity", "targetWeight": {"value": "100"}}],
+                "ledger": [], "activity": []
+              },
+              {
+                "id": "pie-3", "name": "Also Fine", "schedule": null, "createdDay": "2026-07-20",
+                "slices": [{"symbol": "ETH", "assetKind": "Crypto", "targetWeight": {"value": "100"}}],
+                "ledger": [], "activity": []
+              }
+            ]
+            """.trimIndent(),
+        )
+        val originalBytes = file.readBytes()
+
+        val loaded = FilePieStore(file).load()
+
+        assertEquals(0, loaded.size)
+        assertEquals(emptyList(), loaded)
+        assertContentEquals(originalBytes, file.readBytes())
+    }
+
+    @Test
+    fun unrecognizedCadenceMidListDiscardsWholeLoadWithoutTouchingFile() = runTest {
+        // Same shape, but the unrecognized raw value is the 2nd pie's schedule.cadence.
+        val file = tempFile()
+        file.writeText(
+            """
+            [
+              {
+                "id": "pie-1", "name": "Fine", "schedule": null, "createdDay": "2026-07-20",
+                "slices": [{"symbol": "AAPL", "assetKind": "Stock", "targetWeight": {"value": "100"}}],
+                "ledger": [], "activity": []
+              },
+              {
+                "id": "pie-2", "name": "Bad Cadence", "createdDay": "2026-07-20",
+                "slices": [{"symbol": "SPY", "assetKind": "Etf", "targetWeight": {"value": "100"}}],
+                "schedule": {
+                  "amount": {"amount": "100.00", "currencyCode": "USD"},
+                  "cadence": "daily",
+                  "anchorDay": "2026-08-01",
+                  "nextDueDay": "2026-08-01"
+                },
+                "ledger": [], "activity": []
+              },
+              {
+                "id": "pie-3", "name": "Also Fine", "schedule": null, "createdDay": "2026-07-20",
+                "slices": [{"symbol": "ETH", "assetKind": "Crypto", "targetWeight": {"value": "100"}}],
+                "ledger": [], "activity": []
+              }
+            ]
+            """.trimIndent(),
+        )
+        val originalBytes = file.readBytes()
+
+        val loaded = FilePieStore(file).load()
+
+        assertEquals(0, loaded.size)
+        assertEquals(emptyList(), loaded)
+        assertContentEquals(originalBytes, file.readBytes())
+    }
+
+    @Test
     fun scheduleMissingAnchorDayKeyFallsBackToNextDueDay() = runTest {
         // Legacy data written before `anchorDay` existed — Swift's Codable fallback is
         // `anchorDay = nextDueDay` (see `ContributionSchedule.init(from:)`); transcribed
