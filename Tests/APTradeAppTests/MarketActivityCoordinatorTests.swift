@@ -283,9 +283,9 @@ final class MarketActivityCoordinatorTests: XCTestCase {
     func test_dividendCheckDue_notifiesPerOutcome_cashAndReinvested() async {
         let now = et(2025, 6, 25, 10, 0) // open
         let notifier = RecordingNotifier()
-        let cashOutcome = DividendOutcome.credited(symbol: "AAPL", cash: Money(amount: 12.34))
+        let cashOutcome = DividendOutcome.credited(symbol: "AAPL", cash: Money(amount: 12.34), isBackfill: false)
         let dripOutcome = DividendOutcome.reinvested(symbol: "MSFT", cash: Money(amount: 5.67),
-                                                     shares: Quantity(0.1))
+                                                     shares: Quantity(0.1), isBackfill: false)
         let coordinator = makeCoordinator(
             state: SchedulerState(lastStatus: .open), // no lastDividendCheckDay yet -> due today
             settings: AppSettings(marketOpenClose: false, newsDigest: false, earningsReports: false,
@@ -304,6 +304,8 @@ final class MarketActivityCoordinatorTests: XCTestCase {
         XCTAssertEqual(notifier.dividendNotifications[1].title, tr(.notifDividendTitle))
         XCTAssertEqual(notifier.dividendNotifications[1].body,
                        String(format: tr(.notifDividendDripBodyFmt), "MSFT", Money(amount: 5.67).formatted))
+        // Zero backfill outcomes among these two -> no third, summary notification.
+        XCTAssertEqual(notifier.dividendNotifications.count, 2)
     }
 
     /// Crediting is never gated by settings — only the notification is. The closure must
@@ -321,7 +323,7 @@ final class MarketActivityCoordinatorTests: XCTestCase {
             notifier: notifier,
             processDueDividends: { _ in
                 calledCount.value = (calledCount.value ?? 0) + 1
-                return [.credited(symbol: "AAPL", cash: Money(amount: 12.34))]
+                return [.credited(symbol: "AAPL", cash: Money(amount: 12.34), isBackfill: false)]
             },
             now: { now }
         )
@@ -343,7 +345,7 @@ final class MarketActivityCoordinatorTests: XCTestCase {
             settings: AppSettings(marketOpenClose: false, newsDigest: false, earningsReports: false,
                                   pieContributions: false, dividendNotifications: true),
             notifier: notifier,
-            processDueDividends: { _ in [.credited(symbol: "AAPL", cash: Money(amount: 9.99))] },
+            processDueDividends: { _ in [.credited(symbol: "AAPL", cash: Money(amount: 9.99), isBackfill: false)] },
             now: { now }
         )
 
@@ -355,5 +357,64 @@ final class MarketActivityCoordinatorTests: XCTestCase {
         XCTAssertEqual(notifier.dividendNotifications.count, 1)
         XCTAssertEqual(notifier.dividendNotifications[0].body,
                        String(format: tr(.notifDividendCashBodyFmt), "AAPL", Money(amount: 9.99).formatted))
+    }
+
+    /// A first-run backfill can credit an established portfolio's entire dividend
+    /// history in one pass (20-100+ events). Notifying once per outcome there would fire
+    /// a notification burst at launch — so backfill outcomes must collapse into ONE
+    /// summary, while any live (non-backfill) outcome in the same batch still notifies
+    /// individually, exactly as before.
+    func test_dividendCheckDue_mixedBackfillAndLive_collapsesBackfillIntoOneSummary() async {
+        let now = et(2025, 6, 25, 10, 0) // open
+        let notifier = RecordingNotifier()
+        let backfill1 = DividendOutcome.credited(symbol: "AAPL", cash: Money(amount: 10), isBackfill: true)
+        let backfill2 = DividendOutcome.credited(symbol: "AAPL", cash: Money(amount: 20), isBackfill: true)
+        let backfill3 = DividendOutcome.reinvested(symbol: "MSFT", cash: Money(amount: 30),
+                                                    shares: Quantity(0.5), isBackfill: true)
+        let live = DividendOutcome.credited(symbol: "NVDA", cash: Money(amount: 5), isBackfill: false)
+        let coordinator = makeCoordinator(
+            state: SchedulerState(lastStatus: .open),
+            settings: AppSettings(marketOpenClose: false, newsDigest: false, earningsReports: false,
+                                  pieContributions: false, dividendNotifications: true),
+            notifier: notifier,
+            processDueDividends: { _ in [backfill1, backfill2, backfill3, live] },
+            now: { now }
+        )
+
+        await coordinator.tick()
+
+        // Exactly 2 notifications: 1 per-outcome (the live one) + 1 backfill summary.
+        XCTAssertEqual(notifier.dividendNotifications.count, 2)
+        XCTAssertEqual(notifier.dividendNotifications[0].title, tr(.notifDividendTitle))
+        XCTAssertEqual(notifier.dividendNotifications[0].body,
+                       String(format: tr(.notifDividendCashBodyFmt), "NVDA", Money(amount: 5).formatted))
+        XCTAssertEqual(notifier.dividendNotifications[1].title, tr(.notifDividendTitle))
+        let totalBackfillCash = Money(amount: 10) + Money(amount: 20) + Money(amount: 30)
+        XCTAssertEqual(notifier.dividendNotifications[1].body,
+                       String(format: tr(.notifDividendBackfillBodyFmt), "3", totalBackfillCash.formatted))
+    }
+
+    /// An all-backfill batch (the classic first-run-on-an-established-portfolio case)
+    /// notifies exactly once, regardless of how many events were credited.
+    func test_dividendCheckDue_allBackfillOutcomes_notifiesExactlyOneSummary() async {
+        let now = et(2025, 6, 25, 10, 0) // open
+        let notifier = RecordingNotifier()
+        let backfill1 = DividendOutcome.credited(symbol: "AAPL", cash: Money(amount: 1), isBackfill: true)
+        let backfill2 = DividendOutcome.credited(symbol: "AAPL", cash: Money(amount: 2), isBackfill: true)
+        let coordinator = makeCoordinator(
+            state: SchedulerState(lastStatus: .open),
+            settings: AppSettings(marketOpenClose: false, newsDigest: false, earningsReports: false,
+                                  pieContributions: false, dividendNotifications: true),
+            notifier: notifier,
+            processDueDividends: { _ in [backfill1, backfill2] },
+            now: { now }
+        )
+
+        await coordinator.tick()
+
+        XCTAssertEqual(notifier.dividendNotifications.count, 1)
+        XCTAssertEqual(notifier.dividendNotifications[0].title, tr(.notifDividendTitle))
+        XCTAssertEqual(notifier.dividendNotifications[0].body,
+                       String(format: tr(.notifDividendBackfillBodyFmt), "2", Money(amount: 3).formatted))
     }
 }

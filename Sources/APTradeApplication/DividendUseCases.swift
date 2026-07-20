@@ -29,11 +29,18 @@ private func fetchDividendClosesByDay(
 /// The result of crediting one dividend event to the portfolio.
 public enum DividendOutcome: Equatable, Sendable {
     /// Cash was credited: a plain dividend, or a DRIP that fell back to cash because the
-    /// ex-date trading day's close was missing or non-positive.
-    case credited(symbol: String, cash: Money)
+    /// ex-date trading day's close was missing or non-positive. `isBackfill` is `true`
+    /// when the event's ex-date trading day predates this install's `dividendsFirstRunDay`
+    /// — historical events credited in bulk on first run, as opposed to a live event
+    /// processed as it becomes due. Callers use this to avoid a notification burst on
+    /// first launch (see `MarketActivityCoordinator.notifyDividendsDue`).
+    case credited(symbol: String, cash: Money, isBackfill: Bool)
     /// Cash was credited and immediately reinvested into `shares` of the position, bought
-    /// at the ex-date trading day's close (DRIP).
-    case reinvested(symbol: String, cash: Money, shares: Quantity)
+    /// at the ex-date trading day's close (DRIP). `isBackfill` has the same meaning as
+    /// on `.credited` — in practice always `false` here, since backfill events always
+    /// credit as cash (see `ProcessDueDividends`'s doc comment), but the case still
+    /// carries it for symmetry and so callers can pattern-match uniformly.
+    case reinvested(symbol: String, cash: Money, shares: Quantity, isBackfill: Bool)
 }
 
 // MARK: - ProcessDueDividends
@@ -198,12 +205,12 @@ public struct ProcessDueDividends: Sendable {
                 let reinvested = try credited.buying(asset, quantity: quantity, at: close,
                                                      on: event.exDate, isDrip: true)
                 self.portfolioStore.save(reinvested)
-                return .reinvested(symbol: event.symbol, cash: cash, shares: quantity)
+                return .reinvested(symbol: event.symbol, cash: cash, shares: quantity, isBackfill: isBackfill)
             } else {
                 let credited = try portfolio.receivingDividend(event.symbol, amountPerShare: event.amountPerShare,
                                                                shares: shares, on: event.exDate)
                 self.portfolioStore.save(credited)
-                return .credited(symbol: event.symbol, cash: cash)
+                return .credited(symbol: event.symbol, cash: cash, isBackfill: isBackfill)
             }
         }
     }

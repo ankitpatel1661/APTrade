@@ -95,8 +95,8 @@ final class ProcessDueDividendsTests: XCTestCase {
         let outcomes = await sut(now: day("2025-06-01"))
 
         XCTAssertEqual(outcomes, [
-            .credited(symbol: "AAPL", cash: usd("50")),
-            .credited(symbol: "AAPL", cash: usd("60"))
+            .credited(symbol: "AAPL", cash: usd("50"), isBackfill: true),
+            .credited(symbol: "AAPL", cash: usd("60"), isBackfill: true)
         ])
         XCTAssertEqual(stateStore.state.dividendsFirstRunDay, "2025-06-01")
         // Cash credited, no reinvestment buys.
@@ -120,7 +120,7 @@ final class ProcessDueDividendsTests: XCTestCase {
         let outcomes = await sut(now: day("2025-06-01"))
 
         let expectedShares = Quantity(usd("100").amount / usd("400").amount) // 0.25 exactly
-        XCTAssertEqual(outcomes, [.reinvested(symbol: "MSFT", cash: usd("100"), shares: expectedShares)])
+        XCTAssertEqual(outcomes, [.reinvested(symbol: "MSFT", cash: usd("100"), shares: expectedShares, isBackfill: false)])
         // A .dividend cash event, plus a DRIP buy at the close.
         let dividendTxns = portfolioStore.portfolio.transactions.filter { $0.side == .dividend }
         XCTAssertEqual(dividendTxns.count, 1)
@@ -144,7 +144,7 @@ final class ProcessDueDividendsTests: XCTestCase {
                           stateStore: stateStore, drip: false)
 
         let first = await sut(now: day("2025-06-01"))
-        XCTAssertEqual(first, [.credited(symbol: "T", cash: usd("10"))])
+        XCTAssertEqual(first, [.credited(symbol: "T", cash: usd("10"), isBackfill: false)])
 
         let second = await sut(now: day("2025-06-01"))
         XCTAssertEqual(second, [])
@@ -197,7 +197,7 @@ final class ProcessDueDividendsTests: XCTestCase {
         let outcomes = await sut(now: day("2025-06-01"))
 
         // 40 shares held before ex-date x $1 = $40 (not $100).
-        XCTAssertEqual(outcomes, [.credited(symbol: "Y", cash: usd("40"))])
+        XCTAssertEqual(outcomes, [.credited(symbol: "Y", cash: usd("40"), isBackfill: false)])
         XCTAssertEqual(portfolioStore.portfolio.cash, usd("100040"))
     }
 
@@ -215,7 +215,7 @@ final class ProcessDueDividendsTests: XCTestCase {
 
         let outcomes = await sut(now: day("2025-06-01"))
 
-        XCTAssertEqual(outcomes, [.credited(symbol: "Z", cash: usd("100"))])
+        XCTAssertEqual(outcomes, [.credited(symbol: "Z", cash: usd("100"), isBackfill: false)])
         XCTAssertEqual(portfolioStore.portfolio.transactions.filter { $0.side == .buy && $0.isDrip }.count, 0)
         XCTAssertEqual(portfolioStore.portfolio.cash, usd("100100"))
     }
@@ -262,7 +262,7 @@ final class ProcessDueDividendsTests: XCTestCase {
 
         let outcomes = await sut(now: day("2025-06-01"))
 
-        XCTAssertEqual(outcomes, [.credited(symbol: "B", cash: usd("10"))])
+        XCTAssertEqual(outcomes, [.credited(symbol: "B", cash: usd("10"), isBackfill: false)])
         XCTAssertEqual(portfolioStore.portfolio.cash, usd("100010"))
     }
 
@@ -280,7 +280,7 @@ final class ProcessDueDividendsTests: XCTestCase {
 
         let outcomes = await sut(now: day("2025-06-01"))
 
-        XCTAssertEqual(outcomes, [.credited(symbol: "M", cash: usd("30"))])
+        XCTAssertEqual(outcomes, [.credited(symbol: "M", cash: usd("30"), isBackfill: false)])
         XCTAssertEqual(portfolioStore.portfolio.transactions.filter { $0.side == .buy && $0.isDrip }.count, 0)
         XCTAssertEqual(portfolioStore.portfolio.cash, usd("100030"))
     }

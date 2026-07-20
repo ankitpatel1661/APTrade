@@ -141,28 +141,54 @@ final class MarketActivityCoordinator {
         }
     }
 
-    /// Runs the dividend-crediting engine and notifies once per outcome, IF the user has
+    /// Runs the dividend-crediting engine and notifies, IF the user has
     /// `dividendNotifications` enabled. Crediting itself is ALWAYS on — this closure runs
     /// unconditionally (see `run()`'s launch catch-up and `tick()`'s `.dividendCheckDue`
     /// case) because a dividend payout is bookkeeping truth (cash owed to the user), not
     /// an optional notification; only the notification below is settings-gated.
+    ///
+    /// **Backfill collapsing.** A first-run backfill can credit an established
+    /// portfolio's entire dividend history in one pass — 20, 100, or more events. Notifying
+    /// once per outcome there would fire a notification burst at first launch. So
+    /// non-backfill (live) outcomes still notify individually, exactly as before, but
+    /// backfill outcomes are tallied and collapsed into a single summary notification
+    /// (count + total cash) emitted after the per-outcome ones. Zero backfill outcomes
+    /// means no summary at all.
     private func notifyDividendsDue() async {
         let outcomes = await processDueDividends(now())
         guard loadSettings().dividendNotifications else { return }
+
+        var backfillCount = 0
+        var totalBackfillCash = Money(amount: 0)
         for outcome in outcomes {
             switch outcome {
-            case .credited(let symbol, let cash):
-                await notifier.notifyDividend(
-                    title: tr(.notifDividendTitle),
-                    body: String(format: tr(.notifDividendCashBodyFmt), symbol, cash.formatted)
-                )
-            case .reinvested(let symbol, let cash, _):
-                await notifier.notifyDividend(
-                    title: tr(.notifDividendTitle),
-                    body: String(format: tr(.notifDividendDripBodyFmt), symbol, cash.formatted)
-                )
+            case .credited(let symbol, let cash, let isBackfill):
+                if isBackfill {
+                    backfillCount += 1
+                    totalBackfillCash = totalBackfillCash + cash
+                } else {
+                    await notifier.notifyDividend(
+                        title: tr(.notifDividendTitle),
+                        body: String(format: tr(.notifDividendCashBodyFmt), symbol, cash.formatted)
+                    )
+                }
+            case .reinvested(let symbol, let cash, _, let isBackfill):
+                if isBackfill {
+                    backfillCount += 1
+                    totalBackfillCash = totalBackfillCash + cash
+                } else {
+                    await notifier.notifyDividend(
+                        title: tr(.notifDividendTitle),
+                        body: String(format: tr(.notifDividendDripBodyFmt), symbol, cash.formatted)
+                    )
+                }
             }
         }
+        guard backfillCount > 0 else { return }
+        await notifier.notifyDividend(
+            title: tr(.notifDividendTitle),
+            body: String(format: tr(.notifDividendBackfillBodyFmt), String(backfillCount), totalBackfillCash.formatted)
+        )
     }
 
     /// Builds the digest body from the watchlist's biggest movers today.

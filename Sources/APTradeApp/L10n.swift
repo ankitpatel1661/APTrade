@@ -367,6 +367,7 @@ enum L10n {
         case notifDividendTitle = "Dividend Received"
         case notifDividendCashBodyFmt = "%@ paid you %@"
         case notifDividendDripBodyFmt = "%@ paid %@ — reinvested"
+        case notifDividendBackfillBodyFmt = "%@ past dividends credited — %@ total"
     }
 
     static let table: [Key: [AppLanguage: String]] = [
@@ -1132,6 +1133,10 @@ enum L10n {
                                     .german: "%@ hat %@ ausgezahlt — reinvestiert",
                                     .italian: "%@ ha pagato %@ — reinvestito",
                                     .spanish: "%@ pagó %@ — reinvertido"],
+        .notifDividendBackfillBodyFmt: [.english: "%@ past dividends credited — %@ total",
+                                        .german: "%@ vergangene Dividenden gutgeschrieben — %@ insgesamt",
+                                        .italian: "%@ dividendi passati accreditati — %@ in totale",
+                                        .spanish: "%@ dividendos pasados acreditados — %@ en total"],
     ]
 }
 
