@@ -310,6 +310,12 @@ enum L10n {
         case backtestLumpSum = "Lump sum"
         case backtestInsufficient = "Not enough price history to run this backtest."
         case manualAdjustmentNote = "Adjusted after a manual sale outside this pie."
+        case missedContribution = "Contribution skipped — insufficient cash"
+        case pieContributionsToggle = "Plan Contributions"
+        case notifPieExecutedTitle = "Contribution Complete"
+        case notifPieExecutedBody = "%@ contribution has been executed"
+        case notifPieSkippedTitle = "Contribution Skipped"
+        case notifPieSkippedBody = "%@ was skipped due to insufficient cash"
 
         case pieNameLabel = "Pie Name"
         case pieNamePlaceholder = "e.g. Core Growth"
@@ -960,6 +966,24 @@ enum L10n {
                                 .german: "Angepasst nach einem manuellen Verkauf außerhalb dieses Pies.",
                                 .italian: "Rettificato dopo una vendita manuale al di fuori di questa pie.",
                                 .spanish: "Ajustado tras una venta manual fuera de este pie."],
+        .missedContribution: [.english: "Contribution skipped — insufficient cash",
+                              .german: "Beitrag übersprungen — unzureichendes Guthaben",
+                              .italian: "Contributo saltato — liquidità insufficiente",
+                              .spanish: "Aportación omitida — efectivo insuficiente"],
+        .pieContributionsToggle: [.english: "Plan Contributions", .german: "Plan-Beiträge",
+                                  .italian: "Contributi del piano", .spanish: "Aportaciones del plan"],
+        .notifPieExecutedTitle: [.english: "Contribution Complete", .german: "Beitrag abgeschlossen",
+                                 .italian: "Contributo completato", .spanish: "Aportación completada"],
+        .notifPieExecutedBody: [.english: "%@ contribution has been executed",
+                                .german: "%@ Beitrag wurde ausgeführt",
+                                .italian: "Il contributo di %@ è stato eseguito",
+                                .spanish: "La aportación de %@ se ha ejecutado"],
+        .notifPieSkippedTitle: [.english: "Contribution Skipped", .german: "Beitrag übersprungen",
+                                .italian: "Contributo saltato", .spanish: "Aportación omitida"],
+        .notifPieSkippedBody: [.english: "%@ was skipped due to insufficient cash",
+                               .german: "%@ wurde aufgrund unzureichenden Guthabens übersprungen",
+                               .italian: "%@ è stato saltato a causa di liquidità insufficiente",
+                               .spanish: "%@ se omitió debido a efectivo insuficiente"],
         .pieNameLabel: [.english: "Pie Name", .german: "Pie-Name",
                         .italian: "Nome della pie", .spanish: "Nombre del pie"],
         .pieNamePlaceholder: [.english: "e.g. Core Growth", .german: "z. B. Core Growth",
