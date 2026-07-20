@@ -27,7 +27,12 @@ public final class UserNotificationAlertNotifier: AlertNotifier, OrderFillNotifi
     }
 
     public func notifyFill(side: TradeSide, symbol: String, quantity: Quantity, amount: Money) async {
-        let verb = side == .buy ? "Bought" : "Sold"
+        let verb: String
+        switch side {
+        case .buy: verb = "Bought"
+        case .sell: verb = "Sold"
+        case .dividend: verb = "Dividend"
+        }
         await deliver(
             identifier: "fill-\(UUID().uuidString)",
             title: "Order filled",
