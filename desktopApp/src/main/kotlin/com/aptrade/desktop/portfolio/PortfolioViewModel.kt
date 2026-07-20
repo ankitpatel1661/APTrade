@@ -154,6 +154,7 @@ data class PortfolioUiState(
 private fun sideLabel(side: TradeSide): String = when (side) {
     TradeSide.Buy -> "Buy"
     TradeSide.Sell -> "Sell"
+    TradeSide.Dividend -> "Dividend"
 }
 
 /** Owns the current paper-trading portfolio: valuation, allocation, trade execution, the

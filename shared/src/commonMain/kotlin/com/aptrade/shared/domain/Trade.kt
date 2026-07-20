@@ -3,7 +3,7 @@ package com.aptrade.shared.domain
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
 import kotlin.random.Random
 
-enum class TradeSide { Buy, Sell }
+enum class TradeSide { Buy, Sell, Dividend }
 
 sealed class TradeError(message: String) : Exception(message) {
     object InsufficientFunds : TradeError("Insufficient funds")
@@ -24,6 +24,7 @@ data class Transaction(
     val price: Money,
     val epochSeconds: Long,
     val pieId: String? = null,
+    val isDrip: Boolean = false,
 )
 
 /** Unique-enough trade id without a platform UUID or kotlinx.datetime dependency.

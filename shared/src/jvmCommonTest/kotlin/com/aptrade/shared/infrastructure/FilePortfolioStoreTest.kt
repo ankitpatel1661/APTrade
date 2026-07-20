@@ -96,6 +96,40 @@ class FilePortfolioStoreTest {
         assertEquals("AAPL", loaded?.transactions?.get(0)?.symbol)
     }
 
+    // M8.2 T1: isDrip forwarding — legacy JSON (pre-M8, hand-written, no "isDrip" key)
+    // decodes with isDrip == false; a Dividend transaction round-trips through save/load.
+    @Test
+    fun legacyTransactionJsonWithoutIsDripDecodesWithFalse() = runTest {
+        val file = createTempDirectory("aptrade-test").resolve("portfolio.json")
+        file.writeText(
+            """{"cash":{"amount":"50000.50","currency":"USD"},"positions":[],"transactions":[{"id":"txn-001","symbol":"AAPL","side":"Buy","quantity":"10.5","price":{"amount":"150.25","currency":"USD"},"epochSeconds":1688169600}]}""",
+        )
+        val loaded = FilePortfolioStore(file).load()
+        assertEquals(1, loaded?.transactions?.size)
+        assertEquals(false, loaded?.transactions?.get(0)?.isDrip)
+    }
+
+    @Test
+    fun dividendTransactionRoundTripsThroughSaveAndLoad() = runTest {
+        val withDividend = portfolio.copy(
+            transactions = portfolio.transactions + Transaction(
+                id = "txn-003",
+                symbol = "AAPL",
+                side = TradeSide.Dividend,
+                quantity = BigDecimal.parseString("10.5"),
+                price = Money(BigDecimal.parseString("0.50"), "USD"),
+                epochSeconds = 1688342400,
+            ),
+        )
+        val file = createTempDirectory("aptrade-test").resolve("portfolio.json")
+        val store = FilePortfolioStore(file)
+        store.save(withDividend)
+        val loaded = store.load()
+        assertEquals(withDividend, loaded)
+        assertEquals(TradeSide.Dividend, loaded?.transactions?.get(1)?.side)
+        assertEquals(false, loaded?.transactions?.get(1)?.isDrip)
+    }
+
     @Test
     fun taggedTransactionPieIdRoundTripsThroughSaveAndLoad() = runTest {
         val tagged = portfolio.copy(

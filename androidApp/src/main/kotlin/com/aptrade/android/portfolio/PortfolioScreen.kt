@@ -283,6 +283,9 @@ private fun PortfolioContent(
                         quantity,
                     )
                     TradeSide.Sell -> onSell(target.row.symbol, quantity)
+                    // The trade sheet never offers Dividend as a selectable side today —
+                    // minimal neutral staging only. Real handling lands with the coordinator task.
+                    TradeSide.Dividend -> Unit
                 }
             },
             onDismiss = { tradeTarget = null },

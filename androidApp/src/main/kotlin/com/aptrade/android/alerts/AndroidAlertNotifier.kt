@@ -70,7 +70,14 @@ internal fun formatOrderFillBody(
     quantityText: String,
     amountFormatted: String,
 ): String {
-    val verb = if (side == TradeSide.Buy) "Bought" else "Sold"
+    // Dividend never reaches an order-fill notification today (paper trades only fire Buy/
+    // Sell fills) — the Dividend branch is minimal neutral staging so this stays exhaustive.
+    // Real handling lands with the coordinator task.
+    val verb = when (side) {
+        TradeSide.Buy -> "Bought"
+        TradeSide.Sell -> "Sold"
+        TradeSide.Dividend -> "Bought"
+    }
     return "$verb $quantityText ${symbol.uppercase()} for $amountFormatted"
 }
 

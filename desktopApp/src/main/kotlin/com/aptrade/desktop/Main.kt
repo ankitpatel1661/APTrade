@@ -582,6 +582,11 @@ private fun AppRoot(
                     when (side) {
                         TradeSide.Buy -> portfolioViewModel.buy(target.asset, quantityText)
                         TradeSide.Sell -> portfolioViewModel.sell(target.asset.symbol, quantityText)
+                        // The manual trade dialog never offers Dividend as a selectable side
+                        // today (see TradeDialog.kt's Buy/Sell-only option list) — this branch
+                        // only staves off the non-exhaustive `when` warning.
+                        // Real handling lands with the coordinator task.
+                        TradeSide.Dividend -> Unit
                     }
                 },
                 onDismiss = onCloseTrade,

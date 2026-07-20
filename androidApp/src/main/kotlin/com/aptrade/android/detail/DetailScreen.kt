@@ -286,6 +286,9 @@ fun DetailScreen(symbol: String, confirmTrades: Boolean, onBack: () -> Unit) {
                 when (submittedSide) {
                     TradeSide.Buy -> viewModel.buy(quantity)
                     TradeSide.Sell -> viewModel.sell(quantity)
+                    // The trade sheet never offers Dividend as a selectable side today —
+                    // minimal neutral staging only. Real handling lands with the coordinator task.
+                    TradeSide.Dividend -> Unit
                 }
             },
             onDismiss = { tradeSide = null },

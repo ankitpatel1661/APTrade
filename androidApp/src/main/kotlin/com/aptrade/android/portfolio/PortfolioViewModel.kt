@@ -136,6 +136,7 @@ data class PortfolioUiState(
 private fun sideLabel(side: TradeSide): String = when (side) {
     TradeSide.Buy -> "Buy"
     TradeSide.Sell -> "Sell"
+    TradeSide.Dividend -> "Dividend"
 }
 
 /** Accepts an optional leading '-', digits, and an optional '.' followed by 1-8 fraction
