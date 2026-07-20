@@ -38,13 +38,15 @@ import kotlin.test.assertTrue
  * bringing the total to 227. The calendar increment (Task 5 of SDD) added 22 keys for market
  * holidays, earnings calendar, and session states, bringing the total to 249. Task 10 (M7.2 —
  * Investment Plans L10n) added 52 keys for the Plans (pies) feature UI, bringing the total to
- * 301; the count below tracks the Kotlin-only total going forward, not the Swift source count.
+ * 301. A Task 10 review fix wave then added the missing `Next` key (pie wizard's forward
+ * action — dropped from the initial transcription), bringing the total to 302; the count below
+ * tracks the Kotlin-only total going forward, not the Swift source count.
  */
 class L10nCatalogTest {
 
     @Test
-    fun `catalog has exactly 301 keys (205 macOS-transcribed + 12 desktop-only from Tasks 6-7 + 32 Kotlin-side additions + 52 Plans L10n from Task 10)`() {
-        assertEquals(301, L10n.Key.entries.size)
+    fun `catalog has exactly 302 keys (205 macOS-transcribed + 12 desktop-only from Tasks 6-7 + 32 Kotlin-side additions + 52 Plans L10n from Task 10 + 1 Next key fix)`() {
+        assertEquals(302, L10n.Key.entries.size)
     }
 
     @Test
