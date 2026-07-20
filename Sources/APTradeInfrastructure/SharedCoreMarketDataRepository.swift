@@ -9,12 +9,13 @@ import APTradeDomain
 /// Serves `quote`/`history`/`candles`/`profile`/`search` from the shared Kotlin core.
 /// @unchecked Sendable: all stored properties are immutable, and Kotlin/Native
 /// objects are safely shareable across threads under the current KMP memory model.
-public final class SharedCoreMarketDataRepository: APTradeApplication.MarketDataRepository, @unchecked Sendable {
+public final class SharedCoreMarketDataRepository: APTradeApplication.MarketDataRepository, APTradeApplication.DividendEventsRepository, @unchecked Sendable {
     private let fetch: @Sendable ([String]) async throws -> [Shared.Quote]
     private let fetchHistory: @Sendable (String, Shared.Timeframe) async throws -> [Shared.PricePoint]
     private let fetchCandles: @Sendable (String, Shared.Timeframe) async throws -> [Shared.Candle]
     private let fetchProfile: @Sendable (String) async throws -> Shared.Asset
     private let fetchSearch: @Sendable (String) async throws -> [Shared.Asset]
+    private let fetchDividends: @Sendable (String, Int64) async throws -> [Shared.DividendEvent]
 
     public convenience init() {
         let repository = Shared.YahooMarketDataRepository()
@@ -23,12 +24,14 @@ public final class SharedCoreMarketDataRepository: APTradeApplication.MarketData
         let candlesUseCase = Shared.FetchCandles(repository: repository)
         let profileUseCase = Shared.FetchProfile(repository: repository)
         let searchUseCase = Shared.FetchSearch(repository: repository)
+        let dividendEventsUseCase = Shared.FetchDividendEvents(repository: repository)
         self.init(
             fetch: { try await quotesUseCase.execute(symbols: $0) },
             fetchHistory: { try await historyUseCase.execute(symbol: $0, timeframe: $1) },
             fetchCandles: { try await candlesUseCase.execute(symbol: $0, timeframe: $1) },
             fetchProfile: { try await profileUseCase.execute(symbol: $0) },
-            fetchSearch: { try await searchUseCase.execute(query: $0) })
+            fetchSearch: { try await searchUseCase.execute(query: $0) },
+            fetchDividends: { try await dividendEventsUseCase.execute(symbol: $0, fromEpochSeconds: $1) })
     }
 
     init(
@@ -36,13 +39,15 @@ public final class SharedCoreMarketDataRepository: APTradeApplication.MarketData
         fetchHistory: @escaping @Sendable (String, Shared.Timeframe) async throws -> [Shared.PricePoint],
         fetchCandles: @escaping @Sendable (String, Shared.Timeframe) async throws -> [Shared.Candle],
         fetchProfile: @escaping @Sendable (String) async throws -> Shared.Asset,
-        fetchSearch: @escaping @Sendable (String) async throws -> [Shared.Asset]
+        fetchSearch: @escaping @Sendable (String) async throws -> [Shared.Asset],
+        fetchDividends: @escaping @Sendable (String, Int64) async throws -> [Shared.DividendEvent] = { _, _ in [] }
     ) {
         self.fetch = fetch
         self.fetchHistory = fetchHistory
         self.fetchCandles = fetchCandles
         self.fetchProfile = fetchProfile
         self.fetchSearch = fetchSearch
+        self.fetchDividends = fetchDividends
     }
 
     public func quote(for symbol: String) async throws -> APTradeDomain.Quote {
@@ -90,6 +95,15 @@ public final class SharedCoreMarketDataRepository: APTradeApplication.MarketData
         }
     }
 
+    public func dividendEvents(for symbol: String, since: Date) async throws -> [APTradeDomain.DividendEvent] {
+        do {
+            let events = try await fetchDividends(symbol, Int64(since.timeIntervalSince1970))
+            return try events.map(Self.mapDividendEvent)
+        } catch {
+            throw Self.mapError(error)
+        }
+    }
+
     // MARK: - Mapping (internal statics so tests hit them directly)
 
     static func mapQuote(_ quote: Shared.Quote) throws -> APTradeDomain.Quote {
@@ -118,6 +132,13 @@ public final class SharedCoreMarketDataRepository: APTradeApplication.MarketData
             low: try mapMoney(candle.low),
             close: try mapMoney(candle.close),
             volume: candle.volume)
+    }
+
+    static func mapDividendEvent(_ event: Shared.DividendEvent) throws -> APTradeDomain.DividendEvent {
+        APTradeDomain.DividendEvent(
+            symbol: event.symbol,
+            exDate: Date(timeIntervalSince1970: TimeInterval(event.exDateEpochSeconds)),
+            amountPerShare: try mapMoney(event.amountPerShare))
     }
 
     static func mapAsset(_ asset: Shared.Asset) -> APTradeDomain.Asset {
