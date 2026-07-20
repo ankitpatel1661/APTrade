@@ -11,9 +11,10 @@ final class TransactionPieIdTests: XCTestCase {
     // decodes with `pieId == nil` (synthesized Codable uses `decodeIfPresent` for optionals)
     func test_legacyTransactionJSON_withoutPieId_decodesWithNilPieId() throws {
         // Hand-written JSON literal matching the true encoded shape, WITHOUT pieId key
-        let legacyJSON = """
+        let jsonString = """
         {"date":774306000,"id":"E621E1F8-C36C-495A-93FC-0C247A3E6E5F","price":{"amount":100,"currencyCode":"USD"},"quantity":{"amount":5},"side":"buy","symbol":"AAPL"}
-        """.data(using: .utf8)!
+        """
+        let legacyJSON = try XCTUnwrap(jsonString.data(using: .utf8))
 
         // Decode the legacy JSON
         let decoder = JSONDecoder()
