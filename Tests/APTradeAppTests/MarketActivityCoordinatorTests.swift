@@ -37,6 +37,7 @@ private final class RecordingNotifier: MarketEventNotifier, @unchecked Sendable 
     private(set) var marketStatusEvents: [Bool] = []
     private(set) var earningsNotifications: [(title: String, body: String)] = []
     private(set) var pieContributionNotifications: [(title: String, body: String)] = []
+    private(set) var dividendNotifications: [(title: String, body: String)] = []
     func notifyMarketStatus(opened: Bool) async { marketStatusEvents.append(opened) }
     func notifyDigest(summary: String) async {}
     func notifyEarnings(title: String, body: String) async {
@@ -44,6 +45,9 @@ private final class RecordingNotifier: MarketEventNotifier, @unchecked Sendable 
     }
     func notifyPieContribution(title: String, body: String) async {
         pieContributionNotifications.append((title, body))
+    }
+    func notifyDividend(title: String, body: String) async {
+        dividendNotifications.append((title, body))
     }
 }
 
@@ -96,6 +100,7 @@ final class MarketActivityCoordinatorTests: XCTestCase {
         notifier: RecordingNotifier,
         fetchOwnedEarningsToday: @escaping @Sendable (String) async -> [EarningsEvent] = { _ in [] },
         executeDueContributions: @escaping @Sendable (Date) async -> [(pie: Pie, outcomes: [ContributionOutcome])] = { _ in [] },
+        processDueDividends: @escaping @Sendable (Date) async -> [DividendOutcome] = { _ in [] },
         now: @escaping () -> Date
     ) -> MarketActivityCoordinator {
         MarketActivityCoordinator(
@@ -107,6 +112,7 @@ final class MarketActivityCoordinatorTests: XCTestCase {
             fetchQuotes: FetchQuotesUseCase(repository: FakeMarketDataRepository()),
             fetchOwnedEarningsToday: fetchOwnedEarningsToday,
             executeDueContributions: executeDueContributions,
+            processDueDividends: processDueDividends,
             calendar: marketCalendar,
             now: now
         )
@@ -270,5 +276,84 @@ final class MarketActivityCoordinatorTests: XCTestCase {
         XCTAssertEqual(notifier.pieContributionNotifications.count, 1)
         XCTAssertEqual(notifier.pieContributionNotifications[0].body,
                        String(format: tr(.notifPieExecutedBody), "Launch Catch-Up"))
+    }
+
+    // MARK: - dividendCheckDue
+
+    func test_dividendCheckDue_notifiesPerOutcome_cashAndReinvested() async {
+        let now = et(2025, 6, 25, 10, 0) // open
+        let notifier = RecordingNotifier()
+        let cashOutcome = DividendOutcome.credited(symbol: "AAPL", cash: Money(amount: 12.34))
+        let dripOutcome = DividendOutcome.reinvested(symbol: "MSFT", cash: Money(amount: 5.67),
+                                                     shares: Quantity(0.1))
+        let coordinator = makeCoordinator(
+            state: SchedulerState(lastStatus: .open), // no lastDividendCheckDay yet -> due today
+            settings: AppSettings(marketOpenClose: false, newsDigest: false, earningsReports: false,
+                                  pieContributions: false, dividendNotifications: true),
+            notifier: notifier,
+            processDueDividends: { _ in [cashOutcome, dripOutcome] },
+            now: { now }
+        )
+
+        await coordinator.tick()
+
+        XCTAssertEqual(notifier.dividendNotifications.count, 2)
+        XCTAssertEqual(notifier.dividendNotifications[0].title, tr(.notifDividendTitle))
+        XCTAssertEqual(notifier.dividendNotifications[0].body,
+                       String(format: tr(.notifDividendCashBodyFmt), "AAPL", Money(amount: 12.34).formatted))
+        XCTAssertEqual(notifier.dividendNotifications[1].title, tr(.notifDividendTitle))
+        XCTAssertEqual(notifier.dividendNotifications[1].body,
+                       String(format: tr(.notifDividendDripBodyFmt), "MSFT", Money(amount: 5.67).formatted))
+    }
+
+    /// Crediting is never gated by settings — only the notification is. The closure must
+    /// still be invoked (so cash is credited/DRIP reinvested) even when
+    /// `dividendNotifications` is off; only the resulting notifications are suppressed.
+    func test_dividendCheckDue_notificationsDisabled_closureStillInvoked_zeroNotifications() async {
+        let now = et(2025, 6, 25, 10, 0) // open
+        let notifier = RecordingNotifier()
+        let calledCount = Box<Int>()
+        calledCount.value = 0
+        let coordinator = makeCoordinator(
+            state: SchedulerState(lastStatus: .open),
+            settings: AppSettings(marketOpenClose: false, newsDigest: false, earningsReports: false,
+                                  pieContributions: false, dividendNotifications: false),
+            notifier: notifier,
+            processDueDividends: { _ in
+                calledCount.value = (calledCount.value ?? 0) + 1
+                return [.credited(symbol: "AAPL", cash: Money(amount: 12.34))]
+            },
+            now: { now }
+        )
+
+        await coordinator.tick()
+
+        XCTAssertTrue(notifier.dividendNotifications.isEmpty)
+        XCTAssertEqual(calledCount.value, 1, "crediting is ungated — the closure still ran")
+    }
+
+    /// Mirrors `test_run_executesLaunchCatchUp_beforeFirstTick_regardlessOfMarketStatus`:
+    /// the dividend catch-up runs once at launch even when `pieContributions` is off —
+    /// dividends are never settings-gated at the crediting level.
+    func test_run_executesDividendCatchUp_atLaunch_evenWhenPieContributionsDisabled() async {
+        let now = et(2025, 6, 25, 3, 0) // market closed at this hour
+        let notifier = RecordingNotifier()
+        let coordinator = makeCoordinator(
+            state: SchedulerState(), // fresh install: no seeded status yet
+            settings: AppSettings(marketOpenClose: false, newsDigest: false, earningsReports: false,
+                                  pieContributions: false, dividendNotifications: true),
+            notifier: notifier,
+            processDueDividends: { _ in [.credited(symbol: "AAPL", cash: Money(amount: 9.99))] },
+            now: { now }
+        )
+
+        let task = Task { await coordinator.run() }
+        try? await Task.sleep(for: .milliseconds(50))
+        task.cancel()
+        _ = await task.value
+
+        XCTAssertEqual(notifier.dividendNotifications.count, 1)
+        XCTAssertEqual(notifier.dividendNotifications[0].body,
+                       String(format: tr(.notifDividendCashBodyFmt), "AAPL", Money(amount: 9.99).formatted))
     }
 }

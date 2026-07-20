@@ -84,6 +84,7 @@ public protocol MarketEventNotifier: Sendable {
     func notifyDigest(summary: String) async
     func notifyEarnings(title: String, body: String) async
     func notifyPieContribution(title: String, body: String) async
+    func notifyDividend(title: String, body: String) async
 }
 
 /// Persists the scheduler's last-fired markers across launches.

@@ -82,6 +82,21 @@ enum CompositionRoot {
             pieStore: pieStore, portfolioStore: portfolioStore, market: repo, calendar: calendar,
             serializer: tradeSerializer
         )
+        // Shares the same `portfolioStore`/`tradeSerializer` singletons as the rest of the
+        // app so a coordinator-driven dividend credit/reinvestment is immediately
+        // reflected in the Portfolio and Income tabs. `sharedDividendEventsRepository`
+        // is the same shared Kotlin-core instance's dividend-events facet the Income tab
+        // reads (see its doc comment above).
+        // Captured into a local so the `@Sendable` (non-async) `isDripEnabled` closure
+        // below doesn't reference the MainActor-isolated `settingsStore` static property
+        // directly — `SettingsStore` is itself `Sendable`, so the local copy captures
+        // cleanly without hopping actors.
+        let settingsStoreForDrip = settingsStore
+        let processDueDividends = ProcessDueDividends(
+            portfolioStore: portfolioStore, market: repo, dividends: sharedDividendEventsRepository,
+            stateStore: schedulerStateStore, calendar: calendar, serializer: tradeSerializer,
+            isDripEnabled: { LoadSettingsUseCase(store: settingsStoreForDrip)().dripEnabled }
+        )
         return MarketActivityCoordinator(
             planner: MarketActivityPlanner(calendar: calendar),
             stateStore: schedulerStateStore,
@@ -100,6 +115,7 @@ enum CompositionRoot {
                 (try? await fetchEarnings.ownedToday(day: day)) ?? []
             },
             executeDueContributions: { now in await executeDueContributions(now: now) },
+            processDueDividends: { now in await processDueDividends(now: now) },
             calendar: calendar
         )
     }
