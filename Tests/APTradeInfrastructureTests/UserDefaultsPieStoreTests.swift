@@ -57,15 +57,15 @@ final class UserDefaultsPieStoreTests: XCTestCase {
         store.save([pie])
 
         // Corrupt the data
-        defaults.set("not valid json at all".data(using: .utf8), forKey: "pies")
+        let corruptedBytes = try XCTUnwrap("not valid json at all".data(using: .utf8))
+        defaults.set(corruptedBytes, forKey: "pies")
 
         // Load should return empty without overwriting
         let loaded = store.load()
         XCTAssertEqual(loaded, [])
 
-        // The corrupted data should still be in UserDefaults
-        let data = defaults.data(forKey: "pies")
-        XCTAssertNotNil(data)
+        // The corrupted data should still be in UserDefaults (exact bytes preserved)
+        XCTAssertEqual(defaults.data(forKey: "pies"), corruptedBytes)
     }
 
     func test_persistsAcrossInstances() throws {

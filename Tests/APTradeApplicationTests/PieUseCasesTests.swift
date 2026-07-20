@@ -83,10 +83,12 @@ final class PieUseCasesTests: XCTestCase {
         result = savePie(pie2)
         XCTAssertEqual(result.count, 2)
 
-        // Replace pie1
+        // Replace pie1 in-place (must stay at index 0, not remove+append)
         result = savePie(pie1Updated)
         XCTAssertEqual(result.count, 2)
-        XCTAssertEqual(result.first(where: { $0.id == "pie-1" })?.name, "Pie 1 Updated")
+        XCTAssertEqual(result[0].id, "pie-1", "replaced pie must stay at original position (index 0)")
+        XCTAssertEqual(result[0].name, "Pie 1 Updated")
+        XCTAssertEqual(result[1].id, "pie-2", "other pie must stay at index 1")
     }
 
     // MARK: - DeletePie
