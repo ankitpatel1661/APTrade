@@ -278,6 +278,10 @@ enum L10n {
         case earningsTodayTitle = "Earnings today"
         case earningsTodayBodyFmt = "%1$@ reports today · %2$@"
         case noUpcomingEarnings = "No earnings in the next two weeks"
+
+        // MARK: Plans (investment pies)
+        case pieInsufficientCash = "Not enough cash for this contribution."
+        case nextContributionFormat = "Next: %@"
     }
 
     static let table: [Key: [AppLanguage: String]] = [
@@ -837,6 +841,14 @@ enum L10n {
                               .german: "Keine Quartalsberichte in den nächsten zwei Wochen",
                               .italian: "Nessuna trimestrale nelle prossime due settimane",
                               .spanish: "Sin informes trimestrales en las próximas dos semanas"],
+
+        // MARK: Plans (investment pies)
+        .pieInsufficientCash: [.english: "Not enough cash for this contribution.",
+                               .german: "Nicht genügend Guthaben für diesen Beitrag.",
+                               .italian: "Liquidità insufficiente per questo contributo.",
+                               .spanish: "No hay suficiente efectivo para esta aportación."],
+        .nextContributionFormat: [.english: "Next: %@", .german: "Nächste: %@",
+                                  .italian: "Prossimo: %@", .spanish: "Próximo: %@"],
     ]
 }
 

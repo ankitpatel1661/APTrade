@@ -128,11 +128,37 @@ public enum PieMath {
     }
 
     /// Rounds a Decimal to 2 decimal places using NSDecimalRound with .plain rounding mode.
-    private static func rounded(_ d: Decimal) -> Decimal {
+    /// Internal (not `private`) so `equalWeights` below — and this type's own test target via
+    /// `@testable import` — can reuse it directly rather than duplicating the rounding rule.
+    static func rounded(_ d: Decimal) -> Decimal {
         var result = d
         var input = d
         NSDecimalRound(&result, &input, 2, .plain)
         return result
+    }
+
+    /// Splits 100 percentage points evenly across `count` shares using the largest-remainder
+    /// method, so the result always sums to EXACTLY 100 (never 99.99 or 100.01 from naive
+    /// division). Each share is `100 / count` rounded to 2dp via `rounded(_:)`; the leftover
+    /// (always a small multiple of 0.01pp, since 2dp rounding bounds each share's error to
+    /// under half a cent-of-a-point) is distributed one 0.01pp unit at a time, walking from
+    /// the LAST share backward — an arbitrary but deterministic tie-break, since every share
+    /// is equally entitled to the remainder in an equal split.
+    ///
+    /// - Parameter count: Number of shares. `count <= 0` returns an empty array.
+    public static func equalWeights(count: Int) -> [Percentage] {
+        guard count > 0 else { return [] }
+        let base = Self.rounded(Decimal(100) / Decimal(count))
+        var totals = Array(repeating: base, count: count)
+        let unit = Decimal(1) / Decimal(100)
+        var remainder = Decimal(100) - (base * Decimal(count))
+        var index = count - 1
+        while remainder > 0 && index >= 0 {
+            totals[index] += unit
+            remainder -= unit
+            index -= 1
+        }
+        return totals.map { Percentage(value: $0) }
     }
 
     /// Calculates the signed drift (actual % − target %) for each slice, in percentage points to 2 dp.
