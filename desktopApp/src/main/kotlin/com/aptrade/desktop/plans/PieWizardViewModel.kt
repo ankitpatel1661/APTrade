@@ -139,8 +139,20 @@ class PieWizardViewModel(
         _state.update { s ->
             val index = s.slices.indexOfFirst { it.symbol == symbol }
             if (index < 0) return@update s
+            // A slice's ceiling is whatever the OTHER slices leave of the 100pp budget,
+            // so the wizard's total can never run past Pie.create's exact-sum rule —
+            // the last slice tops out at the remainder instead of pushing the footer to 105%.
+            val othersSum = s.slices.foldIndexed(ZERO) { i, acc, slice ->
+                if (i == index) acc else acc + slice.targetWeightPP
+            }
+            val ceiling = (ONE_HUNDRED - othersSum).let { if (it < ZERO) ZERO else it }
+            val clamped = when {
+                pp < ZERO -> ZERO
+                pp > ceiling -> ceiling
+                else -> pp
+            }
             val updated = s.slices.toMutableList()
-            updated[index] = updated[index].copy(targetWeightPP = pp)
+            updated[index] = updated[index].copy(targetWeightPP = clamped)
             recompute(s.copy(slices = updated))
         }
     }

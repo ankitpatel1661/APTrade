@@ -140,7 +140,14 @@ public final class PieWizardViewModel {
     public func setWeight(symbol: String, pp: Decimal) {
         guard let index = slices.firstIndex(where: { $0.symbol == symbol }) else { return }
         let slice = slices[index]
-        slices[index] = PieSlice(symbol: slice.symbol, assetKind: slice.assetKind, targetWeight: Percentage(value: pp))
+        // A slice's ceiling is whatever the OTHER slices leave of the 100pp budget,
+        // so the wizard's total can never run past `Pie.create`'s exact-sum rule —
+        // the last slice tops out at the remainder instead of pushing the footer to 105%.
+        let othersSum = slices.indices
+            .filter { $0 != index }
+            .reduce(Decimal(0)) { $0 + slices[$1].targetWeight.value }
+        let clamped = min(max(pp, 0), max(0, 100 - othersSum))
+        slices[index] = PieSlice(symbol: slice.symbol, assetKind: slice.assetKind, targetWeight: Percentage(value: clamped))
     }
 
     /// Splits 100pp evenly across every current slice via `PieMath.equalWeights`

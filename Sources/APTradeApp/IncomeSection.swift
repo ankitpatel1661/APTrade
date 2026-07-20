@@ -64,12 +64,28 @@ struct IncomeSection: View {
                 if !viewModel.months.isEmpty {
                     monthlyChart
                 }
+#if os(iOS)
                 if !viewModel.upcoming.isEmpty {
                     upcomingCard
                 }
                 if !viewModel.holdings.isEmpty {
                     holdingsCard
                 }
+#else
+                // Wide layout: upcoming + per-holding share one row, so both tables are
+                // visible without scrolling and neither stretches symbol-to-price across
+                // the whole window.
+                if !viewModel.upcoming.isEmpty, !viewModel.holdings.isEmpty {
+                    HStack(alignment: .top, spacing: 20) {
+                        upcomingCard.frame(maxWidth: .infinity, alignment: .topLeading)
+                        holdingsCard.frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                } else if !viewModel.upcoming.isEmpty {
+                    upcomingCard
+                } else if !viewModel.holdings.isEmpty {
+                    holdingsCard
+                }
+#endif
                 if !viewModel.history.isEmpty {
                     historyCard
                 }
@@ -135,10 +151,24 @@ struct IncomeSection: View {
         let fraction = maxAmount > 0 ? value / maxAmount : 0
         return VStack(spacing: 6) {
             GeometryReader { geo in
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(bar.isProjected ? Theme.gold.opacity(0.4) : Theme.gold)
-                    .frame(height: max(2, geo.size.height * fraction))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                // Projected months render as a dashed outline with a faint fill so they
+                // read as clearly provisional next to the solid received bars.
+                Group {
+                    if bar.isProjected {
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .fill(Theme.gold.opacity(0.12))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                    .strokeBorder(Theme.gold.opacity(0.6),
+                                                  style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+                            )
+                    } else {
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .fill(Theme.gold)
+                    }
+                }
+                .frame(height: max(2, geo.size.height * fraction))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             }
             Text(monthLabel(bar.id))
                 .font(.system(size: 8, weight: .semibold))
@@ -151,7 +181,10 @@ struct IncomeSection: View {
     private var legendRow: some View {
         HStack(spacing: 6) {
             Spacer()
-            Circle().fill(Theme.gold.opacity(0.4)).frame(width: 7, height: 7)
+            Circle()
+                .fill(Theme.gold.opacity(0.12))
+                .overlay(Circle().strokeBorder(Theme.gold.opacity(0.6), lineWidth: 1))
+                .frame(width: 7, height: 7)
             Text(tr(.incomeEstimatedBadge))
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(Theme.textTertiary)
