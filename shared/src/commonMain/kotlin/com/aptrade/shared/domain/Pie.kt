@@ -86,11 +86,16 @@ data class PieActivityEntry(
     val amount: Money?,
 )
 
-/** Validation errors when constructing a [Pie] via [Pie.create]. */
+/** Validation errors when constructing a [Pie] via [Pie.create], plus the house "no such
+ *  pie id" error used by pie-mutating use cases (Task 7+: [PieError.NotFound] mirrors the
+ *  role Swift's generic `AppError.notFound` plays for a `pieId` lookup miss — Kotlin's
+ *  shared core has no equivalent house-wide "not found" error, so this sealed class, being
+ *  the Pie domain's own error type already, is the natural home for it). */
 sealed class PieError(message: String) : Exception(message) {
     object EmptySlices : PieError("Pie must have at least one slice")
     object DuplicateSymbols : PieError("Pie slices must have unique symbols")
     object InvalidWeights : PieError("Pie slice weights must sum to exactly 100")
+    object NotFound : PieError("Pie not found")
 }
 
 private val ONE_HUNDRED_PERCENT_POINTS: BigDecimal = BigDecimal.parseString("100")

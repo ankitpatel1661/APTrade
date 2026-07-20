@@ -30,7 +30,20 @@ import kotlin.coroutines.cancellation.CancellationException
  *  The quote fetch stays OUTSIDE the lock — it is network I/O, and a mutex must never guard
  *  a network call. [Portfolio.buying]'s validation (funds check) depends on the *loaded*
  *  portfolio, not the quote, so it stays inside the lock alongside the load/save it validates
- *  against. */
+ *  against.
+ *
+ *  *** THIS IS THE SAME [portfolioMutex] INSTANCE `ContributeToPie`/`ExecuteDueContributions`
+ *  (and Task 8's `RebalancePie`) HOLD, TOO. *** Every pie-mutating use case performs its own
+ *  load->validate->save cycle against this SAME [PortfolioStore] (contributions and
+ *  rebalances buy/sell exactly like a manual trade, just tagged with a `pieId`) — so a manual
+ *  buy/sell racing a pie contribution is the identical lost-update hazard this class's doc
+ *  already describes for buy-vs-sell, just with a third (and, from Task 8, fourth) co-holder
+ *  instead of two. `AppGraph` constructs exactly ONE `Mutex` and hands that SAME instance to
+ *  [BuyAsset], [SellAsset], `ContributeToPie`, `ExecuteDueContributions`, and (Task 8)
+ *  `RebalancePie` — see the shared commonTest
+ *  `contributionRacingManualBuyThroughSharedMutexBothLandNoLostUpdate` (in
+ *  `ContributeToPieTest`), which proves this the same way
+ *  `racingBuyAndSellSharingOneMutexBothLandNoLostUpdate` proves the buy/sell case. */
 class BuyAsset(
     private val repository: MarketDataRepository,
     private val store: PortfolioStore,
