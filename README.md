@@ -93,7 +93,7 @@ Every app carries: a live watchlist, asset detail with candlestick/area charts a
 - **Drift tracking and manual rebalance** — every slice shows target vs. actual weight and drift; a rebalance preview lists the exact buy/sell orders before you confirm, honoring the **Confirm Trades** setting the same way a manual trade does.
 - **In-wizard DCA backtest** while building a plan — a dollar-cost-average simulation over real historical closes, shown alongside a lump-sum comparison so the schedule's trade-off is visible before you commit.
 - **Settings-gated notifications** — a dedicated **Plan Contributions** toggle (Notifications settings) governs both the scheduled auto-contribution run and its "contribution executed / skipped" notifications, mirroring the earnings-day toggle.
-- **Platform status:** live on macOS, iPhone, and Windows desktop (M7.2); Android Plans support is targeted for the next increment (M7.3).
+- **Platform status:** live on all four platforms — macOS, iPhone, Windows desktop (M7.2), and Android (M7.3).
 
 ### Settings & appearance
 - A unified, persisted **settings** layer — every preference (notification toggles, security/privacy, trade confirmation, theme, accent) flows through one store with a forward-compatible decoder.
@@ -259,6 +259,16 @@ row's BUY/SELL **and** from a prominent **BUY / SELL** action on each asset's de
 (matching the macOS app) — so a fresh $100,000 portfolio can make its first buy from asset
 detail. Both entry points open the same modal-bottom-sheet trade form; a detail-made trade
 persists to the shared store and appears in the Portfolio on return.
+
+**Investment Plans (Pies)** reach Android at parity (M7.3): a **Plans** section in the
+Portfolio screen lists pies with per-slice drift badges, a 4-step wizard (bottom sheet)
+builds and edits them with an in-wizard DCA-vs-lump-sum backtest, contributions run on
+weekly/biweekly/monthly schedules with launch-time and daily catch-up for days accrued
+while the app was closed, and a rebalance preview lists the exact buy/sell orders before
+confirming, honoring **Confirm Trades** — plus a settings-gated **Plan Contributions**
+toggle and notification. **Recorded divergences:** allocation renders as **bars rather
+than a donut chart**, and the wizard/rebalance preview are **modal bottom sheets rather
+than dialogs** — both mirroring the app's existing Portfolio divergences from desktop.
 
 ### Windows desktop app
 
@@ -438,7 +448,21 @@ run on weekly/biweekly/monthly schedules with launch-time and daily catch-up for
 while the app was closed, and a rebalance preview lists the exact buy/sell orders before
 confirming, honoring **Confirm Trades** the same as a manual trade — all on the same shared
 Kotlin core (`PieMath`, `PieSchedule`, `PieBacktest`, contribution/rebalance use cases) as
-the macOS reference. Android Plans support is targeted for the next increment (M7.3).
+the macOS reference.
+
+**Investment Plans (Pies) reach Android at parity** (`:androidApp`, M7.3), closing out
+Milestone 7 across all four platforms: a **Plans** section in the Portfolio screen lists
+pies with per-slice drift badges, a 4-step creation wizard (including the same in-wizard
+DCA-vs-lump-sum backtest) builds and edits them, contributions run on the same
+weekly/biweekly/monthly schedules with launch-time and daily catch-up for days accrued
+while the app was closed, and a rebalance preview lists the exact buy/sell orders before
+confirming, honoring **Confirm Trades** the same as a manual trade — via a settings-gated
+**Plan Contributions** toggle and notification, mirroring the earnings-day toggle. **Recorded
+divergences from macOS/desktop:** allocation is rendered as **bars rather than a donut
+chart**, matching the Android Portfolio's existing allocation-bars divergence; and the
+wizard and rebalance preview are **modal bottom sheets rather than dialogs**, matching the
+app's existing bottom-sheet convention (trade entry, etc.) instead of desktop's
+`Dialog`-based `PieWizardDialog`/`RebalanceDialog`.
 
 ## Project Structure
 
