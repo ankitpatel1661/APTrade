@@ -9,6 +9,7 @@ public enum ScheduledNotification: Equatable, Sendable {
     case digestDue
     case earningsCheckDue
     case contributionCheckDue
+    case dividendCheckDue
 }
 
 /// Persisted markers so scheduled notifications fire once per event rather than every
@@ -91,6 +92,18 @@ public struct MarketActivityPlanner: Sendable {
             if state.lastContributionDay != day, settings.pieContributions {
                 events.append(.contributionCheckDue)
                 newState.lastContributionDay = day
+            }
+        }
+
+        // One dividend check per trading day, the first tick we observe the market open.
+        // Unlike the blocks above, this is NOT gated by any settings toggle: dividend
+        // crediting is bookkeeping truth (cash owed to the user), not an optional
+        // notification, so it always fires regardless of user preferences.
+        if status == .open {
+            let day = calendar.tradingDay(of: now)
+            if state.lastDividendDay != day {
+                events.append(.dividendCheckDue)
+                newState.lastDividendDay = day
             }
         }
 

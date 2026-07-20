@@ -82,6 +82,7 @@ final class MarketActivityCoordinator {
             case .digestDue: await notifier.notifyDigest(summary: await digestSummary())
             case .earningsCheckDue: await notifyEarningsDue()
             case .contributionCheckDue: await notifyContributionsDue()
+            case .dividendCheckDue: break // Wired to ProcessDueDividends + notification in Task 13.
             }
         }
     }

@@ -111,4 +111,33 @@ final class MarketActivityPlannerTests: XCTestCase {
         XCTAssertFalse(events.contains(.contributionCheckDue))
         XCTAssertNil(state.lastContributionDay, "so enabling later in the day still delivers it")
     }
+
+    func test_dividendCheck_firesOncePerDay_ungatedByAnySetting() {
+        let now = et(2025, 6, 25, 10, 0)
+        let (first, state1) = planner.plan(now: now, state: SchedulerState(lastStatus: .open),
+                                           settings: settings())
+        XCTAssertTrue(first.contains(.dividendCheckDue))
+
+        let later = et(2025, 6, 25, 14, 0)
+        let (second, _) = planner.plan(now: later, state: state1, settings: settings())
+        XCTAssertFalse(second.contains(.dividendCheckDue), "already sent today")
+    }
+
+    func test_dividendCheck_fires_evenWhenEveryNotificationToggleIsFalse() {
+        // Dividend crediting is bookkeeping truth, not a user-configurable notification —
+        // it must fire regardless of the state of every other toggle.
+        let now = et(2025, 6, 25, 10, 0)
+        let (events, state) = planner.plan(now: now, state: SchedulerState(lastStatus: .open),
+                                           settings: settings(marketOpenClose: false, newsDigest: false,
+                                                              earningsReports: false, pieContributions: false))
+        XCTAssertTrue(events.contains(.dividendCheckDue))
+        XCTAssertNotNil(state.lastDividendDay)
+    }
+
+    func test_dividendCheck_notFired_whenClosed() {
+        let now = et(2025, 6, 28, 12, 0) // Saturday
+        let (events, _) = planner.plan(now: now, state: SchedulerState(lastStatus: .closed),
+                                       settings: settings())
+        XCTAssertFalse(events.contains(.dividendCheckDue))
+    }
 }
