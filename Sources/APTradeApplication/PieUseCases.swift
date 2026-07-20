@@ -175,12 +175,17 @@ public struct ContributeToPie: Sendable {
 /// in a single place rather than duplicated here).
 ///
 /// Historical closes come from `MarketDataRepository.history(for:timeframe:)` — the
-/// same daily-history method `FetchPortfolioPerformanceUseCase` uses to reconstruct the
-/// portfolio value curve — fetched once per slice symbol (not once per due day) and
-/// indexed by day string via `MarketCalendar.tradingDay(of:)`, mirroring that use
-/// case's convention. `.oneYear` is requested; a Pie neglected longer than that simply
-/// has its oldest due days silently skipped for lack of a close — the same fallback as
-/// a day with a genuinely missing close (see below) rather than a hard failure.
+/// same daily-history method `FetchPortfolioPerformanceUseCase` uses for its own
+/// reconstruction — fetched once per slice symbol (not once per due day). Unlike that
+/// use case (which keys off raw `PricePoint.date` values and forward-fills each
+/// symbol's last known close across mismatched trading calendars), each point here is
+/// indexed by its market-local day string via `MarketCalendar.tradingDay(of:)` and
+/// looked up with an exact match against the due day being executed — deliberately
+/// more precise than forward-filling, since a contribution must price against that
+/// day's own close, never a nearby one. `.oneYear` is requested; a Pie neglected longer
+/// than that simply has its oldest due days silently skipped for lack of a close — the
+/// same fallback as a day with a genuinely missing close (see below) rather than a hard
+/// failure.
 ///
 /// A past due day missing a close for ANY slice symbol is skipped silently: no
 /// `ContributionOutcome`, no activity entry, no ledger change — it is simply consumed
@@ -189,13 +194,24 @@ public struct ContributeToPie: Sendable {
 /// (`.skippedInsufficientCash`) and does not stop later due days in the same run from
 /// being attempted.
 ///
+/// **Crash/failure resumability:** the schedule cursor (`nextDueDay`) advances
+/// incrementally, immediately after each due day is *consumed* — executed, recorded as
+/// missed (insufficient cash), or silently skipped (missing close) — not once at the
+/// end of the due-day loop. Executed/missed days advance the cursor atomically with
+/// that same day's ledger/activity write (one `replace` call, one store save); a
+/// silently-skipped day has no ledger/activity write of its own, so its cursor advance
+/// is its only persisted trace. This makes a mid-run throw (e.g. today's live quote
+/// failing after several historical days already executed) safe to retry: the cursor
+/// sits exactly at the first not-yet-consumed day, so the next run resumes there
+/// instead of replaying already-executed days.
+///
 /// Each Pie is processed independently and defensively: any thrown error while
 /// processing a Pie (a live-quote failure on today's due day, or a `history` fetch
 /// failure while building the historical closes table) degrades that one Pie's result
 /// to an empty outcomes list rather than failing the whole run — other Pies still get
-/// processed, and any historical due days already executed for that Pie before the
-/// failure remain persisted (each due day commits to the stores independently, exactly
-/// like a standalone `ContributeToPie` call would).
+/// processed, and any due days already consumed for that Pie before the failure remain
+/// persisted, cursor included (each due day commits to the stores independently,
+/// exactly like a standalone `ContributeToPie` call would).
 public struct ExecuteDueContributions: Sendable {
     private let pieStore: PieStore
     private let portfolioStore: PortfolioStore
@@ -225,9 +241,10 @@ public struct ExecuteDueContributions: Sendable {
                 }
             } catch {
                 // Degrade this Pie's result to empty outcomes rather than aborting the
-                // whole run; any due days it already executed before the failure are
-                // still reflected in the reloaded Pie below (each due day persists
-                // independently as it's processed, see `executeAtClose`).
+                // whole run; any due days already consumed before the failure — buys,
+                // missed-cash entries, silently-skipped days — are still reflected in
+                // the reloaded Pie below, cursor included, since each one persists
+                // immediately as it's processed (see `catchUp`'s per-day loop).
                 let latest = pieStore.load().first(where: { $0.id == pie.id }) ?? pie
                 results.append((pie: latest, outcomes: []))
             }
@@ -260,25 +277,45 @@ public struct ExecuteDueContributions: Sendable {
         let closesBySymbol = try await historicalCloses(for: pie.slices.map(\.symbol), excluding: today, in: dueDays)
 
         var outcomes: [ContributionOutcome] = []
+        var latestPie = pie
         for day in dueDays {
+            // The cursor value once `day` is fully consumed — always derived from the
+            // ORIGINAL schedule anchor/cadence (never a shifting one), so it lands on
+            // exactly the next entry `dueDays` would itself have produced.
+            let cursorAfterDay = PieSchedule.nextDueDay(
+                anchorDay: schedule.nextDueDay, cadence: schedule.cadence, afterDay: day, calendar: calendar
+            )
+
             if day == today {
                 let outcome = try await ContributeToPie(pieStore: pieStore, portfolioStore: portfolioStore, market: market)(
                     pieId: pie.id, amount: schedule.amount, day: day, now: now
                 )
                 outcomes.append(outcome)
-            } else if let outcome = try executeAtClose(
-                pieId: pie.id, amount: schedule.amount, day: day, closesBySymbol: closesBySymbol
+                // ContributeToPie already persisted the ledger/activity change; this
+                // persists the cursor advance as its own immediate follow-up write —
+                // if a LATER pie in this run throws, this Pie's progress up through
+                // today is not lost.
+                latestPie = try advanceScheduleOnly(
+                    pieId: pie.id, to: cursorAfterDay, amount: schedule.amount, cadence: schedule.cadence
+                )
+            } else if let (outcome, updatedPie) = try executeAtClose(
+                pieId: pie.id, amount: schedule.amount, day: day, closesBySymbol: closesBySymbol,
+                newNextDueDay: cursorAfterDay, cadence: schedule.cadence
             ) {
                 outcomes.append(outcome)
+                latestPie = updatedPie
+            } else {
+                // At least one slice symbol is missing a close on `day`: no buy, no
+                // activity entry — but the day is still consumed, so the cursor still
+                // advances past it (its only persisted trace) so it is never
+                // reconsidered on a later run.
+                latestPie = try advanceScheduleOnly(
+                    pieId: pie.id, to: cursorAfterDay, amount: schedule.amount, cadence: schedule.cadence
+                )
             }
-            // else: at least one slice symbol is missing a close on `day` — silently skipped.
         }
 
-        let newNextDueDay = PieSchedule.nextDueDay(
-            anchorDay: schedule.nextDueDay, cadence: schedule.cadence, afterDay: today, calendar: calendar
-        )
-        let finalPie = try advanceSchedule(pieId: pie.id, to: newNextDueDay, amount: schedule.amount, cadence: schedule.cadence)
-        return (pie: finalPie, outcomes: outcomes)
+        return (pie: latestPie, outcomes: outcomes)
     }
 
     /// `closes[symbol][day]`, fetched once per symbol and reused across every
@@ -305,13 +342,19 @@ public struct ExecuteDueContributions: Sendable {
     /// semantics (distribute -> unrounded qty = share/close -> buy -> ledger/activity)
     /// but priced from `closesBySymbol` instead of a live quote. Reloads the Pie and
     /// Portfolio fresh so each due day sees the previous due day's results (cash spent,
-    /// ledger grown) within the same run.
+    /// ledger grown) within the same run. The schedule cursor is advanced to
+    /// `newNextDueDay` in the SAME `replace` write as the ledger/activity change, so a
+    /// throw on a later day can never leave this day partially persisted (mutation
+    /// applied but cursor stale, or vice versa).
     ///
-    /// - Returns: `nil` (no outcome, no mutation) if any slice symbol is missing a
-    ///   positive close on `day` — the whole day is silently skipped.
+    /// - Returns: `nil` (no outcome, no mutation at all — cursor included) if any slice
+    ///   symbol is missing a positive close on `day`. The caller is responsible for
+    ///   still advancing the cursor past a `nil` result, since the day is consumed
+    ///   either way.
     private func executeAtClose(
-        pieId: String, amount: Money, day: String, closesBySymbol: [String: [String: Money]]
-    ) throws -> ContributionOutcome? {
+        pieId: String, amount: Money, day: String, closesBySymbol: [String: [String: Money]],
+        newNextDueDay: String, cadence: PieCadence
+    ) throws -> (outcome: ContributionOutcome, pie: Pie)? {
         let pies = pieStore.load()
         guard let pie = pies.first(where: { $0.id == pieId }) else { return nil }
 
@@ -329,12 +372,13 @@ public struct ExecuteDueContributions: Sendable {
         }
 
         let shares = PieMath.distribute(contribution: amount, currentValues: currentValues, targets: pie.slices)
+        let advancedSchedule = ContributionSchedule(amount: amount, cadence: cadence, nextDueDay: newNextDueDay)
 
         let portfolio = portfolioStore.load()
         guard amount.amount <= portfolio.cash.amount else {
             let missed = PieActivityEntry(kind: .missedInsufficientCash, day: day, amount: amount)
-            let updatedPie = try replace(pie, in: pies, activity: pie.activity + [missed])
-            return .skippedInsufficientCash(updatedPie)
+            let updatedPie = try replace(pie, in: pies, schedule: advancedSchedule, activity: pie.activity + [missed])
+            return (.skippedInsufficientCash(updatedPie), updatedPie)
         }
 
         var updatedPortfolio = portfolio
@@ -357,37 +401,39 @@ public struct ExecuteDueContributions: Sendable {
         }
 
         let contributed = PieActivityEntry(kind: .contribution, day: day, amount: amount)
-        let updatedPie = try replace(pie, in: pies, ledger: newLedger, activity: pie.activity + [contributed])
+        let updatedPie = try replace(pie, in: pies, schedule: advancedSchedule, ledger: newLedger,
+                                     activity: pie.activity + [contributed])
 
         portfolioStore.save(updatedPortfolio)
-        return .executed(updatedPortfolio, updatedPie)
+        return (.executed(updatedPortfolio, updatedPie), updatedPie)
     }
 
-    /// Rebuilds the Pie's schedule with an advanced `nextDueDay`, leaving the ledger and
-    /// activity log exactly as the due-day loop in `catchUp` left them.
-    private func advanceSchedule(pieId: String, to nextDueDay: String, amount: Money, cadence: PieCadence) throws -> Pie {
+    /// Advances the schedule cursor past a day that was consumed without a Pie mutation
+    /// of its own to piggy-back the cursor write onto — either today's live-quote day
+    /// (whose ledger/activity change, if any, was already persisted inside
+    /// `ContributeToPie`) or a historical day silently skipped for a missing close.
+    /// Persisting the cursor immediately here, rather than deferring it to the end of
+    /// the due-day loop, is what makes a mid-run throw resumable without replaying
+    /// already-consumed days.
+    private func advanceScheduleOnly(pieId: String, to nextDueDay: String, amount: Money, cadence: PieCadence) throws -> Pie {
         let pies = pieStore.load()
         guard let pie = pies.first(where: { $0.id == pieId }) else { throw AppError.notFound }
-        let updatedSchedule = ContributionSchedule(amount: amount, cadence: cadence, nextDueDay: nextDueDay)
-        let updated = try Pie(id: pie.id, name: pie.name, slices: pie.slices, schedule: updatedSchedule,
-                              createdDay: pie.createdDay, ledger: pie.ledger, activity: pie.activity)
-        var all = pies
-        if let index = all.firstIndex(where: { $0.id == pie.id }) {
-            all[index] = updated
-        }
-        pieStore.save(all)
-        return updated
+        let schedule = ContributionSchedule(amount: amount, cadence: cadence, nextDueDay: nextDueDay)
+        return try replace(pie, in: pies, schedule: schedule, activity: pie.activity)
     }
 
     /// Rebuilds `pie` with the given overrides via `Pie`'s validating init (rethrows —
     /// slices pass through unchanged so validation always succeeds here), replaces it
-    /// within `pies`, and persists the full list. Mirrors `ContributeToPie`'s identical
-    /// private helper (duplicated rather than shared — a small pure rebuild-and-save
-    /// step isn't worth introducing a shared dependency between the two use cases).
-    private func replace(_ pie: Pie, in pies: [Pie],
+    /// within `pies`, and persists the full list in one write. `schedule` is always
+    /// passed explicitly (never defaulted to `pie.schedule`) so every call site is
+    /// forced to state, atomically with whatever else it's changing, exactly where the
+    /// cursor lands. Otherwise mirrors `ContributeToPie`'s identical private helper
+    /// (duplicated rather than shared — a small pure rebuild-and-save step isn't worth
+    /// introducing a shared dependency between the two use cases).
+    private func replace(_ pie: Pie, in pies: [Pie], schedule: ContributionSchedule,
                          ledger: [PieLedgerEntry]? = nil,
                          activity: [PieActivityEntry]) throws -> Pie {
-        let updated = try Pie(id: pie.id, name: pie.name, slices: pie.slices, schedule: pie.schedule,
+        let updated = try Pie(id: pie.id, name: pie.name, slices: pie.slices, schedule: schedule,
                               createdDay: pie.createdDay, ledger: ledger ?? pie.ledger, activity: activity)
         var all = pies
         if let index = all.firstIndex(where: { $0.id == pie.id }) {

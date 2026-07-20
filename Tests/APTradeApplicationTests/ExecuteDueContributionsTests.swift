@@ -210,4 +210,65 @@ final class ExecuteDueContributionsTests: XCTestCase {
         XCTAssertEqual(portfolioStore.portfolio, .starting())
         XCTAssertEqual(portfolioStore.saveCallCount, 0)
     }
+
+    // MARK: (regression) A throw on today's live quote, after historical days already
+    // executed, must not leave the cursor behind them -- a retry (with the same failure)
+    // must not replay the already-executed historical days.
+
+    func test_todayLiveQuoteThrowsAfterHistoricalDays_cursorAdvancesPastThem_noReplayOnRetry() async throws {
+        let schedule = ContributionSchedule(amount: usd("100"), cadence: .monthly, nextDueDay: "2025-04-01")
+        let pie = try Pie(id: "pie-f", name: "DCA Pie", slices: [sliceA, sliceB],
+                          schedule: schedule, createdDay: "2025-01-01")
+        let pieStore = FakePieStore()
+        pieStore.pies = [pie]
+        let portfolioStore = FakePortfolioStore(.starting())
+        let repo = makeRepo(
+            closesA: ["2025-04-01": "10", "2025-05-01": "20"],
+            closesB: ["2025-04-01": "10", "2025-05-01": "20"]
+        )
+        // June 1 2025 is a Sunday -> rolls to Monday June 2, which is due given the
+        // April 1 cursor and monthly cadence. `repo.quotes` is left empty, so the live
+        // quote for today throws (AppError.notFound) once the two historical days ahead
+        // of it have already executed.
+        let today = "2025-06-02"
+
+        let sut = ExecuteDueContributions(pieStore: pieStore, portfolioStore: portfolioStore, market: repo, calendar: calendar)
+
+        // Run 1: April 1 and May 1 execute at their historical closes; today's live
+        // quote throws, degrading this Pie's outcomes to empty -- but the two
+        // historical executions and their cursor advances must already be persisted.
+        let results1 = await sut(now: date(today))
+        XCTAssertEqual(results1.count, 1)
+        XCTAssertEqual(results1[0].outcomes.count, 0, "today's throw degrades outcomes to empty")
+        XCTAssertEqual(portfolioStore.portfolio.cash, usd("99800"), "both historical days spent cash")
+        XCTAssertEqual(pieStore.pies.first?.activity.filter { $0.kind == .contribution }.map(\.day),
+                       ["2025-04-01", "2025-05-01"])
+        XCTAssertEqual(pieStore.pies.first?.schedule?.nextDueDay, today,
+                       "cursor sits at today -- NOT past it -- since today itself never consumed")
+        let cashAfterRun1 = portfolioStore.portfolio.cash
+        let activityAfterRun1 = pieStore.pies.first?.activity.count
+
+        // Run 2: identical failure. The regression: if the cursor had stayed at
+        // "2025-04-01" (the bug), this run would recompute April 1 and May 1 as due
+        // again and re-execute them (double-buy/double-spend). With the incremental
+        // cursor, only today is due -- and it fails the same way, with zero replay.
+        let results2 = await sut(now: date(today))
+        XCTAssertEqual(results2.count, 1)
+        XCTAssertEqual(results2[0].outcomes.count, 0)
+        XCTAssertEqual(portfolioStore.portfolio.cash, cashAfterRun1, "no re-execution of already-consumed days")
+        XCTAssertEqual(pieStore.pies.first?.activity.count, activityAfterRun1)
+        XCTAssertEqual(pieStore.pies.first?.schedule?.nextDueDay, today)
+
+        // Run 3: the live quote now succeeds -- only today's due day executes.
+        repo.quotes["A"] = Quote(symbol: "A", price: usd("30"), previousClose: usd("30"))
+        repo.quotes["B"] = Quote(symbol: "B", price: usd("30"), previousClose: usd("30"))
+        let results3 = await sut(now: date(today))
+        XCTAssertEqual(results3.count, 1)
+        XCTAssertEqual(results3[0].outcomes.count, 1)
+        guard case .executed = results3[0].outcomes[0] else { XCTFail("today expected .executed"); return }
+        XCTAssertEqual(pieStore.pies.first?.activity.filter { $0.kind == .contribution }.map(\.day),
+                       ["2025-04-01", "2025-05-01", today], "only today's day newly executed")
+        XCTAssertGreaterThan(pieStore.pies.first?.schedule?.nextDueDay ?? "", today,
+                             "cursor now advances past today")
+    }
 }
