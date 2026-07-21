@@ -82,15 +82,17 @@ private func activeMetricColumn(for selection: ScreenSelection) -> ActiveMetricC
     }
 }
 
-/// Custom-screen mapping — one column definition per `ScreenerMetric` case.
-private func activeMetricColumn(for metric: ScreenerMetric) -> ActiveMetricColumn {
+/// Custom-screen mapping — one column definition per `ScreenerMetric` case. `.price` and
+/// `.dayChangePercent` return `nil`: those two metrics are already the always-present
+/// Price/Day % columns, so surfacing them again here would render an identical duplicate
+/// column beside the real one. This is a deliberate asymmetry with sorting — the view
+/// model's `ScreenerSortColumn.activeMetric` can still target either field (sorting by
+/// price via "active metric" is indistinguishable from sorting by the Price column
+/// itself), only the redundant *visual* column is suppressed.
+private func activeMetricColumn(for metric: ScreenerMetric) -> ActiveMetricColumn? {
     switch metric {
-    case .price:
-        return ActiveMetricColumn(titleKey: .metricPrice, value: { $0.close },
-                                   format: { formatPlain($0, decimals: 2) })
-    case .dayChangePercent:
-        return ActiveMetricColumn(titleKey: .metricDayChange, value: { $0.dayChangePercent },
-                                   format: formatSignedPercent)
+    case .price, .dayChangePercent:
+        return nil
     case .rsi14:
         return ActiveMetricColumn(titleKey: .metricRsi, value: { $0.rsi14 },
                                    format: { formatPlain($0, decimals: 1) })
@@ -151,14 +153,21 @@ struct ScreenerView: View {
     var onOpenSearch: (() -> Void)? = nil
     var onOpenAccount: (() -> Void)? = nil
     /// Seam for Task 8's custom-screen builder sheet — presenting it is that task's job;
-    /// this tab only needs somewhere to route the "+" chip's tap.
-    var onNewScreen: () -> Void = {}
+    /// this tab only needs somewhere to route the "+" chip's tap. `nil` (the default,
+    /// until Task 8 supplies a real closure) disables the chip rather than leaving it
+    /// tappable with no effect — a caller-supplied closure enables it automatically.
+    var onNewScreen: (() -> Void)? = nil
 
     @State private var viewModel = CompositionRoot.makeScreenerViewModel()
     /// Independent of `viewModel` — the Screener tab reads market data but writes to the
     /// SAME watchlist store every other tab shares, so an add-from-screener row shows up
-    /// immediately back on the Watchlist tab.
+    /// immediately back on the Watchlist tab (and, symmetrically, a symbol already on the
+    /// watchlist shows its checkmark here — see `loadWatchlist`/the `.task` below).
     @State private var addToWatchlist = AddToWatchlistUseCase(store: CompositionRoot.makeStore())
+    @State private var loadWatchlist = LoadWatchlistUseCase(store: CompositionRoot.makeStore())
+    /// Seeded from the real watchlist store on appear (below), then kept in sync locally
+    /// as this view's own add-taps land — mirrors `WatchlistViewModel.onAppear()`'s load,
+    /// just without needing a whole view model for one read.
     @State private var addedSymbols: Set<String> = []
     @State private var selectedAsset: Asset?
 
@@ -183,6 +192,9 @@ struct ScreenerView: View {
             .frame(minWidth: 560, minHeight: 640)
             #endif
             .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
+            .task {
+                addedSymbols = Set(loadWatchlist().map(\.symbol))
+            }
         }
     }
 
@@ -246,10 +258,12 @@ struct ScreenerView: View {
         .buttonStyle(.plain)
     }
 
-    /// Task 8 wires the actual builder sheet onto `onNewScreen`; this tab only renders the
-    /// entry point.
+    /// Task 8 wires the actual builder sheet onto `onNewScreen`; until then the chip is
+    /// disabled and dimmed rather than tappable-but-inert — never a dead button.
     private var newScreenChip: some View {
-        Button(action: onNewScreen) {
+        Button {
+            onNewScreen?()
+        } label: {
             Image(systemName: "plus")
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(Theme.gold)
@@ -258,6 +272,8 @@ struct ScreenerView: View {
                 .overlay(Circle().stroke(Theme.gold.opacity(0.4), lineWidth: 1))
         }
         .buttonStyle(.plain)
+        .disabled(onNewScreen == nil)
+        .opacity(onNewScreen == nil ? 0.4 : 1)
         .help(tr(.screenerNewScreen))
     }
 
