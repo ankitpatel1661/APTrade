@@ -104,8 +104,16 @@ public final class ScreenBuilderModel {
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
 
+    /// Parses a threshold field's raw text as a `Double`. Normalizes a comma decimal
+    /// separator to a dot BEFORE parsing: the iOS decimal pad inserts the locale's own
+    /// separator, and this app ships DE/IT/ES, all of which use "," (e.g. "1,5") where
+    /// `Double.init(String)` only ever accepts ".". This is a simple, predictable
+    /// normalization (not a full `NumberFormatter`/locale-aware parse) — good enough for
+    /// a plain decimal threshold, and it correctly still rejects genuine garbage like
+    /// "1,5.2" (becomes "1.5.2", which `Double.init` fails on either way).
     private static func parsedThreshold(_ text: String) -> Double? {
-        Double(text.trimmingCharacters(in: .whitespaces))
+        let normalized = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
+        return Double(normalized)
     }
 
     /// Pre-fill text for an existing condition's threshold — whole numbers render without
@@ -187,7 +195,7 @@ struct ScreenBuilderSheet: View {
                     actions
                 }
             }
-            .navigationTitle(tr(.screenerNewScreen))
+            .navigationTitle(tr(model.isEditing ? .screenerEditScreen : .screenerNewScreen))
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif

@@ -127,18 +127,55 @@ public final class ScreenerViewModel {
     }
 
     /// Insert-or-replace by `id`, then persists the full list.
+    ///
+    /// Also re-syncs `selection` so it can never point at a stale value: if the screen
+    /// being saved was ALREADY the active selection (matched by `id` — the old and new
+    /// `CustomScreen` values are otherwise `!=` the moment a condition changes), the
+    /// active selection is replaced with the freshly-saved value so `results` reflect
+    /// the edit immediately rather than showing pre-edit matches against a chip that no
+    /// longer even renders as selected. Symmetrically, saving a BRAND-NEW screen (one
+    /// `savedScreens` didn't already contain) auto-selects it, so a user who just built
+    /// a screen sees its results without an extra tap. Editing some OTHER, non-active
+    /// screen leaves `selection` untouched in both cases.
     public func saveScreen(_ screen: CustomScreen) {
+        let wasNew = !savedScreens.contains { $0.id == screen.id }
+        let wasActiveSelection: Bool
+        if case .custom(let active) = selection {
+            wasActiveSelection = active.id == screen.id
+        } else {
+            wasActiveSelection = false
+        }
+
         if let index = savedScreens.firstIndex(where: { $0.id == screen.id }) {
             savedScreens[index] = screen
         } else {
             savedScreens.append(screen)
         }
         screenStore.save(savedScreens)
+
+        if wasNew || wasActiveSelection {
+            select(.custom(screen))
+        }
     }
 
+    /// Removes the screen, persists the list, then — if the deleted screen was the
+    /// active selection — falls back to the default preset. Leaving `selection` pointed
+    /// at a `.custom` screen no longer present in `savedScreens` would strand `results`
+    /// on a screen with no corresponding chip left to show it was ever active.
     public func deleteScreen(id: String) {
+        let wasActiveSelection: Bool
+        if case .custom(let active) = selection {
+            wasActiveSelection = active.id == id
+        } else {
+            wasActiveSelection = false
+        }
+
         savedScreens.removeAll { $0.id == id }
         screenStore.save(savedScreens)
+
+        if wasActiveSelection {
+            select(.preset(.rsiOversold))
+        }
     }
 
     /// Live match count for the builder sheet: how many rows in the CURRENT snapshot

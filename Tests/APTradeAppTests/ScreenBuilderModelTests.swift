@@ -99,6 +99,42 @@ final class ScreenBuilderModelTests: XCTestCase {
         XCTAssertTrue(model.isValid)
     }
 
+    // MARK: - Locale decimal parsing (comma decimal separator, e.g. DE/IT/ES iOS decimalPad)
+
+    func test_isValid_true_thresholdWithCommaDecimalSeparator() {
+        let model = ScreenBuilderModel()
+        model.name = "Screen"
+        model.conditions[0].thresholdText = "1,5"
+
+        XCTAssertTrue(model.isValid)
+    }
+
+    func test_isValid_true_thresholdWithDotDecimalSeparator_stillWorks() {
+        let model = ScreenBuilderModel()
+        model.name = "Screen"
+        model.conditions[0].thresholdText = "1.5"
+
+        XCTAssertTrue(model.isValid)
+    }
+
+    func test_isValid_false_thresholdWithBothSeparators_isGarbage() {
+        let model = ScreenBuilderModel()
+        model.name = "Screen"
+        model.conditions[0].thresholdText = "1,5.2"
+
+        XCTAssertFalse(model.isValid)
+    }
+
+    func test_buildScreen_commaDecimalSeparator_parsesAsExpectedDouble() {
+        let model = ScreenBuilderModel()
+        model.name = "Screen"
+        model.conditions[0].metric = .rsi14
+        model.conditions[0].comparison = .below
+        model.conditions[0].thresholdText = "1,5"
+
+        XCTAssertEqual(model.buildScreen()?.conditions.first?.threshold, 1.5)
+    }
+
     // MARK: - addCondition / removeCondition
 
     func test_addCondition_appendsANewEmptyDraft() {

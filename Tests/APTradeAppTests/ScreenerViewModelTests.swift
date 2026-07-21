@@ -360,6 +360,95 @@ final class ScreenerViewModelTests: XCTestCase {
         XCTAssertEqual(screenStore.screens, [screenB])
     }
 
+    // MARK: (h) selection re-sync — saveScreen/deleteScreen keep `selection` consistent
+    // with `savedScreens` rather than leaving a stale/ghost `.custom` value behind.
+
+    /// Editing the ACTIVE custom screen must re-select the updated value (same id, new
+    /// conditions) so `results` reflect the edit immediately rather than showing
+    /// pre-edit matches with the chip no longer highlighted (the old and new
+    /// `CustomScreen` values are `!=` to each other despite sharing an id).
+    func test_h_saveScreen_editingTheActiveSelection_reSelectsUpdatedScreen_andReevaluatesResults() {
+        let screenStore = MemoryScreenStore()
+        let original = CustomScreen(id: "s1", name: "Screen",
+                                    conditions: [ScreenCondition(metric: .rsi14, comparison: .below, threshold: 30)])
+        screenStore.screens = [original]
+        let snapshotStore = MemorySnapshotStore()
+        snapshotStore.snapshot = ScreenerSnapshot(
+            tradingDay: "2026-07-20", scannedAt: fixedNow,
+            rows: [row(symbol: "A", rsi14: 20), row(symbol: "B", rsi14: 80)],
+            failedSymbols: []
+        )
+        let vm = makeVM(snapshotStore: snapshotStore, screenStore: screenStore)
+        vm.select(.custom(original))
+        XCTAssertEqual(vm.results.map(\.symbol), ["A"]) // rsi14 < 30
+
+        // Same id, tightened threshold — now excludes "A" too (rsi14 20 is not < 10).
+        let edited = CustomScreen(id: "s1", name: "Screen",
+                                  conditions: [ScreenCondition(metric: .rsi14, comparison: .below, threshold: 10)])
+        vm.saveScreen(edited)
+
+        XCTAssertEqual(vm.selection, .custom(edited))
+        XCTAssertEqual(vm.results.map(\.symbol), [], "results must re-evaluate against the edited conditions")
+    }
+
+    /// Editing a screen that ISN'T the active selection must not perturb `selection` at
+    /// all — the auto-select behavior is scoped to "was active" or "brand new", never
+    /// "any save."
+    func test_h_saveScreen_editingANonActiveScreen_leavesSelectionUnchanged() {
+        let screenStore = MemoryScreenStore()
+        let active = CustomScreen(id: "active", name: "Active", conditions: [])
+        let other = CustomScreen(id: "other", name: "Other", conditions: [])
+        screenStore.screens = [active, other]
+        let vm = makeVM(screenStore: screenStore)
+        vm.select(.custom(active))
+
+        let editedOther = CustomScreen(id: "other", name: "Other Renamed", conditions: [])
+        vm.saveScreen(editedOther)
+
+        XCTAssertEqual(vm.selection, .custom(active))
+    }
+
+    /// Saving a screen that wasn't previously in `savedScreens` at all (a brand-new
+    /// screen) auto-selects it, so the user immediately sees its results rather than
+    /// staying on whatever preset/screen was active before opening the builder.
+    func test_h_saveScreen_brandNewScreen_autoSelectsIt() {
+        let vm = makeVM() // default selection is .preset(.rsiOversold)
+
+        let created = CustomScreen(id: "new", name: "New Screen", conditions: [])
+        vm.saveScreen(created)
+
+        XCTAssertEqual(vm.selection, .custom(created))
+    }
+
+    /// Deleting the ACTIVE custom screen must fall back to the default preset — leaving
+    /// `selection` pointed at a screen that no longer exists in `savedScreens` would
+    /// strand `results` on a screen the user can no longer even see a chip for.
+    func test_h_deleteScreen_deletingTheActiveSelection_resetsToDefaultPreset() {
+        let screenStore = MemoryScreenStore()
+        let active = CustomScreen(id: "s1", name: "Screen", conditions: [])
+        screenStore.screens = [active]
+        let vm = makeVM(screenStore: screenStore)
+        vm.select(.custom(active))
+
+        vm.deleteScreen(id: "s1")
+
+        XCTAssertEqual(vm.selection, .preset(.rsiOversold))
+    }
+
+    /// Deleting a screen that ISN'T the active selection leaves `selection` untouched.
+    func test_h_deleteScreen_deletingANonActiveScreen_leavesSelectionUnchanged() {
+        let screenStore = MemoryScreenStore()
+        let active = CustomScreen(id: "active", name: "Active", conditions: [])
+        let other = CustomScreen(id: "other", name: "Other", conditions: [])
+        screenStore.screens = [active, other]
+        let vm = makeVM(screenStore: screenStore)
+        vm.select(.custom(active))
+
+        vm.deleteScreen(id: "other")
+
+        XCTAssertEqual(vm.selection, .custom(active))
+    }
+
     // MARK: (i) matchCount live against the current snapshot
 
     func test_i_matchCount_evaluatesAdHocConditionsAgainstSnapshot() {
