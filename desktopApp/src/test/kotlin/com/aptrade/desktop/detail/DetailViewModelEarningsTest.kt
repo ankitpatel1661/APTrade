@@ -3,6 +3,7 @@ package com.aptrade.desktop.detail
 import com.aptrade.desktop.FakeMarketDataRepository
 import com.aptrade.shared.application.EarningsCalendarRepository
 import com.aptrade.shared.application.FetchChartWindow
+import com.aptrade.shared.application.FetchDividendEvents
 import com.aptrade.shared.application.FetchEarningsCalendar
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketQuotes
@@ -43,6 +44,7 @@ private fun vm(
     fetchHistory = FetchHistory(repo),
     fetchChartWindow = FetchChartWindow(repo),
     fetchEarningsCalendar = FetchEarningsCalendar(earningsRepo) { emptySet() },
+    fetchDividendEvents = FetchDividendEvents(repo),
     scope = scope,
     nowEpochSeconds = { nowEpochSeconds },
 )

@@ -60,12 +60,20 @@ import com.aptrade.shared.l10n.L10n
 import com.aptrade.desktop.l10n.tr
 import com.aptrade.desktop.news.ArticleRow
 import com.aptrade.desktop.portfolio.HoldingRowUi
+import com.aptrade.shared.domain.Money
 import java.math.BigDecimal
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import androidx.compose.runtime.collectAsState
+
+private val dividendExDateFormatter: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.US).withZone(ZoneOffset.UTC)
 
 /** Full-window asset detail. A fresh `DetailViewModel` (with its own single-thread
  *  scope) is built per `symbol` so a stale load dies with its symbol. A 48dp back bar
@@ -90,6 +98,7 @@ fun DetailScreen(
             fetchHistory = graph.fetchHistory,
             fetchChartWindow = graph.fetchChartWindow,
             fetchEarningsCalendar = graph.fetchEarningsCalendar,
+            fetchDividendEvents = graph.fetchDividendEvents,
             scope = scope,
             fetchCompanyNews = graph.fetchCompanyNews,
             loadBookmarks = graph.loadBookmarks,
@@ -255,6 +264,10 @@ private fun DetailContent(
         }
         Spacer(Modifier.height(24.dp))
         KeyStatsCard(state)
+        state.dividendInfo?.let { info ->
+            Spacer(Modifier.height(16.dp))
+            DividendCard(info)
+        }
         if (heldPosition != null) {
             Spacer(Modifier.height(16.dp))
             PositionCard(heldPosition)
@@ -563,6 +576,98 @@ private fun PositionCard(row: HoldingRowUi) {
             StatRow(
                 leftLabel = tr(L10n.Key.StatMarketValue), leftValue = formatMoney(row.marketValueText),
                 rightLabel = tr(L10n.Key.UnrealizedPnL), rightValue = row.unrealizedText, rightColor = pnlColor,
+            )
+        }
+    }
+}
+
+// MARK: Dividends
+
+/** DIVIDENDS card: yield/annual-rate stat pair, a next-estimated-ex-date row (with an "Est."
+ *  badge, hidden when the projection is stale/absent), and a last-8 per-share mini bar chart.
+ *  Only ever rendered when [DetailUiState.dividendInfo] is non-null (see [DetailContent]) —
+ *  crypto, non-payers, and degraded fetches all present identically: no error state, no empty
+ *  placeholder. Compose port of `AssetDetailView.dividendSection` (Swift AS-BUILT). */
+@Composable
+private fun DividendCard(info: DividendInfo) {
+    StatCard(title = tr(L10n.Key.AssetDividendSection)) {
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            StatRow(
+                leftLabel = tr(L10n.Key.AssetDividendYield), leftValue = formatPercent(info.yieldFraction * 100),
+                rightLabel = tr(L10n.Key.AssetDividendRate), rightValue = formatMoney(info.trailingAnnualRate.amountText),
+            )
+            if (info.nextEstimatedExDateEpochSeconds != null) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        tr(L10n.Key.AssetNextExDate).uppercase(),
+                        style = TextStyle(
+                            fontFamily = InterFamily,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = DK.textTertiary,
+                            letterSpacing = 1.0.sp,
+                        ),
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        dividendExDateFormatter.format(Instant.ofEpochSecond(info.nextEstimatedExDateEpochSeconds)),
+                        style = TextStyle(
+                            fontFamily = InterFamily,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = DK.textPrimary,
+                        ),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    DividendEstBadge()
+                }
+            }
+            if (info.recentAmounts.isNotEmpty()) {
+                DividendMiniChart(info.recentAmounts)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DividendEstBadge() {
+    Text(
+        tr(L10n.Key.IncomeEstimatedBadge).uppercase(),
+        style = TextStyle(
+            fontFamily = InterFamily,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            color = DK.gold,
+            letterSpacing = 0.4.sp,
+        ),
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(DK.gold.copy(alpha = 0.12f))
+            .border(1.dp, DK.gold.copy(alpha = 0.28f), RoundedCornerShape(50))
+            .padding(horizontal = 7.dp, vertical = 3.dp),
+    )
+}
+
+/** A small bar mini-chart of the last (up to) 8 per-share amounts, oldest first — no axes or
+ *  labels, just the shape of the trend (bars read better than a continuous line for discrete
+ *  per-payout amounts). Mirrors `AssetDetailView.dividendMiniChart`. */
+@Composable
+private fun DividendMiniChart(amounts: List<Money>) {
+    val values = amounts.map { it.amount.doubleValue(false) }
+    val maxValue = values.maxOrNull() ?: 0.0
+    Row(
+        Modifier.fillMaxWidth().height(36.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        for (value in values) {
+            val barHeight = if (maxValue > 0.0) (36.0 * value / maxValue).coerceAtLeast(3.0) else 3.0
+            Box(
+                Modifier
+                    .weight(1f)
+                    .height(barHeight.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(DK.gold.copy(alpha = 0.7f)),
             )
         }
     }

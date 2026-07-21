@@ -4,6 +4,7 @@ import com.aptrade.desktop.designkit.ChartCandle
 import com.aptrade.desktop.ui.userMessage
 import com.aptrade.shared.application.FetchChartWindow
 import com.aptrade.shared.application.FetchCompanyNews
+import com.aptrade.shared.application.FetchDividendEvents
 import com.aptrade.shared.application.FetchEarningsCalendar
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketQuotes
@@ -12,19 +13,41 @@ import com.aptrade.shared.application.LoadBookmarks
 import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.ToggleBookmark
 import com.aptrade.shared.domain.AssetKind
+import com.aptrade.shared.domain.DividendMath
 import com.aptrade.shared.domain.EarningsEvent
+import com.aptrade.shared.domain.MONEY_MATH
 import com.aptrade.shared.domain.MarketCalendar
+import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.NewsArticle
 import com.aptrade.shared.domain.Timeframe
+import com.ionspin.kotlin.bignum.decimal.BigDecimal
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+private const val SECONDS_PER_DAY = 86_400L
+
 enum class ChartMode { Line, Candles }
+
+/** Dividend snapshot for the current symbol, shown on the asset-detail dividend card. `null`
+ *  on [DetailUiState.dividendInfo] hides the card entirely — crypto (skipped WITHOUT
+ *  fetching), non-payers (zero events in the trailing 2 years), and degraded fetches all
+ *  present identically. Transcribed from `AssetDetailViewModel.DividendInfo` (Swift AS-BUILT).
+ */
+data class DividendInfo(
+    val trailingAnnualRate: Money,
+    val yieldFraction: Double,
+    /** Future-only: the VM already filters out a stale projection (<= now), so the pane only
+     *  ever needs a null check, never a re-validation of an already-passed date. */
+    val nextEstimatedExDateEpochSeconds: Long? = null,
+    /** Up to 8 most recent per-share amounts, oldest first (mini bar chart). */
+    val recentAmounts: List<Money> = emptyList(),
+)
 
 data class DetailUiState(
     val symbol: String,
@@ -64,6 +87,10 @@ data class DetailUiState(
      *  formats/localizes it at render time (Task 7 contract) — mirrors why [kind]/[timeframe]
      *  stay typed rather than pre-rendered strings. */
     val nextEarnings: EarningsEvent? = null,
+    /** Null hides the Dividends card — crypto (never fetched), non-payers (zero events in the
+     *  trailing 2 years), and fetch failures all degrade here identically; see
+     *  `DetailViewModel.loadDividendInfo` for the full semantics. */
+    val dividendInfo: DividendInfo? = null,
 ) {
     /** Ids of bookmarked articles — lets each news row render its bookmark glyph. */
     val bookmarkedIds: Set<String> get() = bookmarks.mapTo(HashSet()) { it.id }
@@ -82,6 +109,9 @@ class DetailViewModel(
      *  configured, never null) — unlike [fetchCompanyNews] below, there is no "absent" state
      *  to model, so this is required like [fetchProfile]/[fetchMarketQuotes]. */
     private val fetchEarningsCalendar: FetchEarningsCalendar,
+    /** Always present (the repository backing it is never null), like
+     *  [fetchEarningsCalendar] above — there is no "absent" state to model here. */
+    private val fetchDividendEvents: FetchDividendEvents,
     private val scope: CoroutineScope,
     /** Null when no news key is configured — surfaces as [DetailUiState.newsKeyMissing] and
      *  the company-news section stays empty. */
@@ -106,9 +136,18 @@ class DetailViewModel(
         get() = candlesTimeframe != _state.value.timeframe
 
     init {
+        // Profile and quote each fetch exactly once per symbol, shared (via `async`, which
+        // caches its result/exception) between the coroutine that renders them into state and
+        // the dividend-info coroutine below — which needs the SAME asset kind (crypto guard)
+        // and quote price (yield denominator) without triggering a second network call for
+        // either. Backed by a SupervisorJob scope (see `DetailScreen`), so one branch's failure
+        // never cancels the others.
+        val profileDeferred = scope.async { fetchProfile.execute(symbol) }
+        val quoteDeferred = scope.async { fetchMarketQuotes.execute(listOf(symbol)).firstOrNull() }
+
         scope.launch {
             try {
-                val asset = fetchProfile.execute(symbol)
+                val asset = profileDeferred.await()
                 _state.update { it.copy(name = asset.name, kind = asset.kind) }
             } catch (e: CancellationException) {
                 throw e
@@ -118,7 +157,7 @@ class DetailViewModel(
         }
         scope.launch {
             try {
-                val quote = fetchMarketQuotes.execute(listOf(symbol)).firstOrNull() ?: return@launch
+                val quote = quoteDeferred.await() ?: return@launch
                 _state.update {
                     it.copy(amountText = quote.price.amountText,
                         changePercent = quote.changePercent,
@@ -129,6 +168,31 @@ class DetailViewModel(
             } catch (e: QuoteError) {
                 // stat tiles stay empty; the chart error path covers messaging
             }
+        }
+        // Dividend info: awaits the SAME profile/quote fetches above (no duplicate network
+        // calls). Crypto is skipped WITHOUT ever calling fetchDividendEvents. A profile failure
+        // (kind unknown) does not itself skip the fetch — only a POSITIVELY known crypto kind
+        // does, mirroring the Swift reference's unconditional (kind-is-always-known) guard as
+        // closely as this platform's async profile fetch allows. A quote failure/absence
+        // degrades the yield denominator to zero, same fallback `AssetDetailViewModel.swift`
+        // uses (`quote?.price.amount ?? 0`).
+        scope.launch {
+            val kind = try {
+                profileDeferred.await().kind
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: QuoteError) {
+                null
+            }
+            if (kind == AssetKind.Crypto) return@launch
+            val priceAmount = try {
+                quoteDeferred.await()?.price?.amount
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: QuoteError) {
+                null
+            } ?: BigDecimal.ZERO
+            loadDividendInfo(priceAmount)
         }
         // Next-earnings loads exactly once per symbol in its own isolated coroutine (like
         // profile/quote above), a 30-day window from "today" in market-local terms.
@@ -166,6 +230,51 @@ class DetailViewModel(
         }
         loadBookmarks?.let { load ->
             scope.launch { _state.update { it.copy(bookmarks = load.execute()) } }
+        }
+    }
+
+    /** Fetches dividend events over a trailing-2-year window and derives [DetailUiState.
+     *  dividendInfo]. Zero events in the window (non-payer) and any fetch failure both degrade
+     *  to null identically: this stat is never worth surfacing as an error state. [priceAmount]
+     *  is the current quote price (or [BigDecimal.ZERO] when unavailable) — the yield fraction
+     *  guards against a zero/missing price by degrading to 0 rather than dividing by zero, same
+     *  choice `IncomeViewModel` makes for its yield fields. Transcribed from
+     *  `AssetDetailViewModel.loadDividendInfo` (Swift AS-BUILT), including its 730-day window
+     *  and future-only `nextEstimatedExDate` guard. */
+    private suspend fun loadDividendInfo(priceAmount: BigDecimal) {
+        val asOf = nowEpochSeconds()
+        val windowStart = asOf - 730 * SECONDS_PER_DAY
+        try {
+            val events = fetchDividendEvents.execute(symbol, windowStart)
+            if (events.isEmpty()) return
+
+            val rate = DividendMath.trailingAnnualPerShare(events, asOf)
+            val yieldFraction = if (priceAmount > BigDecimal.ZERO) {
+                rate.amount.divide(priceAmount, MONEY_MATH).doubleValue(false)
+            } else {
+                0.0
+            }
+            val recentAmounts = events.sortedBy { it.exDateEpochSeconds }.takeLast(8).map { it.amountPerShare }
+            // Future-only guard, mirroring `IncomeViewModel.buildUpcoming`: a projection that
+            // lands before "now" must not surface a past date under the "Est." badge — the row
+            // simply hides, the rest of DividendInfo still shows.
+            val projected = DividendMath.nextProjected(events)
+            val nextEstimatedExDate = projected?.exDateEpochSeconds?.takeIf { it > asOf }
+
+            _state.update {
+                it.copy(
+                    dividendInfo = DividendInfo(
+                        trailingAnnualRate = rate,
+                        yieldFraction = yieldFraction,
+                        nextEstimatedExDateEpochSeconds = nextEstimatedExDate,
+                        recentAmounts = recentAmounts,
+                    ),
+                )
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: QuoteError) {
+            // dividendInfo stays null — never an error state.
         }
     }
 
