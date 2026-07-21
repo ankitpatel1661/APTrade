@@ -3,7 +3,9 @@ package com.aptrade.desktop.portfolio
 import com.aptrade.desktop.designkit.formatMoney
 import com.aptrade.desktop.designkit.formatPercent
 import com.aptrade.desktop.designkit.signedMoney
+import com.aptrade.desktop.l10n.tr
 import com.aptrade.desktop.ui.userMessage
+import com.aptrade.shared.l10n.L10n
 import com.aptrade.shared.application.BuyAsset
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchPerformanceReport
@@ -151,10 +153,13 @@ data class PortfolioUiState(
     val tradeError: String? = null,
 )
 
+// Buy/Sell stay hardcoded English pending a broader retrofit (pre-existing since the 6e
+// wave, and out of scope for M8.2 Task 5); Dividend is wired to the localized chip key here
+// since M8.2 Task 5 adds it, so at least the newest side doesn't ship as English-only.
 private fun sideLabel(side: TradeSide): String = when (side) {
     TradeSide.Buy -> "Buy"
     TradeSide.Sell -> "Sell"
-    TradeSide.Dividend -> "Dividend"
+    TradeSide.Dividend -> tr(L10n.Key.ActivityDividend)
 }
 
 /** Owns the current paper-trading portfolio: valuation, allocation, trade execution, the
