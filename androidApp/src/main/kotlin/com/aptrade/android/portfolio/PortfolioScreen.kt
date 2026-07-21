@@ -186,23 +186,25 @@ private fun PortfolioContent(
                     item { SummaryHeader(state) }
                     item { HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant) }
 
-                    if (state.holdings.isEmpty()) {
-                        // Desktop parity (PortfolioPane.kt): an empty portfolio shows one
-                        // generic empty state below the summary — no switcher, no per-section
-                        // content — regardless of which section was last selected.
-                        item { EmptyHoldingsState() }
-                    } else {
-                        item {
-                            SectionSwitcher(
-                                selected = section,
-                                onSelect = { section = it },
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                            )
-                        }
-                        item { HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant) }
+                    // The switcher is ALWAYS shown — matching desktop PortfolioPane and
+                    // macOS PortfolioView, both deliberately un-gated in M7 so Plans (and
+                    // now Income) are reachable before the first holding exists. Only the
+                    // Holdings section shows the empty state. (An earlier gate here hid
+                    // every section on a fresh portfolio and wrongly claimed desktop parity.)
+                    item {
+                        SectionSwitcher(
+                            selected = section,
+                            onSelect = { section = it },
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        )
+                    }
+                    item { HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant) }
 
-                        when (section) {
-                            PortfolioSection.Holdings -> {
+                    when (section) {
+                        PortfolioSection.Holdings -> {
+                            if (state.holdings.isEmpty()) {
+                                item { EmptyHoldingsState() }
+                            } else {
                                 items(state.holdings, key = { it.symbol }) { row ->
                                     HoldingRow(
                                         row = row,
@@ -213,44 +215,44 @@ private fun PortfolioContent(
                                     HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                                 }
                             }
-                            PortfolioSection.Allocation -> {
-                                if (state.allocationByHolding.isNotEmpty()) {
-                                    item { AllocationGroupHeader(tr(L10n.Key.ByHolding)) }
-                                    items(state.allocationByHolding, key = { "h-${it.id}" }) { slice ->
-                                        AllocationBar(slice)
-                                    }
-                                }
-                                if (state.allocationByKind.isNotEmpty()) {
-                                    item { AllocationGroupHeader(tr(L10n.Key.ByClass)) }
-                                    items(state.allocationByKind, key = { "c-${it.id}" }) { slice ->
-                                        AllocationBar(slice)
-                                    }
+                        }
+                        PortfolioSection.Allocation -> {
+                            if (state.allocationByHolding.isNotEmpty()) {
+                                item { AllocationGroupHeader(tr(L10n.Key.ByHolding)) }
+                                items(state.allocationByHolding, key = { "h-${it.id}" }) { slice ->
+                                    AllocationBar(slice)
                                 }
                             }
-                            PortfolioSection.Activity -> {
-                                if (state.transactions.isEmpty()) {
-                                    item { EmptyChartText(tr(L10n.Key.NoTransactionsYet)) }
-                                } else {
-                                    items(state.transactions, key = { it.id }) { txn ->
-                                        ActivityRow(txn)
-                                        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-                                    }
+                            if (state.allocationByKind.isNotEmpty()) {
+                                item { AllocationGroupHeader(tr(L10n.Key.ByClass)) }
+                                items(state.allocationByKind, key = { "c-${it.id}" }) { slice ->
+                                    AllocationBar(slice)
                                 }
                             }
-                            PortfolioSection.Plans -> {
-                                item { PlansSection(confirmTrades = confirmTrades) }
-                            }
-                            PortfolioSection.Income -> {
-                                item { IncomeSection() }
-                            }
-                            PortfolioSection.Performance -> {
-                                item {
-                                    PerformanceSection(
-                                        state = state,
-                                        onSetSpan = onSetSpan,
-                                        onSetBenchmark = onSetBenchmark,
-                                    )
+                        }
+                        PortfolioSection.Activity -> {
+                            if (state.transactions.isEmpty()) {
+                                item { EmptyChartText(tr(L10n.Key.NoTransactionsYet)) }
+                            } else {
+                                items(state.transactions, key = { it.id }) { txn ->
+                                    ActivityRow(txn)
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                                 }
+                            }
+                        }
+                        PortfolioSection.Plans -> {
+                            item { PlansSection(confirmTrades = confirmTrades) }
+                        }
+                        PortfolioSection.Income -> {
+                            item { IncomeSection() }
+                        }
+                        PortfolioSection.Performance -> {
+                            item {
+                                PerformanceSection(
+                                    state = state,
+                                    onSetSpan = onSetSpan,
+                                    onSetBenchmark = onSetBenchmark,
+                                )
                             }
                         }
                     }
