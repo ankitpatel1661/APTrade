@@ -40,6 +40,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -67,10 +68,12 @@ import com.aptrade.android.ui.chart.nearestIndex
 import com.aptrade.android.ui.localizedLabel
 import com.aptrade.android.ui.theme.GainGreen
 import com.aptrade.android.ui.theme.LossRed
+import com.aptrade.shared.application.FetchDividendEvents
 import com.aptrade.shared.domain.AllocationSlice
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.l10n.L10n
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 /** The holding row a [TradeSheet] is opened against, plus the side the user tapped. */
@@ -110,6 +113,7 @@ fun PortfolioScreen(onBack: () -> Unit, onOpenDetail: (String) -> Unit, confirmT
             fetchPerformanceReport = portfolio.fetchPerformanceReport,
             nowEpochSeconds = { System.currentTimeMillis() / 1000 },
             notifyOrderFill = AppGraph.notifyOrderFill,
+            fetchDividendEvents = FetchDividendEvents(portfolio.repository),
         )
     }
 
@@ -147,8 +151,8 @@ private fun PortfolioContent(
     onBuy: (Asset, String) -> Unit,
     onSell: (String, String) -> Unit,
     onReset: () -> Unit,
-    exportCsv: () -> String,
-    exportJson: () -> String,
+    exportCsv: suspend () -> String,
+    exportJson: suspend () -> String,
     confirmTrades: Boolean,
 ) {
     val context = LocalContext.current
@@ -156,6 +160,11 @@ private fun PortfolioContent(
     var showResetConfirm by remember { mutableStateOf(false) }
     var showExportChooser by remember { mutableStateOf(false) }
     var section by rememberSaveable { mutableStateOf(PortfolioSection.Holdings) }
+    // Composition-scoped coroutine launcher for the export buttons below — `exportCsv`/
+    // `exportJson` became `suspend` (M8.3 final-review fix: `exportSnapshot`'s
+    // `projectedAnnualIncome` fetches per-symbol dividend events), so their click handlers
+    // need somewhere to launch into. Mirrors desktop Main.kt's `exportScope`.
+    val exportScope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -319,13 +328,13 @@ private fun PortfolioContent(
             confirmButton = {
                 TextButton(onClick = {
                     showExportChooser = false
-                    shareExport(context, ExportFormat.Csv, exportCsv())
+                    exportScope.launch { shareExport(context, ExportFormat.Csv, exportCsv()) }
                 }) { Text("CSV") }
             },
             dismissButton = {
                 TextButton(onClick = {
                     showExportChooser = false
-                    shareExport(context, ExportFormat.Json, exportJson())
+                    exportScope.launch { shareExport(context, ExportFormat.Json, exportJson()) }
                 }) { Text("JSON") }
             },
         )
