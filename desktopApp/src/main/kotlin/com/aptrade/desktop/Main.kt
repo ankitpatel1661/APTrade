@@ -35,6 +35,7 @@ import com.aptrade.desktop.portfolio.PortfolioPane
 import com.aptrade.desktop.portfolio.PortfolioViewModel
 import com.aptrade.desktop.portfolio.TradeDialog
 import com.aptrade.shared.application.ContributionOutcome
+import com.aptrade.shared.application.DividendOutcome
 import com.aptrade.desktop.infra.exportFileName
 import com.aptrade.desktop.infra.renderPortfolioPdf
 import com.aptrade.desktop.infra.saveBinaryFile
@@ -165,10 +166,36 @@ fun main() = application {
                         )
                 }
             },
+            processDueDividends = { now -> graph.processDueDividends.execute(now) },
+            // Same L10n-here, coordinator-stays-ignorant split as notifyPieContribution above:
+            // the coordinator hands back the typed DividendOutcome(s) it produced (or, for a
+            // collapsed backfill run, the tallied count + summed cash), and only this (UI-land)
+            // closure resolves the cash/DRIP/backfill-summary title+body via tr/trf.
+            notifyDividendOutcome = { outcome ->
+                when (outcome) {
+                    is DividendOutcome.Credited ->
+                        graph.trayNotifier.notifyDividend(
+                            title = tr(L10n.Key.NotifDividendTitle),
+                            body = trf(L10n.Key.NotifDividendCashBodyFmt, outcome.symbol, outcome.cash.formatted),
+                        )
+                    is DividendOutcome.Reinvested ->
+                        graph.trayNotifier.notifyDividend(
+                            title = tr(L10n.Key.NotifDividendTitle),
+                            body = trf(L10n.Key.NotifDividendDripBodyFmt, outcome.symbol, outcome.cash.formatted),
+                        )
+                }
+            },
+            notifyDividendBackfillSummary = { count, totalCash ->
+                graph.trayNotifier.notifyDividend(
+                    title = tr(L10n.Key.NotifDividendTitle),
+                    body = trf(L10n.Key.NotifDividendBackfillBodyFmt, count.toString(), totalCash.formatted),
+                )
+            },
             fetchWatchlist = graph.fetchWatchlist,
             fetchMarketQuotes = graph.fetchMarketQuotes,
             scope = appScope,
             nowEpochSeconds = { System.currentTimeMillis() / 1000 },
+            calendar = marketCalendar,
         )
     }
     // News VM is created once (like the others) but started lazily on the first visit to the

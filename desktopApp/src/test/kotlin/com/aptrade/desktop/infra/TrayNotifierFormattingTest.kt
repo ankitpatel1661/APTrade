@@ -93,6 +93,19 @@ class TrayNotifierFormattingTest {
     }
 
     @Test
+    fun `order fill body for a dividend side uses Dividend verb`() {
+        // Kotlin twin of Swift review fix 3c0ac79 (M8.2 Task 10): the ternary that used to
+        // silently fall back to "Bought" for TradeSide.Dividend is now an exhaustive `when`
+        // naming a real verb. Dividend never actually reaches an order-fill notification in
+        // practice (a dividend credit surfaces through TrayNotifier.notifyDividend instead),
+        // but the exhaustive match means it can never accidentally mislabel one either.
+        assertEquals(
+            "Dividend 1 AAPL for $12.34",
+            formatOrderFillBody(TradeSide.Dividend, "AAPL", "1", "$12.34"),
+        )
+    }
+
+    @Test
     fun `order fill body upper-cases the symbol`() {
         assertEquals(
             "Bought 1 BTC-USD for $50,000.00",

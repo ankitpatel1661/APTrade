@@ -46,6 +46,7 @@ import com.aptrade.shared.application.MarketDataRepository
 import com.aptrade.shared.application.NewsRepository
 import com.aptrade.shared.application.PieStore
 import com.aptrade.shared.application.PortfolioStore
+import com.aptrade.shared.application.ProcessDueDividends
 import com.aptrade.shared.application.RebalancePie
 import com.aptrade.shared.application.ReconcilePieLedgers
 import com.aptrade.shared.application.RemoveFromWatchlist
@@ -142,6 +143,23 @@ class AppGraph(
     val rebalancePie = RebalancePie(pieStore, portfolioStore, repository, portfolioMutex)
     val reconcilePieLedgers = ReconcilePieLedgers(pieStore, portfolioStore, portfolioMutex, marketCalendar)
     val simulateDCA = SimulateDCA(repository, marketCalendar)
+
+    // Dividend crediting (M8.2 Task 10). Shares the SAME portfolioMutex as every other
+    // mutating portfolio use case above (BuyAsset's co-holder doc contract) — the engine
+    // read-modify-writes portfolioStore just like a buy/sell/contribution does, so one shared
+    // lock is what makes them all mutually exclusive. `isDripEnabled` is `suspend` (carry-note
+    // 4 on `ProcessDueDividends` — Kotlin's `FileSettingsStore.load()` is real file I/O, unlike
+    // Swift's synchronous UserDefaults-backed equivalent) and reads the live `dripEnabled`
+    // toggle fresh on every call — never captured once at construction time — since the user
+    // can flip it at any point during a run.
+    val processDueDividends = ProcessDueDividends(
+        portfolioStore = portfolioStore,
+        market = repository,
+        stateStore = schedulerStateStore,
+        calendar = marketCalendar,
+        portfolioMutex = portfolioMutex,
+        isDripEnabled = { settingsStore.load().dripEnabled },
+    )
 
     /** Builds a fresh [PlansViewModel] bound to [scope] — mirrors macOS's
      *  `CompositionRoot.makePlansViewModel()` factory (there is no persistent, graph-owned VM

@@ -28,13 +28,16 @@ internal fun formatOrderFillBody(
     quantityText: String,
     amountFormatted: String,
 ): String {
-    // Dividend never reaches an order-fill notification today (paper trades only fire Buy/
-    // Sell fills) — the Dividend branch is minimal neutral staging so this stays exhaustive.
-    // Real handling lands with the coordinator task.
+    // Dividend never reaches an order-fill notification in practice (paper trades only fire
+    // Buy/Sell fills; a dividend credit surfaces through notifyDividend instead — see
+    // DesktopMarketActivityCoordinator's notifyDividendsDue). The exhaustive `when` (Kotlin
+    // twin of Swift review fix 3c0ac79) still names a real verb for this branch rather than
+    // silently reusing "Bought", so an exhaustive match here can never accidentally mislabel
+    // an order fill.
     val verb = when (side) {
         TradeSide.Buy -> "Bought"
         TradeSide.Sell -> "Sold"
-        TradeSide.Dividend -> "Bought"
+        TradeSide.Dividend -> "Dividend"
     }
     return "$verb $quantityText ${symbol.uppercase()} for $amountFormatted"
 }
@@ -136,6 +139,20 @@ class TrayNotifier(private val trayState: TrayState) : AlertNotifier {
      * class performs no formatting of its own here either.
      */
     suspend fun notifyPieContribution(title: String, body: String) {
+        trayState.sendNotification(Notification(title, body))
+    }
+
+    /**
+     * Delivers a dividend notification (cash credit, DRIP reinvestment, or a collapsed
+     * backfill summary).
+     *
+     * Mechanical twin of [notifyPieContribution]/[notifyEarnings]: both [title] and [body]
+     * arrive pre-localized — `Main.kt` resolves `L10n.Key.NotifDividendTitle` and one of
+     * `NotifDividendCashBodyFmt`/`NotifDividendDripBodyFmt`/`NotifDividendBackfillBodyFmt` via
+     * `tr`/`trf` before calling in, so this class performs no formatting of its own here
+     * either.
+     */
+    suspend fun notifyDividend(title: String, body: String) {
         trayState.sendNotification(Notification(title, body))
     }
 }
