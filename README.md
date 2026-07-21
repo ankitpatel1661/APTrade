@@ -102,7 +102,7 @@ Every app carries: a live watchlist, asset detail with candlestick/area charts a
 - **Asset detail dividend info** — dividend yield, derived trailing annual rate, and an estimated next ex-date on any dividend-paying holding; hidden entirely for crypto and non-payers.
 - **Reinvest Dividends (DRIP)** toggle in Account Settings, and a **Dividend Payments** toggle in Notifications settings gating the "payment received / reinvested" alert — crediting itself is never gated, since a payout is bookkeeping truth, not an optional notification.
 - **Export rows** — every portfolio statement (PDF on macOS/iPhone/Windows; Excel and Word on macOS/iPhone) carries **Dividends Received (YTD)** and **Projected Annual Income** alongside the existing summary rows.
-- **Platform status:** shipped on macOS + iPhone (M8.1) and Windows desktop (M8.2); Android (M8.3) pending — the underlying Yahoo dividend-events fetch already lives in the shared Kotlin core, so that increment is UI wiring, not new data plumbing.
+- **Platform status:** shipped on all four platforms — macOS + iPhone (M8.1), Windows desktop (M8.2), and Android (M8.3) — closing Milestone 8.
 
 ### Settings & appearance
 - A unified, persisted **settings** layer — every preference (notification toggles, security/privacy, trade confirmation, theme, accent) flows through one store with a forward-compatible decoder.
@@ -278,6 +278,23 @@ confirming, honoring **Confirm Trades** — plus a settings-gated **Plan Contrib
 toggle and notification. **Recorded divergences:** allocation renders as **bars rather
 than a donut chart**, and the wizard/rebalance preview are **modal bottom sheets rather
 than dialogs** — both mirroring the app's existing Portfolio divergences from desktop.
+
+**Dividend & Income engine reaches Android at parity** (`:androidApp`, M8.3), closing out
+**Milestone 8 across all four platforms**: the same shared-core `DividendMath`/
+`ProcessDueDividends` engine (ex-date detection, cash or **DRIP** reinvestment with cash
+fallback, backfill + dedup) drives an ungated launch-time catch-up plus the market-activity
+coordinator's daily `DividendCheckDue` tick — a direct port of the desktop M8.2 coordinator
+wiring, positioned after the still-gated Pie-contribution catch-up. A five-surface **Income**
+section joins the Portfolio switcher (a 2x2 summary-card grid, a monthly received-vs-projected
+bar chart with dashed projected bars, Upcoming Dividends and Income by Holding, and full
+payment history with a **Reinvested** badge), and asset detail gains the same dividend info
+card (yield, trailing rate, next ex-date) alongside **Reinvest Dividends (DRIP)** and
+**Dividend Payments** notification toggles in Settings — crediting itself is never gated.
+**Recorded divergences from macOS/desktop:** Income's Upcoming Dividends and Income by
+Holding tables render **stacked rather than side-by-side**, matching the phone-layout
+divergence already recorded for Portfolio and Plans; and share quantities across the app
+now format through a shared **4-decimal-place** `formatShares` helper, transcribed from
+desktop's own fixed-decimals fix.
 
 ### Windows desktop app
 
@@ -512,15 +529,6 @@ logo/                       Brand assets
 APTrade Lite is the foundation. Planned toward the full platform:
 
 - Real authentication (Apple Sign In), biometric gating, and cloud sync (Supabase)
-- **Dividend & income engine (M8) — M8.1 + M8.2 shipped.** A Yahoo-backed dividend-events
-  feed (shared Kotlin core) drives an automatic crediting engine on macOS, iPhone, and now
-  Windows desktop: ex-date detection with strictly-before shares-held reconstruction, cash
-  or **DRIP** reinvestment (cash fallback if a close is missing), backfill + dedup so
-  re-runs never double-credit, first-class `.dividend`/`isDrip` ledger transactions (so
-  realized-P&L and performance reconstruction include dividend income automatically — no
-  separate "dividend-adjusted" calculation needed), a five-surface **Income** view,
-  asset-detail dividend info, and export summary rows (PDF on desktop; PDF/Excel/Word on
-  macOS + iPhone). Still to come: **M8.3** (Android).
 - **Technical screener (M9)** — scan the bundled S&P 500 universe with the existing
   `TechnicalIndicators` math (RSI thresholds, SMA/EMA crossovers, 52-week range position,
   momentum), with results feeding watchlists and Plans.
@@ -533,7 +541,29 @@ APTrade Lite is the foundation. Planned toward the full platform:
   language switcher plus chart/UX polish (6e). Still to come: **none** — macOS parity and
   localization are complete; the `:desktopApp` roadmap that opened at 6a is closed.
 
-Recently shipped: **Investment Plans ("Pies") — Milestone 7, all four platforms** —
+Recently shipped: **Dividend & Income Engine — Milestone 8, all four platforms** —
+automatic dividend crediting over the paper-trading portfolio, shipped in three increments
+(M8.1 Swift/macOS + iPhone, M8.2 Kotlin shared core + Windows desktop, M8.3 Android). A
+Yahoo-backed dividend-events feed drives a scheduled `ProcessDueDividends` engine (riding
+each platform's market-activity planner, plus a launch-time catch-up) that reconstructs
+shares held **strictly before** the ex-date from the existing transaction ledger and credits
+the payout as cash, or reinvests it via **DRIP** at that day's close (falling back to cash
+when a close is unavailable) — a (symbol, ex-date day) dedup guard means re-running the same
+day never double-credits. Every payout posts as a first-class `.dividend` ledger transaction
+(DRIP reinvestments post as a `.buy` flagged `isDrip`), so realized-P&L and performance
+reconstruction pick it up automatically, no special-casing anywhere. Every platform gets a
+five-surface **Income** section in the Portfolio switcher (summary cards, a monthly
+received-vs-projected bar chart, upcoming payouts, a per-holding income/yield-on-cost
+breakdown, and full payment history), an asset-detail dividend info card (yield, trailing
+rate, next ex-date), a **Reinvest Dividends (DRIP)** toggle in Account Settings, and a
+**Dividend Payments** notification toggle — crediting itself is never gated. Portfolio
+statement exports gain **Dividends Received (YTD)** and **Projected Annual Income** rows
+(PDF on all four platforms; Excel and Word on macOS/iPhone). Recorded platform divergences
+(phone-layout stacked tables on iPhone/Android in place of macOS/desktop's side-by-side
+layout, and Android's shared 4-decimal-place `formatShares` display) are noted in each app's
+section above. Suites at merge: macOS 469 / shared 538 / desktop 295 / android 217.
+
+Before that: **Investment Plans ("Pies") — Milestone 7, all four platforms** —
 target-weight investment baskets over the paper portfolio, shipped in three increments
 (M7.1 Swift/macOS + iPhone, M7.2 Kotlin shared core + Windows desktop, M7.3 Android).
 Every platform gets a **Plans** section in Portfolio: self-balancing contributions on
