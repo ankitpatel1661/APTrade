@@ -3,6 +3,7 @@ package com.aptrade.android.portfolio
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aptrade.android.ui.formatPercent
+import com.aptrade.android.ui.formatShares
 import com.aptrade.android.ui.money
 import com.aptrade.android.ui.signedMoney
 import com.aptrade.android.ui.userMessage
@@ -288,7 +289,7 @@ class PortfolioViewModel(
         val txn = portfolio.transactions.lastOrNull { it.symbol == symbol && it.side == side } ?: return
         try {
             val amountText = (txn.price.amount * txn.quantity).toStringExpanded()
-            notifyOrderFill(side, symbol, txn.quantity.toStringExpanded(), money(amountText))
+            notifyOrderFill(side, symbol, formatShares(txn.quantity), money(amountText))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
@@ -393,7 +394,7 @@ class PortfolioViewModel(
                     symbol = position.asset.symbol,
                     name = position.asset.name,
                     kind = position.asset.kind,
-                    quantityText = position.quantity.toStringExpanded(),
+                    quantityText = formatShares(position.quantity),
                     averageCostText = money(position.averageCost.amountText),
                     marketValueText = money(marketValue.amountText),
                     unrealizedText = signedMoney(unrealized.amountText),
@@ -412,7 +413,7 @@ class PortfolioViewModel(
                     symbol = txn.symbol,
                     sideLabel = sideLabel(txn.side),
                     isBuy = txn.side == TradeSide.Buy,
-                    quantityText = txn.quantity.toStringExpanded(),
+                    quantityText = formatShares(txn.quantity),
                     priceText = money(txn.price.amountText),
                     epochSeconds = txn.epochSeconds,
                     dateText = Instant.ofEpochSecond(txn.epochSeconds).atZone(zoneId).format(transactionDateFormatter),

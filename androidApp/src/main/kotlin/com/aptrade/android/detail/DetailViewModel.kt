@@ -2,6 +2,7 @@ package com.aptrade.android.detail
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.aptrade.android.ui.formatShares
 import com.aptrade.android.ui.money
 import com.aptrade.android.ui.userMessage
 import com.aptrade.shared.application.BuyAsset
@@ -284,7 +285,7 @@ class DetailViewModel(
         val txn = portfolio.transactions.lastOrNull { it.symbol == symbol && it.side == side } ?: return
         try {
             val amountText = (txn.price.amount * txn.quantity).toStringExpanded()
-            notifyOrderFill(side, symbol, txn.quantity.toStringExpanded(), money(amountText))
+            notifyOrderFill(side, symbol, formatShares(txn.quantity), money(amountText))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {

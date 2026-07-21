@@ -2,6 +2,8 @@ package com.aptrade.android.ui
 
 import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.domain.TradeError
+import com.ionspin.kotlin.bignum.decimal.BigDecimal
+import com.ionspin.kotlin.bignum.decimal.RoundingMode
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -45,4 +47,16 @@ fun formatPercent(value: Double?): String {
     }
     val sign = if (rounded > 0) "+" else if (rounded < 0) "-" else ""
     return "$sign$body%"
+}
+
+/** Share quantities for DISPLAY: rounded to at most 4 decimal places (same
+ *  HALF_AWAY_FROM_ZERO mode as Money's display rounding), trailing zeros trimmed —
+ *  "10", "0.05", "0.1667". Display-only: ledger math (PortfolioViewModel, IncomeViewModel)
+ *  keeps full precision, so a DRIP fraction like 0.16666…67 renders "0.1667" without
+ *  touching the stored value. Android twin of desktop `designkit/Formatting.kt`'s
+ *  `formatShares` — identical algorithm and test vectors (see `ShareFormattingTest`). */
+fun formatShares(quantity: BigDecimal): String {
+    val rounded = quantity.roundToDigitPositionAfterDecimalPoint(4, RoundingMode.ROUND_HALF_AWAY_FROM_ZERO)
+    val text = rounded.toStringExpanded()
+    return if ('.' in text) text.trimEnd('0').trimEnd('.') else text
 }

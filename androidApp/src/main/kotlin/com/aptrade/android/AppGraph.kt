@@ -368,8 +368,12 @@ internal fun buildNotifyOrderFill(
  *  class is that scope on Android (`AppGraph.portfolioMutex` has no equivalent — the desktop
  *  `AppGraph` is a single flat class, this one splits the portfolio-dependent slice out). */
 class PortfolioGraph(
-    repository: MarketDataRepository,
-    portfolioStore: PortfolioStore,
+    // repository/portfolioStore are public vals (M8.3 Task 2): IncomeScreen's viewModel { }
+    // factory builds IncomeViewModel straight from portfolio.repository/portfolio.portfolioStore/
+    // portfolio.marketCalendar, mirroring desktop AppGraph's flat portfolioStore/repository/
+    // marketCalendar vals that makeIncomeViewModel reads from.
+    val repository: MarketDataRepository,
+    val portfolioStore: PortfolioStore,
     pieStore: PieStore,
 ) {
     val fetchPortfolio = FetchPortfolio(portfolioStore)
