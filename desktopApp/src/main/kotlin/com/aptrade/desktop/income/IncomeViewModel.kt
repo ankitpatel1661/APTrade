@@ -16,9 +16,11 @@ import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.domain.Transaction
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 private const val SECONDS_PER_DAY = 86_400L
 
@@ -87,12 +89,11 @@ data class State(
  *  `Sources/APTradeApp/IncomeViewModel.swift` AS-BUILT — including the `buildUpcoming`
  *  stale-projection guard (`projected.exDate > asOf`).
  *
- *  Unlike [com.aptrade.desktop.plans.PlansViewModel]'s self-launching event handlers, `load`
- *  here is a plain `suspend fun` — same shape as the Swift `func load() async` it mirrors:
- *  there is no ongoing/polling work for this VM to internally schedule, so callers
- *  (`scope.launch { vm.load() }` from a Composable, or a direct `await`-style call from a
- *  test) own the coroutine themselves. No injected [kotlinx.coroutines.CoroutineScope] is
- *  needed as a result.
+ *  Follows the house desktop-VM convention exactly (see
+ *  [com.aptrade.desktop.plans.PlansViewModel.onAppear]): `load` is a plain (non-suspend)
+ *  event handler that internally `scope.launch`s, and `scope` MUST be single-thread-confined
+ *  (Dispatchers.Main on desktop) — the same contract every other desktop VM in this codebase
+ *  relies on instead of locks.
  *
  *  Failure isolation: a dividend-event fetch failure for one symbol degrades only that
  *  symbol's projections (to empty/zero) -- it never blocks another symbol's events, and
@@ -103,69 +104,74 @@ class IncomeViewModel(
     private val portfolioStore: PortfolioStore,
     private val marketDataRepository: MarketDataRepository,
     private val calendar: MarketCalendar = MarketCalendar(),
+    private val scope: CoroutineScope,
     private val nowEpochSeconds: () -> Long,
 ) {
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state
 
-    suspend fun load() {
-        _state.update { it.copy(isLoading = true) }
-        try {
-            // Mirrors FetchPortfolio.execute()'s fallback -- the starting portfolio is not
-            // persisted here, only synthesized for a store that has never been saved to.
-            val portfolio = portfolioStore.load() ?: Portfolio.starting()
-            val transactions = portfolio.transactions
-            val asOf = nowEpochSeconds()
+    fun load() {
+        scope.launch {
+            _state.update { it.copy(isLoading = true) }
+            try {
+                // Mirrors FetchPortfolio.execute()'s fallback -- the starting portfolio is
+                // not persisted here, only synthesized for a store that has never been saved
+                // to.
+                val portfolio = portfolioStore.load() ?: Portfolio.starting()
+                val transactions = portfolio.transactions
+                val asOf = nowEpochSeconds()
 
-            // Ledger-derived pieces never depend on network calls, so they populate even
-            // when every remote fetch below fails.
-            val history = buildHistory(transactions, calendar)
-            val receivedYTDValue = receivedYTD(transactions, asOf)
+                // Ledger-derived pieces never depend on network calls, so they populate even
+                // when every remote fetch below fails.
+                val history = buildHistory(transactions, calendar)
+                val receivedYTDValue = receivedYTD(transactions, asOf)
 
-            // Dividend events, fetched per non-crypto holding. A single symbol's failure is
-            // caught locally and contributes an empty history for that symbol only.
-            val nonCryptoPositions = portfolio.positions.filter { it.asset.kind != AssetKind.Crypto }
-            val eventsBySymbol = mutableMapOf<String, List<DividendEvent>>()
-            for (position in nonCryptoPositions) {
-                val symbol = position.asset.symbol
-                eventsBySymbol[symbol] = try {
-                    marketDataRepository.dividendEvents(symbol, lookbackStart(asOf))
+                // Dividend events, fetched per non-crypto holding. A single symbol's failure
+                // is caught locally and contributes an empty history for that symbol only.
+                val nonCryptoPositions = portfolio.positions.filter { it.asset.kind != AssetKind.Crypto }
+                val eventsBySymbol = mutableMapOf<String, List<DividendEvent>>()
+                for (position in nonCryptoPositions) {
+                    val symbol = position.asset.symbol
+                    eventsBySymbol[symbol] = try {
+                        marketDataRepository.dividendEvents(symbol, lookbackStart(asOf))
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: QuoteError) {
+                        emptyList()
+                    }
+                }
+
+                // Quotes for every held symbol (including crypto) so market value mirrors
+                // `Portfolio.valuation`'s total; a missing quote falls back to cost basis
+                // there.
+                val quotes: Map<String, Quote> = try {
+                    marketDataRepository.quotes(portfolio.positions.map { it.asset.symbol })
+                        .associateBy { it.symbol }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: QuoteError) {
-                    emptyList()
+                    emptyMap()
                 }
-            }
 
-            // Quotes for every held symbol (including crypto) so market value mirrors
-            // `Portfolio.valuation`'s total; a missing quote falls back to cost basis there.
-            val quotes: Map<String, Quote> = try {
-                marketDataRepository.quotes(portfolio.positions.map { it.asset.symbol })
-                    .associateBy { it.symbol }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: QuoteError) {
-                emptyMap()
-            }
+                val cards = buildCards(portfolio, eventsBySymbol, quotes, receivedYTDValue, asOf)
+                val months = buildMonths(transactions, nonCryptoPositions, eventsBySymbol, asOf)
+                val upcoming = buildUpcoming(nonCryptoPositions, eventsBySymbol, asOf)
+                    .sortedBy { it.estimatedExDateEpochSeconds }
+                val holdings = buildHoldings(nonCryptoPositions, eventsBySymbol, transactions, asOf)
+                    .sortedByDescending { it.annualIncome.amount }
 
-            val cards = buildCards(portfolio, eventsBySymbol, quotes, receivedYTDValue, asOf)
-            val months = buildMonths(transactions, nonCryptoPositions, eventsBySymbol, asOf)
-            val upcoming = buildUpcoming(nonCryptoPositions, eventsBySymbol, asOf)
-                .sortedBy { it.estimatedExDateEpochSeconds }
-            val holdings = buildHoldings(nonCryptoPositions, eventsBySymbol, transactions, asOf)
-                .sortedByDescending { it.annualIncome.amount }
-
-            _state.update {
-                it.copy(
-                    cards = cards,
-                    months = months,
-                    upcoming = upcoming,
-                    holdings = holdings,
-                    history = history,
-                )
+                _state.update {
+                    it.copy(
+                        cards = cards,
+                        months = months,
+                        upcoming = upcoming,
+                        holdings = holdings,
+                        history = history,
+                    )
+                }
+            } finally {
+                _state.update { it.copy(isLoading = false) }
             }
-        } finally {
-            _state.update { it.copy(isLoading = false) }
         }
     }
 

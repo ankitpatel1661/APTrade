@@ -11,6 +11,8 @@ import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.domain.MONEY_MATH
 import com.aptrade.shared.domain.Quote
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import java.time.LocalDateTime
 import java.time.ZoneOffset
@@ -47,6 +49,7 @@ class IncomeViewModelTest {
 
     private fun makeVm(
         portfolio: Portfolio,
+        scope: CoroutineScope,
         quotes: Map<String, Quote> = emptyMap(),
         events: Map<String, () -> List<DividendEvent>> = emptyMap(),
         now: Long = fixedNow,
@@ -60,6 +63,7 @@ class IncomeViewModelTest {
         val vm = IncomeViewModel(
             portfolioStore = store,
             marketDataRepository = market,
+            scope = scope,
             nowEpochSeconds = { now },
         )
         return vm to market
@@ -96,11 +100,13 @@ class IncomeViewModelTest {
         )
         val (vm, _) = makeVm(
             portfolio = portfolio,
+            scope = backgroundScope,
             quotes = mapOf("KO" to quote("KO", "65")),
             events = mapOf("KO" to { koEvents }),
         )
 
         vm.load()
+        runCurrent()
         val state = vm.state.value
 
         // receivedYTD = (0.48 + 0.51) x 100 = $99.00 -- the 2025 payout is excluded.
@@ -145,8 +151,9 @@ class IncomeViewModelTest {
             exDateEpochSeconds = utc(2026, 5, 14),
         )
 
-        val (vm, _) = makeVm(portfolio = portfolio)
+        val (vm, _) = makeVm(portfolio = portfolio, scope = backgroundScope)
         vm.load()
+        runCurrent()
         val state = vm.state.value
 
         assertEquals(2, state.history.size)
@@ -180,8 +187,9 @@ class IncomeViewModelTest {
             DividendEvent("KO", utc(2026, 2, 14), usd("0.48")),
             DividendEvent("KO", utc(2026, 5, 14), usd("0.51")),
         )
-        val (vm, _) = makeVm(portfolio = portfolio, events = mapOf("KO" to { koEvents }))
+        val (vm, _) = makeVm(portfolio = portfolio, scope = backgroundScope, events = mapOf("KO" to { koEvents }))
         vm.load()
+        runCurrent()
         val state = vm.state.value
 
         val receivedBars = state.months.filter { !it.isProjected }
@@ -226,9 +234,11 @@ class IncomeViewModelTest {
         )
         val (vm, _) = makeVm(
             portfolio = portfolio,
+            scope = backgroundScope,
             events = mapOf("KO" to { koEvents }, "JNJ" to { jnjEvents }),
         )
         vm.load()
+        runCurrent()
         val state = vm.state.value
 
         assertEquals(2, state.upcoming.size)
@@ -271,9 +281,11 @@ class IncomeViewModelTest {
         )
         val (vm, _) = makeVm(
             portfolio = portfolio,
+            scope = backgroundScope,
             events = mapOf("OLD" to { oldEvents }, "KO" to { koEvents }),
         )
         vm.load()
+        runCurrent()
         val state = vm.state.value
 
         assertFalse(
@@ -300,9 +312,11 @@ class IncomeViewModelTest {
         // The events repo throws for KO -- the only held symbol.
         val (vm, market) = makeVm(
             portfolio = portfolio,
+            scope = backgroundScope,
             events = mapOf("KO" to { throw QuoteError.NotFound }),
         )
         vm.load()
+        runCurrent()
         val state = vm.state.value
 
         assertTrue(state.upcoming.isEmpty())
