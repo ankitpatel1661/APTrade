@@ -164,7 +164,11 @@ fun AccountPanel(
                     onClose = onClose,
                 )
                 AccountPage.Profile -> ProfilePage(onBack = { page = AccountPage.Root })
-                AccountPage.AccountSettings -> AccountSettingsPage(onBack = { page = AccountPage.Root })
+                AccountPage.AccountSettings -> AccountSettingsPage(
+                    settings = notificationSettings,
+                    onUpdate = onUpdateNotificationSettings,
+                    onBack = { page = AccountPage.Root },
+                )
                 AccountPage.Help -> HelpPage(onBack = { page = AccountPage.Root }, onClose = onClose)
             }
         }
@@ -518,6 +522,17 @@ private fun NotificationsPage(
         checked = settings.pieContributions,
         onCheckedChange = { checked -> onUpdate { it.copy(pieContributions = checked) } },
     )
+    // Dividend-payment notification (M8.2 Task 9) sits right beside Pie Contributions —
+    // same macOS placement (RootView.swift notificationsPage: settingsDividendNotif
+    // immediately follows pieContributionsToggle). Purely a delivery toggle for the credit
+    // notice; it does NOT gate whether dividends are processed — see AppSettings.
+    // dividendNotifications' doc comment and DesktopMarketActivityCoordinator.
+    ToggleRow(
+        title = tr(L10n.Key.SettingsDividendNotif),
+        subtitle = tr(L10n.Key.SettingsDividendNotifSubtitle),
+        checked = settings.dividendNotifications,
+        onCheckedChange = { checked -> onUpdate { it.copy(dividendNotifications = checked) } },
+    )
     Spacer(Modifier.height(10.dp))
     // macOS reuses tr(.email) ("Email") for this section label too (RootView.swift:426) —
     // not a dedicated EMAIL-section Key. Mirrored here rather than adding a duplicate Key.
@@ -641,9 +656,20 @@ private fun ProfilePage(onBack: () -> Unit) {
  *  `accountSettingsPage` (lines 392-411). Five decorative detail rows, including the static
  *  "Enabled — Touch ID" biometric row: macOS displays static text here too, NOT bound to the
  *  Security page's Biometric Login toggle (verified against `RootView.swift:403`, which reads
- *  `tr(.enabledTouchID)` — a fixed L10n string, not `settingsVM.settings.biometricLogin`). */
+ *  `tr(.enabledTouchID)` — a fixed L10n string, not `settingsVM.settings.biometricLogin`).
+ *
+ *  DRIP (M8.2 Task 9) is the one functional row here — mirroring macOS's placement exactly
+ *  (`RootView.swift:434-435`: `toggleRow(... tr(.settingsDrip), subtitle: tr(.settingsDripFooter),
+ *  isOn: $settingsVM.settings.dripEnabled)`, appended after the detail fields). It lives in
+ *  this account/trading group rather than Notifications because it changes money behavior
+ *  (cash vs. reinvest on dividend receipt), not notification delivery — see
+ *  AppSettings.dripEnabled's doc comment. */
 @Composable
-private fun AccountSettingsPage(onBack: () -> Unit) {
+private fun AccountSettingsPage(
+    settings: AppSettings,
+    onUpdate: ((AppSettings) -> AppSettings) -> Unit,
+    onBack: () -> Unit,
+) {
     // Trading Mode / Default Tab / Biometric Login VALUES route through tr() too, matching
     // macOS exactly (RootView.swift:398-403: tr(.simulatedPaperTrading), tr(.watchlist),
     // tr(.enabledTouchID)) — these are keyed display strings, not free-form personal data.
@@ -660,6 +686,13 @@ private fun AccountSettingsPage(onBack: () -> Unit) {
     DetailField(label = tr(L10n.Key.DefaultTab), value = tr(L10n.Key.Watchlist))
     Spacer(Modifier.height(14.dp))
     DetailField(label = tr(L10n.Key.BiometricLogin), value = tr(L10n.Key.EnabledTouchID))
+    Spacer(Modifier.height(14.dp))
+    ToggleRow(
+        title = tr(L10n.Key.SettingsDrip),
+        subtitle = tr(L10n.Key.SettingsDripFooter),
+        checked = settings.dripEnabled,
+        onCheckedChange = { checked -> onUpdate { it.copy(dripEnabled = checked) } },
+    )
 }
 
 // MARK: - Help & Support
