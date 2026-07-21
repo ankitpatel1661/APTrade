@@ -221,10 +221,13 @@ private object ScreenerColumnWidth {
  * immediately back on that tab (and vice versa) — this part stays fully self-contained since
  * it needs no state `AppRoot` doesn't already have elsewhere.
  *
- * The "+" new-screen chip is wired with a `null` callback for now (Task 8 adds the builder
- * dialog) — the nullable-callback convention `DetailScreen`'s own `onBuy` already
- * establishes: a `null` handler renders the chip disabled at reduced opacity, never a dead
- * button that silently does nothing on click.
+ * The "+" new-screen chip opens [ScreenBuilderDialog] (Task 8) in create mode; each saved
+ * custom-screen chip carries its own small edit-glyph affordance ([EditScreenButton]) that
+ * opens the same dialog pre-filled for that screen. There is no `ContextMenuArea`
+ * (right-click) precedent anywhere else in this desktop codebase (checked `WatchlistPane`/
+ * `PlansPane` — both use full labeled buttons, e.g. `PlansPane`'s `ActionButtons`, never a
+ * secondary-click menu), so a small icon on the chip — rather than inventing a new
+ * right-click convention for this one feature — is the deliberate, documented choice.
  */
 @Composable
 fun ScreenerPane(onOpenDetail: (String) -> Unit) {
@@ -252,6 +255,12 @@ fun ScreenerPane(onOpenDetail: (String) -> Unit) {
         addedSymbols = graph.fetchWatchlist.execute().map { it.symbol }.toSet()
     }
 
+    // `null` = no dialog shown; `New` = the "+" chip; `Edit(screen)` = a saved chip's edit
+    // glyph. `ScreenBuilderDialog` itself calls `onDismiss` after a successful Save or a
+    // confirmed Delete, so both `onSave`/`onDelete` below only need to drive the view model —
+    // clearing this state back to `null` is the dialog's job, not theirs.
+    var builderTarget by remember { mutableStateOf<ScreenBuilderTarget?>(null) }
+
     val activeColumn = activeMetricColumn(state.selection)
     Column(Modifier.fillMaxSize()) {
         Column(
@@ -264,9 +273,8 @@ fun ScreenerPane(onOpenDetail: (String) -> Unit) {
                     savedScreens = state.savedScreens,
                     onSelectPreset = { viewModel.select(ScreenSelection.Preset(it)) },
                     onSelectCustom = { viewModel.select(ScreenSelection.Custom(it)) },
-                    // Task 8 wires a real builder-dialog callback here; until then the chip
-                    // renders disabled (reduced opacity), never a dead no-op button.
-                    onNewScreen = null,
+                    onNewScreen = { builderTarget = ScreenBuilderTarget.New },
+                    onEditCustom = { screen -> builderTarget = ScreenBuilderTarget.Edit(screen) },
                 )
             }
             Box(Modifier.padding(horizontal = 24.dp)) {
@@ -305,6 +313,29 @@ fun ScreenerPane(onOpenDetail: (String) -> Unit) {
             )
         }
     }
+
+    val target = builderTarget
+    if (target != null) {
+        ScreenBuilderDialog(
+            existingScreen = (target as? ScreenBuilderTarget.Edit)?.screen,
+            matchCount = viewModel::matchCount,
+            onDismiss = { builderTarget = null },
+            onSave = { screen -> viewModel.saveScreen(screen) },
+            onDelete = if (target is ScreenBuilderTarget.Edit) {
+                { viewModel.deleteScreen(target.screen.id) }
+            } else {
+                null
+            },
+        )
+    }
+}
+
+/** Which mode [ScreenBuilderDialog] is showing, if any — `null` (no dialog), a brand-new
+ *  screen, or an edit of an existing saved one. A plain nullable `CustomScreen?` couldn't tell
+ *  "new screen" (`existingScreen = null`) apart from "no dialog shown" on its own. */
+private sealed class ScreenBuilderTarget {
+    object New : ScreenBuilderTarget()
+    data class Edit(val screen: CustomScreen) : ScreenBuilderTarget()
 }
 
 // MARK: - Chips row
@@ -315,7 +346,8 @@ private fun ChipsRow(
     savedScreens: List<CustomScreen>,
     onSelectPreset: (PresetScreen) -> Unit,
     onSelectCustom: (CustomScreen) -> Unit,
-    onNewScreen: (() -> Unit)?,
+    onNewScreen: () -> Unit,
+    onEditCustom: (CustomScreen) -> Unit,
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         for (preset in PresetScreen.entries) {
@@ -327,10 +359,13 @@ private fun ChipsRow(
         for (screen in savedScreens) {
             // `screen.name` is user-authored data, not app copy — rendered verbatim, never
             // routed through `tr(_:)`.
-            ScreenerChip(
-                title = screen.name,
-                selected = selection == ScreenSelection.Custom(screen),
-            ) { onSelectCustom(screen) }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                ScreenerChip(
+                    title = screen.name,
+                    selected = selection == ScreenSelection.Custom(screen),
+                ) { onSelectCustom(screen) }
+                EditScreenButton(onClick = { onEditCustom(screen) })
+            }
         }
         NewScreenChip(onClick = onNewScreen)
     }
@@ -366,27 +401,19 @@ private fun ScreenerChip(title: String, selected: Boolean, onClick: () -> Unit) 
     }
 }
 
-/** Nullable-callback pattern (mirroring `DetailScreen`'s `onBuy`): a `null` [onClick] renders
- *  the "+" chip disabled at reduced opacity rather than a dead button that silently no-ops. */
+/** Opens [ScreenBuilderDialog] in create mode (Task 8). Previously wired with a nullable
+ *  callback (mirroring `DetailScreen`'s `onBuy`) that rendered the chip disabled at reduced
+ *  opacity pending the dialog's arrival — now that the dialog exists, the chip is always
+ *  enabled. */
 @Composable
-private fun NewScreenChip(onClick: (() -> Unit)?) {
-    val enabled = onClick != null
+private fun NewScreenChip(onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .size(30.dp)
             .clip(CircleShape)
             .background(DK.surface)
-            .border(1.dp, DK.gold.copy(alpha = if (enabled) 0.4f else 0.15f), CircleShape)
-            .then(
-                if (enabled) {
-                    Modifier.clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) { onClick?.invoke() }
-                } else {
-                    Modifier
-                },
-            ),
+            .border(1.dp, DK.gold.copy(alpha = 0.4f), CircleShape)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() },
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -395,8 +422,29 @@ private fun NewScreenChip(onClick: (() -> Unit)?) {
                 fontFamily = InterFamily,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
-                color = DK.gold.copy(alpha = if (enabled) 1f else 0.35f),
+                color = DK.gold,
             ),
+        )
+    }
+}
+
+/** Small edit-glyph affordance beside each saved custom-screen chip (Task 8) — see
+ *  [ScreenerPane]'s doc comment for why this, rather than a right-click context menu, is the
+ *  edit entry point. A separate 22dp circular hit target (a sibling of [ScreenerChip], not
+ *  nested inside its clickable area) so tapping it never also fires the chip's own
+ *  select-screen click. */
+@Composable
+private fun EditScreenButton(onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(22.dp)
+            .clip(CircleShape)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            "✎",
+            style = TextStyle(fontFamily = InterFamily, fontSize = 11.sp, color = DK.textTertiary),
         )
     }
 }
