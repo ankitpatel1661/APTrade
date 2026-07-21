@@ -133,6 +133,7 @@ enum L10n {
         case resetPortfolioConfirm = "Reset portfolio to $100,000 cash and clear all holdings?"
         case portfolioUnrealizedPnLChartTitle = "Portfolio · Unrealized P&L"
         case byHolding = "BY HOLDING"
+        case byClass = "BY CLASS"
         case holdingsLabel = "HOLDINGS"
         case noTransactionsYet = "No transactions yet."
         case noHoldingsYet = "No holdings yet"
@@ -672,6 +673,8 @@ enum L10n {
                                             .spanish: "Cartera · P&L no realizado"],
         .byHolding: [.english: "BY HOLDING", .german: "NACH BESTAND",
                      .italian: "PER POSIZIONE", .spanish: "POR POSICIÓN"],
+        .byClass: [.english: "BY CLASS", .german: "NACH KLASSE",
+                   .italian: "PER CLASSE", .spanish: "POR CLASE"],
         .holdingsLabel: [.english: "HOLDINGS", .german: "BESTÄNDE",
                          .italian: "POSIZIONI", .spanish: "POSICIONES"],
         .noTransactionsYet: [.english: "No transactions yet.", .german: "Noch keine Transaktionen.",

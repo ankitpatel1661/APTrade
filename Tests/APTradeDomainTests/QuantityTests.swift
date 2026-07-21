@@ -15,4 +15,10 @@ final class QuantityTests: XCTestCase {
         XCTAssertEqual(Quantity(Decimal(string: "2.50")!).formatted, "2.5")
         XCTAssertEqual(Quantity(Decimal(3)).formatted, "3")
     }
+
+    func test_formatted_capsAtFourFractionDigits() {
+        XCTAssertEqual(Quantity(Decimal(string: "0.16666666")!).formatted, "0.1667")
+        XCTAssertEqual(Quantity(Decimal(string: "10")!).formatted, "10")
+        XCTAssertEqual(Quantity(Decimal(string: "2.5")!).formatted, "2.5")
+    }
 }

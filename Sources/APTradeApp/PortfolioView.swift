@@ -334,38 +334,69 @@ struct PortfolioView: View {
     private var allocationView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+#if os(iOS)
                 HStack(alignment: .center, spacing: 20) {
                     allocationDonut
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(viewModel.allocationByKind) { slice in
-                            HStack(spacing: 8) {
-                                Circle().fill(kindColor(slice.id)).frame(width: 9, height: 9)
-                                Text(assetClassLabel(slice))
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundStyle(Theme.textPrimary)
-                                Spacer()
-                                Text("\(slice.fraction * 100, specifier: "%.1f")%")
-                                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                                    .foregroundStyle(Theme.textSecondary)
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
+                    byClassColumn
                 }
                 .padding(.horizontal, 24).padding(.top, 18)
 
-                Text(tr(.byHolding))
-                    .font(.system(size: 10, weight: .bold)).tracking(1.4)
-                    .foregroundStyle(Theme.textTertiary)
+                byHoldingColumn
                     .padding(.horizontal, 24)
+                    .padding(.bottom, 24)
+#else
+                // Wide layout: donut on its own row, then By-Class and By-Holding as two
+                // top-aligned columns side-by-side (mirrors the Income section's
+                // upcoming/holdings row so neither list stretches edge-to-edge).
+                HStack {
+                    Spacer()
+                    allocationDonut
+                    Spacer()
+                }
+                .padding(.horizontal, 24).padding(.top, 18)
 
-                VStack(spacing: 14) {
-                    ForEach(viewModel.allocationByHolding) { slice in
-                        allocationBar(slice)
-                    }
+                HStack(alignment: .top, spacing: 20) {
+                    byClassColumn.frame(maxWidth: .infinity, alignment: .topLeading)
+                    byHoldingColumn.frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 24)
+#endif
+            }
+        }
+    }
+
+    private var byClassColumn: some View {
+        VStack(alignment: .leading, spacing: 10) {
+#if os(iOS)
+#else
+            Text(tr(.byClass))
+                .font(.system(size: 10, weight: .bold)).tracking(1.4)
+                .foregroundStyle(Theme.textTertiary)
+#endif
+            ForEach(viewModel.allocationByKind) { slice in
+                HStack(spacing: 8) {
+                    Circle().fill(kindColor(slice.id)).frame(width: 9, height: 9)
+                    Text(assetClassLabel(slice))
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Theme.textPrimary)
+                    Spacer()
+                    Text("\(slice.fraction * 100, specifier: "%.1f")%")
+                        .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+        }
+    }
+
+    private var byHoldingColumn: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(tr(.byHolding))
+                .font(.system(size: 10, weight: .bold)).tracking(1.4)
+                .foregroundStyle(Theme.textTertiary)
+
+            ForEach(viewModel.allocationByHolding) { slice in
+                allocationBar(slice)
             }
         }
     }
