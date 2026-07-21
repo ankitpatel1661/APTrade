@@ -37,7 +37,8 @@ enum class ScreenerMetric {
 }
 
 /** Direction of a threshold comparison. Both sides are STRICT — a value exactly at the
- *  threshold matches neither. */
+ *  threshold matches neither. Case names are PascalCase; the Swift twin uses lowerCamelCase
+ *  ("above"/"below"), and Task 4's persistence DTO must map explicitly, never `.name`. */
 enum class ScreenComparison { Above, Below }
 
 /** One metric/comparison/threshold predicate. [matches] is total: a row whose metric is
@@ -67,7 +68,10 @@ data class CustomScreen(
     val conditions: List<ScreenCondition>,
 )
 
-/** The 9 curated signal screens. Presets are code, not storage — identified by case. */
+/** The 9 curated signal screens. Presets are code, not storage — identified by case.
+ *  Case names are PascalCase (RsiOversold, etc.); the Swift twin's raw values are
+ *  lowerCamelCase ("rsiOversold", etc.). Task 4's persistence DTO must use EXPLICIT
+ *  string mapping, never `.name`, to stay wire-compatible with the Swift/macOS side. */
 enum class PresetScreen {
     RsiOversold, RsiOverbought, MacdBullishCross, MacdBearishCross,
     GoldenCross, DeathCross, BollingerSqueeze, Near52wHigh, Near52wLow;
