@@ -20,7 +20,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /** Sortable columns for the screener results table.
@@ -100,6 +103,21 @@ data class ScreenerUiState(
  * as `Dispatchers.Main`) and call `runCurrent()` to deterministically drain those hops — see
  * `ScreenerViewModelTest`'s harness note.
  *
+ * APPLY-THEN-PERSIST ORDERING (M9.3 Task 2, hardening): that same IO hop is exactly what
+ * desktop's fully-synchronous [saveScreen]/[deleteScreen] bodies never have to worry about —
+ * there, capturing `_state.value` at the top of the method and computing the mutation from it
+ * is safe because nothing suspends between the capture and the terminal `_state.update`. Here
+ * a suspension point (`withContext(ioDispatcher)`) sits in between, so two calls issued in the
+ * same tick would each capture the SAME pre-mutation state, compute their own updated list
+ * from it, and the second call's terminal `_state.update` would clobber the first call's
+ * change with a stale base (a classic lost update), with the store file ending up holding
+ * whichever write happened to resume last. [saveScreen] and [deleteScreen] therefore compute
+ * the mutation INSIDE `_state.update` (via `updateAndGet`), so it is applied atomically
+ * against whatever state is current AT APPLY TIME rather than at call-time; only the
+ * resulting, already-applied list is then persisted through [ioDispatcher].
+ * [screenStoreWriteMutex] additionally serializes the writes themselves (state application is
+ * never done under the lock) so two racing persists can't land on disk out of order.
+ *
  * Follows the house Android VM convention (see [com.aptrade.android.plans.PlansViewModel] /
  * [com.aptrade.android.portfolio.PortfolioViewModel]): a single [MutableStateFlow]-backed
  * [state], public methods are plain (non-suspend) event handlers that internally
@@ -146,6 +164,12 @@ class ScreenerViewModel(
      *  that window: [cancelScan] already nulled [scanJobToken], so the stale completion's
      *  token comparison fails and it correctly skips clearing the new job. */
     private var scanJobToken: Any? = null
+
+    /** Serializes [screenStore] writes issued by [saveScreen]/[deleteScreen] — see this
+     *  class's "APPLY-THEN-PERSIST ORDERING" doc. Guards ONLY the write call itself; the
+     *  state mutation that decides what gets written always happens first, synchronously,
+     *  inside `_state.update` — this lock never wraps state application. */
+    private val screenStoreWriteMutex = Mutex()
 
     init {
         // See this class's "DIVERGENCE — STRICTMODE-SAFE I/O" doc: desktop's `init` loads
@@ -315,32 +339,36 @@ class ScreenerViewModel(
      * didn't already contain) auto-selects it, so a user who just built a screen sees its
      * results without an extra tap. Editing some OTHER, non-active screen leaves
      * `selection` untouched in both cases.
+     *
+     * APPLY-THEN-PERSIST (see class doc): the whole insert-or-replace/re-sync computation
+     * runs INSIDE `_state.update`, against whatever state is current at apply time — never
+     * against a `current` captured before the [ioDispatcher] hop below. Only the exact list
+     * that got applied is then persisted, under [screenStoreWriteMutex] so a racing
+     * [deleteScreen]/[saveScreen] write can't land out of order on disk.
      */
     fun saveScreen(screen: CustomScreen) {
         viewModelScope.launch {
-            val current = _state.value
-            val wasNew = current.savedScreens.none { it.id == screen.id }
-            val wasActiveSelection = (current.selection as? ScreenSelection.Custom)?.screen?.id == screen.id
+            val updated = _state.updateAndGet { current ->
+                val wasNew = current.savedScreens.none { it.id == screen.id }
+                val wasActiveSelection = (current.selection as? ScreenSelection.Custom)?.screen?.id == screen.id
 
-            val updatedScreens = if (current.savedScreens.any { it.id == screen.id }) {
-                current.savedScreens.map { if (it.id == screen.id) screen else it }
-            } else {
-                current.savedScreens + screen
-            }
-            withContext(ioDispatcher) { screenStore.save(updatedScreens) }
-
-            val newSelection: ScreenSelection = if (wasNew || wasActiveSelection) {
-                ScreenSelection.Custom(screen)
-            } else {
-                current.selection
-            }
-            _state.update {
-                it.copy(
+                val updatedScreens = if (current.savedScreens.any { it.id == screen.id }) {
+                    current.savedScreens.map { if (it.id == screen.id) screen else it }
+                } else {
+                    current.savedScreens + screen
+                }
+                val newSelection: ScreenSelection = if (wasNew || wasActiveSelection) {
+                    ScreenSelection.Custom(screen)
+                } else {
+                    current.selection
+                }
+                current.copy(
                     savedScreens = updatedScreens,
                     selection = newSelection,
-                    results = computeResults(it.snapshot, newSelection, it.sortColumn, it.sortAscending),
+                    results = computeResults(current.snapshot, newSelection, current.sortColumn, current.sortAscending),
                 )
             }
+            persistScreens(updated.savedScreens)
         }
     }
 
@@ -348,27 +376,39 @@ class ScreenerViewModel(
      *  screen was the active selection — falls back to the default preset. Leaving
      *  `selection` pointed at a [ScreenSelection.Custom] screen no longer present in
      *  `savedScreens` would strand `results` on a screen with no corresponding chip left to
-     *  show it was ever active. */
+     *  show it was ever active.
+     *
+     *  APPLY-THEN-PERSIST (see class doc): the removal AND the selection re-sync both happen
+     *  INSIDE the same `_state.update`, against whatever state is current at apply time; only
+     *  the resulting list is then persisted, under [screenStoreWriteMutex]. */
     fun deleteScreen(id: String) {
         viewModelScope.launch {
-            val current = _state.value
-            val wasActiveSelection = (current.selection as? ScreenSelection.Custom)?.screen?.id == id
-
-            val updatedScreens = current.savedScreens.filterNot { it.id == id }
-            withContext(ioDispatcher) { screenStore.save(updatedScreens) }
-
-            val newSelection: ScreenSelection = if (wasActiveSelection) {
-                ScreenSelection.Preset(PresetScreen.RsiOversold)
-            } else {
-                current.selection
-            }
-            _state.update {
-                it.copy(
+            val updated = _state.updateAndGet { current ->
+                val wasActiveSelection = (current.selection as? ScreenSelection.Custom)?.screen?.id == id
+                val updatedScreens = current.savedScreens.filterNot { it.id == id }
+                val newSelection: ScreenSelection = if (wasActiveSelection) {
+                    ScreenSelection.Preset(PresetScreen.RsiOversold)
+                } else {
+                    current.selection
+                }
+                current.copy(
                     savedScreens = updatedScreens,
                     selection = newSelection,
-                    results = computeResults(it.snapshot, newSelection, it.sortColumn, it.sortAscending),
+                    results = computeResults(current.snapshot, newSelection, current.sortColumn, current.sortAscending),
                 )
             }
+            persistScreens(updated.savedScreens)
+        }
+    }
+
+    /** The single write path for [screenStore], shared by [saveScreen]/[deleteScreen]: hops
+     *  to [ioDispatcher] (StrictMode-safe — see class doc) and serializes the actual disk
+     *  write under [screenStoreWriteMutex] so two racing calls can't complete out of order.
+     *  Takes the already-applied list (from `_state.updateAndGet`'s result) — never
+     *  recomputes or re-reads state. */
+    private suspend fun persistScreens(screens: List<CustomScreen>) {
+        screenStoreWriteMutex.withLock {
+            withContext(ioDispatcher) { screenStore.save(screens) }
         }
     }
 

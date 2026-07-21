@@ -34,9 +34,12 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** Android twin of desktopApp/src/test/kotlin/com/aptrade/desktop/screener/ScreenerViewModelTest.kt,
- *  transcribed near-verbatim (fakes, fixtures, and all 23 test names — 22 transcribed from the
- *  Swift original via the desktop Kotlin twin, plus the desktop twin's own extra Kotlin-only
- *  test (23) covering `ScreenerScanAborted` -> `Failed`).
+ *  transcribed near-verbatim (fakes, fixtures, and 23 of its 24 test names — 22 transcribed
+ *  from the Swift original via the desktop Kotlin twin, plus the desktop twin's own extra
+ *  Kotlin-only test (23) covering `ScreenerScanAborted` -> `Failed`). Test 24,
+ *  `saveScreenTwoMutationsInSameTickBothPersistNoLostUpdate`, is Android-only and pins the
+ *  M9.3 Task 2 apply-then-persist hardening — see that test's own comment and
+ *  [ScreenerViewModel]'s "APPLY-THEN-PERSIST ORDERING" class doc.
  *
  *  [ScreenerViewModel] is an androidx ViewModel using `viewModelScope`
  *  (Dispatchers.Main.immediate), mirroring [com.aptrade.android.plans.PlansViewModelTest]'s
@@ -581,6 +584,46 @@ class ScreenerViewModelTest {
         runCurrent()
 
         assertEquals(ScreenSelection.Custom(active), viewModel.state.value.selection)
+    }
+
+    // MARK: (h, Android-only) apply-then-persist hardening -- pins the M9.3 Task 2
+    // lost-update fix for the IO-hop race in saveScreen/deleteScreen. NOT transcribed from
+    // the desktop twin, which has no suspension between capturing state and persisting it
+    // and so cannot exhibit this race at all -- see ScreenerViewModel's "APPLY-THEN-PERSIST
+    // ORDERING" class doc.
+    //
+    // Pre-fix, saveScreen captured `current = _state.value` at the very top of the launched
+    // coroutine, computed `updatedScreens` from that stale snapshot, suspended at
+    // `withContext(ioDispatcher)`, and only THEN applied `_state.update` using the
+    // pre-capture list. Issuing saveScreen(screenA) then saveScreen(screenB) in the same
+    // tick (before any runCurrent()) meant both coroutines captured the SAME empty
+    // `savedScreens`, each computed its own single-screen list, and B's terminal
+    // `_state.update` (using its stale list) clobbered A's already-applied change --
+    // `state.savedScreens` and the persisted store list would end up holding ONLY screenB.
+    @Test
+    fun saveScreenTwoMutationsInSameTickBothPersistNoLostUpdate() = runTest(dispatcher.scheduler) {
+        val screenStore = MemoryScreenStore()
+        val viewModel = vm(screenStore = screenStore)
+        runCurrent() // let the init-time store loads land
+
+        val screenA = CustomScreen(id = "a", name = "A", conditions = emptyList())
+        val screenB = CustomScreen(id = "b", name = "B", conditions = emptyList())
+        // Both calls issued in the same tick, before any runCurrent() drains either one's
+        // IO hop -- this is exactly the racing-mutation window the fix closes.
+        viewModel.saveScreen(screenA)
+        viewModel.saveScreen(screenB)
+        runCurrent()
+
+        assertEquals(
+            setOf("a", "b"),
+            viewModel.state.value.savedScreens.map { it.id }.toSet(),
+            "neither save may clobber the other in state -- both screens must survive",
+        )
+        assertEquals(
+            setOf("a", "b"),
+            screenStore.screens.map { it.id }.toSet(),
+            "the persisted store list must also retain both screens, not just whichever write resumed last",
+        )
     }
 
     // MARK: (i) matchCount live against the current snapshot
