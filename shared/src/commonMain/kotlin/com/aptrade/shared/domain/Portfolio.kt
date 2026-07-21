@@ -64,7 +64,7 @@ data class Portfolio(
      *  a cash event, not a trade. Pure. Transcribed from
      *  `Sources/APTradeDomain/Portfolio.swift:receivingDividend`. */
     fun receivingDividend(
-        id: String,
+        id: String = generateTradeId(),
         symbol: String,
         amountPerShare: Money,
         shares: BigDecimal,
