@@ -148,7 +148,11 @@ class DesktopMarketActivityCoordinator(
      * (its launch catch-up and the day's first tick both call `processDueDividends`, relying
      * on the engine's own per-event ledger dedup to make the second call a cheap no-op);
      * Kotlin additionally advances the day marker here to skip the redundant network
-     * round-trip entirely.
+     * round-trip entirely. Trade-off: an event Yahoo publishes between launch and market open
+     * credits same-day on Swift (its unguarded second call still re-sweeps and picks it up on
+     * the open tick), but only on the next trading day or next launch here (≤1 trading day of
+     * added latency; the engine's own dedup still keeps the eventual credit correct) — so this
+     * marker should not be "fixed" away without understanding that Swift difference.
      */
     private suspend fun runDividendCatchUp() {
         notifyDividendsDue()

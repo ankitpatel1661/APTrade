@@ -115,13 +115,15 @@ sealed class DividendOutcome {
  *    rounding ulp can never overspend the dividend (or trip [com.aptrade.shared.domain.TradeError.InsufficientFunds]).
  * 3. A position that vanished between the snapshot and the in-lock reload credits as CASH,
  *    never a fabricated `Asset(kind = Stock)` DRIP buy (Swift's `?? Asset(...)` fallback).
- * 4. [isDripEnabled] is `suspend`, unlike Swift's synchronous equivalent (its `SettingsStore`
- *    is `UserDefaults`-backed, so reading a toggle never needs to suspend). Kotlin's real
- *    settings source (`FileSettingsStore.load()`) is `suspend` (file I/O), and this engine is
- *    already suspend end-to-end, so a suspend closure is the idiomatic equivalent here —
- *    semantics are unchanged either way: the toggle is read fresh at processing time (once per
- *    [process] call to decide whether to fetch closes at all, then again per event inside
- *    [credit]), never captured once at construction time.
+ *
+ * Recorded divergence: suspend isDripEnabled (Swift's `SettingsStore` is sync `UserDefaults`;
+ * Kotlin's store is suspend IO). [isDripEnabled] is `suspend`, unlike Swift's synchronous
+ * equivalent (its `SettingsStore` is `UserDefaults`-backed, so reading a toggle never needs to
+ * suspend). Kotlin's real settings source (`FileSettingsStore.load()`) is `suspend` (file I/O),
+ * and this engine is already suspend end-to-end, so a suspend closure is the idiomatic
+ * equivalent here — semantics are unchanged either way: the toggle is read fresh at processing
+ * time (once per [process] call to decide whether to fetch closes at all, then again per event
+ * inside [credit]), never captured once at construction time.
  */
 class ProcessDueDividends(
     private val portfolioStore: PortfolioStore,

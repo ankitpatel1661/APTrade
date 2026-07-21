@@ -86,6 +86,8 @@ class PortfolioExportTest {
             "Holdings Value,9100",
             "Day Change,50",
             "Unrealized PnL,100",
+            "Dividends Received (YTD),0",
+            "Projected Annual Income,0",
         ).joinToString("\n")
 
         assertEquals(expected, export.renderCsv())

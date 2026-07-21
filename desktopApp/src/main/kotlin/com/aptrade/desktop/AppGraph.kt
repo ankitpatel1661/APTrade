@@ -147,11 +147,11 @@ class AppGraph(
     // Dividend crediting (M8.2 Task 10). Shares the SAME portfolioMutex as every other
     // mutating portfolio use case above (BuyAsset's co-holder doc contract) — the engine
     // read-modify-writes portfolioStore just like a buy/sell/contribution does, so one shared
-    // lock is what makes them all mutually exclusive. `isDripEnabled` is `suspend` (carry-note
-    // 4 on `ProcessDueDividends` — Kotlin's `FileSettingsStore.load()` is real file I/O, unlike
-    // Swift's synchronous UserDefaults-backed equivalent) and reads the live `dripEnabled`
-    // toggle fresh on every call — never captured once at construction time — since the user
-    // can flip it at any point during a run.
+    // lock is what makes them all mutually exclusive. `isDripEnabled` is `suspend` (recorded
+    // divergence: suspend isDripEnabled on `ProcessDueDividends` — Swift's `SettingsStore` is
+    // sync `UserDefaults`; Kotlin's store is suspend IO, i.e. `FileSettingsStore.load()` is real
+    // file I/O) and reads the live `dripEnabled` toggle fresh on every call — never captured
+    // once at construction time — since the user can flip it at any point during a run.
     val processDueDividends = ProcessDueDividends(
         portfolioStore = portfolioStore,
         market = repository,

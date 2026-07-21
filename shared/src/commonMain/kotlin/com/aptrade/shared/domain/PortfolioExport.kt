@@ -168,6 +168,8 @@ data class PortfolioExport(
 //   Holdings Value,<holdingsValue>
 //   Day Change,<dayChange>
 //   Unrealized PnL,<unrealizedPnL>
+//   Dividends Received (YTD),<dividendsReceivedYTD>
+//   Projected Annual Income,<projectedAnnualIncome>
 //
 // Amounts are plain decimal strings (`toStringExpanded()`), never locale-formatted.
 // Allocation is a plain decimal fraction (0..1) rendered with up to 6 fractional digits,
@@ -211,6 +213,8 @@ fun PortfolioExport.renderCsv(): String {
     lines += "Holdings Value,${holdingsValue.amount.toStringExpanded()}"
     lines += "Day Change,${dayChange.amount.toStringExpanded()}"
     lines += "Unrealized PnL,${unrealizedPnL.amount.toStringExpanded()}"
+    lines += "Dividends Received (YTD),${dividendsReceivedYTD.toStringExpanded()}"
+    lines += "Projected Annual Income,${projectedAnnualIncome.toStringExpanded()}"
     return lines.joinToString("\n")
 }
 

@@ -72,11 +72,11 @@ internal fun formatOrderFillBody(
 ): String {
     // Dividend never reaches an order-fill notification today (paper trades only fire Buy/
     // Sell fills) — the Dividend branch is minimal neutral staging so this stays exhaustive.
-    // Real handling lands with the coordinator task.
+    // M8.3 owns the real dividend notification flow.
     val verb = when (side) {
         TradeSide.Buy -> "Bought"
         TradeSide.Sell -> "Sold"
-        TradeSide.Dividend -> "Bought"
+        TradeSide.Dividend -> "Dividend"
     }
     return "$verb $quantityText ${symbol.uppercase()} for $amountFormatted"
 }
