@@ -35,6 +35,7 @@ import com.aptrade.desktop.news.NewsViewModel
 import com.aptrade.desktop.portfolio.PortfolioPane
 import com.aptrade.desktop.portfolio.PortfolioViewModel
 import com.aptrade.desktop.portfolio.TradeDialog
+import com.aptrade.desktop.screener.ScreenerPane
 import com.aptrade.shared.application.ContributionOutcome
 import com.aptrade.shared.application.DividendOutcome
 import com.aptrade.desktop.infra.exportFileName
@@ -557,6 +558,7 @@ private fun AppRoot(
                     onToggleBookmark = newsViewModel::toggleBookmark,
                 )
                 AppTab.Calendar -> CalendarPane(calendarViewModel)
+                AppTab.Screener -> ScreenerPane()
             }
         }
 
