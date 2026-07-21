@@ -18,17 +18,26 @@ public struct ScreenerSnapshotRow: Equatable, Codable, Sendable, Identifiable {
     /// (close − sma50)/sma50 × 100
     public let pctVsSma50: Double?
     public let pctVsSma200: Double?
-    /// (close − lower)/(upper − lower)
+    /// (close − lower)/(upper − lower). nil when upper == lower (zero-variance/flat-price
+    /// window) — the division would be 0/0, so this degrades to nil rather than NaN.
     public let bollingerPercentB: Double?
-    /// (upper − lower)/middle
+    /// (upper − lower)/middle. On a flat-price window upper == lower, so this is 0.0 exactly
+    /// (a well-defined zero, not nil) — bandwidth of 0 correctly says "no band width."
     public let bollingerBandwidth: Double?
+    /// Max/min of the highs/lows across *whatever candles the caller passed in* — ScreenerMath
+    /// does no date filtering of its own. The caller is responsible for supplying ~1 year of
+    /// daily candles; if it passes more or less, these silently reflect that different window
+    /// rather than a true rolling 52-week range.
     public let week52High: Double?
     public let week52Low: Double?
     /// (high − close)/high × 100, ≥ 0
     public let pctTo52wHigh: Double?
     /// (close − low)/low × 100, ≥ 0
     public let pctTo52wLow: Double?
-    /// today ÷ 20-day average volume (nil when avg 0)
+    /// today ÷ mean(last 20 daily volumes). The 20-day window is INCLUSIVE of today's own
+    /// volume (`volumes.suffix(20)`, the trailing window ending today) — chosen deliberately;
+    /// preserve this convention in any transcription (e.g. the Kotlin port), since inclusive
+    /// vs. exclusive materially changes the value. nil when that average is 0.
     public let relativeVolume: Double?
     /// histogram ≤ 0 yesterday, > 0 today
     public let macdCrossedUp: Bool
@@ -135,10 +144,13 @@ public enum ScreenerMath {
         let middle = bands.middle.last ?? nil
         let lower = bands.lower.last ?? nil
         let bollingerPercentB: Double? = {
+            // u == l on a flat-price window (zero variance): (close-l)/(u-l) would be 0/0 → nil.
             guard let u = upper, let l = lower, u != l else { return nil }
             return (close - l) / (u - l)
         }()
         let bollingerBandwidth: Double? = {
+            // u == l on a flat-price window collapses this to 0.0/m == 0.0 (a real, defined
+            // zero-width band), not nil — only missing inputs (nil bands) yield nil here.
             guard let u = upper, let l = lower, let m = middle, m != 0 else { return nil }
             return (u - l) / m
         }()
@@ -149,6 +161,11 @@ public enum ScreenerMath {
         let pctTo52wLow = week52Low.flatMap { $0 != 0 ? ((close - $0) / $0) * 100 : nil }
 
         let relativeVolume: Double? = {
+            // INCLUSIVE 20-day window: `suffix(20)` is the trailing window ending at (and
+            // including) today, so today's own volume is counted in both the numerator and
+            // the average it's divided by. This is deliberate, not incidental — do not change
+            // to `dropLast().suffix(20)` (exclusive) without updating every consumer/port,
+            // since inclusive vs. exclusive materially changes the resulting ratio.
             let window = volumes.suffix(20)
             guard !window.isEmpty else { return nil }
             let average = window.reduce(0, +) / Double(window.count)

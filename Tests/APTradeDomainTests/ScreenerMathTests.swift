@@ -236,6 +236,22 @@ final class ScreenerMathTests: XCTestCase {
         XCTAssertNil(row)
     }
 
+    // MARK: - Bonus: flat-price Bollinger (reviewer-requested, not one of the 7 lettered scenarios)
+
+    /// 20 bars, all closes == 100 (zero variance). middle = 100, stddev = 0, so upper == lower
+    /// == 100. bollingerPercentB's guard (`u != l`) trips → nil (avoids the 0/0 that would
+    /// otherwise produce NaN). bollingerBandwidth has no such guard against a *zero* result —
+    /// only against nil inputs — so (upper − lower)/middle = 0/100 = 0.0 exactly: a real,
+    /// well-defined "no band width" answer, not a degraded/missing value.
+    func test_flatPriceSeries_bollingerPercentBNil_bandwidthZero() {
+        let closes = Array(repeating: 100.0, count: 20)
+        guard let row = ScreenerMath.snapshot(symbol: "FLAT", name: "Flat Co", candles: makeCandles(closes: closes)) else {
+            return XCTFail("expected a row")
+        }
+        XCTAssertNil(row.bollingerPercentB)
+        XCTAssertEqual(row.bollingerBandwidth!, 0, accuracy: 1e-9)
+    }
+
     // MARK: - Bonus: Codable round-trip (not one of the 7 lettered scenarios, cheap safety net)
 
     func test_codableRoundTrip_rowAndSnapshot() throws {
