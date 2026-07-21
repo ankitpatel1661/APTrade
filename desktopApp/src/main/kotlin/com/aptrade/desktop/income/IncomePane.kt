@@ -44,6 +44,7 @@ import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.designkit.InterFamily
 import com.aptrade.desktop.designkit.formatMoney
 import com.aptrade.desktop.designkit.formatPercent
+import com.aptrade.desktop.designkit.formatShares
 import com.aptrade.desktop.income.State as IncomeState
 import com.aptrade.desktop.l10n.tr
 import com.aptrade.shared.l10n.L10n
@@ -357,7 +358,7 @@ private fun HoldingRowItem(row: HoldingRow) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(row.symbol, style = TextStyle(fontFamily = InterFamily, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DK.textPrimary))
                 Text(
-                    row.shares.toStringExpanded(),
+                    formatShares(row.shares),
                     style = TextStyle(fontFamily = InterFamily, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = DK.textTertiary, fontFeatureSettings = "tnum"),
                 )
             }
@@ -426,7 +427,7 @@ private fun HistoryRowItem(entry: HistoryEntry) {
                     style = TextStyle(fontFamily = InterFamily, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DK.textPrimary, fontFeatureSettings = "tnum"),
                 )
                 Text(
-                    "${entry.shares.toStringExpanded()} @ ${formatMoney(entry.amountPerShare.amountText)}",
+                    "${formatShares(entry.shares)} @ ${formatMoney(entry.amountPerShare.amountText)}",
                     style = TextStyle(fontFamily = InterFamily, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = DK.textSecondary, fontFeatureSettings = "tnum"),
                 )
             }
