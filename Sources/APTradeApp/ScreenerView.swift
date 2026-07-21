@@ -152,13 +152,15 @@ struct ScreenerView: View {
     var switcher: AnyView? = nil
     var onOpenSearch: (() -> Void)? = nil
     var onOpenAccount: (() -> Void)? = nil
-    /// Seam for Task 8's custom-screen builder sheet — presenting it is that task's job;
-    /// this tab only needs somewhere to route the "+" chip's tap. `nil` (the default,
-    /// until Task 8 supplies a real closure) disables the chip rather than leaving it
-    /// tappable with no effect — a caller-supplied closure enables it automatically.
-    var onNewScreen: (() -> Void)? = nil
 
     @State private var viewModel = CompositionRoot.makeScreenerViewModel()
+    /// Drives `ScreenBuilderSheet`'s presentation. `builderTarget` is `nil` for a
+    /// brand-new screen (the "+" chip) and set to the screen being edited when opened
+    /// from a saved-screen chip's context menu — presentation is owned entirely by this
+    /// view (not threaded up to `RootView`), matching how `PlansSection` owns its own
+    /// wizard sheet state locally.
+    @State private var showBuilder = false
+    @State private var builderTarget: CustomScreen?
     /// Independent of `viewModel` — the Screener tab reads market data but writes to the
     /// SAME watchlist store every other tab shares, so an add-from-screener row shows up
     /// immediately back on the Watchlist tab (and, symmetrically, a symbol already on the
@@ -183,6 +185,17 @@ struct ScreenerView: View {
             }
             .navigationDestination(item: $selectedAsset) { asset in
                 AssetDetailView(asset: asset)
+            }
+            .sheet(isPresented: $showBuilder) {
+                ScreenBuilderSheet(
+                    existingScreen: builderTarget,
+                    matchCount: { viewModel.matchCount(for: $0) },
+                    onSave: { viewModel.saveScreen($0) },
+                    onDelete: builderTarget.map { screen in { viewModel.deleteScreen(id: screen.id) } }
+                )
+                #if os(iOS)
+                .presentationBackground(Theme.surface)
+                #endif
             }
             #if os(iOS)
             .iosTopChrome(onSearch: { onOpenSearch?() }, onAccount: { onOpenAccount?() })
@@ -234,6 +247,16 @@ struct ScreenerView: View {
                 chip(title: screen.name, selected: viewModel.selection == .custom(screen)) {
                     viewModel.select(.custom(screen))
                 }
+                // Long-press (iOS) / right-click (macOS) → edit, mirroring
+                // `WatchlistRow`'s `.contextMenu` — the only existing long-press/
+                // secondary-click affordance in the app. Deletion itself lives inside
+                // the builder sheet (with its own destructive confirm), not here.
+                .contextMenu {
+                    Button(tr(.screenerEditScreen), systemImage: "pencil") {
+                        builderTarget = screen
+                        showBuilder = true
+                    }
+                }
             }
             newScreenChip
         }
@@ -258,11 +281,10 @@ struct ScreenerView: View {
         .buttonStyle(.plain)
     }
 
-    /// Task 8 wires the actual builder sheet onto `onNewScreen`; until then the chip is
-    /// disabled and dimmed rather than tappable-but-inert — never a dead button.
     private var newScreenChip: some View {
         Button {
-            onNewScreen?()
+            builderTarget = nil
+            showBuilder = true
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 12, weight: .bold))
@@ -272,8 +294,6 @@ struct ScreenerView: View {
                 .overlay(Circle().stroke(Theme.gold.opacity(0.4), lineWidth: 1))
         }
         .buttonStyle(.plain)
-        .disabled(onNewScreen == nil)
-        .opacity(onNewScreen == nil ? 0.4 : 1)
         .help(tr(.screenerNewScreen))
     }
 

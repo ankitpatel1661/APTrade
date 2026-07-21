@@ -402,6 +402,7 @@ enum L10n {
         case metricVsSma200 = "vs SMA 200"
         // Builder
         case screenerNewScreen = "New Screen"
+        case screenerEditScreen = "Edit Screen"
         case screenerScreenName = "Screen Name"
         case screenerAddCondition = "Add Condition"
         case screenerAbove = "Above"
@@ -1256,6 +1257,8 @@ enum L10n {
         // Builder
         .screenerNewScreen: [.english: "New Screen", .german: "Neuer Filter",
                              .italian: "Nuovo filtro", .spanish: "Nuevo filtro"],
+        .screenerEditScreen: [.english: "Edit Screen", .german: "Filter bearbeiten",
+                              .italian: "Modifica filtro", .spanish: "Editar filtro"],
         .screenerScreenName: [.english: "Screen Name", .german: "Filtername",
                               .italian: "Nome del filtro", .spanish: "Nombre del filtro"],
         .screenerAddCondition: [.english: "Add Condition", .german: "Bedingung hinzufügen",
