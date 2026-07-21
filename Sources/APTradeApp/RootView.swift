@@ -147,13 +147,21 @@ public struct RootView: View {
                     .padding(.horizontal, 24)
                     .padding(.top, 18)
                     .padding(.bottom, 4)
+                    // ONE fixed, centered switcher for all five tabs — hoisted out of the
+                    // per-view headers (each embedded it beside different-width siblings,
+                    // so its x-position shifted per tab; user-reported). Views receive no
+                    // switcher and render their headers without it, exactly like iOS.
+                    switcher
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 8)
+                        .padding(.bottom, 4)
                     Group {
                         switch tab {
-                        case .watchlist: WatchlistView(switcher: AnyView(switcher))
-                        case .portfolio: PortfolioView(switcher: AnyView(switcher))
-                        case .news: NewsView(switcher: AnyView(switcher))
-                        case .calendar: CalendarView(switcher: AnyView(switcher))
-                        case .screener: ScreenerView(switcher: AnyView(switcher))
+                        case .watchlist: WatchlistView()
+                        case .portfolio: PortfolioView()
+                        case .news: NewsView()
+                        case .calendar: CalendarView()
+                        case .screener: ScreenerView()
                         }
                     }
                 }
