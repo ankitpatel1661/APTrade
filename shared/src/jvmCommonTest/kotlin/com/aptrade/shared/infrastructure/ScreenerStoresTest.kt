@@ -239,4 +239,27 @@ class ScreenerStoresTest {
 
         assertEquals(loaded, store.load())
     }
+
+    // (all-or-nothing, house precedent from FilePieStore): a well-formed JSON array whose
+    // 2nd of 3 screens has an unrecognized metric raw value discards the WHOLE load, not
+    // just that one screen -- and never touches the file, since load() never writes.
+    @Test
+    fun screenStore_unrecognizedMetricMidList_discardsWholeLoad_withoutTouchingFile() {
+        val file = tempDir().resolve("screens.json")
+        file.writeText(
+            """
+            [
+                {"id": "screen-1", "name": "Fine", "conditions": [{"metric": "rsi14", "comparison": "below", "threshold": 30.0}]},
+                {"id": "screen-2", "name": "Bad Metric", "conditions": [{"metric": "notARealMetric", "comparison": "above", "threshold": 1.0}]},
+                {"id": "screen-3", "name": "Also Fine", "conditions": [{"metric": "price", "comparison": "above", "threshold": 100.0}]}
+            ]
+            """.trimIndent(),
+        )
+        val originalBytes = file.readBytes()
+
+        val loaded = FileScreenStore(file).load()
+
+        assertEquals(emptyList(), loaded)
+        assertContentEquals(originalBytes, file.readBytes())
+    }
 }
