@@ -23,6 +23,12 @@ data class PortfolioExport(
     val holdingsValue: Money,
     val dayChange: Money,
     val unrealizedPnL: Money,
+    /** Sum of Dividend ledger transactions (quantity x price-per-share) whose date falls in
+     *  the current UTC calendar year as of `generatedAtEpochSeconds`. */
+    val dividendsReceivedYTD: BigDecimal = BigDecimal.ZERO,
+    /** Forward-looking annual dividend income from `DividendMath.projectedAnnualIncome`, or
+     *  zero when the caller had no dividend-events data to project from. */
+    val projectedAnnualIncome: BigDecimal = BigDecimal.ZERO,
     val holdings: List<Holding>,
 ) {
     data class Holding(
@@ -52,6 +58,7 @@ data class PortfolioExport(
             quotes: Map<String, Quote>,
             accountName: String,
             generatedAtEpochSeconds: Long,
+            projectedAnnualIncome: BigDecimal = BigDecimal.ZERO,
         ): PortfolioExport {
             val valuation = portfolio.valuation(quotes)
             val total = valuation.totalValue.amount
@@ -90,8 +97,56 @@ data class PortfolioExport(
                 holdingsValue = valuation.holdingsValue,
                 dayChange = valuation.dayChange,
                 unrealizedPnL = valuation.unrealizedPnL,
+                dividendsReceivedYTD = dividendsReceivedYTD(portfolio.transactions, generatedAtEpochSeconds),
+                projectedAnnualIncome = projectedAnnualIncome,
                 holdings = rows,
             )
+        }
+
+        /** Sum of Dividend transactions (quantity x price-per-share) dated within the same
+         *  UTC calendar year as [asOfEpochSeconds]. Pure ledger arithmetic — no quotes, no
+         *  networking. Mirrors `PortfolioExport.dividendsReceivedYTD` (Swift). */
+        private fun dividendsReceivedYTD(transactions: List<Transaction>, asOfEpochSeconds: Long): BigDecimal {
+            val currentYear = utcYear(asOfEpochSeconds)
+            var total = BigDecimal.ZERO
+            for (txn in transactions) {
+                if (txn.side != TradeSide.Dividend) continue
+                if (utcYear(txn.epochSeconds) != currentYear) continue
+                total += txn.quantity * txn.price.amount
+            }
+            return total
+        }
+
+        // --- UTC epoch-day civil-date math (private copy) ---------------------------------
+        // DividendMath.kt (shared/src/commonMain/kotlin/com/aptrade/shared/domain/
+        // DividendMath.kt) already implements this exact Hinnant civil-date algorithm,
+        // privately — but per that file's own doc, the house precedent is each type keeps
+        // its OWN private copy rather than widening visibility to share it. Only the minimal
+        // piece this file needs (UTC epoch-seconds -> epoch-day -> civil year) is reproduced
+        // here.
+
+        private const val SECONDS_PER_DAY = 86_400L
+
+        private fun utcYear(epochSeconds: Long): Long {
+            val epochDay = floorDiv(epochSeconds, SECONDS_PER_DAY)
+            return civilYearFromDays(epochDay)
+        }
+
+        private fun floorDiv(x: Long, y: Long): Long {
+            val q = x / y
+            return if ((x xor y) < 0 && q * y != x) q - 1 else q
+        }
+
+        private fun civilYearFromDays(z0: Long): Long {
+            val z = z0 + 719_468L
+            val era = floorDiv(z, 146_097L)
+            val doe = z - era * 146_097L // [0, 146096]
+            val yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365 // [0, 399]
+            val y = yoe + era * 400
+            val doy = doe - (365 * yoe + yoe / 4 - yoe / 100) // [0, 365]
+            val mp = (5 * doy + 2) / 153 // [0, 11]
+            val m = (if (mp < 10) mp + 3 else mp - 9).toInt() // [1, 12]
+            return if (m <= 2) y + 1 else y
         }
     }
 }
@@ -113,6 +168,8 @@ data class PortfolioExport(
 //   Holdings Value,<holdingsValue>
 //   Day Change,<dayChange>
 //   Unrealized PnL,<unrealizedPnL>
+//   Dividends Received (YTD),<dividendsReceivedYTD>
+//   Projected Annual Income,<projectedAnnualIncome>
 //
 // Amounts are plain decimal strings (`toStringExpanded()`), never locale-formatted.
 // Allocation is a plain decimal fraction (0..1) rendered with up to 6 fractional digits,
@@ -156,13 +213,18 @@ fun PortfolioExport.renderCsv(): String {
     lines += "Holdings Value,${holdingsValue.amount.toStringExpanded()}"
     lines += "Day Change,${dayChange.amount.toStringExpanded()}"
     lines += "Unrealized PnL,${unrealizedPnL.amount.toStringExpanded()}"
+    lines += "Dividends Received (YTD),${dividendsReceivedYTD.toStringExpanded()}"
+    lines += "Projected Annual Income,${projectedAnnualIncome.toStringExpanded()}"
     return lines.joinToString("\n")
 }
 
 // MARK: - JSON rendering
 
+/** `internal` (not `private`) so a hand-written legacy-export fixture (a pre-M8.2 JSON blob,
+ *  missing both income keys) can be decoded directly in `PortfolioExportTest` to verify the
+ *  two new fields fall back to their `"0"` defaults rather than failing to decode. */
 @Serializable
-private data class PortfolioExportDto(
+internal data class PortfolioExportDto(
     val generatedAtEpochSeconds: Long,
     val accountName: String,
     val currencyCode: String,
@@ -171,11 +233,13 @@ private data class PortfolioExportDto(
     val holdingsValue: String,
     val dayChange: String,
     val unrealizedPnL: String,
+    val dividendsReceivedYTD: String = "0",
+    val projectedAnnualIncome: String = "0",
     val holdings: List<HoldingDto>,
 )
 
 @Serializable
-private data class HoldingDto(
+internal data class HoldingDto(
     val symbol: String,
     val name: String,
     val kind: String,
@@ -202,6 +266,8 @@ fun PortfolioExport.renderJson(): String {
         holdingsValue = holdingsValue.amount.toStringExpanded(),
         dayChange = dayChange.amount.toStringExpanded(),
         unrealizedPnL = unrealizedPnL.amount.toStringExpanded(),
+        dividendsReceivedYTD = dividendsReceivedYTD.toStringExpanded(),
+        projectedAnnualIncome = projectedAnnualIncome.toStringExpanded(),
         holdings = holdings.map { holding ->
             HoldingDto(
                 symbol = holding.symbol,

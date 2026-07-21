@@ -39,14 +39,20 @@ import kotlin.test.assertTrue
  * holidays, earnings calendar, and session states, bringing the total to 249. Task 10 (M7.2 —
  * Investment Plans L10n) added 52 keys for the Plans (pies) feature UI, bringing the total to
  * 301. A Task 10 review fix wave then added the missing `Next` key (pie wizard's forward
- * action — dropped from the initial transcription), bringing the total to 302; the count below
- * tracks the Kotlin-only total going forward, not the Swift source count.
+ * action — dropped from the initial transcription), bringing the total to 302. M8.2 Task 5
+ * (the Kotlin port of the M8.1 dividend & income feature's L10n keys) added 26 more: the 20
+ * Task-8 income/asset-detail/settings keys, `settingsDividendNotifSubtitle` and
+ * `notifDividendBackfillBodyFmt` (added to the Swift catalog in later M8.1 fix commits), and
+ * `activityDividend` (the uppercase "DIVIDEND" transaction chip, transcribed here for the
+ * first time even though the Kotlin `TradeSide.Dividend` case predates this task) — bringing
+ * the total to 328; the count below tracks the Kotlin-only total going forward, not the Swift
+ * source count.
  */
 class L10nCatalogTest {
 
     @Test
-    fun `catalog has exactly 302 keys (205 macOS-transcribed + 12 desktop-only from Tasks 6-7 + 32 Kotlin-side additions + 52 Plans L10n from Task 10 + 1 Next key fix)`() {
-        assertEquals(302, L10n.Key.entries.size)
+    fun `catalog has exactly 328 keys (205 macOS-transcribed + 12 desktop-only from Tasks 6-7 + 32 Kotlin-side additions + 52 Plans L10n from Task 10 + 1 Next key fix + 26 dividend and income keys from the M8_2 Kotlin L10n port)`() {
+        assertEquals(328, L10n.Key.entries.size)
     }
 
     @Test

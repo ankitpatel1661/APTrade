@@ -34,6 +34,7 @@ data class Portfolio(
         epochSeconds: Long,
         id: String = generateTradeId(),
         pieId: String? = null,
+        isDrip: Boolean = false,
     ): Portfolio {
         if (quantity.isZero()) throw TradeError.InvalidQuantity
         val cost = price.amount * quantity
@@ -50,10 +51,34 @@ data class Portfolio(
             updated += Position(asset, quantity, price, Money(BigDecimal.ZERO, price.currencyCode))
         }
 
-        val txn = Transaction(id, asset.symbol, TradeSide.Buy, quantity, price, epochSeconds, pieId)
+        val txn = Transaction(id, asset.symbol, TradeSide.Buy, quantity, price, epochSeconds, pieId, isDrip)
         return Portfolio(
             cash = Money(cash.amount - cost, cash.currencyCode),
             positions = updated,
+            transactions = transactions + txn,
+        )
+    }
+
+    /** Credits a dividend payout: cash increases by `shares × amountPerShare` and a
+     *  `Dividend` transaction is appended. Positions and cost basis are untouched — this is
+     *  a cash event, not a trade. Pure. Transcribed from
+     *  `Sources/APTradeDomain/Portfolio.swift:receivingDividend`. */
+    fun receivingDividend(
+        id: String = generateTradeId(),
+        symbol: String,
+        amountPerShare: Money,
+        shares: BigDecimal,
+        exDateEpochSeconds: Long,
+    ): Portfolio {
+        if (shares <= BigDecimal.ZERO || amountPerShare.amount <= BigDecimal.ZERO) {
+            throw TradeError.InvalidQuantity
+        }
+        val credit = amountPerShare.amount * shares
+
+        val txn = Transaction(id, symbol, TradeSide.Dividend, shares, amountPerShare, exDateEpochSeconds)
+        return Portfolio(
+            cash = Money(cash.amount + credit, cash.currencyCode),
+            positions = positions,
             transactions = transactions + txn,
         )
     }

@@ -37,6 +37,10 @@ val Portfolio.realizedPnL: Money
                     realized += (transaction.price.amount - heldAvg) * tradeQty
                     quantity[symbol] = (quantity[symbol] ?: BigDecimal.ZERO) - tradeQty
                 }
+                TradeSide.Dividend -> {
+                    // Cash event only — does not affect quantity, cost basis, or realized
+                    // P&L. Matches Sources/APTradeDomain/PortfolioAnalytics.swift's `case .dividend: break`.
+                }
             }
         }
         return Money(realized, cash.currencyCode)

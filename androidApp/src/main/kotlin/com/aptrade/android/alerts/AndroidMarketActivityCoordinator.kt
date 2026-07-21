@@ -160,6 +160,11 @@ class AndroidMarketActivityCoordinator(
                     // of desktop's `ContributionCheckDue` handler (M7.2 Task 12).
                     runContributionCatchUpIfEnabled()
                 }
+                // No-op for now: the planner already fires this once per trading day
+                // (M8.2 Task 3), but wiring it to the dividend-processing engine and the
+                // notifier is M8.2 Task 10's job. Listed here only so the exhaustive `when`
+                // compiles. Direct port of desktop's identical placeholder branch.
+                ScheduledNotification.DividendCheckDue -> Unit
             }
         }
     }

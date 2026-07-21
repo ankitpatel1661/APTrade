@@ -363,4 +363,41 @@ class FileSettingsStoreTest {
         assertEquals(false, loaded.earningsReports)
         assertEquals(true, loaded.pieContributions)
     }
+
+    // --- Dividends & DRIP (M8.2 Task 3) ---
+
+    @Test
+    fun `dripEnabled defaults to false and dividendNotifications defaults to true`() = runTest {
+        val defaults = AppSettings()
+        assertEquals(false, defaults.dripEnabled)
+        assertEquals(true, defaults.dividendNotifications)
+    }
+
+    @Test
+    fun `round-trips dripEnabled true and dividendNotifications false`() = runTest {
+        val file = tempFile()
+        val store = FileSettingsStore(file)
+        val settings = AppSettings(dripEnabled = true, dividendNotifications = false)
+        store.save(settings)
+        assertEquals(settings, store.load())
+    }
+
+    @Test
+    fun `old file without dripEnabled or dividendNotifications keys loads fine with macOS-matching defaults`() = runTest {
+        // Back-compat pin (same family as pieContributions/earningsReports/isDarkMode/
+        // security/language tests above): a settings.json written before the dividend/DRIP
+        // fields existed has neither "dripEnabled" nor "dividendNotifications" keys. Lenient
+        // decode must still succeed and default them to false/true respectively rather than
+        // failing the whole-blob load. Hand-written legacy JSON literal -- no dividend keys
+        // present anywhere.
+        val file = tempFile()
+        file.writeText("""{"accent":"Sapphire","newsDigest":false,"earningsReports":false,"pieContributions":false}""")
+        val loaded = FileSettingsStore(file).load()
+        assertEquals(AccentTheme.Sapphire, loaded.accent)
+        assertEquals(false, loaded.newsDigest)
+        assertEquals(false, loaded.earningsReports)
+        assertEquals(false, loaded.pieContributions)
+        assertEquals(false, loaded.dripEnabled)
+        assertEquals(true, loaded.dividendNotifications)
+    }
 }

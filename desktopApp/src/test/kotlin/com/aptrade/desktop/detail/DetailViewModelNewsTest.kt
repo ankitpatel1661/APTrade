@@ -5,6 +5,7 @@ import com.aptrade.shared.application.BookmarkStore
 import com.aptrade.shared.application.EmptyEarningsRepository
 import com.aptrade.shared.application.FetchChartWindow
 import com.aptrade.shared.application.FetchCompanyNews
+import com.aptrade.shared.application.FetchDividendEvents
 import com.aptrade.shared.application.FetchEarningsCalendar
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketQuotes
@@ -71,6 +72,7 @@ private fun vm(
     // Not under test here (see DetailViewModelEarningsTest) — an always-empty fetch keeps
     // these news-focused tests unaffected by the Next-earnings load.
     fetchEarningsCalendar = FetchEarningsCalendar(EmptyEarningsRepository) { emptySet() },
+    fetchDividendEvents = FetchDividendEvents(repo),
     scope = scope,
     fetchCompanyNews = news?.let { FetchCompanyNews(it) },
     loadBookmarks = LoadBookmarks(store),

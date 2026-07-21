@@ -75,6 +75,13 @@ fun benchmarkTwinSeries(
                 val soldUnits = amount.divide(close, MONEY_MATH)
                 units -= minOf(units, soldUnits)
             }
+            // Units unchanged — a dividend is a cash credit, not a benchmark trade. No
+            // cash-side action is needed either: unlike the buy/sell replay above, [cash]
+            // here is the CURRENT portfolio cash (see class KDoc), which already reflects
+            // every historical dividend credit. Mirrors the Swift equity-curve
+            // reconstruction's exhaustive switch (PortfolioEquityCurve.swift's
+            // `case .dividend: break` on the quantity side).
+            TradeSide.Dividend -> Unit
         }
     }
 

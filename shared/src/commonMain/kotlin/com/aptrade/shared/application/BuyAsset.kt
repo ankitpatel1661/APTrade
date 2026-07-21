@@ -33,17 +33,19 @@ import kotlin.coroutines.cancellation.CancellationException
  *  against.
  *
  *  *** THIS IS THE SAME [portfolioMutex] INSTANCE `ContributeToPie`/`ExecuteDueContributions`/
- *  `RebalancePie`/`ReconcilePieLedgers`/`SavePie`/`DeletePie`/`ResetPortfolio` HOLD, TOO. ***
+ *  `RebalancePie`/`ReconcilePieLedgers`/`SavePie`/`DeletePie`/`ResetPortfolio`/
+ *  `ProcessDueDividends` HOLD, TOO. ***
  *  Every pie-mutating use case performs its own load->validate->save cycle against this SAME
  *  [PortfolioStore] and/or [PieStore] (contributions and rebalances buy/sell exactly like a
  *  manual trade, just tagged with a `pieId`; `SavePie`/`DeletePie`/`ReconcilePieLedgers` mutate
  *  the [PieStore] a contribution or rebalance also reads-modifies-writes; `ResetPortfolio`
- *  overwrites the whole [PortfolioStore] with a fresh starting portfolio) — so a manual
- *  buy/sell racing a pie mutation or a reset is the identical lost-update hazard this class's
- *  doc already describes for buy-vs-sell, just with more co-holders. `AppGraph` constructs
- *  exactly ONE `Mutex` and hands that SAME instance to [BuyAsset], [SellAsset],
+ *  overwrites the whole [PortfolioStore] with a fresh starting portfolio; `ProcessDueDividends`
+ *  credits dividend cash and DRIP buys into the [PortfolioStore]) — so a manual buy/sell racing
+ *  a pie mutation, a reset, or a dividend credit is the identical lost-update hazard this
+ *  class's doc already describes for buy-vs-sell, just with more co-holders. `AppGraph`
+ *  constructs exactly ONE `Mutex` and hands that SAME instance to [BuyAsset], [SellAsset],
  *  `ContributeToPie`, `ExecuteDueContributions`, `RebalancePie`, `ReconcilePieLedgers`,
- *  `SavePie`, `DeletePie`, and `ResetPortfolio` — see the shared commonTest
+ *  `SavePie`, `DeletePie`, `ResetPortfolio`, and `ProcessDueDividends` — see the shared commonTest
  *  `contributionRacingManualBuyThroughSharedMutexBothLandNoLostUpdate` (in
  *  `ContributeToPieTest`) and `savePieRacesMultiDayCatchUpThroughSharedMutexCannotInterleave
  *  InsideADaysCriticalSection` (in `ExecuteDueContributionsTest`), which prove this the same

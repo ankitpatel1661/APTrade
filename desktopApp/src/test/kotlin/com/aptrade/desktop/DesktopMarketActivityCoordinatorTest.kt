@@ -2,6 +2,7 @@ package com.aptrade.desktop
 
 import com.aptrade.desktop.infra.AppSettings
 import com.aptrade.shared.application.ContributionOutcome
+import com.aptrade.shared.application.DividendOutcome
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchWatchlist
 import com.aptrade.shared.application.MarketActivityPlanner
@@ -13,6 +14,7 @@ import com.aptrade.shared.application.WatchlistStore
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.EarningsEvent
 import com.aptrade.shared.domain.EarningsSession
+import com.aptrade.shared.domain.MarketCalendar
 import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.Pie
 import com.aptrade.shared.domain.PieSlice
@@ -74,6 +76,9 @@ class DesktopMarketActivityCoordinatorTest {
         fetchTodaysOwnEarnings: suspend () -> List<EarningsEvent> = { emptyList() },
         executeDueContributions: suspend (Long) -> List<PieRunResult> = { emptyList() },
         notifyPieContribution: suspend (ContributionOutcome) -> Unit = {},
+        processDueDividends: suspend (Long) -> List<DividendOutcome> = { emptyList() },
+        notifyDividendOutcome: suspend (DividendOutcome) -> Unit = {},
+        notifyDividendBackfillSummary: suspend (Int, Money) -> Unit = { _, _ -> },
         nowEpochSeconds: () -> Long,
         scope: kotlinx.coroutines.CoroutineScope,
     ): DesktopMarketActivityCoordinator {
@@ -88,10 +93,14 @@ class DesktopMarketActivityCoordinatorTest {
             fetchTodaysOwnEarnings = fetchTodaysOwnEarnings,
             executeDueContributions = executeDueContributions,
             notifyPieContribution = notifyPieContribution,
+            processDueDividends = processDueDividends,
+            notifyDividendOutcome = notifyDividendOutcome,
+            notifyDividendBackfillSummary = notifyDividendBackfillSummary,
             fetchWatchlist = FetchWatchlist(watchlistStore, emptyList()),
             fetchMarketQuotes = FetchMarketQuotes(repo),
             scope = scope,
             nowEpochSeconds = nowEpochSeconds,
+            calendar = MarketCalendar(),
         )
     }
 
@@ -112,7 +121,10 @@ class DesktopMarketActivityCoordinatorTest {
 
         assertEquals(listOf(true), statusEvents)
         assertEquals(com.aptrade.shared.domain.MarketStatus.OPEN, stateStore.stored.lastStatus)
-        assertEquals(1, stateStore.saveCallCount)
+        // 2, not 1: start()'s ungated dividend launch catch-up (M8.2 Task 10, carry-note 4)
+        // also persists `lastDividendDay` for today before the tick loop begins, on top of
+        // this tick's own save.
+        assertEquals(2, stateStore.saveCallCount)
     }
 
     @Test
@@ -216,7 +228,9 @@ class DesktopMarketActivityCoordinatorTest {
         coordinator.start(); runCurrent()
 
         assertEquals(listOf("Market data is still updating."), digests)
-        assertEquals(1, stateStore.saveCallCount)   // state still persisted despite the fetch failure
+        // 2, not 1: state still persisted despite the fetch failure, PLUS the ungated dividend
+        // launch catch-up's own save (M8.2 Task 10, carry-note 4) before the tick loop begins.
+        assertEquals(2, stateStore.saveCallCount)
     }
 
     @Test
@@ -288,7 +302,9 @@ class DesktopMarketActivityCoordinatorTest {
 
         coordinator.start(); runCurrent()
         assertTrue(notified.isEmpty())             // failure -> no earnings notification
-        assertEquals(1, stateStore.saveCallCount)  // tick completed, state persisted
+        // 2, not 1: tick completed, state persisted, PLUS the ungated dividend launch
+        // catch-up's own save (M8.2 Task 10, carry-note 4) before the tick loop begins.
+        assertEquals(2, stateStore.saveCallCount)
 
         now = mondayNineAmClosed + 24 * 3_600      // next day pre-open -> market closed
         advanceTimeBy(60_001); runCurrent()
@@ -393,7 +409,9 @@ class DesktopMarketActivityCoordinatorTest {
 
         assertEquals(2, catchUpCallCount)      // launch catch-up + the first tick's ContributionCheckDue
         assertEquals(listOf(outcome), notified) // only the first (due-work) call produced an outcome
-        assertEquals(1, stateStore.saveCallCount)
+        // 2, not 1: the tick's own save, PLUS the ungated dividend launch catch-up's own save
+        // (M8.2 Task 10, carry-note 4) before the tick loop begins.
+        assertEquals(2, stateStore.saveCallCount)
     }
 
     @Test
@@ -413,10 +431,199 @@ class DesktopMarketActivityCoordinatorTest {
         )
 
         coordinator.start(); runCurrent()
-        assertEquals(1, stateStore.saveCallCount)  // tick completed despite the catch-up failure
+        // 2, not 1: tick completed despite the catch-up failure, PLUS the ungated dividend
+        // launch catch-up's own save (M8.2 Task 10, carry-note 4) before the tick loop begins.
+        assertEquals(2, stateStore.saveCallCount)
 
         now = mondayNineAmClosed + 24 * 3_600      // next day pre-open -> market closed
         advanceTimeBy(60_001); runCurrent()
         assertEquals(listOf(false), statusEvents)  // loop survived: transition still delivered
+    }
+
+    // MARK: - Dividends (M8.2 Task 10)
+
+    @Test
+    fun launchCatchUpRunsDividendEngineUngated_evenWhenPieContributionsDisabled() = runTest {
+        // Brief-mandated relative structure: the dividend launch catch-up is UNGATED, unlike
+        // the contribution catch-up immediately above it in start() (which stays gated on
+        // `pieContributions`, per Global Constraints correction 6).
+        val stateStore = InMemorySchedulerStateStore(initial = SchedulerState(lastStatus = com.aptrade.shared.domain.MarketStatus.CLOSED))
+        var contributionCatchUpCallCount = 0
+        var dividendCatchUpCallCount = 0
+        val coordinator = coordinator(
+            stateStore = stateStore,
+            settings = AppSettings(
+                marketOpenClose = false, newsDigest = false,
+                pieContributions = false, dividendNotifications = true,
+            ),
+            executeDueContributions = { contributionCatchUpCallCount += 1; emptyList() },
+            processDueDividends = { dividendCatchUpCallCount += 1; emptyList() },
+            nowEpochSeconds = { mondayNineAmClosed },
+            scope = backgroundScope,
+        )
+
+        coordinator.start(); runCurrent()
+
+        assertEquals(0, contributionCatchUpCallCount)  // still gated on pieContributions
+        assertEquals(1, dividendCatchUpCallCount)       // ungated: runs regardless
+    }
+
+    @Test
+    fun launchCatchUpRunsDividendEngineAfterContributionCatchUp_preservesRelativeOrder() = runTest {
+        val stateStore = InMemorySchedulerStateStore(initial = SchedulerState(lastStatus = com.aptrade.shared.domain.MarketStatus.CLOSED))
+        val callOrder = mutableListOf<String>()
+        val coordinator = coordinator(
+            stateStore = stateStore,
+            settings = AppSettings(
+                marketOpenClose = false, newsDigest = false,
+                pieContributions = true, dividendNotifications = true,
+            ),
+            executeDueContributions = { callOrder += "contributions"; emptyList() },
+            processDueDividends = { callOrder += "dividends"; emptyList() },
+            nowEpochSeconds = { mondayNineAmClosed },
+            scope = backgroundScope,
+        )
+
+        coordinator.start(); runCurrent()
+
+        assertEquals(listOf("contributions", "dividends"), callOrder)
+    }
+
+    @Test
+    fun dividendNotificationsDisabled_engineStillRunsButZeroNotifications() = runTest {
+        val stateStore = InMemorySchedulerStateStore(initial = SchedulerState(lastStatus = com.aptrade.shared.domain.MarketStatus.CLOSED))
+        var engineCallCount = 0
+        val notified = mutableListOf<DividendOutcome>()
+        val summaries = mutableListOf<Pair<Int, Money>>()
+        val coordinator = coordinator(
+            stateStore = stateStore,
+            settings = AppSettings(
+                marketOpenClose = false, newsDigest = false,
+                pieContributions = false, dividendNotifications = false,
+            ),
+            processDueDividends = {
+                engineCallCount += 1
+                listOf(DividendOutcome.Credited("AAPL", Money(BigDecimal.parseString("9.99"), "USD"), isBackfill = false))
+            },
+            notifyDividendOutcome = { outcome -> notified += outcome },
+            notifyDividendBackfillSummary = { count, cash -> summaries += count to cash },
+            nowEpochSeconds = { mondayNineAmClosed },
+            scope = backgroundScope,
+        )
+
+        coordinator.start(); runCurrent()
+
+        assertEquals(1, engineCallCount)   // crediting is never settings-gated
+        assertTrue(notified.isEmpty())
+        assertTrue(summaries.isEmpty())
+    }
+
+    @Test
+    fun mixedBackfillAndLiveOutcomes_collapsesBackfillIntoExactlyOneSummary() = runTest {
+        // 3 backfill outcomes + 1 live outcome -> exactly 2 notifications total: one live
+        // per-outcome notification, and ONE collapsed summary (count + summed cash) for all
+        // three backfill outcomes. Exercised via the launch catch-up itself (which routes
+        // through the SAME notifyDividendsDue helper the tick's DividendCheckDue uses), so no
+        // day-advance is needed to observe the collapsing behavior in isolation.
+        val stateStore = InMemorySchedulerStateStore(initial = SchedulerState(lastStatus = com.aptrade.shared.domain.MarketStatus.CLOSED))
+        val backfill1 = DividendOutcome.Credited("AAPL", Money(BigDecimal.parseString("10"), "USD"), isBackfill = true)
+        val backfill2 = DividendOutcome.Credited("AAPL", Money(BigDecimal.parseString("20"), "USD"), isBackfill = true)
+        val backfill3 = DividendOutcome.Reinvested(
+            "MSFT", Money(BigDecimal.parseString("30"), "USD"), BigDecimal.parseString("2"), isBackfill = true,
+        )
+        val live = DividendOutcome.Credited("NVDA", Money(BigDecimal.parseString("5"), "USD"), isBackfill = false)
+        val notified = mutableListOf<DividendOutcome>()
+        val summaries = mutableListOf<Pair<Int, Money>>()
+        val coordinator = coordinator(
+            stateStore = stateStore,
+            settings = AppSettings(
+                marketOpenClose = false, newsDigest = false,
+                pieContributions = false, dividendNotifications = true,
+            ),
+            processDueDividends = { listOf(backfill1, backfill2, backfill3, live) },
+            notifyDividendOutcome = { outcome -> notified += outcome },
+            notifyDividendBackfillSummary = { count, cash -> summaries += count to cash },
+            nowEpochSeconds = { mondayNineAmClosed },
+            scope = backgroundScope,
+        )
+
+        coordinator.start(); runCurrent()
+
+        assertEquals<List<DividendOutcome>>(listOf(live), notified)
+        assertEquals(1, summaries.size)
+        assertEquals(3, summaries[0].first)
+        assertEquals(Money(BigDecimal.parseString("60"), "USD"), summaries[0].second)
+    }
+
+    @Test
+    fun dividendCheckDueOnATickAfterLaunchDayNotifiesBothOutcomeVariants() = runTest {
+        // The launch catch-up (ungated) consumes day 1 and, per carry-note 4, marks
+        // `lastDividendDay` so day 1's own first tick doesn't refire the engine. Advancing to
+        // day 2 exercises the tick's own DividendCheckDue -> notifyDividendsDue dispatch with
+        // concrete outcomes, proving both the cash and DRIP body variants are delivered.
+        val stateStore = InMemorySchedulerStateStore(initial = SchedulerState(lastStatus = com.aptrade.shared.domain.MarketStatus.OPEN))
+        val cashOutcome = DividendOutcome.Credited("AAPL", Money(BigDecimal.parseString("12.34"), "USD"), isBackfill = false)
+        val dripOutcome = DividendOutcome.Reinvested(
+            "MSFT", Money(BigDecimal.parseString("5.67"), "USD"), BigDecimal.parseString("1"), isBackfill = false,
+        )
+        var now = mondayTenAmOpen
+        var engineCallCount = 0
+        val notified = mutableListOf<DividendOutcome>()
+        val summaries = mutableListOf<Pair<Int, Money>>()
+        val coordinator = coordinator(
+            stateStore = stateStore,
+            settings = AppSettings(
+                marketOpenClose = false, newsDigest = false,
+                pieContributions = false, dividendNotifications = true,
+            ),
+            processDueDividends = { _ ->
+                engineCallCount += 1
+                if (engineCallCount == 1) emptyList() else listOf(cashOutcome, dripOutcome)
+            },
+            notifyDividendOutcome = { outcome -> notified += outcome },
+            notifyDividendBackfillSummary = { count, cash -> summaries += count to cash },
+            nowEpochSeconds = { now },
+            scope = backgroundScope,
+        )
+
+        coordinator.start(); runCurrent()
+        assertEquals(1, engineCallCount)
+        assertTrue(notified.isEmpty())   // day 1's catch-up call returned no outcomes
+
+        now += 24 * 3_600   // next trading day
+        advanceTimeBy(60_001); runCurrent()
+
+        assertEquals(2, engineCallCount)
+        assertEquals(listOf(cashOutcome, dripOutcome), notified)
+        assertTrue(summaries.isEmpty())
+    }
+
+    @Test
+    fun launchCatchUpMarksLastDividendDay_soSameDayTickDoesNotReinvokeEngine() = runTest {
+        // CARRY-NOTE 4 (Kotlin-only divergence from the Swift AS-BUILT, recorded in
+        // DesktopMarketActivityCoordinator.runDividendCatchUp's KDoc): the launch catch-up
+        // marks `lastDividendDay` to today's trading day so the planner's `DividendCheckDue`
+        // event -- which would otherwise fire on this same trading day's very first tick,
+        // since `lastDividendDay` was null before the catch-up -- is suppressed. Only the one
+        // launch-catch-up call to processDueDividends should ever happen this trading day.
+        val stateStore = InMemorySchedulerStateStore(initial = SchedulerState(lastStatus = com.aptrade.shared.domain.MarketStatus.OPEN))
+        var callCount = 0
+        val coordinator = coordinator(
+            stateStore = stateStore,
+            settings = AppSettings(
+                marketOpenClose = false, newsDigest = false,
+                pieContributions = false, dividendNotifications = true,
+            ),
+            processDueDividends = { callCount += 1; emptyList() },
+            nowEpochSeconds = { mondayTenAmOpen },
+            scope = backgroundScope,
+        )
+
+        coordinator.start(); runCurrent()
+        assertEquals(1, callCount)
+
+        // Same trading day, next tick: still no re-invocation.
+        advanceTimeBy(60_001); runCurrent()
+        assertEquals(1, callCount)
     }
 }

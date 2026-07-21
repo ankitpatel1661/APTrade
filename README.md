@@ -15,7 +15,7 @@ An ultra-premium **native investing platform across four OSes** — a SwiftUI fl
 ![Swift](https://img.shields.io/badge/Swift-6.0-D4A94E?logo=swift)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Multiplatform-D4A94E?logo=kotlin)
 ![Architecture](https://img.shields.io/badge/architecture-Clean-D4A94E)
-![Tests](https://img.shields.io/badge/macOS%20tests-464%20passing-46C98A)
+![Tests](https://img.shields.io/badge/macOS%20tests-469%20passing-46C98A)
 
 </div>
 
@@ -101,8 +101,8 @@ Every app carries: a live watchlist, asset detail with candlestick/area charts a
 - **Income section** — a fifth view in the Portfolio sub-switcher: summary cards (received YTD, projected 12-month income, portfolio yield, yield-on-cost), a monthly bar chart of received-vs-projected income, an upcoming-payouts list, a per-holding income/yield-on-cost breakdown, and full payment history — all degrading gracefully per-symbol (never portfolio-wide) if a dividend-events fetch fails.
 - **Asset detail dividend info** — dividend yield, derived trailing annual rate, and an estimated next ex-date on any dividend-paying holding; hidden entirely for crypto and non-payers.
 - **Reinvest Dividends (DRIP)** toggle in Account Settings, and a **Dividend Payments** toggle in Notifications settings gating the "payment received / reinvested" alert — crediting itself is never gated, since a payout is bookkeeping truth, not an optional notification.
-- **Export rows** — every portfolio statement (PDF / Excel / Word) carries **Dividends Received (YTD)** and **Projected Annual Income** alongside the existing summary rows.
-- **Platform status:** shipped on macOS + iPhone (M8.1); Windows desktop (M8.2) and Android (M8.3) pending — the underlying Yahoo dividend-events fetch already lives in the shared Kotlin core, so those increments are UI wiring, not new data plumbing.
+- **Export rows** — every portfolio statement (PDF on macOS/iPhone/Windows; Excel and Word on macOS/iPhone) carries **Dividends Received (YTD)** and **Projected Annual Income** alongside the existing summary rows.
+- **Platform status:** shipped on macOS + iPhone (M8.1) and Windows desktop (M8.2); Android (M8.3) pending — the underlying Yahoo dividend-events fetch already lives in the shared Kotlin core, so that increment is UI wiring, not new data plumbing.
 
 ### Settings & appearance
 - A unified, persisted **settings** layer — every preference (notification toggles, security/privacy, trade confirmation, theme, accent) flows through one store with a forward-compatible decoder.
@@ -184,7 +184,7 @@ The app ships as a bare SwiftPM executable. Launching the built binary directly 
 DEVELOPER_DIR=/Applications/Xcode.app swift test
 ```
 
-> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **464 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction, the all-priced gate + benchmark head-trim), the market calendar and earnings calendar, use cases, the market-activity planner (incl. earnings-check and Pie-contribution-check scheduling), alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the Finnhub earnings mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, the view models, Investment Plans (`PieMath` distribution/drift, `PieSchedule` cadence math, `PieBacktest` DCA-vs-lump-sum, contribution/rebalance use cases and catch-up, the `UserDefaultsPieStore`, and the coordinator's contribution notifications), and the dividend & income engine (`DividendMath` shares-held/trailing-rate/cadence math, `ProcessDueDividends` backfill/dedup/DRIP-with-cash-fallback, the Income view model, and the export renderer's two new income rows).
+> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **469 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction, the all-priced gate + benchmark head-trim), the market calendar and earnings calendar, use cases, the market-activity planner (incl. earnings-check and Pie-contribution-check scheduling), alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the Finnhub earnings mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, the view models, Investment Plans (`PieMath` distribution/drift, `PieSchedule` cadence math, `PieBacktest` DCA-vs-lump-sum, contribution/rebalance use cases and catch-up, the `UserDefaultsPieStore`, and the coordinator's contribution notifications), and the dividend & income engine (`DividendMath` shares-held/trailing-rate/cadence math, `ProcessDueDividends` backfill/dedup/DRIP-with-cash-fallback, the Income view model, and the export renderer's two new income rows).
 
 ### Building the shared Kotlin core
 
@@ -473,6 +473,23 @@ wizard and rebalance preview are **modal bottom sheets rather than dialogs**, ma
 app's existing bottom-sheet convention (trade entry, etc.) instead of desktop's
 `Dialog`-based `PieWizardDialog`/`RebalanceDialog`.
 
+**Dividend & Income engine reaches the desktop app** (`:desktopApp`, M8.2), transcribing
+the macOS M8.1 reference onto the shared Kotlin core: `DividendMath` (shares-held
+reconstruction, trailing-annual rate, cadence inference/projection, monthly aggregation)
+and `ProcessDueDividends` (ex-date detection, cash or **DRIP** reinvestment with cash
+fallback, backfill + dedup) drive the same automatic crediting engine as macOS, riding the
+desktop market-activity coordinator's daily tick. A five-surface **Income** section joins
+the Portfolio switcher (summary cards, monthly received-vs-projected bars, upcoming
+payouts, per-holding breakdown, full history), asset detail gains the same dividend info
+card, and **Reinvest Dividends (DRIP)** / **Dividend Payments** settings toggles match
+macOS's gating exactly (crediting itself is never gated). The portfolio PDF export gains
+the same two **Dividends Received (YTD)** / **Projected Annual Income** summary rows as
+macOS — `PortfolioExport`'s `projectedAnnualIncome` fetches per-symbol dividend events
+through an optional, nil-safe repository seam (mirroring Swift's `ExportPortfolioUseCase`),
+degrading to zero rather than failing when unwired; `dividendsReceivedYTD` is pure
+ledger arithmetic and always populates. Suites at merge: macOS 469 / shared 538 / desktop
+290 / android 195 (untouched — Android dividend/income parity is M8.3).
+
 ## Project Structure
 
 ```
@@ -495,15 +512,15 @@ logo/                       Brand assets
 APTrade Lite is the foundation. Planned toward the full platform:
 
 - Real authentication (Apple Sign In), biometric gating, and cloud sync (Supabase)
-- **Dividend & income engine (M8) — M8.1 shipped.** A Yahoo-backed dividend-events feed
-  (shared Kotlin core) drives an automatic crediting engine on macOS + iPhone: ex-date
-  detection with strictly-before shares-held reconstruction, cash or **DRIP** reinvestment
-  (cash fallback if a close is missing), backfill + dedup so re-runs never double-credit,
-  first-class `.dividend`/`isDrip` ledger transactions (so realized-P&L and performance
-  reconstruction include dividend income automatically — no separate "dividend-adjusted"
-  calculation needed), a five-surface **Income** view, asset-detail dividend info, and two
-  new export summary rows. Still to come: **M8.2** (Kotlin engine + Windows desktop UI)
-  and **M8.3** (Android).
+- **Dividend & income engine (M8) — M8.1 + M8.2 shipped.** A Yahoo-backed dividend-events
+  feed (shared Kotlin core) drives an automatic crediting engine on macOS, iPhone, and now
+  Windows desktop: ex-date detection with strictly-before shares-held reconstruction, cash
+  or **DRIP** reinvestment (cash fallback if a close is missing), backfill + dedup so
+  re-runs never double-credit, first-class `.dividend`/`isDrip` ledger transactions (so
+  realized-P&L and performance reconstruction include dividend income automatically — no
+  separate "dividend-adjusted" calculation needed), a five-surface **Income** view,
+  asset-detail dividend info, and export summary rows (PDF on desktop; PDF/Excel/Word on
+  macOS + iPhone). Still to come: **M8.3** (Android).
 - **Technical screener (M9)** — scan the bundled S&P 500 universe with the existing
   `TechnicalIndicators` math (RSI thresholds, SMA/EMA crossovers, 52-week range position,
   momentum), with results feeding watchlists and Plans.

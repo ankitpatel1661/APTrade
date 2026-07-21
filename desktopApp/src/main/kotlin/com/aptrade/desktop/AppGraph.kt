@@ -9,6 +9,7 @@ import com.aptrade.desktop.infra.FileSettingsStore
 import com.aptrade.desktop.infra.FileWatchlistStore
 import com.aptrade.desktop.infra.FinnhubKeyConfig
 import com.aptrade.desktop.infra.TrayNotifier
+import com.aptrade.desktop.income.IncomeViewModel
 import com.aptrade.desktop.plans.PieWizardViewModel
 import com.aptrade.desktop.plans.PlansViewModel
 import com.aptrade.shared.infrastructure.resolveConfigDir
@@ -23,6 +24,7 @@ import com.aptrade.shared.application.EvaluateAlerts
 import com.aptrade.shared.application.FetchCandles
 import com.aptrade.shared.application.FetchChartWindow
 import com.aptrade.shared.application.FetchCompanyNews
+import com.aptrade.shared.application.FetchDividendEvents
 import com.aptrade.shared.application.FetchEarningsCalendar
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketNews
@@ -44,6 +46,7 @@ import com.aptrade.shared.application.MarketDataRepository
 import com.aptrade.shared.application.NewsRepository
 import com.aptrade.shared.application.PieStore
 import com.aptrade.shared.application.PortfolioStore
+import com.aptrade.shared.application.ProcessDueDividends
 import com.aptrade.shared.application.RebalancePie
 import com.aptrade.shared.application.ReconcilePieLedgers
 import com.aptrade.shared.application.RemoveFromWatchlist
@@ -75,7 +78,7 @@ import kotlinx.coroutines.sync.withLock
 class AppGraph(
     private val repository: MarketDataRepository = YahooMarketDataRepository(),
     store: WatchlistStore = FileWatchlistStore(resolveConfigDir().resolve("watchlist.json")),
-    portfolioStore: PortfolioStore = FilePortfolioStore(resolveConfigDir().resolve("portfolio.json")),
+    private val portfolioStore: PortfolioStore = FilePortfolioStore(resolveConfigDir().resolve("portfolio.json")),
     val settingsStore: FileSettingsStore = FileSettingsStore(resolveConfigDir().resolve("settings.json")),
     val bookmarkStore: BookmarkStore = FileBookmarkStore(resolveConfigDir().resolve("bookmarks.json")),
     alertStore: AlertStore = FileAlertStore(resolveConfigDir().resolve("alerts.json")),
@@ -99,6 +102,7 @@ class AppGraph(
     val fetchHistory = FetchHistory(repository)
     val fetchCandles = FetchCandles(repository)
     val fetchChartWindow = FetchChartWindow(repository)
+    val fetchDividendEvents = FetchDividendEvents(repository)
 
     val defaultEntries = listOf(
         WatchlistEntry("AAPL", "Apple Inc.", AssetKind.Stock),
@@ -140,6 +144,23 @@ class AppGraph(
     val reconcilePieLedgers = ReconcilePieLedgers(pieStore, portfolioStore, portfolioMutex, marketCalendar)
     val simulateDCA = SimulateDCA(repository, marketCalendar)
 
+    // Dividend crediting (M8.2 Task 10). Shares the SAME portfolioMutex as every other
+    // mutating portfolio use case above (BuyAsset's co-holder doc contract) — the engine
+    // read-modify-writes portfolioStore just like a buy/sell/contribution does, so one shared
+    // lock is what makes them all mutually exclusive. `isDripEnabled` is `suspend` (recorded
+    // divergence: suspend isDripEnabled on `ProcessDueDividends` — Swift's `SettingsStore` is
+    // sync `UserDefaults`; Kotlin's store is suspend IO, i.e. `FileSettingsStore.load()` is real
+    // file I/O) and reads the live `dripEnabled` toggle fresh on every call — never captured
+    // once at construction time — since the user can flip it at any point during a run.
+    val processDueDividends = ProcessDueDividends(
+        portfolioStore = portfolioStore,
+        market = repository,
+        stateStore = schedulerStateStore,
+        calendar = marketCalendar,
+        portfolioMutex = portfolioMutex,
+        isDripEnabled = { settingsStore.load().dripEnabled },
+    )
+
     /** Builds a fresh [PlansViewModel] bound to [scope] — mirrors macOS's
      *  `CompositionRoot.makePlansViewModel()` factory (there is no persistent, graph-owned VM
      *  instance; each caller, e.g. `PlansPane`, owns its own scope/instance lifetime). */
@@ -170,6 +191,22 @@ class AppGraph(
         savePie = savePie,
         simulateDCA = simulateDCA,
         searchAssets = fetchSearch,
+        calendar = marketCalendar,
+        scope = scope,
+        nowEpochSeconds = nowEpochSeconds,
+    )
+
+    /** Builds a fresh [IncomeViewModel] bound to [scope] — mirrors macOS's
+     *  `CompositionRoot.makeIncomeViewModel()` factory (there is no persistent, graph-owned VM
+     *  instance; each caller, e.g. `IncomePane`, owns its own scope/instance lifetime). Shares
+     *  the same `portfolioStore`/`repository`/[marketCalendar] every other read-only VM factory
+     *  here reads from — Income never mutates the portfolio, so it needs no mutex. */
+    fun makeIncomeViewModel(
+        scope: CoroutineScope,
+        nowEpochSeconds: () -> Long = { System.currentTimeMillis() / 1000 },
+    ): IncomeViewModel = IncomeViewModel(
+        portfolioStore = portfolioStore,
+        marketDataRepository = repository,
         calendar = marketCalendar,
         scope = scope,
         nowEpochSeconds = nowEpochSeconds,

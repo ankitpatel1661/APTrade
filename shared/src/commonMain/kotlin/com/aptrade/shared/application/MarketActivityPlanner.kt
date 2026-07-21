@@ -13,6 +13,7 @@ sealed class ScheduledNotification {
     object DigestDue : ScheduledNotification()
     object EarningsCheckDue : ScheduledNotification()
     object ContributionCheckDue : ScheduledNotification()
+    object DividendCheckDue : ScheduledNotification()
 }
 
 /** Persisted markers so scheduled notifications fire once per event rather than every
@@ -23,6 +24,14 @@ data class SchedulerState(
     val lastDigestDay: String? = null,
     val lastEarningsDay: String? = null,
     val lastContributionDay: String? = null,
+    // Planner gate for the once-per-trading-day dividend check (mirrors macOS's
+    // `lastDividendDay`).
+    val lastDividendDay: String? = null,
+    // The trading day dividend processing first ran on this install. Events whose ex-date
+    // trading day predates it are backfill and always credit as cash, regardless of the
+    // DRIP toggle. Set once, by the `ProcessDueDividends` engine (not by this planner) --
+    // mirrors macOS's `dividendsFirstRunDay`.
+    val dividendsFirstRunDay: String? = null,
 )
 
 /** Persists the scheduler's last-fired markers across launches. */
@@ -115,11 +124,27 @@ class MarketActivityPlanner(private val calendar: MarketCalendar = MarketCalenda
             }
         }
 
+        var lastDividendDay = state.lastDividendDay
+
+        // One dividend check per trading day, the first tick we observe the market open.
+        // Unlike the blocks above, this is NOT gated by any settings toggle: dividend
+        // crediting is bookkeeping truth (cash owed to the user), not an optional
+        // notification, so it always fires regardless of user preferences.
+        if (status == MarketStatus.OPEN) {
+            val day = calendar.tradingDay(nowEpochSeconds)
+            if (lastDividendDay != day) {
+                events += ScheduledNotification.DividendCheckDue
+                lastDividendDay = day
+            }
+        }
+
         val newState = SchedulerState(
             lastStatus = status,
             lastDigestDay = lastDigestDay,
             lastEarningsDay = lastEarningsDay,
             lastContributionDay = lastContributionDay,
+            lastDividendDay = lastDividendDay,
+            dividendsFirstRunDay = state.dividendsFirstRunDay,
         )
         return events to newState
     }

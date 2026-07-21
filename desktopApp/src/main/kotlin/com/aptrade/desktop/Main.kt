@@ -10,6 +10,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
@@ -35,6 +36,7 @@ import com.aptrade.desktop.portfolio.PortfolioPane
 import com.aptrade.desktop.portfolio.PortfolioViewModel
 import com.aptrade.desktop.portfolio.TradeDialog
 import com.aptrade.shared.application.ContributionOutcome
+import com.aptrade.shared.application.DividendOutcome
 import com.aptrade.desktop.infra.exportFileName
 import com.aptrade.desktop.infra.renderPortfolioPdf
 import com.aptrade.desktop.infra.saveBinaryFile
@@ -113,6 +115,7 @@ fun main() = application {
             scope = appScope,
             nowEpochSeconds = { System.currentTimeMillis() / 1000 },
             notifyOrderFill = graph.notifyOrderFill,
+            fetchDividendEvents = graph.fetchDividendEvents,
         )
     }
     // Time-based notifications (market open/close + daily digest), 60s cadence — a
@@ -165,10 +168,36 @@ fun main() = application {
                         )
                 }
             },
+            processDueDividends = { now -> graph.processDueDividends.execute(now) },
+            // Same L10n-here, coordinator-stays-ignorant split as notifyPieContribution above:
+            // the coordinator hands back the typed DividendOutcome(s) it produced (or, for a
+            // collapsed backfill run, the tallied count + summed cash), and only this (UI-land)
+            // closure resolves the cash/DRIP/backfill-summary title+body via tr/trf.
+            notifyDividendOutcome = { outcome ->
+                when (outcome) {
+                    is DividendOutcome.Credited ->
+                        graph.trayNotifier.notifyDividend(
+                            title = tr(L10n.Key.NotifDividendTitle),
+                            body = trf(L10n.Key.NotifDividendCashBodyFmt, outcome.symbol, outcome.cash.formatted),
+                        )
+                    is DividendOutcome.Reinvested ->
+                        graph.trayNotifier.notifyDividend(
+                            title = tr(L10n.Key.NotifDividendTitle),
+                            body = trf(L10n.Key.NotifDividendDripBodyFmt, outcome.symbol, outcome.cash.formatted),
+                        )
+                }
+            },
+            notifyDividendBackfillSummary = { count, totalCash ->
+                graph.trayNotifier.notifyDividend(
+                    title = tr(L10n.Key.NotifDividendTitle),
+                    body = trf(L10n.Key.NotifDividendBackfillBodyFmt, count.toString(), totalCash.formatted),
+                )
+            },
             fetchWatchlist = graph.fetchWatchlist,
             fetchMarketQuotes = graph.fetchMarketQuotes,
             scope = appScope,
             nowEpochSeconds = { System.currentTimeMillis() / 1000 },
+            calendar = marketCalendar,
         )
     }
     // News VM is created once (like the others) but started lazily on the first visit to the
@@ -413,6 +442,10 @@ private fun AppRoot(
     onUpdateNotificationSettings: ((com.aptrade.desktop.infra.AppSettings) -> com.aptrade.desktop.infra.AppSettings) -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(AppTab.Watchlist) }
+    // Composition-scoped coroutine launcher for the export buttons below — `exportSnapshot`/
+    // `exportCsv`/`exportJson` became `suspend` in M8.2 Task 11 (dividend-events fetch for
+    // `projectedAnnualIncome`), so their click handlers need somewhere to launch into.
+    val exportScope = rememberCoroutineScope()
     val watchState by watchlistViewModel.state.collectAsState()
     val portfolioState by portfolioViewModel.state.collectAsState()
     val newsState by newsViewModel.state.collectAsState()
@@ -498,14 +531,20 @@ private fun AppRoot(
                         onOpenTrade(TradeTarget(asset, side, row?.priceText))
                     },
                     onReset = portfolioViewModel::reset,
-                    onExportCsv = { saveTextFile("portfolio.csv", portfolioViewModel.exportCsv()) },
-                    onExportJson = { saveTextFile("portfolio.json", portfolioViewModel.exportJson()) },
+                    onExportCsv = {
+                        exportScope.launch { saveTextFile("portfolio.csv", portfolioViewModel.exportCsv()) }
+                    },
+                    onExportJson = {
+                        exportScope.launch { saveTextFile("portfolio.json", portfolioViewModel.exportJson()) }
+                    },
                     onExportPdf = {
-                        val now = System.currentTimeMillis() / 1000
-                        saveBinaryFile(
-                            exportFileName("pdf", now),
-                            renderPortfolioPdf(portfolioViewModel.exportSnapshot()),
-                        )
+                        exportScope.launch {
+                            val now = System.currentTimeMillis() / 1000
+                            saveBinaryFile(
+                                exportFileName("pdf", now),
+                                renderPortfolioPdf(portfolioViewModel.exportSnapshot()),
+                            )
+                        }
                     },
                     pendingExport = pendingExport,
                 )
@@ -582,6 +621,11 @@ private fun AppRoot(
                     when (side) {
                         TradeSide.Buy -> portfolioViewModel.buy(target.asset, quantityText)
                         TradeSide.Sell -> portfolioViewModel.sell(target.asset.symbol, quantityText)
+                        // The manual trade dialog never offers Dividend as a selectable side
+                        // today (see TradeDialog.kt's Buy/Sell-only option list) — this branch
+                        // only staves off the non-exhaustive `when` warning.
+                        // Real handling lands with the coordinator task.
+                        TradeSide.Dividend -> Unit
                     }
                 },
                 onDismiss = onCloseTrade,

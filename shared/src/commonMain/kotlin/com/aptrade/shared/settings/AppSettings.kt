@@ -33,7 +33,16 @@ import com.aptrade.shared.l10n.AppLanguage
  *  pieContributions (M7.2 Task 9) defaults on, mirroring macOS `AppSettings.pieContributions`
  *  — a scheduled Plan contribution executing or being skipped is high-signal in the same way
  *  an earnings report is. It gates EXECUTION of due contributions (both the planner event and
- *  launch catch-up), not just the notification — see `MarketActivityPlanner`. */
+ *  launch catch-up), not just the notification — see `MarketActivityPlanner`.
+ *
+ *  dripEnabled/dividendNotifications (M8.2 Task 3) mirror macOS `AppSettings` exactly:
+ *  [dripEnabled] defaults false (DRIP is opt-in — reinvesting is a deliberate choice, unlike
+ *  cash crediting which always happens regardless of this toggle), [dividendNotifications]
+ *  defaults true (a dividend credit is high-signal, same family as earnings/contributions).
+ *  Neither gates the planner's `DividendCheckDue` event itself — that block is UNGATED (see
+ *  `MarketActivityPlanner`); these flags are read downstream by the dividend-processing engine
+ *  ([dripEnabled], to choose cash vs. reinvest) and the notifier ([dividendNotifications], to
+ *  decide whether to surface the credit). */
 data class AppSettings(
     val accent: AccentTheme = AccentTheme.ChampagneGold,
     val priceAlerts: Boolean = true,
@@ -49,4 +58,6 @@ data class AppSettings(
     val confirmTrades: Boolean = true,
     val analyticsSharing: Boolean = false,
     val language: AppLanguage = AppLanguage.English,
+    val dripEnabled: Boolean = false,
+    val dividendNotifications: Boolean = true,
 )

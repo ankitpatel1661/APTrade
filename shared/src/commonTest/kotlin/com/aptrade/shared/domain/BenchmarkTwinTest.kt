@@ -11,6 +11,8 @@ private fun buy(epoch: Long, price: String, quantity: String, id: String = "txn-
     Transaction(id, "AAPL", TradeSide.Buy, qty(quantity), Money.usd(price), epoch)
 private fun sell(epoch: Long, price: String, quantity: String, id: String = "txn-$epoch") =
     Transaction(id, "AAPL", TradeSide.Sell, qty(quantity), Money.usd(price), epoch)
+private fun dividend(epoch: Long, amountPerShare: String, shares: String, id: String = "txn-$epoch") =
+    Transaction(id, "AAPL", TradeSide.Dividend, qty(shares), Money.usd(amountPerShare), epoch)
 
 class BenchmarkTwinTest {
 
@@ -105,6 +107,30 @@ class BenchmarkTwinTest {
         val series = benchmarkTwinSeries(transactions, benchmarkPoints, Money.usd("0"), curveDates)
 
         assertEquals(curveDates.size, series!!.size)
+    }
+
+    @Test
+    fun dividendTransactionDoesNotAlterUnitsCashAlreadyReflectsTheCredit() {
+        // Buy $1000 at close 100 -> U = 10. A $0.50/share dividend on the 10 held shares
+        // must NOT itself change U — a non-exhaustive `side == Buy ? +amount : -amount`
+        // reconstruction would wrongly treat the dividend as a benchmark trade (subtracting
+        // units, as `Sell` does). Mirrors the Swift equity-curve regression (buy-then-
+        // dividend, PortfolioEquityCurveTests.swift) adapted to this twin: [cash] here is the
+        // CURRENT portfolio cash (see class KDoc) — it already includes the dividend's $5
+        // credit, since the twin never re-derives historical cash balances. So the dividend's
+        // only visible effect on the twin's value is via the externally-supplied [cash], not
+        // via [units].
+        val transactions = listOf(
+            buy(epoch = 100, price = "100", quantity = "10", id = "txn-1"),
+            dividend(epoch = 150, amountPerShare = "0.50", shares = "10", id = "txn-2"),
+        )
+        val benchmarkPoints = listOf(bpoint(100, "100"), bpoint(200, "110"))
+        val cash = Money.usd("5")   // simulates portfolio.cash already having received the dividend credit
+
+        val series = benchmarkTwinSeries(transactions, benchmarkPoints, cash, curveDates = listOf(200L))
+
+        // U unaffected by the dividend: still 10. Valued at close 110 -> 1100, plus cash 5 -> 1105.
+        assertEquals(BigDecimal.parseString("1105"), series!![0].amount)
     }
 
     @Test

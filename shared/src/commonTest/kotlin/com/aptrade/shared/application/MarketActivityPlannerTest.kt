@@ -23,7 +23,10 @@ class MarketActivityPlannerTest {
 
     @Test
     fun closedToOpenTransitionFiresMarketOpenedWhenGateEnabled() {
-        val seedState = SchedulerState(lastStatus = MarketStatus.CLOSED)
+        // lastDividendDay pre-seeded to today so the (ungated) dividend block has already
+        // "fired" for this trading day and doesn't pollute this test's exact-event-list
+        // assertion -- it's covered on its own in the dedicated dividend tests below.
+        val seedState = SchedulerState(lastStatus = MarketStatus.CLOSED, lastDividendDay = "2024-01-08")
 
         val (events, newState) = planner.plan(
             nowEpochSeconds = mondayTenAmOpen,
@@ -53,7 +56,8 @@ class MarketActivityPlannerTest {
 
     @Test
     fun unchangedStatusFiresNoTransitionEvent() {
-        val seedState = SchedulerState(lastStatus = MarketStatus.OPEN)
+        // lastDividendDay pre-seeded to today -- see closedToOpenTransitionFiresMarketOpenedWhenGateEnabled.
+        val seedState = SchedulerState(lastStatus = MarketStatus.OPEN, lastDividendDay = "2024-01-08")
 
         val (events, newState) = planner.plan(
             nowEpochSeconds = mondayTenAmOpen,
@@ -69,7 +73,8 @@ class MarketActivityPlannerTest {
     @Test
     fun firstObservationSeedsBaselineWithoutFiringASpuriousEvent() {
         // No lastStatus yet (fresh install / first tick) -- must not fire, only seed.
-        val seedState = SchedulerState(lastStatus = null)
+        // lastDividendDay pre-seeded to today -- see closedToOpenTransitionFiresMarketOpenedWhenGateEnabled.
+        val seedState = SchedulerState(lastStatus = null, lastDividendDay = "2024-01-08")
 
         val (events, newState) = planner.plan(
             nowEpochSeconds = mondayTenAmOpen,
@@ -84,7 +89,8 @@ class MarketActivityPlannerTest {
 
     @Test
     fun transitionIsSuppressedWhenMarketOpenCloseGateIsDisabled() {
-        val seedState = SchedulerState(lastStatus = MarketStatus.CLOSED)
+        // lastDividendDay pre-seeded to today -- see closedToOpenTransitionFiresMarketOpenedWhenGateEnabled.
+        val seedState = SchedulerState(lastStatus = MarketStatus.CLOSED, lastDividendDay = "2024-01-08")
 
         val (events, newState) = planner.plan(
             nowEpochSeconds = mondayTenAmOpen,
@@ -116,7 +122,12 @@ class MarketActivityPlannerTest {
     @Test
     fun digestDoesNotFireAgainLaterTheSameTradingDay() {
         // Already fired earlier this trading day -- a later open tick must not repeat it.
-        val seedState = SchedulerState(lastStatus = MarketStatus.OPEN, lastDigestDay = "2024-01-08")
+        // lastDividendDay pre-seeded to today -- see closedToOpenTransitionFiresMarketOpenedWhenGateEnabled.
+        val seedState = SchedulerState(
+            lastStatus = MarketStatus.OPEN,
+            lastDigestDay = "2024-01-08",
+            lastDividendDay = "2024-01-08",
+        )
 
         val (events, newState) = planner.plan(
             nowEpochSeconds = mondayTenAmOpen,
@@ -161,7 +172,12 @@ class MarketActivityPlannerTest {
 
     @Test
     fun digestIsSuppressedWhenNewsDigestGateIsDisabledEvenOnFirstOpenOfTheDay() {
-        val seedState = SchedulerState(lastStatus = MarketStatus.CLOSED, lastDigestDay = null)
+        // lastDividendDay pre-seeded to today -- see closedToOpenTransitionFiresMarketOpenedWhenGateEnabled.
+        val seedState = SchedulerState(
+            lastStatus = MarketStatus.CLOSED,
+            lastDigestDay = null,
+            lastDividendDay = "2024-01-08",
+        )
 
         val (events, newState) = planner.plan(
             nowEpochSeconds = mondayTenAmOpen,
@@ -176,7 +192,12 @@ class MarketActivityPlannerTest {
 
     @Test
     fun bothGatesDisabledProducesNoEventsEvenAcrossATransitionWithDigestDue() {
-        val seedState = SchedulerState(lastStatus = MarketStatus.CLOSED, lastDigestDay = null)
+        // lastDividendDay pre-seeded to today -- see closedToOpenTransitionFiresMarketOpenedWhenGateEnabled.
+        val seedState = SchedulerState(
+            lastStatus = MarketStatus.CLOSED,
+            lastDigestDay = null,
+            lastDividendDay = "2024-01-08",
+        )
 
         val (events, newState) = planner.plan(
             nowEpochSeconds = mondayTenAmOpen,
@@ -289,6 +310,68 @@ class MarketActivityPlannerTest {
 
         assertFalse(events.contains(ScheduledNotification.ContributionCheckDue))
         assertEquals(null, newState.lastContributionDay)
+    }
+
+    @Test
+    fun dividendCheckFiresOncePerTradingDayThenSuppressedSameDay() {
+        // Mirrors contributionCheckFiresOncePerTradingDayWhenEnabled's two-tick shape, but
+        // the dividend block takes NO enable-flag at all -- it's ungated (crediting is
+        // bookkeeping truth, not an optional notification).
+        val seedState = SchedulerState(lastStatus = MarketStatus.OPEN)
+
+        val (events1, newState1) = planner.plan(
+            nowEpochSeconds = tuesdayTenAmOpen,
+            state = seedState,
+            marketOpenCloseEnabled = false,
+            newsDigestEnabled = false,
+        )
+
+        assertTrue(events1.contains(ScheduledNotification.DividendCheckDue))
+        assertEquals("2024-01-09", newState1.lastDividendDay)
+
+        val (events2, _) = planner.plan(
+            nowEpochSeconds = tuesdayTenAmOpen + 60,
+            state = newState1,
+            marketOpenCloseEnabled = false,
+            newsDigestEnabled = false,
+        )
+
+        assertFalse(events2.contains(ScheduledNotification.DividendCheckDue))
+    }
+
+    @Test
+    fun dividendCheckFiresEvenWithEveryOtherGateDisabled() {
+        // Unlike digest/earnings/contribution, the dividend block has no settings gate of
+        // its own to disable -- but this pins that the OTHER gates being off has zero
+        // bearing on whether it fires.
+        val seedState = SchedulerState(lastStatus = MarketStatus.OPEN)
+
+        val (events, newState) = planner.plan(
+            nowEpochSeconds = tuesdayTenAmOpen,
+            state = seedState,
+            marketOpenCloseEnabled = false,
+            newsDigestEnabled = false,
+            earningsReportsEnabled = false,
+            pieContributionsEnabled = false,
+        )
+
+        assertTrue(events.contains(ScheduledNotification.DividendCheckDue))
+        assertEquals("2024-01-09", newState.lastDividendDay)
+    }
+
+    @Test
+    fun dividendCheckDoesNotFireWhenMarketIsClosed() {
+        val seedState = SchedulerState(lastStatus = null, lastDividendDay = null)
+
+        val (events, newState) = planner.plan(
+            nowEpochSeconds = saturdayTenAmClosed,
+            state = seedState,
+            marketOpenCloseEnabled = false,
+            newsDigestEnabled = false,
+        )
+
+        assertFalse(events.contains(ScheduledNotification.DividendCheckDue))
+        assertEquals(null, newState.lastDividendDay)
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.aptrade.desktop.portfolio
 
 import com.aptrade.desktop.FakeMarketDataRepository
 import com.aptrade.shared.application.BuyAsset
+import com.aptrade.shared.application.FetchDividendEvents
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchPerformanceReport
 import com.aptrade.shared.application.FetchPortfolio
@@ -12,6 +13,7 @@ import com.aptrade.shared.application.ResetPortfolio
 import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.AssetKind
+import com.aptrade.shared.domain.DividendEvent
 import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.PricePoint
 import com.aptrade.shared.domain.Portfolio
@@ -39,6 +41,7 @@ private class InMemoryPortfolioStore(initial: Portfolio? = null) : PortfolioStor
 }
 
 private val aapl = Asset("AAPL", "Apple Inc.", AssetKind.Stock)
+private val btcUsd = Asset("BTC-USD", "Bitcoin USD", AssetKind.Crypto)
 
 private fun quote(symbol: String, price: String, change: Double = 1.0) =
     Quote(symbol, Money.usd(price), Money.usd(price), change)
@@ -50,6 +53,7 @@ private fun vm(
     nowEpochSeconds: () -> Long = { 0L },
     zoneId: java.time.ZoneId = java.time.ZoneId.systemDefault(),
     notifyOrderFill: suspend (TradeSide, String, String, String) -> Unit = { _, _, _, _ -> },
+    fetchDividendEvents: FetchDividendEvents? = null,
 ) = PortfolioViewModel(
     fetchPortfolio = FetchPortfolio(store),
     fetchMarketQuotes = FetchMarketQuotes(repo),
@@ -61,6 +65,7 @@ private fun vm(
     nowEpochSeconds = nowEpochSeconds,
     zoneId = zoneId,
     notifyOrderFill = notifyOrderFill,
+    fetchDividendEvents = fetchDividendEvents,
 )
 
 class PortfolioViewModelTest {
@@ -494,6 +499,103 @@ class PortfolioViewModelTest {
         val csv = vm.exportCsv()
 
         assertTrue(csv.lines().any { it.startsWith("AAPL,") })
+    }
+
+    // MARK: - exportSnapshot income fields (M8.2 Task 11) — mirrors Swift's
+    // ExportUseCasesTests exactly, incl. its hand-computable 25.00 / 5.00 / 7.50 fixture
+    // values: 10 AAPL shares, one Dividend txn of 10 x $0.50 = $5.00 YTD, and a single
+    // trailing-annual dividend event of $0.75/share x 10 shares = $7.50 projected.
+
+    private fun seededDividendPortfolio(): Portfolio = Portfolio(
+        cash = Money.usd("50000"),
+        positions = listOf(Position(aapl, BigDecimal.parseString("10"), Money.usd("100.00"), Money.usd("0"))),
+        transactions = listOf(
+            Transaction(
+                id = "div-1", symbol = "AAPL", side = TradeSide.Dividend,
+                quantity = BigDecimal.parseString("10"), price = Money.usd("0.50"), epochSeconds = 2_000_000L,
+            ),
+        ),
+    )
+
+    @Test
+    fun exportSnapshotWithDividendsAndRepositoryPopulatesBothIncomeFields() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
+        // Trailing-annual per-share = $0.75 (single event inside the 365-day window) x
+        // 10 held shares = $7.50 projected annual income.
+        repo.dividendEventsImpl = { symbol, _ ->
+            if (symbol == "AAPL") listOf(DividendEvent("AAPL", 1_900_000L, Money.usd("0.75"))) else emptyList()
+        }
+        val store = InMemoryPortfolioStore(seededDividendPortfolio())
+        val vm = vm(
+            repo, store, backgroundScope, nowEpochSeconds = { 2_000_000L },
+            fetchDividendEvents = FetchDividendEvents(repo),
+        )
+        vm.start(); runCurrent()
+
+        val export = vm.exportSnapshot()
+
+        assertEquals(BigDecimal.parseString("5.00"), export.dividendsReceivedYTD)
+        assertEquals(BigDecimal.parseString("7.50"), export.projectedAnnualIncome)
+        assertEquals(listOf("AAPL"), repo.requestedDividendEventSymbols)
+    }
+
+    @Test
+    fun exportSnapshotWithNilFetchDividendEventsProjectsZeroButStillPopulatesYTD() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
+        val store = InMemoryPortfolioStore(seededDividendPortfolio())
+        val vm = vm(repo, store, backgroundScope, nowEpochSeconds = { 2_000_000L })
+        // fetchDividendEvents defaults to null.
+        vm.start(); runCurrent()
+
+        val export = vm.exportSnapshot()
+
+        assertEquals(BigDecimal.ZERO, export.projectedAnnualIncome)
+        assertEquals(
+            BigDecimal.parseString("5.00"), export.dividendsReceivedYTD,
+            "YTD dividends are ledger-derived and don't need the repository",
+        )
+    }
+
+    @Test
+    fun exportSnapshotRepositoryThrowsDegradesToZeroForThatSymbolOnly() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
+        repo.dividendEventsImpl = { _, _ -> throw QuoteError.NotFound }
+        val store = InMemoryPortfolioStore(seededDividendPortfolio())
+        val vm = vm(
+            repo, store, backgroundScope, nowEpochSeconds = { 2_000_000L },
+            fetchDividendEvents = FetchDividendEvents(repo),
+        )
+        vm.start(); runCurrent()
+
+        val export = vm.exportSnapshot()
+
+        assertEquals(BigDecimal.ZERO, export.projectedAnnualIncome)
+    }
+
+    @Test
+    fun exportSnapshotCryptoOnlyPortfolioSkipsRepositoryAndProjectsZero() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "50000.00") } }
+        val seeded = Portfolio(
+            cash = Money.usd("50000"),
+            positions = listOf(Position(btcUsd, BigDecimal.parseString("1"), Money.usd("50000"), Money.usd("0"))),
+        )
+        val vm = vm(
+            repo, InMemoryPortfolioStore(seeded), backgroundScope, nowEpochSeconds = { 2_000_000L },
+            fetchDividendEvents = FetchDividendEvents(repo),
+        )
+        vm.start(); runCurrent()
+
+        val export = vm.exportSnapshot()
+
+        assertEquals(BigDecimal.ZERO, export.projectedAnnualIncome)
+        assertTrue(
+            repo.requestedDividendEventSymbols.isEmpty(),
+            "crypto positions should never be queried for dividend events",
+        )
     }
 
     @Test
