@@ -299,11 +299,11 @@ private fun ChipsRow(
                 onClick = { onSelectCustom(screen) },
                 label = { Text(screen.name) },
                 trailingIcon = {
-                    IconButton(onClick = { onEditScreen(screen) }, modifier = Modifier.size(18.dp)) {
+                    IconButton(onClick = { onEditScreen(screen) }) {
                         Icon(
                             Icons.Filled.Edit,
                             contentDescription = tr(L10n.Key.ScreenerEditScreen),
-                            modifier = Modifier.size(14.dp),
+                            modifier = Modifier.size(18.dp),
                         )
                     }
                 },
@@ -328,7 +328,7 @@ private fun ScanBar(
         is ScreenerScanState.Scanning -> ScanningBar(done = scanState.done, total = scanState.total, modifier = modifier)
         is ScreenerScanState.Failed -> ScanBarAction(
             icon = Icons.Filled.Warning,
-            tint = LossRed,
+            tint = MaterialTheme.colorScheme.error,
             message = tr(L10n.Key.ScreenerScanFailed),
             actionTitle = tr(L10n.Key.Refresh),
             onAction = onScan,
@@ -618,7 +618,7 @@ private fun ResultRow(
 
 @Composable
 private fun AddButton(added: Boolean, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.size(32.dp)) {
+    IconButton(onClick = onClick) {
         Icon(
             if (added) Icons.Filled.CheckCircle else Icons.Filled.Add,
             contentDescription = tr(L10n.Key.AddToWatchlist),
