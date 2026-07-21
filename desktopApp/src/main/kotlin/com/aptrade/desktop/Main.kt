@@ -558,7 +558,26 @@ private fun AppRoot(
                     onToggleBookmark = newsViewModel::toggleBookmark,
                 )
                 AppTab.Calendar -> CalendarPane(calendarViewModel)
-                AppTab.Screener -> ScreenerPane()
+                AppTab.Screener ->
+                    if (openSymbol != null) {
+                        // Same shared detail navigation the Watchlist tab uses above (reviewer
+                        // fix: an earlier version rendered DetailScreen from pane-local state,
+                        // which meant no `tradeTarget`/`onOpenTrade` was reachable and the Buy
+                        // button never showed here — the Swift reference shows it
+                        // unconditionally for every caller). Routing through this shared
+                        // `openSymbol`/`onOpenDetail` path gives Buy AND `heldPosition` parity
+                        // with Watchlist for free.
+                        DetailScreen(
+                            symbol = openSymbol,
+                            heldPosition = portfolioState.holdings.firstOrNull { it.symbol == openSymbol },
+                            onBack = onBack,
+                            onBuy = { asset, priceText ->
+                                onOpenTrade(TradeTarget(asset, TradeSide.Buy, priceText))
+                            },
+                        )
+                    } else {
+                        ScreenerPane(onOpenDetail = onOpenDetail)
+                    }
             }
         }
 

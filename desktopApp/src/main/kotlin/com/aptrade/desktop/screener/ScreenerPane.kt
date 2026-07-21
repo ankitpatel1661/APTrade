@@ -50,7 +50,6 @@ import com.aptrade.desktop.designkit.InterFamily
 import com.aptrade.desktop.designkit.SuperscriptPrice
 import com.aptrade.desktop.designkit.formatMoney
 import com.aptrade.desktop.designkit.formatPercent
-import com.aptrade.desktop.detail.DetailScreen
 import com.aptrade.desktop.l10n.tr
 import com.aptrade.desktop.l10n.trf
 import com.aptrade.shared.domain.AssetKind
@@ -201,20 +200,34 @@ private object ScreenerColumnWidth {
  * `PlansPane`/`IncomePane`'s per-composable-VM pattern) — reads [AppGraph] via
  * [LocalAppGraph] rather than threading VM state through `Main.kt`/`AppRoot`, since the
  * non-suspend snapshot/screen stores mean the view model needs no async `onAppear()` load
- * (its `init` already reads both synchronously). Row-click detail navigation and the
- * add-to-watchlist affordance are likewise self-contained: [DetailScreen] is rendered
- * in-place (keyed by the selected symbol, mirroring its own per-composable-VM contract) and
- * watchlist membership is read/written through the SAME [AppGraph.fetchWatchlist]/
+ * (its `init` already reads both synchronously).
+ *
+ * Row-click detail navigation is DELIBERATELY NOT self-contained (reviewer fix, this task):
+ * [onOpenDetail] is the SAME hoisted `openSymbol` setter `Main.kt`'s `AppRoot` already
+ * threads into the Watchlist tab (`onOpenDetail = { symbol -> openSymbol = symbol }`) — the
+ * caller (`AppRoot`) is responsible for rendering `DetailScreen` when `openSymbol` is
+ * non-null, exactly mirroring the Watchlist tab's own `if (openSymbol != null) { DetailScreen
+ * } else { WatchlistPane }` branch. An earlier version of this pane rendered `DetailScreen`
+ * in-place from pane-local state instead; that meant this pane's detail view had no `onBuy`
+ * wired (no `tradeTarget`/`onOpenTrade` reachable from inside a self-contained composable),
+ * so a user scanning for a candidate and opening it hit a detail screen with no Buy button —
+ * a real gap versus the Swift reference, which shows the Buy button unconditionally for
+ * every caller. Routing through the shared path fixes that for free (and picks up
+ * `heldPosition` too, same as Watchlist) since `AppRoot` already owns `tradeTarget`/
+ * `portfolioState`.
+ *
+ * Watchlist membership is read/written through the SAME [AppGraph.fetchWatchlist]/
  * [AppGraph.addToWatchlist] use cases the Watchlist tab itself uses, so an add here shows up
- * immediately back on that tab (and vice versa).
+ * immediately back on that tab (and vice versa) — this part stays fully self-contained since
+ * it needs no state `AppRoot` doesn't already have elsewhere.
  *
  * The "+" new-screen chip is wired with a `null` callback for now (Task 8 adds the builder
- * dialog) — the nullable-callback convention [DetailScreen]'s own `onBuy` already
+ * dialog) — the nullable-callback convention `DetailScreen`'s own `onBuy` already
  * establishes: a `null` handler renders the chip disabled at reduced opacity, never a dead
  * button that silently does nothing on click.
  */
 @Composable
-fun ScreenerPane() {
+fun ScreenerPane(onOpenDetail: (String) -> Unit) {
     val graph: AppGraph = LocalAppGraph.current
     val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
     val viewModel = remember { graph.makeScreenerViewModel(scope) }
@@ -239,68 +252,57 @@ fun ScreenerPane() {
         addedSymbols = graph.fetchWatchlist.execute().map { it.symbol }.toSet()
     }
 
-    // Independent of the view model's own selection/results state — the open detail symbol
-    // (null = list), mirroring the Watchlist tab's `openSymbol` but scoped locally to this
-    // pane rather than hoisted to `Main.kt`/`AppRoot`, since Screener needs no held-position
-    // lookup the way Portfolio's detail navigation does.
-    var selectedSymbol by remember { mutableStateOf<String?>(null) }
-
-    val openSymbol = selectedSymbol
-    if (openSymbol != null) {
-        DetailScreen(symbol = openSymbol, onBack = { selectedSymbol = null })
-    } else {
-        val activeColumn = activeMetricColumn(state.selection)
-        Column(Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier.padding(top = 12.dp, bottom = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                Box(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
-                    ChipsRow(
-                        selection = state.selection,
-                        savedScreens = state.savedScreens,
-                        onSelectPreset = { viewModel.select(ScreenSelection.Preset(it)) },
-                        onSelectCustom = { viewModel.select(ScreenSelection.Custom(it)) },
-                        // Task 8 wires a real builder-dialog callback here; until then the
-                        // chip renders disabled (reduced opacity), never a dead no-op button.
-                        onNewScreen = null,
-                    )
-                }
-                Box(Modifier.padding(horizontal = 24.dp)) {
-                    ScanBar(
-                        state = state,
-                        isSnapshotFresh = viewModel.isSnapshotFresh(),
-                        onScan = { viewModel.startScan() },
-                    )
-                }
-            }
-            Box(Modifier.fillMaxWidth().height(1.dp).background(DK.hairline))
-            Box(Modifier.fillMaxSize()) {
-                ScreenerContent(
-                    state = state,
-                    activeColumn = activeColumn,
-                    addedSymbols = addedSymbols,
-                    onSort = { column ->
-                        if (state.sortColumn == column) {
-                            viewModel.setSortAscending(!state.sortAscending)
-                        } else {
-                            viewModel.setSortColumn(column)
-                            viewModel.setSortAscending(true)
-                        }
-                    },
-                    onRowClick = { symbol -> selectedSymbol = symbol },
-                    onAdd = { row ->
-                        if (row.symbol !in addedSymbols) {
-                            addedSymbols = addedSymbols + row.symbol
-                            scope.launch {
-                                graph.addToWatchlist.execute(
-                                    WatchlistEntry(symbol = row.symbol, name = row.name, kind = AssetKind.Stock),
-                                )
-                            }
-                        }
-                    },
+    val activeColumn = activeMetricColumn(state.selection)
+    Column(Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier.padding(top = 12.dp, bottom = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Box(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
+                ChipsRow(
+                    selection = state.selection,
+                    savedScreens = state.savedScreens,
+                    onSelectPreset = { viewModel.select(ScreenSelection.Preset(it)) },
+                    onSelectCustom = { viewModel.select(ScreenSelection.Custom(it)) },
+                    // Task 8 wires a real builder-dialog callback here; until then the chip
+                    // renders disabled (reduced opacity), never a dead no-op button.
+                    onNewScreen = null,
                 )
             }
+            Box(Modifier.padding(horizontal = 24.dp)) {
+                ScanBar(
+                    state = state,
+                    isSnapshotFresh = viewModel.isSnapshotFresh(),
+                    onScan = { viewModel.startScan() },
+                )
+            }
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(DK.hairline))
+        Box(Modifier.fillMaxSize()) {
+            ScreenerContent(
+                state = state,
+                activeColumn = activeColumn,
+                addedSymbols = addedSymbols,
+                onSort = { column ->
+                    if (state.sortColumn == column) {
+                        viewModel.setSortAscending(!state.sortAscending)
+                    } else {
+                        viewModel.setSortColumn(column)
+                        viewModel.setSortAscending(true)
+                    }
+                },
+                onRowClick = onOpenDetail,
+                onAdd = { row ->
+                    if (row.symbol !in addedSymbols) {
+                        addedSymbols = addedSymbols + row.symbol
+                        scope.launch {
+                            graph.addToWatchlist.execute(
+                                WatchlistEntry(symbol = row.symbol, name = row.name, kind = AssetKind.Stock),
+                            )
+                        }
+                    }
+                },
+            )
         }
     }
 }
@@ -364,7 +366,7 @@ private fun ScreenerChip(title: String, selected: Boolean, onClick: () -> Unit) 
     }
 }
 
-/** Nullable-callback pattern (mirroring [DetailScreen]'s `onBuy`): a `null` [onClick] renders
+/** Nullable-callback pattern (mirroring `DetailScreen`'s `onBuy`): a `null` [onClick] renders
  *  the "+" chip disabled at reduced opacity rather than a dead button that silently no-ops. */
 @Composable
 private fun NewScreenChip(onClick: (() -> Unit)?) {
