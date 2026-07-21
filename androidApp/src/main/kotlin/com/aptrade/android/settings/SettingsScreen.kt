@@ -359,6 +359,17 @@ private fun NotificationsPage(settings: AppSettings, onUpdate: ((AppSettings) ->
         checked = settings.pieContributions,
         onCheckedChange = { checked -> onUpdate { it.copy(pieContributions = checked) } },
     )
+    // Dividend-payment notification (Task 3) sits right beside Pie Contributions — same
+    // desktop/macOS placement (desktop AccountPanel.kt: settingsDividendNotif immediately
+    // follows pieContributionsToggle). Purely a delivery toggle for the credit notice; it does
+    // NOT gate whether dividends are processed — see AppSettings.dividendNotifications' doc
+    // comment.
+    ToggleRow(
+        title = tr(L10n.Key.SettingsDividendNotif),
+        subtitle = tr(L10n.Key.SettingsDividendNotifSubtitle),
+        checked = settings.dividendNotifications,
+        onCheckedChange = { checked -> onUpdate { it.copy(dividendNotifications = checked) } },
+    )
     Spacer(Modifier.height(10.dp))
     // macOS/desktop reuse tr(.email) ("Email") for this section label — not a dedicated
     // EMAIL-section Key. Mirrored here rather than adding a duplicate Key.
@@ -445,13 +456,21 @@ private fun ProfilePage() {
 /** Account Settings page — five decorative detail rows, including the static
  *  "Enabled — Touch ID" biometric row: macOS/desktop display static text here too, NOT
  *  bound to the Security page's Biometric Login toggle. Starting Balance and Display
- *  Currency values stay literal, same as both references. Below them, the one LIVE
- *  control on this page: the Finnhub key-entry field — the Android answer to the
- *  desktop/macOS "drop a key into config.json" instructions, since the sandboxed config
- *  dir isn't user-reachable here. Saving writes the same config.json AppGraph's news
- *  wiring re-reads, so the key applies the next time the News tab loads. */
+ *  Currency values stay literal, same as both references. Below them, the Finnhub
+ *  key-entry field — the Android answer to the desktop/macOS "drop a key into config.json"
+ *  instructions, since the sandboxed config dir isn't user-reachable here. Saving writes the
+ *  same config.json AppGraph's news wiring re-reads, so the key applies the next time the News
+ *  tab loads.
+ *
+ *  DRIP (Task 3) is a functional toggle appended right after the five detail rows (BEFORE
+ *  the Finnhub key section below, which has no desktop counterpart) — mirroring desktop
+ *  `AccountPanel.kt`'s `AccountSettingsPage` placement exactly: DRIP lives in this
+ *  account/trading group rather than Notifications because it changes money behavior (cash
+ *  vs. reinvest on dividend receipt), not notification delivery. */
 @Composable
 private fun AccountSettingsPage(viewModel: SettingsViewModel) {
+    val settings by viewModel.settings.collectAsState()
+
     DetailField(label = tr(L10n.Key.TradingMode), value = tr(L10n.Key.SimulatedPaperTrading))
     Spacer(Modifier.height(14.dp))
     DetailField(label = tr(L10n.Key.StartingBalance), value = "$100,000.00")
@@ -461,6 +480,13 @@ private fun AccountSettingsPage(viewModel: SettingsViewModel) {
     DetailField(label = tr(L10n.Key.DefaultTab), value = tr(L10n.Key.Watchlist))
     Spacer(Modifier.height(14.dp))
     DetailField(label = tr(L10n.Key.BiometricLogin), value = tr(L10n.Key.EnabledTouchID))
+    Spacer(Modifier.height(14.dp))
+    ToggleRow(
+        title = tr(L10n.Key.SettingsDrip),
+        subtitle = tr(L10n.Key.SettingsDripFooter),
+        checked = settings.dripEnabled,
+        onCheckedChange = { checked -> viewModel.update { it.copy(dripEnabled = checked) } },
+    )
 
     Spacer(Modifier.height(20.dp))
     SectionLabel(tr(L10n.Key.News))

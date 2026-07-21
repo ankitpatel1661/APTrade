@@ -2,6 +2,7 @@ package com.aptrade.android.portfolio
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.aptrade.android.l10n.tr
 import com.aptrade.android.ui.formatPercent
 import com.aptrade.android.ui.formatShares
 import com.aptrade.android.ui.money
@@ -28,6 +29,7 @@ import com.aptrade.shared.domain.allocationByKind
 import com.aptrade.shared.domain.realizedPnL
 import com.aptrade.shared.domain.renderCsv
 import com.aptrade.shared.domain.renderJson
+import com.aptrade.shared.l10n.L10n
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -134,10 +136,13 @@ data class PortfolioUiState(
     val tradeError: String? = null,
 )
 
+// Buy/Sell stay literal English here — only Dividend routes through tr(), matching desktop
+// PortfolioViewModel's own sideLabel (M8.2 Task 5): Dividend is the one side introduced after
+// the L10n catalog existed, so it's the only one keyed so far.
 private fun sideLabel(side: TradeSide): String = when (side) {
     TradeSide.Buy -> "Buy"
     TradeSide.Sell -> "Sell"
-    TradeSide.Dividend -> "Dividend"
+    TradeSide.Dividend -> tr(L10n.Key.ActivityDividend)
 }
 
 /** Accepts an optional leading '-', digits, and an optional '.' followed by 1-8 fraction
