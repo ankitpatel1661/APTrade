@@ -71,6 +71,17 @@ public final class ScreenerViewModel {
     /// `Task` has no such hook and keeps running orphaned, which is how a return-and-
     /// rescan used to fire two overlapping engines.
     private var scanTask: Task<Void, Never>?
+    /// Identifies which `scanTask` is currently owned, since `Task` itself has no
+    /// identity comparison available here. `startScan()`'s completion handler captures
+    /// the token it was minted with and only clears `scanTask`/`scanTaskToken` if the
+    /// stored token still matches — i.e. if THIS run is still the one `scanTask` points
+    /// at. Without this, a task that `cancelScan()` already cancelled (and whose handle
+    /// `cancelScan()` already nil'd out) can still be winding down when its `await
+    /// self?.scan()` returns; its completion would then unconditionally nil out
+    /// `scanTask` a second time — except by then a fresh `startScan()` may have stored a
+    /// NEW task there, and the stale completion would nil out that live handle instead,
+    /// leaving the new scan un-cancellable by a subsequent `cancelScan()` call.
+    private var scanTaskToken: UUID?
 
     public init(
         engine: ScreenerScanEngine,
@@ -108,6 +119,16 @@ public final class ScreenerViewModel {
     /// nothing is persisted, matching the spec's "interrupted → nothing persisted."
     /// `.failed` is reserved for a genuine, non-cancellation engine throw: no such path
     /// exists today, but the branch stays in place for when one does.
+    ///
+    /// A total network failure (every symbol fetch failed) surfaces as an engine
+    /// *success* — the engine only throws for cancellation — with an empty `rows` and
+    /// `failedSymbols` covering the whole universe. Persisting that would clobber a good
+    /// previous snapshot with nothing and show "0 scanned" with no way back. Per spec,
+    /// that case is treated as a failure instead: `scanState` flips to `.failed` and
+    /// neither the store nor `snapshot`/`results` are touched, so the prior snapshot
+    /// (and its results) survive and the view's `.failed` state offers retry. A scan
+    /// that legitimately returns zero rows with zero failures (e.g. an empty symbol
+    /// universe) is not this case and still saves normally.
     public func scan() async {
         if case .scanning = scanState { return }
         scanState = .scanning(done: 0, total: symbols.count)
@@ -126,6 +147,10 @@ public final class ScreenerViewModel {
                     }
                 }
             )
+            if newSnapshot.rows.isEmpty && !newSnapshot.failedSymbols.isEmpty {
+                scanState = .failed
+                return
+            }
             snapshotStore.save(newSnapshot)
             snapshot = newSnapshot
             scanState = .idle
@@ -145,20 +170,32 @@ public final class ScreenerViewModel {
     /// fresh scan) after the view itself is torn down by tab switching.
     public func startScan() {
         guard scanTask == nil else { return }
+        let token = UUID()
+        scanTaskToken = token
         scanTask = Task { @MainActor [weak self] in
             await self?.scan()
+            // Only clear the stored handle if it's still THIS run's token — i.e. nobody
+            // else (cancelScan, or a subsequent startScan after a cancel) has already
+            // reassigned `scanTask`/`scanTaskToken` out from under this completion. A
+            // late-finishing cancelled task must never nil out a newer task's handle.
+            guard self?.scanTaskToken == token else { return }
             self?.scanTask = nil
+            self?.scanTaskToken = nil
         }
     }
 
     /// Cancels the in-flight scan task, if any, and immediately releases ownership of it
     /// (so a subsequent `startScan()` isn't blocked by a task that's merely winding down).
+    /// Clearing `scanTaskToken` here too means the cancelled task's own completion
+    /// (above) will find its token stale once it eventually runs, and will correctly
+    /// skip clearing whatever `scanTask` a later `startScan()` has since stored.
     /// Cancellation itself is cooperative — the engine only notices at its next
     /// `Task.checkCancellation()` between batches — so the visible `scanState` reversion
     /// to `.idle` happens asynchronously inside `scan()`'s catch clause, not here.
     public func cancelScan() {
         scanTask?.cancel()
         scanTask = nil
+        scanTaskToken = nil
     }
 
     public func select(_ selection: ScreenSelection) {

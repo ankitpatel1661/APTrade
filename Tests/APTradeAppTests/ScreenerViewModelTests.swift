@@ -37,6 +37,9 @@ private final class FakeMarket: MarketDataRepository, @unchecked Sendable {
 
     var candlesBySymbol: [String: [Candle]] = [:]
     var delayNanoseconds: UInt64 = 0
+    /// When true, every `candles(for:timeframe:)` call throws instead of returning —
+    /// simulates a total network outage where every symbol in the universe fails.
+    var throwForAllSymbols = false
 
     // NSLock's lock()/unlock() are unavailable directly inside an `async` function body
     // (Swift 6 flags blocking-primitive calls there); routing through a plain synchronous
@@ -56,6 +59,9 @@ private final class FakeMarket: MarketDataRepository, @unchecked Sendable {
         withLock { _callCount += 1 }
         if delayNanoseconds > 0 {
             try? await Task.sleep(nanoseconds: delayNanoseconds)
+        }
+        if throwForAllSymbols {
+            throw AppError.network
         }
         return candlesBySymbol[symbol] ?? [Self.candle(close: 100)]
     }
@@ -183,6 +189,48 @@ final class ScreenerViewModelTests: XCTestCase {
         XCTAssertEqual(vm.snapshot?.rows.map(\.symbol).sorted(), ["NORM", "OVER"])
         // default selection is .preset(.rsiOversold) — only OVER (rsi14 == 0) should match
         XCTAssertEqual(vm.results.map(\.symbol), ["OVER"])
+    }
+
+    // MARK: (b2) total network failure -> .failed, previous snapshot + results retained,
+    // nothing (re-)persisted. Per the M9.1 micro-fix spec: the engine never throws for
+    // per-symbol failures (only for cancellation), so an offline refresh comes back as an
+    // engine *success* with empty `rows` and `failedSymbols` covering the whole universe.
+    // Saving that unconditionally would clobber a good previous snapshot with nothing and
+    // show "0 scanned" with no way back — this must instead surface as `.failed` and leave
+    // the prior snapshot untouched.
+    func test_b2_scan_totalNetworkFailure_setsFailedState_andRetainsPreviousSnapshot() async {
+        let market = FakeMarket()
+        market.throwForAllSymbols = true
+        let priorSnapshot = ScreenerSnapshot(
+            tradingDay: "2026-07-19", scannedAt: fixedNow.addingTimeInterval(-86_400),
+            rows: [row(symbol: "OLD", close: 42)], failedSymbols: []
+        )
+        let snapshotStore = MemorySnapshotStore()
+        snapshotStore.snapshot = priorSnapshot
+        let vm = makeVM(market: market, snapshotStore: snapshotStore, symbols: ["SYM1", "SYM2"])
+        let previousResults = vm.results
+
+        await vm.scan()
+
+        XCTAssertEqual(vm.scanState, .failed)
+        XCTAssertEqual(snapshotStore.saveCallCount, 0, "an all-failed scan must not persist")
+        XCTAssertEqual(vm.snapshot, priorSnapshot, "the previous good snapshot must survive")
+        XCTAssertEqual(vm.results.map(\.symbol), previousResults.map(\.symbol), "previous results retained")
+    }
+
+    /// The empty-rows-but-no-failures case (e.g. a genuinely empty symbol universe) is NOT
+    /// the offline case above and must still save normally, per the spec carve-out.
+    func test_b3_scan_emptyRowsWithNoFailures_stillSaves() async {
+        let market = FakeMarket()
+        let snapshotStore = MemorySnapshotStore()
+        let vm = makeVM(market: market, snapshotStore: snapshotStore, symbols: [])
+
+        await vm.scan()
+
+        XCTAssertEqual(vm.scanState, .idle)
+        XCTAssertEqual(snapshotStore.saveCallCount, 1)
+        XCTAssertEqual(vm.snapshot?.rows, [])
+        XCTAssertEqual(vm.snapshot?.failedSymbols, [])
     }
 
     // MARK: (c) progress states observed in order
