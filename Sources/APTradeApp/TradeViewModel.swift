@@ -66,14 +66,31 @@ final class TradeViewModel {
 
     /// Fills the quantity field with the maximum: shares owned (sell), or the largest
     /// whole-and-fractional amount affordable at the current price (buy).
+    ///
+    /// The sell arm deliberately does NOT go through `Quantity.formatted`: that helper
+    /// rounds to 4dp half-to-even, which can round a holding UP (e.g. a DRIP-accrued
+    /// 0.12345678-share position formats as "0.1235") — the field then reads a quantity
+    /// larger than what's actually held, `canSubmit`'s `quantity.amount <= sharesOwned.amount`
+    /// fails, and Sell is a dead end on any fractional holding whose 5th decimal rounds
+    /// up. Interpolating `sharesOwned.amount` directly renders the exact `Decimal`, so the
+    /// parsed-back quantity always matches the holding precisely.
+    ///
+    /// The buy arm rounds DOWN to 4dp instead (`NSDecimalRound` with `.down`): rounding
+    /// UP here (the old `.formatted` behavior) could make `quantity * price` exceed
+    /// `availableCash` by a fraction of a cent, so a max-buy could fail with
+    /// "not enough cash" the moment it's submitted. Rounding down guarantees the
+    /// estimated cost never exceeds the cash actually available.
     func setMax() {
         switch side {
         case .sell:
-            quantityText = sharesOwned.isZero ? "" : sharesOwned.formatted
+            quantityText = sharesOwned.isZero ? "" : "\(sharesOwned.amount)"
         case .buy:
             guard let price = quote?.price, price.amount > 0 else { return }
             let maxQty = availableCash.amount / price.amount
-            quantityText = Quantity(maxQty).formatted
+            var roundedDown = Decimal()
+            var raw = maxQty
+            NSDecimalRound(&roundedDown, &raw, 4, .down)
+            quantityText = Quantity(roundedDown).formatted
         case .dividend:
             break   // Not a user-selectable side in the trade sheet.
         }

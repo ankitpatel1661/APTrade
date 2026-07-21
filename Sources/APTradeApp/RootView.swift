@@ -10,7 +10,8 @@ public struct RootView: View {
     public init() {}
 
     enum Tab: String, CaseIterable {
-        case watchlist = "Watchlist", portfolio = "Portfolio", news = "News", calendar = "Calendar"
+        case watchlist = "Watchlist", portfolio = "Portfolio", news = "News", calendar = "Calendar",
+             screener = "Screener"
     }
     private enum PanelRoute {
         case menu, profile, accountSettings, notifications, appearance, security, help, about, language
@@ -68,6 +69,10 @@ public struct RootView: View {
                          onOpenAccount: { showAccountPanel = true })
                 .tabItem { Label(tr(.calendarTab), systemImage: "calendar") }
                 .tag(Tab.calendar)
+            ScreenerView(onOpenSearch: { showPalette = true },
+                         onOpenAccount: { showAccountPanel = true })
+                .tabItem { Label(tr(.screenerTab), systemImage: "line.3.horizontal.decrease.circle") }
+                .tag(Tab.screener)
         }
         .tint(Theme.gold)
         .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
@@ -148,6 +153,7 @@ public struct RootView: View {
                         case .portfolio: PortfolioView(switcher: AnyView(switcher))
                         case .news: NewsView(switcher: AnyView(switcher))
                         case .calendar: CalendarView(switcher: AnyView(switcher))
+                        case .screener: ScreenerView(switcher: AnyView(switcher))
                         }
                     }
                 }
@@ -831,6 +837,7 @@ public struct RootView: View {
         case .portfolio: return tr(.portfolio)
         case .news:      return tr(.news)
         case .calendar:  return tr(.calendarTab)
+        case .screener:  return tr(.screenerTab)
         }
     }
 

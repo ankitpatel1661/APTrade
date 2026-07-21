@@ -251,6 +251,28 @@ enum CompositionRoot {
         )
     }
 
+    /// Drives the Screener tab: full-universe technical scans over the S&P 500, saved
+    /// custom screens, and sortable results. `symbols` is the bundled S&P 500 snapshot
+    /// (sorted for a deterministic scan/progress order — `SP500Symbols.set` is unordered);
+    /// `names` is the same desktop-platform display-name map the macOS Calendar tab's
+    /// earnings rows already read (`SP500Names.swift`). The snapshot store is file-backed
+    /// (a full-universe scan is too large for `UserDefaults`); the screen store mirrors
+    /// every other small-list preference (`UserDefaultsScreenStore`).
+    static func makeScreenerViewModel() -> ScreenerViewModel {
+        let repo = makeRepository()
+        // Shared with the engine so the persisted snapshot's `tradingDay` and
+        // `isSnapshotFresh`'s "scanned today" check agree on the same trading calendar.
+        let calendar = MarketCalendar()
+        return ScreenerViewModel(
+            engine: ScreenerScanEngine(market: repo, calendar: calendar),
+            snapshotStore: FileScreenerSnapshotStore(),
+            screenStore: UserDefaultsScreenStore(),
+            symbols: SP500Symbols.set.sorted(),
+            names: sp500Names,
+            calendar: calendar
+        )
+    }
+
     static func makeNewsViewModel() -> NewsViewModel {
         // The key is read only here, never above infrastructure.
         let key = AppConfig.finnhubAPIKey()

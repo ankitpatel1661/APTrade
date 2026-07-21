@@ -15,7 +15,7 @@ An ultra-premium **native investing platform across four OSes** — a SwiftUI fl
 ![Swift](https://img.shields.io/badge/Swift-6.0-D4A94E?logo=swift)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Multiplatform-D4A94E?logo=kotlin)
 ![Architecture](https://img.shields.io/badge/architecture-Clean-D4A94E)
-![Tests](https://img.shields.io/badge/macOS%20tests-469%20passing-46C98A)
+![Tests](https://img.shields.io/badge/macOS%20tests-554%20passing-46C98A)
 
 </div>
 
@@ -59,7 +59,7 @@ Every app carries: a live watchlist, asset detail with candlestick/area charts a
 - **Buy / Sell** simulated orders with average-cost positions, an optional trade-confirmation step, and a Max helper.
 - **Holdings / Allocation / Activity / Performance** — a portfolio sub-switcher:
   - **Holdings** — positions sorted by market value, each with unrealized P&L and return %, plus a **top-movers** strip of today's biggest moves.
-  - **Allocation** — a donut by asset class (Stocks / ETFs / Crypto) with holdings value centered, and a per-holding percentage breakdown.
+  - **Allocation** — a donut by asset class (Stocks / ETFs / Crypto) with holdings value centered, and a per-holding percentage breakdown. On **macOS**, By-Class and By-Holding render as two top-aligned columns below the donut (an M9.1 polish pass, mirroring the Income section's side-by-side layout); **iPhone** keeps the original stacked layout.
   - **Activity** — **realized P&L** (average-cost, computed from the full transaction log so closed positions still count) and the complete transactions ledger.
   - **Performance** — risk & return analytics computed on a trade-aware equity curve (replaying the transaction log, not just today's holdings backward): **Total Return**, **Annualized Return (CAGR)**, **Volatility**, **Max Drawdown**, **Sharpe**, **Beta**, and **Alpha**. A normalized overlay chart compares the portfolio against a selectable benchmark (**SPY · QQQ · VTI**), and a **diversification score** (effective holdings, Herfindahl-based) flags single-name and asset-class concentration.
 - **P&L-over-time chart** — unrealized P&L reconstructed from real historical prices over a selectable timeframe, colored green/red by direction; tap the sparkline to expand it inline with axes and a hover crosshair.
@@ -104,6 +104,15 @@ Every app carries: a live watchlist, asset detail with candlestick/area charts a
 - **Export rows** — every portfolio statement (PDF on macOS/iPhone/Windows; Excel and Word on macOS/iPhone) carries **Dividends Received (YTD)** and **Projected Annual Income** alongside the existing summary rows.
 - **Platform status:** shipped on all four platforms — macOS + iPhone (M8.1), Windows desktop (M8.2), and Android (M8.3) — closing Milestone 8.
 
+### Technical Screener
+- **On-demand S&P 500 scan** — a scan bar runs `ScreenerScanEngine` over the bundled S&P 500 universe on request (there is no scheduled or background scan): symbols are grouped into throttled batches of 4 concurrent fetches, a rate-limited batch sleeps and retries once in full before any symbol in it is marked failed, and progress reports incrementally (`done / total`) as each batch completes — one bad symbol never stops or corrupts the rest of the scan.
+- **Daily snapshot cache** — the most recent full-universe scan persists to disk (`FileScreenerSnapshotStore`, atomic writes), so reopening the tab shows the last scan's results instantly with no network call; running a new scan simply overwrites the cached snapshot.
+- **9 curated presets** — RSI Oversold / Overbought, MACD Bullish Cross / Bearish Cross, Golden Cross, Death Cross, Bollinger Squeeze, and Near 52-Week High / Low, each evaluated directly off the scan's precomputed technical snapshot (RSI 14, MACD cross flags, Bollinger %B/bandwidth, 52-week range position).
+- **Custom builder** — a sheet AND-combines any number of conditions across 10 metrics (price, day change %, RSI 14, Bollinger %B, Bollinger bandwidth, % to 52-week high/low, relative volume, % vs SMA 50/200) with a live match count as you build; saved custom screens persist alongside the presets and can be edited or deleted.
+- **Sortable results** with an inline **add-to-watchlist** action per row — the Screener writes only to the same shared watchlist store every other tab uses (a symbol added here shows up on Watchlist immediately, and vice versa); it never touches the portfolio, and nothing about it is notification-driven.
+- **Fifth tab** alongside Watchlist / Portfolio / News / Calendar, with an iPhone-adapted row layout and horizontally-scrolling preset chips (`#if os(iOS)`); macOS keeps the full table columns and a static chip row.
+- **Platform status:** macOS + iPhone shipped (M9.1); Windows desktop (M9.2) and Android (M9.3) still to come.
+
 ### Settings & appearance
 - A unified, persisted **settings** layer — every preference (notification toggles, security/privacy, trade confirmation, theme, accent) flows through one store with a forward-compatible decoder.
 - **Selectable accents** — Champagne Gold, Rose Gold, Sapphire, Amethyst, and Platinum re-tint the whole brand ramp **including the logo/wordmark artwork** (gold pixels are remapped onto the chosen accent); **dark / light** mode toggle.
@@ -137,9 +146,9 @@ Strict **Clean Architecture**. Dependencies point inward only; the domain knows 
 └─────────────────────────────────────────────┘
 ```
 
-- **Domain** — `Asset`, `Quote`, `Money`, `Percentage`, `Quantity`, `Portfolio`, `Position`, `Candle`, `PricePoint`, `PriceAlert`, `NewsArticle`, `NewsCategory`, `AppSettings`, `AccentTheme`, `AppLanguage`, `MarketCalendar`, `EarningsEvent`, `Timeframe`, `Pie`, `PieSlice`, `ContributionSchedule`, `DividendEvent`, plus pure calculations: `TechnicalIndicators` (SMA/EMA/RSI/Bollinger/MACD), portfolio performance reconstruction, realized-P&L, `PieMath`/`PieSchedule`/`PieBacktest` (target-weight distribution, cadence due-day math, DCA-vs-lump-sum backtesting), `DividendMath` (strictly-before shares-held reconstruction, trailing-annual rate, cadence inference, projected income), and the `PortfolioExport` model. No framework imports.
-- **Application** — use cases (quotes, history, **candles**, search, watchlist, buy/sell, portfolio snapshots, **performance reconstruction**, **export**, **news**, **bookmarks**, alerts, settings, market-activity planning, **earnings calendar**, **Pie contribution / rebalance / backtest**, **dividend processing**) orchestrating over ports: `MarketDataRepository`, `WatchlistStore`, `PortfolioStore`, `PortfolioHistoryStore`, `AlertStore`, `AlertNotifier`, `OrderFillNotifier`, `MarketEventNotifier`, `SettingsStore`, `SchedulerStateStore`, `PortfolioExportRenderer`, `NewsRepository`, `BookmarkStore`, `EarningsCalendarRepository`, `PieStore`, `DividendEventsRepository`.
-- **Infrastructure** — `SharedCoreMarketDataRepository` (quotes, history, OHLC candles, profile, search, and dividend events via the shared Kotlin core), `CachingMarketDataRepository`, `FinnhubNewsRepository` (with an `EmptyNewsRepository` no-key fallback), `FinnhubEarningsRepository` (with an `EmptyEarningsRepository` no-key fallback), `AppConfig` (reads the Finnhub key from `~/.config/aptrade/config.json`), `UserNotificationAlertNotifier`, `UserDefaults`-backed stores (incl. bookmarks and `UserDefaultsPieStore`), and a dependency-free **export renderer** (Core Graphics PDF + a hand-rolled ZIP writer producing OOXML `.xlsx` / `.docx`).
+- **Domain** — `Asset`, `Quote`, `Money`, `Percentage`, `Quantity`, `Portfolio`, `Position`, `Candle`, `PricePoint`, `PriceAlert`, `NewsArticle`, `NewsCategory`, `AppSettings`, `AccentTheme`, `AppLanguage`, `MarketCalendar`, `EarningsEvent`, `Timeframe`, `Pie`, `PieSlice`, `ContributionSchedule`, `DividendEvent`, `ScreenerSnapshotRow`, `ScreenerSnapshot`, `ScreenerMetric`, `ScreenCondition`, `CustomScreen`, `PresetScreen`, `ScreenSelection`, plus pure calculations: `TechnicalIndicators` (SMA/EMA/RSI/Bollinger/MACD), portfolio performance reconstruction, realized-P&L, `PieMath`/`PieSchedule`/`PieBacktest` (target-weight distribution, cadence due-day math, DCA-vs-lump-sum backtesting), `DividendMath` (strictly-before shares-held reconstruction, trailing-annual rate, cadence inference, projected income), `ScreenerMath` (per-symbol technical snapshot with SMA/EMA/RSI/Bollinger/MACD-cross/52-week values), and the `PortfolioExport` model. No framework imports.
+- **Application** — use cases (quotes, history, **candles**, search, watchlist, buy/sell, portfolio snapshots, **performance reconstruction**, **export**, **news**, **bookmarks**, alerts, settings, market-activity planning, **earnings calendar**, **Pie contribution / rebalance / backtest**, **dividend processing**, **technical screening**) orchestrating over ports: `MarketDataRepository`, `WatchlistStore`, `PortfolioStore`, `PortfolioHistoryStore`, `AlertStore`, `AlertNotifier`, `OrderFillNotifier`, `MarketEventNotifier`, `SettingsStore`, `SchedulerStateStore`, `PortfolioExportRenderer`, `NewsRepository`, `BookmarkStore`, `EarningsCalendarRepository`, `PieStore`, `DividendEventsRepository`, `ScreenerSnapshotStore`, `ScreenStore`. The throttled, batched, backoff-and-retry `ScreenerScanEngine` also lives here, orchestrating over `MarketDataRepository` alone.
+- **Infrastructure** — `SharedCoreMarketDataRepository` (quotes, history, OHLC candles, profile, search, and dividend events via the shared Kotlin core), `CachingMarketDataRepository`, `FinnhubNewsRepository` (with an `EmptyNewsRepository` no-key fallback), `FinnhubEarningsRepository` (with an `EmptyEarningsRepository` no-key fallback), `AppConfig` (reads the Finnhub key from `~/.config/aptrade/config.json`), `UserNotificationAlertNotifier`, `UserDefaults`-backed stores (incl. bookmarks, `UserDefaultsPieStore`, and `UserDefaultsScreenStore`), `FileScreenerSnapshotStore` (Infrastructure's first file-backed, as opposed to `UserDefaults`-backed, store — a full S&P 500 snapshot is too large for `UserDefaults`), and a dependency-free **export renderer** (Core Graphics PDF + a hand-rolled ZIP writer producing OOXML `.xlsx` / `.docx`).
 - **Presentation** — declarative SwiftUI views with thin `@Observable` view models; a `MarketActivityCoordinator` runs the notification scheduler; `ThemeManager` and `LocalizationManager` drive live theme/accent and language switching; a typed `L10n` catalog backs `tr(_:)` localization; all dependencies wired in `CompositionRoot`.
 
 Built throughout on Swift 6 concurrency — `async/await`, `actor` isolation, and `Sendable` types. Business policy (e.g. the market-hours scheduler) is kept as **pure, fully tested functions**, with clocks and I/O injected at the edges.
@@ -184,7 +193,7 @@ The app ships as a bare SwiftPM executable. Launching the built binary directly 
 DEVELOPER_DIR=/Applications/Xcode.app swift test
 ```
 
-> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **469 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction, the all-priced gate + benchmark head-trim), the market calendar and earnings calendar, use cases, the market-activity planner (incl. earnings-check and Pie-contribution-check scheduling), alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the Finnhub earnings mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, the view models, Investment Plans (`PieMath` distribution/drift, `PieSchedule` cadence math, `PieBacktest` DCA-vs-lump-sum, contribution/rebalance use cases and catch-up, the `UserDefaultsPieStore`, and the coordinator's contribution notifications), and the dividend & income engine (`DividendMath` shares-held/trailing-rate/cadence math, `ProcessDueDividends` backfill/dedup/DRIP-with-cash-fallback, the Income view model, and the export renderer's two new income rows).
+> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **554 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction, the all-priced gate + benchmark head-trim), the market calendar and earnings calendar, use cases, the market-activity planner (incl. earnings-check and Pie-contribution-check scheduling), alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the Finnhub earnings mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, the view models, Investment Plans (`PieMath` distribution/drift, `PieSchedule` cadence math, `PieBacktest` DCA-vs-lump-sum, contribution/rebalance use cases and catch-up, the `UserDefaultsPieStore`, and the coordinator's contribution notifications), the dividend & income engine (`DividendMath` shares-held/trailing-rate/cadence math, `ProcessDueDividends` backfill/dedup/DRIP-with-cash-fallback, the Income view model, and the export renderer's two new income rows), and the technical screener (`ScreenerMath`'s per-symbol snapshot and cross-flag math, the 9 preset screens and custom AND-evaluation, `ScreenerScanEngine`'s throttled batching/backoff/failure-isolation, the file-backed snapshot and screen stores, and the screener view model).
 
 ### Building the shared Kotlin core
 
@@ -294,7 +303,9 @@ card (yield, trailing rate, next ex-date) alongside **Reinvest Dividends (DRIP)*
 Holding tables render **stacked rather than side-by-side**, matching the phone-layout
 divergence already recorded for Portfolio and Plans; and share quantities across the app
 now format through a shared **4-decimal-place** `formatShares` helper, transcribed from
-desktop's own fixed-decimals fix.
+desktop's own fixed-decimals fix (macOS's own `Quantity.formatted` caught up to the same
+4-decimal-place display in an M9.1 polish pass, so all four platforms now agree on share
+precision).
 
 ### Windows desktop app
 
@@ -530,8 +541,12 @@ APTrade Lite is the foundation. Planned toward the full platform:
 
 - Real authentication (Apple Sign In), biometric gating, and cloud sync (Supabase)
 - **Technical screener (M9)** — scan the bundled S&P 500 universe with the existing
-  `TechnicalIndicators` math (RSI thresholds, SMA/EMA crossovers, 52-week range position,
-  momentum), with results feeding watchlists and Plans.
+  `TechnicalIndicators` math: 9 curated presets (RSI oversold/overbought, MACD bullish/
+  bearish cross, golden/death cross, Bollinger squeeze, near 52-week high/low) plus a
+  custom AND-condition builder, an on-demand throttled scan with a daily on-disk snapshot
+  cache, and results that add straight to the watchlist. **Shipped on macOS + iPhone
+  (M9.1).** Windows desktop (M9.2) and Android (M9.3) still to come — M9 stays open on
+  this roadmap until Android parity closes it.
 - **Windows parity — complete.** The `:desktopApp` Compose app now covers Watchlist +
   detail + palette (6a), a Portfolio tab with detail-screen indicators, performance/risk
   intelligence, and export (6b.1 + 6b.2), a News tab with per-symbol company news and

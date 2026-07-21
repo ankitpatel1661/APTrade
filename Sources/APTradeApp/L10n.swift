@@ -133,6 +133,7 @@ enum L10n {
         case resetPortfolioConfirm = "Reset portfolio to $100,000 cash and clear all holdings?"
         case portfolioUnrealizedPnLChartTitle = "Portfolio · Unrealized P&L"
         case byHolding = "BY HOLDING"
+        case byClass = "BY CLASS"
         case holdingsLabel = "HOLDINGS"
         case noTransactionsYet = "No transactions yet."
         case noHoldingsYet = "No holdings yet"
@@ -368,6 +369,49 @@ enum L10n {
         case notifDividendCashBodyFmt = "%@ paid you %@"
         case notifDividendDripBodyFmt = "%@ paid %@ — reinvested"
         case notifDividendBackfillBodyFmt = "%@ past dividends credited — %@ total"
+
+        // MARK: Screener (M9.1)
+        case screenerTab = "Screener"
+        case screenerScan = "Scan"
+        // screenerRefresh reuses the existing `.refresh` key ("Refresh") — no new case needed.
+        case screenerScanningFmt = "Scanning… %@ of %@"
+        case screenerLastScanFmt = "%@ scanned · %@"
+        case screenerFailedNoteFmt = "%@ symbols unavailable"
+        case screenerNotScanned = "Scan the S&P 500 to run your first screen."
+        case screenerNoMatches = "No matches for this screen."
+        case screenerScanFailed = "Scan failed — check your connection and try again."
+        // Presets
+        case presetRsiOversold = "RSI Oversold"
+        case presetRsiOverbought = "RSI Overbought"
+        case presetMacdBullish = "MACD Bullish Cross"
+        case presetMacdBearish = "MACD Bearish Cross"
+        case presetGoldenCross = "Golden Cross"
+        case presetDeathCross = "Death Cross"
+        case presetBollingerSqueeze = "Bollinger Squeeze"
+        case presetNear52wHigh = "Near 52-Week High"
+        case presetNear52wLow = "Near 52-Week Low"
+        // Metrics (builder + columns)
+        case metricPrice = "Price"
+        case metricDayChange = "Day %"
+        case metricRsi = "RSI (14)"
+        case metricPercentB = "%B"
+        case metricBandwidth = "Bandwidth"
+        case metricTo52wHigh = "To 52w High"
+        case metricTo52wLow = "To 52w Low"
+        case metricRelVolume = "Rel. Volume"
+        case metricVsSma50 = "vs SMA 50"
+        case metricVsSma200 = "vs SMA 200"
+        // Builder
+        case screenerNewScreen = "New Screen"
+        case screenerEditScreen = "Edit Screen"
+        case screenerScreenName = "Screen Name"
+        case screenerAddCondition = "Add Condition"
+        case screenerAbove = "Above"
+        case screenerBelow = "Below"
+        case screenerMatchCountFmt = "%@ matches"
+        case screenerSaveScreen = "Save Screen"
+        case screenerDeleteScreen = "Delete Screen"
+        case addToWatchlist = "Add to Watchlist"
     }
 
     static let table: [Key: [AppLanguage: String]] = [
@@ -629,6 +673,8 @@ enum L10n {
                                             .spanish: "Cartera · P&L no realizado"],
         .byHolding: [.english: "BY HOLDING", .german: "NACH BESTAND",
                      .italian: "PER POSIZIONE", .spanish: "POR POSICIÓN"],
+        .byClass: [.english: "BY CLASS", .german: "NACH KLASSE",
+                   .italian: "PER CLASSE", .spanish: "POR CLASE"],
         .holdingsLabel: [.english: "HOLDINGS", .german: "BESTÄNDE",
                          .italian: "POSIZIONI", .spanish: "POSICIONES"],
         .noTransactionsYet: [.english: "No transactions yet.", .german: "Noch keine Transaktionen.",
@@ -1137,6 +1183,101 @@ enum L10n {
                                         .german: "%@ vergangene Dividenden gutgeschrieben — %@ insgesamt",
                                         .italian: "%@ dividendi passati accreditati — %@ in totale",
                                         .spanish: "%@ dividendos pasados acreditados — %@ en total"],
+
+        // MARK: Screener (M9.1)
+        .screenerTab: [.english: "Screener", .german: "Screener",
+                       .italian: "Screener", .spanish: "Screener"],
+        .screenerScan: [.english: "Scan", .german: "Scannen",
+                        .italian: "Scansiona", .spanish: "Escanear"],
+        // screenerRefresh reuses the existing `.refresh` row above — no duplicate row needed.
+        .screenerScanningFmt: [.english: "Scanning… %@ of %@",
+                               .german: "Scanne … %@ von %@",
+                               .italian: "Scansione in corso… %@ di %@",
+                               .spanish: "Escaneando… %@ de %@"],
+        .screenerLastScanFmt: [.english: "%@ scanned · %@",
+                               .german: "%@ gescannt · %@",
+                               .italian: "%@ scansionati · %@",
+                               .spanish: "%@ escaneados · %@"],
+        .screenerFailedNoteFmt: [.english: "%@ symbols unavailable",
+                                 .german: "%@ Symbole nicht verfügbar",
+                                 .italian: "%@ simboli non disponibili",
+                                 .spanish: "%@ símbolos no disponibles"],
+        .screenerNotScanned: [.english: "Scan the S&P 500 to run your first screen.",
+                              .german: "Scannen Sie den S&P 500, um Ihren ersten Filter auszuführen.",
+                              .italian: "Scansiona l'S&P 500 per eseguire il tuo primo filtro.",
+                              .spanish: "Escanea el S&P 500 para ejecutar tu primer filtro."],
+        .screenerNoMatches: [.english: "No matches for this screen.",
+                             .german: "Keine Treffer für diesen Filter.",
+                             .italian: "Nessun risultato per questo filtro.",
+                             .spanish: "Sin resultados para este filtro."],
+        .screenerScanFailed: [.english: "Scan failed — check your connection and try again.",
+                              .german: "Scan fehlgeschlagen — überprüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
+                              .italian: "Scansione non riuscita — controlla la tua connessione e riprova.",
+                              .spanish: "Error al escanear — comprueba tu conexión e inténtalo de nuevo."],
+
+        // Presets
+        .presetRsiOversold: [.english: "RSI Oversold", .german: "RSI überverkauft",
+                             .italian: "RSI ipervenduto", .spanish: "RSI sobrevendido"],
+        .presetRsiOverbought: [.english: "RSI Overbought", .german: "RSI überkauft",
+                               .italian: "RSI ipercomprato", .spanish: "RSI sobrecomprado"],
+        .presetMacdBullish: [.english: "MACD Bullish Cross", .german: "MACD Aufwärtskreuzung",
+                             .italian: "Incrocio rialzista MACD", .spanish: "Cruce alcista MACD"],
+        .presetMacdBearish: [.english: "MACD Bearish Cross", .german: "MACD Abwärtskreuzung",
+                             .italian: "Incrocio ribassista MACD", .spanish: "Cruce bajista MACD"],
+        .presetGoldenCross: [.english: "Golden Cross", .german: "Goldenes Kreuz",
+                             .italian: "Croce dorata", .spanish: "Cruce dorado"],
+        .presetDeathCross: [.english: "Death Cross", .german: "Todeskreuz",
+                            .italian: "Croce della morte", .spanish: "Cruce de la muerte"],
+        .presetBollingerSqueeze: [.english: "Bollinger Squeeze", .german: "Bollinger-Squeeze",
+                                  .italian: "Squeeze di Bollinger", .spanish: "Squeeze de Bollinger"],
+        .presetNear52wHigh: [.english: "Near 52-Week High", .german: "Nahe 52-Wochen-Hoch",
+                             .italian: "Vicino al massimo a 52 settimane", .spanish: "Cerca del máximo de 52 semanas"],
+        .presetNear52wLow: [.english: "Near 52-Week Low", .german: "Nahe 52-Wochen-Tief",
+                            .italian: "Vicino al minimo a 52 settimane", .spanish: "Cerca del mínimo de 52 semanas"],
+
+        // Metrics (builder + columns)
+        .metricPrice: [.english: "Price", .german: "Preis",
+                       .italian: "Prezzo", .spanish: "Precio"],
+        .metricDayChange: [.english: "Day %", .german: "Tag %",
+                           .italian: "Giorno %", .spanish: "Día %"],
+        .metricRsi: [.english: "RSI (14)", .german: "RSI (14)",
+                     .italian: "RSI (14)", .spanish: "RSI (14)"],
+        .metricPercentB: [.english: "%B", .german: "%B",
+                          .italian: "%B", .spanish: "%B"],
+        .metricBandwidth: [.english: "Bandwidth", .german: "Bandbreite",
+                           .italian: "Ampiezza banda", .spanish: "Ancho de banda"],
+        .metricTo52wHigh: [.english: "To 52w High", .german: "Bis 52W-Hoch",
+                           .italian: "Al massimo 52S", .spanish: "Al máximo 52S"],
+        .metricTo52wLow: [.english: "To 52w Low", .german: "Bis 52W-Tief",
+                          .italian: "Al minimo 52S", .spanish: "Al mínimo 52S"],
+        .metricRelVolume: [.english: "Rel. Volume", .german: "Rel. Volumen",
+                           .italian: "Volume rel.", .spanish: "Volumen rel."],
+        .metricVsSma50: [.english: "vs SMA 50", .german: "vs SMA 50",
+                         .italian: "vs SMA 50", .spanish: "vs SMA 50"],
+        .metricVsSma200: [.english: "vs SMA 200", .german: "vs SMA 200",
+                          .italian: "vs SMA 200", .spanish: "vs SMA 200"],
+
+        // Builder
+        .screenerNewScreen: [.english: "New Screen", .german: "Neuer Filter",
+                             .italian: "Nuovo filtro", .spanish: "Nuevo filtro"],
+        .screenerEditScreen: [.english: "Edit Screen", .german: "Filter bearbeiten",
+                              .italian: "Modifica filtro", .spanish: "Editar filtro"],
+        .screenerScreenName: [.english: "Screen Name", .german: "Filtername",
+                              .italian: "Nome del filtro", .spanish: "Nombre del filtro"],
+        .screenerAddCondition: [.english: "Add Condition", .german: "Bedingung hinzufügen",
+                                .italian: "Aggiungi condizione", .spanish: "Añadir condición"],
+        .screenerAbove: [.english: "Above", .german: "Über",
+                         .italian: "Sopra", .spanish: "Por encima"],
+        .screenerBelow: [.english: "Below", .german: "Unter",
+                         .italian: "Sotto", .spanish: "Por debajo"],
+        .screenerMatchCountFmt: [.english: "%@ matches", .german: "%@ Treffer",
+                                 .italian: "%@ risultati", .spanish: "%@ resultados"],
+        .screenerSaveScreen: [.english: "Save Screen", .german: "Filter speichern",
+                              .italian: "Salva filtro", .spanish: "Guardar filtro"],
+        .screenerDeleteScreen: [.english: "Delete Screen", .german: "Filter löschen",
+                                .italian: "Elimina filtro", .spanish: "Eliminar filtro"],
+        .addToWatchlist: [.english: "Add to Watchlist", .german: "Zur Beobachtungsliste hinzufügen",
+                          .italian: "Aggiungi alla lista di controllo", .spanish: "Añadir a la lista de seguimiento"],
     ]
 }
 
