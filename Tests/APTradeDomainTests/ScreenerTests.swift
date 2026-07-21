@@ -238,6 +238,38 @@ final class ScreenerTests: XCTestCase {
         }
     }
 
+    /// Every metric-backed field gets its own distinct value (1...10) so a transposition
+    /// inside `value(in:)` — e.g. swapping the `pctTo52wHigh`/`pctTo52wLow` returns — fails
+    /// this test even though it would sail through nil-only or single-field checks. If
+    /// `.pctTo52wHigh` and `.pctTo52wLow` were swapped in the implementation, the
+    /// `.pctTo52wHigh` assertion below would observe 7.0 (pctTo52wLow's value) instead of
+    /// the expected 6.0, and fail.
+    func test_metricValue_allTenCases_mapToTheirOwnDistinctField() {
+        let row = makeRow(
+            close: 1.0,
+            dayChangePercent: 2.0,
+            rsi14: 3.0,
+            pctVsSma50: 9.0,
+            pctVsSma200: 10.0,
+            bollingerPercentB: 4.0,
+            bollingerBandwidth: 5.0,
+            pctTo52wHigh: 6.0,
+            pctTo52wLow: 7.0,
+            relativeVolume: 8.0
+        )
+
+        XCTAssertEqual(ScreenerMetric.price.value(in: row), 1.0)
+        XCTAssertEqual(ScreenerMetric.dayChangePercent.value(in: row), 2.0)
+        XCTAssertEqual(ScreenerMetric.rsi14.value(in: row), 3.0)
+        XCTAssertEqual(ScreenerMetric.bollingerPercentB.value(in: row), 4.0)
+        XCTAssertEqual(ScreenerMetric.bollingerBandwidth.value(in: row), 5.0)
+        XCTAssertEqual(ScreenerMetric.pctTo52wHigh.value(in: row), 6.0)
+        XCTAssertEqual(ScreenerMetric.pctTo52wLow.value(in: row), 7.0)
+        XCTAssertEqual(ScreenerMetric.relativeVolume.value(in: row), 8.0)
+        XCTAssertEqual(ScreenerMetric.pctVsSma50.value(in: row), 9.0)
+        XCTAssertEqual(ScreenerMetric.pctVsSma200.value(in: row), 10.0)
+    }
+
     // MARK: - ScreenSelection.evaluate — preset door
 
     func test_screenSelection_presetDoor_filtersRows() {
