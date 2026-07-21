@@ -49,6 +49,12 @@ internal const val EARNINGS_CHANNEL_ID = "earnings_reports"
  *  [EARNINGS_CHANNEL_ID]: separate channel per notification kind, same reasoning. */
 internal const val PLAN_CONTRIBUTIONS_CHANNEL_ID = "plan_contributions"
 
+/** The channel every dividend (cash credit, DRIP reinvestment, or collapsed backfill
+ *  summary) notification posts to (M8.3 Task 4 — desktop `TrayNotifier.notifyDividend`
+ *  parity). Mechanical twin of [PLAN_CONTRIBUTIONS_CHANNEL_ID]: separate channel per
+ *  notification kind, same reasoning. */
+internal const val DIVIDENDS_CHANNEL_ID = "dividends"
+
 // --- Pure formatters -------------------------------------------------------------
 //
 // Transcribed verbatim from desktop's TrayNotifier (`desktopApp/.../infra/TrayNotifier.kt`),
@@ -121,6 +127,7 @@ class AndroidAlertNotifier(private val context: Context) : AlertNotifier {
     private var dailyDigestChannelCreated = false
     private var earningsChannelCreated = false
     private var planContributionsChannelCreated = false
+    private var dividendsChannelCreated = false
 
     private fun ensureChannel() {
         if (channelCreated || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -186,6 +193,17 @@ class AndroidAlertNotifier(private val context: Context) : AlertNotifier {
         )
         notificationManager.createNotificationChannel(channel)
         planContributionsChannelCreated = true
+    }
+
+    private fun ensureDividendsChannel() {
+        if (dividendsChannelCreated || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val channel = NotificationChannel(
+            DIVIDENDS_CHANNEL_ID,
+            tr(L10n.Key.SettingsDividendNotif),
+            NotificationManager.IMPORTANCE_DEFAULT,
+        )
+        notificationManager.createNotificationChannel(channel)
+        dividendsChannelCreated = true
     }
 
     private fun hasNotificationPermission(): Boolean =
@@ -324,6 +342,34 @@ class AndroidAlertNotifier(private val context: Context) : AlertNotifier {
         if (!hasNotificationPermission()) return
 
         val notification = NotificationCompat.Builder(context, PLAN_CONTRIBUTIONS_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setColor(ContextCompat.getColor(context, R.color.notification_accent))
+            .setContentTitle(title)
+            .setContentText(body)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+        notificationManager.notify(body.hashCode(), notification)
+    }
+
+    /**
+     * Delivers a dividend notification (cash credit, DRIP reinvestment, or a collapsed
+     * backfill summary) (M8.3 Task 4) — the Android counterpart to desktop's
+     * `TrayNotifier.notifyDividend`. Mechanical twin of [notifyPieContribution]: both [title]
+     * and [body] arrive pre-localized — the `AppGraph.marketActivityCoordinator` factory
+     * resolves `L10n.Key.NotifDividendTitle` and one of `NotifDividendCashBodyFmt`/
+     * `NotifDividendDripBodyFmt`/`NotifDividendBackfillBodyFmt` via `tr`/`trf` before calling
+     * in, so this method performs no formatting of its own, just the notification post. The
+     * notification id is keyed off [body] (which embeds the symbol, or the backfill count +
+     * total), same reasoning as [notifyPieContribution]'s id: a single tick can deliver
+     * multiple distinct dividend outcomes (one per live event, plus at most one collapsed
+     * backfill summary) that must not clobber each other in the tray.
+     */
+    suspend fun notifyDividend(title: String, body: String) {
+        ensureDividendsChannel()
+        if (!hasNotificationPermission()) return
+
+        val notification = NotificationCompat.Builder(context, DIVIDENDS_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(ContextCompat.getColor(context, R.color.notification_accent))
             .setContentTitle(title)

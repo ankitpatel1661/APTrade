@@ -3,20 +3,24 @@ package com.aptrade.android.portfolio
 import com.aptrade.android.FakeMarketDataRepository
 import com.aptrade.android.FakePortfolioStore
 import com.aptrade.shared.application.BuyAsset
+import com.aptrade.shared.application.FetchDividendEvents
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchPerformanceReport
 import com.aptrade.shared.application.FetchPortfolio
 import com.aptrade.shared.application.FetchPortfolioPerformance
+import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.ResetPortfolio
 import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.AssetKind
+import com.aptrade.shared.domain.DividendEvent
 import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.domain.Position
 import com.aptrade.shared.domain.PricePoint
 import com.aptrade.shared.domain.Quote
 import com.aptrade.shared.domain.TradeSide
+import com.aptrade.shared.domain.Transaction
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -53,6 +57,7 @@ class PortfolioViewModelTest {
         Quote(symbol, Money.usd(price), Money.usd(price), change)
 
     private val aapl = Asset("AAPL", "Apple Inc.", AssetKind.Stock)
+    private val btcUsd = Asset("BTC-USD", "Bitcoin USD", AssetKind.Crypto)
 
     /** A portfolio holding 100 AAPL @ $300 avg, $70,000 cash. */
     private fun heldPortfolio(): Portfolio = Portfolio(
@@ -65,6 +70,7 @@ class PortfolioViewModelTest {
         repo: FakeMarketDataRepository,
         now: () -> Long = { 1_700_000_000L },
         notifyOrderFill: suspend (TradeSide, String, String, String) -> Unit = { _, _, _, _ -> },
+        fetchDividendEvents: FetchDividendEvents? = null,
     ): PortfolioViewModel {
         val perf = FetchPortfolioPerformance(repo, store)
         return PortfolioViewModel(
@@ -78,6 +84,7 @@ class PortfolioViewModelTest {
             tickMillis = 15_000,
             zoneId = utc,
             notifyOrderFill = notifyOrderFill,
+            fetchDividendEvents = fetchDividendEvents,
         )
     }
 
@@ -489,6 +496,108 @@ class PortfolioViewModelTest {
         val s = vm.state.value
         assertNull(s.tradeError)
         assertEquals(listOf("AAPL"), s.holdings.map { it.symbol })
+        vm.stop()
+    }
+
+    // --- exportSnapshot income fields (M8.3 final-review fix) — transcribed from desktop's
+    // PortfolioViewModelTest ("exportSnapshot income fields (M8.2 Task 11)"): the same
+    // hand-computable 25.00 / 5.00 / 7.50 fixture (10 AAPL shares, one Dividend txn of
+    // 10 x $0.50 = $5.00 YTD, and a single trailing-annual dividend event of $0.75/share
+    // x 10 shares = $7.50 projected).
+
+    private fun seededDividendPortfolio(): Portfolio = Portfolio(
+        cash = Money.usd("50000"),
+        positions = listOf(Position(aapl, BigDecimal.parseString("10"), Money.usd("100.00"), Money.usd("0"))),
+        transactions = listOf(
+            Transaction(
+                id = "div-1", symbol = "AAPL", side = TradeSide.Dividend,
+                quantity = BigDecimal.parseString("10"), price = Money.usd("0.50"), epochSeconds = 2_000_000L,
+            ),
+        ),
+    )
+
+    @Test
+    fun exportSnapshotWithDividendsAndRepositoryPopulatesBothIncomeFields() = runTest(dispatcher.scheduler) {
+        val store = FakePortfolioStore().apply { saveImpl = {}; loadImpl = { seededDividendPortfolio() } }
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
+        // Trailing-annual per-share = $0.75 (single event inside the 365-day window) x
+        // 10 held shares = $7.50 projected annual income.
+        repo.dividendEventsImpl = { symbol, _ ->
+            if (symbol == "AAPL") listOf(DividendEvent("AAPL", 1_900_000L, Money.usd("0.75"))) else emptyList()
+        }
+        val vm = vm(store, repo, now = { 2_000_000L }, fetchDividendEvents = FetchDividendEvents(repo))
+
+        vm.start()
+        runCurrent()
+
+        val export = vm.exportSnapshot()
+
+        assertEquals(BigDecimal.parseString("5.00"), export.dividendsReceivedYTD)
+        assertEquals(BigDecimal.parseString("7.50"), export.projectedAnnualIncome)
+        assertEquals(listOf("AAPL"), repo.requestedDividendEventSymbols)
+        vm.stop()
+    }
+
+    @Test
+    fun exportSnapshotWithNilFetchDividendEventsProjectsZeroButStillPopulatesYTD() = runTest(dispatcher.scheduler) {
+        val store = FakePortfolioStore().apply { saveImpl = {}; loadImpl = { seededDividendPortfolio() } }
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
+        val vm = vm(store, repo, now = { 2_000_000L })
+        // fetchDividendEvents defaults to null.
+
+        vm.start()
+        runCurrent()
+
+        val export = vm.exportSnapshot()
+
+        assertEquals(BigDecimal.ZERO, export.projectedAnnualIncome)
+        assertEquals(
+            BigDecimal.parseString("5.00"), export.dividendsReceivedYTD,
+            "YTD dividends are ledger-derived and don't need the repository",
+        )
+        vm.stop()
+    }
+
+    @Test
+    fun exportSnapshotRepositoryThrowsDegradesToZeroForThatSymbolOnly() = runTest(dispatcher.scheduler) {
+        val store = FakePortfolioStore().apply { saveImpl = {}; loadImpl = { seededDividendPortfolio() } }
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
+        repo.dividendEventsImpl = { _, _ -> throw QuoteError.NotFound }
+        val vm = vm(store, repo, now = { 2_000_000L }, fetchDividendEvents = FetchDividendEvents(repo))
+
+        vm.start()
+        runCurrent()
+
+        val export = vm.exportSnapshot()
+
+        assertEquals(BigDecimal.ZERO, export.projectedAnnualIncome)
+        vm.stop()
+    }
+
+    @Test
+    fun exportSnapshotCryptoOnlyPortfolioSkipsRepositoryAndProjectsZero() = runTest(dispatcher.scheduler) {
+        val seeded = Portfolio(
+            cash = Money.usd("50000"),
+            positions = listOf(Position(btcUsd, BigDecimal.parseString("1"), Money.usd("50000"), Money.usd("0"))),
+        )
+        val store = FakePortfolioStore().apply { saveImpl = {}; loadImpl = { seeded } }
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "50000.00") } }
+        val vm = vm(store, repo, now = { 2_000_000L }, fetchDividendEvents = FetchDividendEvents(repo))
+
+        vm.start()
+        runCurrent()
+
+        val export = vm.exportSnapshot()
+
+        assertEquals(BigDecimal.ZERO, export.projectedAnnualIncome)
+        assertTrue(
+            repo.requestedDividendEventSymbols.isEmpty(),
+            "crypto positions should never be queried for dividend events",
+        )
         vm.stop()
     }
 }

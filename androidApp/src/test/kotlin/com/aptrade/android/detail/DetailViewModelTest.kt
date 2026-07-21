@@ -4,6 +4,7 @@ import com.aptrade.android.FakeMarketDataRepository
 import com.aptrade.android.FakePortfolioStore
 import com.aptrade.shared.application.BuyAsset
 import com.aptrade.shared.application.FetchChartWindow
+import com.aptrade.shared.application.FetchDividendEvents
 import com.aptrade.shared.application.FetchHistory
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchProfile
@@ -12,6 +13,9 @@ import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.Candle
+import com.aptrade.shared.domain.DividendEvent
+import com.aptrade.shared.domain.DividendMath
+import com.aptrade.shared.domain.MONEY_MATH
 import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.domain.Position
@@ -49,6 +53,10 @@ class DetailViewModelTest {
         store: FakePortfolioStore = FakePortfolioStore(),
         now: () -> Long = { 1_700_000_000L },
         notifyOrderFill: suspend (TradeSide, String, String, String) -> Unit = { _, _, _, _ -> },
+        // Always wired by default (mirrors desktop's "always present" contract) — tests that
+        // don't care about dividends simply get FakeMarketDataRepository's default empty-list
+        // dividendEventsImpl, so dividendInfo stays null with no other side effects.
+        fetchDividendEvents: FetchDividendEvents? = FetchDividendEvents(repo),
     ) = DetailViewModel(
         symbol = symbol,
         fetchProfile = FetchProfile(repo),
@@ -59,6 +67,7 @@ class DetailViewModelTest {
         sellAsset = SellAsset(repo, store, Mutex()),
         nowEpochSeconds = now,
         notifyOrderFill = notifyOrderFill,
+        fetchDividendEvents = fetchDividendEvents,
     )
 
     @Test
@@ -496,5 +505,128 @@ class DetailViewModelTest {
         val s = viewModel.state.value
         assertNull(s.tradeError)
         assertEquals(1, s.transactionCount)
+    }
+
+    // --- Dividend info (Task 3 — desktop parity, DetailViewModelTest.kt "MARK: - Dividend info") ---
+
+    /** (a) A payer with events in the trailing window gets a computed `DividendInfo`: rate =
+     *  trailing 365d per-share sum, yield = rate / current quote price. Transcribed from
+     *  desktop's `payerWithEventsComputesDividendInfo`. */
+    @Test
+    fun payerWithEventsComputesDividendInfo() = runTest(dispatcher.scheduler) {
+        val repo = FakeMarketDataRepository()
+        repo.profileImpl = { Asset(it, "Apple Inc.", AssetKind.Stock) }
+        repo.quotesImpl = { listOf(Quote("AAPL", Money.usd("10.00"), Money.usd("10.00"), 0.0)) }
+        val now = 1_700_000_000L
+        val events = listOf(
+            DividendEvent("AAPL", now - 90 * 86_400L, Money.usd("0.24")),
+            DividendEvent("AAPL", now - 180 * 86_400L, Money.usd("0.23")),
+            DividendEvent("AAPL", now - 270 * 86_400L, Money.usd("0.23")),
+            DividendEvent("AAPL", now - 360 * 86_400L, Money.usd("0.22")),
+        )
+        repo.dividendEventsImpl = { _, _ -> events }
+        val viewModel = vm(repo, now = { now })
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val expectedRate = DividendMath.trailingAnnualPerShare(events, now)
+        val info = assertNotNull(viewModel.state.value.dividendInfo)
+        assertEquals(expectedRate, info.trailingAnnualRate)
+        val expectedYield = expectedRate.amount.divide(BigDecimal.parseString("10.00"), MONEY_MATH).doubleValue(false)
+        assertEquals(expectedYield, info.yieldFraction, 0.0001)
+        assertEquals(events.sortedBy { it.exDateEpochSeconds }.map { it.amountPerShare }, info.recentAmounts)
+        assertEquals(1, repo.requestedDividendEventSymbols.size)
+    }
+
+    /** (b) Crypto assets never fetch dividend events — `dividendInfo` degrades to null without
+     *  the repository ever being called. Transcribed from desktop's
+     *  `cryptoAssetDividendInfoNullWithoutFetching`. */
+    @Test
+    fun cryptoAssetDividendInfoNullWithoutFetching() = runTest(dispatcher.scheduler) {
+        val repo = FakeMarketDataRepository()
+        repo.profileImpl = { Asset("BTC-USD", "Bitcoin", AssetKind.Crypto) }
+        val viewModel = vm(repo, symbol = "BTC-USD", now = { 1_700_000_000L })
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertNull(viewModel.state.value.dividendInfo)
+        assertEquals(0, repo.requestedDividendEventSymbols.size)
+    }
+
+    /** (c) Zero dividend events in the trailing-2-year window -> null (non-payer, card hidden).
+     *  Transcribed from desktop's `noEventsDividendInfoNull`. */
+    @Test
+    fun noEventsDividendInfoNull() = runTest(dispatcher.scheduler) {
+        val repo = FakeMarketDataRepository()
+        repo.profileImpl = { Asset("AAPL", "Apple Inc.", AssetKind.Stock) }
+        repo.dividendEventsImpl = { _, _ -> emptyList() }
+        val viewModel = vm(repo, now = { 1_700_000_000L })
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertNull(viewModel.state.value.dividendInfo)
+    }
+
+    /** (d) A dividend-events fetch failure degrades to null — never an error state — and leaves
+     *  the rest of the detail load (quote/chart) unaffected. Transcribed from desktop's
+     *  `dividendFetchFailureDividendInfoNullOtherStateUnaffected`. */
+    @Test
+    fun dividendFetchFailureDividendInfoNullOtherStateUnaffected() = runTest(dispatcher.scheduler) {
+        val repo = FakeMarketDataRepository()
+        repo.profileImpl = { Asset("AAPL", "Apple Inc.", AssetKind.Stock) }
+        repo.quotesImpl = { listOf(Quote("AAPL", Money.usd("5.25"), Money.usd("4.50"), 1.2)) }
+        repo.historyImpl = { _, _ -> listOf(PricePoint(1, Money.usd("5.25"))) }
+        repo.dividendEventsImpl = { _, _ -> throw QuoteError.Network("boom") }
+        val viewModel = vm(repo, now = { 1_700_000_000L })
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertNull(viewModel.state.value.dividendInfo)
+        assertEquals(false, viewModel.state.value.isLoadingChart)
+        assertEquals("$5.25", viewModel.state.value.priceText)
+    }
+
+    /** Regression: a payer whose last event within the fetch window is old enough that
+     *  `lastEvent.exDate + cadenceInterval` lands before "now" must NOT surface a past date
+     *  under the "Est." badge — `nextEstimatedExDateEpochSeconds` hides (null) while the rest
+     *  of `DividendInfo` (rate/yield/recentAmounts) still shows. Transcribed from desktop's
+     *  `staleProjectionHidesDateKeepsOtherFields`. */
+    @Test
+    fun staleProjectionHidesDateKeepsOtherFields() = runTest(dispatcher.scheduler) {
+        val repo = FakeMarketDataRepository()
+        repo.profileImpl = { Asset("AAPL", "Apple Inc.", AssetKind.Stock) }
+        val now = 1_700_000_000L
+        // Annual cadence (365-day gap), last event ~700 days ago: projected next ex-date =
+        // lastEvent + 365d = now - 335d, i.e. still in the past relative to `now`.
+        val events = listOf(
+            DividendEvent("AAPL", now - 700 * 86_400L, Money.usd("0.20")),
+            DividendEvent("AAPL", now - 1_065 * 86_400L, Money.usd("0.20")),
+        )
+        repo.dividendEventsImpl = { _, _ -> events }
+        val viewModel = vm(repo, now = { now })
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val info = assertNotNull(viewModel.state.value.dividendInfo)
+        assertNull(info.nextEstimatedExDateEpochSeconds)
+        assertEquals(events.sortedBy { it.exDateEpochSeconds }.map { it.amountPerShare }, info.recentAmounts)
+    }
+
+    /** Pins a documented edge in the crypto dividend-skip guard: a profile FETCH FAILURE never
+     *  itself skips the dividend-events call — only a POSITIVELY KNOWN `AssetKind.Crypto` kind
+     *  does (see [DetailViewModel]'s dividend-info init coroutine KDoc). Flagged during the
+     *  M8.2 desktop review as a case a careless refactor could silently flip.
+     *
+     *  Swift has no equivalent state to pin here: `AssetDetailViewModel`'s asset kind arrives
+     *  already resolved at construction (no async profile fetch, so no "still resolving / just
+     *  failed" window exists). This test exists purely because Kotlin's `DetailViewModel`
+     *  resolves `kind` asynchronously from its own `fetchProfile` call — when that call fails,
+     *  `kind` stays `null`, and `null != AssetKind.Crypto`, so the guard falls through and the
+     *  dividend-events fetch proceeds exactly as it would for any non-crypto symbol. */
+    @Test
+    fun profileFailureForCryptoSymbolStillProceedsWithDividendFetch() = runTest(dispatcher.scheduler) {
+        val repo = FakeMarketDataRepository()
+        repo.profileImpl = { throw QuoteError.NotFound } // kind never resolves — stays null, NOT Crypto
+        repo.dividendEventsImpl = { _, _ -> emptyList() } // no events -> dividendInfo stays null regardless
+        val viewModel = vm(repo, symbol = "BTC-USD", now = { 1_700_000_000L })
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(1, repo.requestedDividendEventSymbols.size) // fetch WAS attempted despite profile failure
+        assertNull(viewModel.state.value.dividendInfo)
     }
 }

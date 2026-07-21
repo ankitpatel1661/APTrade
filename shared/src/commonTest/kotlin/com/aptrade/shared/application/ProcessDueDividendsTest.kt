@@ -478,7 +478,12 @@ private class FakeDivMarket : MarketDataRepository {
 
     override suspend fun dividendEvents(symbol: String, fromEpochSeconds: Long): List<DividendEvent> {
         errorsBySymbol[symbol]?.let { throw it }
-        return (eventsBySymbol[symbol] ?: emptyList()).filter { it.exDateEpochSeconds >= fromEpochSeconds }
+        // `fromEpochSeconds` is deliberately ignored, mirroring the Swift fake (which ignores
+        // `since` entirely) — the production `sharesHeld == 0` skip in `credit()` is what's
+        // meant to filter out pre-buy events, not this fake's fetch boundary. Filtering here
+        // would make test (j)'s pre-buy assertion vacuous (the event would never reach the
+        // engine for the production skip to act on).
+        return eventsBySymbol[symbol] ?: emptyList()
     }
 }
 

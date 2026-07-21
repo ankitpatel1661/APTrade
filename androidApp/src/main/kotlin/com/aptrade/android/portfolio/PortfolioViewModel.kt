@@ -2,11 +2,14 @@ package com.aptrade.android.portfolio
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.aptrade.android.l10n.tr
 import com.aptrade.android.ui.formatPercent
+import com.aptrade.android.ui.formatShares
 import com.aptrade.android.ui.money
 import com.aptrade.android.ui.signedMoney
 import com.aptrade.android.ui.userMessage
 import com.aptrade.shared.application.BuyAsset
+import com.aptrade.shared.application.FetchDividendEvents
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchPerformanceReport
 import com.aptrade.shared.application.FetchPortfolio
@@ -16,6 +19,8 @@ import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.domain.AllocationSlice
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.AssetKind
+import com.aptrade.shared.domain.DividendEvent
+import com.aptrade.shared.domain.DividendMath
 import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.domain.PortfolioExport
 import com.aptrade.shared.domain.Quote
@@ -27,6 +32,7 @@ import com.aptrade.shared.domain.allocationByKind
 import com.aptrade.shared.domain.realizedPnL
 import com.aptrade.shared.domain.renderCsv
 import com.aptrade.shared.domain.renderJson
+import com.aptrade.shared.l10n.L10n
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -40,6 +46,12 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+
+/** How far back to fetch dividend events when projecting annual income: two years covers
+ *  the trailing-annual window (365d) plus enough history for cadence inference on
+ *  slower-paying assets. Mirrors desktop `PortfolioViewModel`'s
+ *  `DIVIDEND_EVENTS_LOOKBACK_SECONDS` and `IncomeViewModel.lookbackStart`. */
+private const val DIVIDEND_EVENTS_LOOKBACK_SECONDS = 730L * 86_400L
 
 /** The portfolio P&L chart's time span. Mirrors the desktop `PortfolioSpan`: the asset-detail
  *  timeframes plus a **Max** option that runs since the portfolio's first purchase. */
@@ -133,10 +145,13 @@ data class PortfolioUiState(
     val tradeError: String? = null,
 )
 
+// Buy/Sell stay literal English here — only Dividend routes through tr(), matching desktop
+// PortfolioViewModel's own sideLabel (M8.2 Task 5): Dividend is the one side introduced after
+// the L10n catalog existed, so it's the only one keyed so far.
 private fun sideLabel(side: TradeSide): String = when (side) {
     TradeSide.Buy -> "Buy"
     TradeSide.Sell -> "Sell"
-    TradeSide.Dividend -> "Dividend"
+    TradeSide.Dividend -> tr(L10n.Key.ActivityDividend)
 }
 
 /** Accepts an optional leading '-', digits, and an optional '.' followed by 1-8 fraction
@@ -168,7 +183,13 @@ private fun parseQuantity(text: String): BigDecimal? {
  *  `AppGraphNotifyOrderFill`/`PortfolioViewModel.notifyFillSafely`): event-driven, fired only
  *  after a trade actually succeeds, gated upstream by `settings.orderFills`, and never allowed
  *  to fail the trade — CancellationException rethrows, everything else is swallowed. Defaults
- *  to a no-op so existing callers/tests that don't care about notifications keep compiling. */
+ *  to a no-op so existing callers/tests that don't care about notifications keep compiling.
+ *
+ *  [fetchDividendEvents] mirrors desktop `PortfolioViewModel`'s optional
+ *  `FetchDividendEvents? = null` DI seam (itself transcribed from Swift's
+ *  `ExportPortfolioUseCase`'s `dividendEventsRepository: DividendEventsRepository? = nil`,
+ *  M8.2 Task 11): a nil-safe seam so `exportSnapshot`'s `projectedAnnualIncome` degrades to
+ *  zero rather than failing when no dividend-events source is wired for a given build. */
 class PortfolioViewModel(
     private val fetchPortfolio: FetchPortfolio,
     private val fetchMarketQuotes: FetchMarketQuotes,
@@ -180,6 +201,7 @@ class PortfolioViewModel(
     private val tickMillis: Long = 15_000,
     private val zoneId: ZoneId = ZoneId.systemDefault(),
     private val notifyOrderFill: suspend (TradeSide, String, String, String) -> Unit = { _, _, _, _ -> },
+    private val fetchDividendEvents: FetchDividendEvents? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(PortfolioUiState())
@@ -288,7 +310,7 @@ class PortfolioViewModel(
         val txn = portfolio.transactions.lastOrNull { it.symbol == symbol && it.side == side } ?: return
         try {
             val amountText = (txn.price.amount * txn.quantity).toStringExpanded()
-            notifyOrderFill(side, symbol, txn.quantity.toStringExpanded(), money(amountText))
+            notifyOrderFill(side, symbol, formatShares(txn.quantity), money(amountText))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
@@ -313,14 +335,45 @@ class PortfolioViewModel(
         }
     }
 
-    fun exportCsv(): String = exportSnapshot().renderCsv()
+    suspend fun exportCsv(): String = exportSnapshot().renderCsv()
 
-    fun exportJson(): String = exportSnapshot().renderJson()
+    suspend fun exportJson(): String = exportSnapshot().renderJson()
 
     /** The current portfolio valued against the last-good quotes, as a [PortfolioExport]
-     *  snapshot — the single source for CSV/JSON export. */
-    fun exportSnapshot(): PortfolioExport =
-        PortfolioExport.from(portfolio, quotes, "APTrade", nowEpochSeconds())
+     *  snapshot — the single source for CSV/JSON export.
+     *
+     *  `suspend` (M8.3 final-review fix, mirroring desktop `PortfolioViewModel`'s M8.2 Task
+     *  11 change): `projectedAnnualIncome` fetches per-symbol dividend events. */
+    suspend fun exportSnapshot(): PortfolioExport {
+        val asOf = nowEpochSeconds()
+        val income = projectedAnnualIncome(portfolio, asOf)
+        return PortfolioExport.from(portfolio, quotes, "APTrade", asOf, income)
+    }
+
+    /** Forward 12-month dividend income from held, non-crypto positions. Returns zero when
+     *  there's no [fetchDividendEvents] to source events from (e.g. export is used before
+     *  the shared dividend-events facet is wired for a given build). A per-symbol fetch
+     *  failure degrades only that symbol to zero events — it never blocks the others.
+     *  Byte-transcribed from desktop `PortfolioViewModel.projectedAnnualIncome`. */
+    private suspend fun projectedAnnualIncome(portfolio: Portfolio, asOfEpochSeconds: Long): BigDecimal {
+        val fetchDividendEvents = fetchDividendEvents ?: return BigDecimal.ZERO
+        val nonCryptoPositions = portfolio.positions.filter { it.asset.kind != AssetKind.Crypto }
+        if (nonCryptoPositions.isEmpty()) return BigDecimal.ZERO
+
+        val since = asOfEpochSeconds - DIVIDEND_EVENTS_LOOKBACK_SECONDS
+        val eventsBySymbol = mutableMapOf<String, List<DividendEvent>>()
+        for (position in nonCryptoPositions) {
+            val symbol = position.asset.symbol
+            eventsBySymbol[symbol] = try {
+                fetchDividendEvents.execute(symbol, since)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: QuoteError) {
+                emptyList()
+            }
+        }
+        return DividendMath.projectedAnnualIncome(portfolio.positions, eventsBySymbol, asOfEpochSeconds).amount
+    }
 
     /** Merges per-symbol instead of replacing wholesale: a poll returning a SUBSET of held
      *  symbols keeps the last-good quote for the missing ones (right-biased merge), rather than
@@ -393,7 +446,7 @@ class PortfolioViewModel(
                     symbol = position.asset.symbol,
                     name = position.asset.name,
                     kind = position.asset.kind,
-                    quantityText = position.quantity.toStringExpanded(),
+                    quantityText = formatShares(position.quantity),
                     averageCostText = money(position.averageCost.amountText),
                     marketValueText = money(marketValue.amountText),
                     unrealizedText = signedMoney(unrealized.amountText),
@@ -412,7 +465,7 @@ class PortfolioViewModel(
                     symbol = txn.symbol,
                     sideLabel = sideLabel(txn.side),
                     isBuy = txn.side == TradeSide.Buy,
-                    quantityText = txn.quantity.toStringExpanded(),
+                    quantityText = formatShares(txn.quantity),
                     priceText = money(txn.price.amountText),
                     epochSeconds = txn.epochSeconds,
                     dateText = Instant.ofEpochSecond(txn.epochSeconds).atZone(zoneId).format(transactionDateFormatter),

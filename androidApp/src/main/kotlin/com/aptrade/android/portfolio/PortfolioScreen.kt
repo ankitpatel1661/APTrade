@@ -40,6 +40,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -55,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aptrade.android.AppGraph
+import com.aptrade.android.income.IncomeSection
 import com.aptrade.android.l10n.tr
 import com.aptrade.android.plans.PlansSection
 import com.aptrade.android.ui.chart.ChartLegend
@@ -66,23 +68,25 @@ import com.aptrade.android.ui.chart.nearestIndex
 import com.aptrade.android.ui.localizedLabel
 import com.aptrade.android.ui.theme.GainGreen
 import com.aptrade.android.ui.theme.LossRed
+import com.aptrade.shared.application.FetchDividendEvents
 import com.aptrade.shared.domain.AllocationSlice
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.l10n.L10n
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 /** The holding row a [TradeSheet] is opened against, plus the side the user tapped. */
 private data class TradeTarget(val row: HoldingRowUi, val side: TradeSide)
 
-/** The five content sections switched below the summary header — desktop parity
+/** The six content sections switched below the summary header — desktop parity
  *  ([com.aptrade.desktop.portfolio.PortfolioPane]'s `PortfolioSection`, which added `Plans` the
- *  same way for M7.3), plus Performance as a fifth switchable tab (desktop keeps its chart
- *  block always visible above the switcher; Android instead folds it into the switcher itself
- *  so only one section — chart or list — is on screen at a time, matching this screen's
- *  existing single-LazyColumn, one-thing-at-a-time layout). Order and labels match desktop's
- *  set exactly (same five L10n keys). */
-private enum class PortfolioSection { Holdings, Allocation, Activity, Plans, Performance }
+ *  same way for M7.3, and `Income` for M8.3 Task 2), plus Performance as a switchable tab
+ *  (desktop keeps its chart block always visible above the switcher; Android instead folds it
+ *  into the switcher itself so only one section — chart or list — is on screen at a time,
+ *  matching this screen's existing single-LazyColumn, one-thing-at-a-time layout). Order and
+ *  labels match desktop's set exactly (same six L10n keys). */
+private enum class PortfolioSection { Holdings, Allocation, Activity, Plans, Income, Performance }
 
 /** [PortfolioSection]'s display label. A plain function (not an enum property) so it calls
  *  [tr] fresh on every read — recomposes correctly when the active language changes, mirroring
@@ -92,6 +96,7 @@ private fun PortfolioSection.label(): String = when (this) {
     PortfolioSection.Allocation -> tr(L10n.Key.AllocationSection)
     PortfolioSection.Activity -> tr(L10n.Key.ActivitySection)
     PortfolioSection.Plans -> tr(L10n.Key.PlansSection)
+    PortfolioSection.Income -> tr(L10n.Key.IncomeSection)
     PortfolioSection.Performance -> tr(L10n.Key.PerformanceSection)
 }
 
@@ -108,6 +113,7 @@ fun PortfolioScreen(onBack: () -> Unit, onOpenDetail: (String) -> Unit, confirmT
             fetchPerformanceReport = portfolio.fetchPerformanceReport,
             nowEpochSeconds = { System.currentTimeMillis() / 1000 },
             notifyOrderFill = AppGraph.notifyOrderFill,
+            fetchDividendEvents = FetchDividendEvents(portfolio.repository),
         )
     }
 
@@ -145,8 +151,8 @@ private fun PortfolioContent(
     onBuy: (Asset, String) -> Unit,
     onSell: (String, String) -> Unit,
     onReset: () -> Unit,
-    exportCsv: () -> String,
-    exportJson: () -> String,
+    exportCsv: suspend () -> String,
+    exportJson: suspend () -> String,
     confirmTrades: Boolean,
 ) {
     val context = LocalContext.current
@@ -154,6 +160,11 @@ private fun PortfolioContent(
     var showResetConfirm by remember { mutableStateOf(false) }
     var showExportChooser by remember { mutableStateOf(false) }
     var section by rememberSaveable { mutableStateOf(PortfolioSection.Holdings) }
+    // Composition-scoped coroutine launcher for the export buttons below — `exportCsv`/
+    // `exportJson` became `suspend` (M8.3 final-review fix: `exportSnapshot`'s
+    // `projectedAnnualIncome` fetches per-symbol dividend events), so their click handlers
+    // need somewhere to launch into. Mirrors desktop Main.kt's `exportScope`.
+    val exportScope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -228,6 +239,9 @@ private fun PortfolioContent(
                             }
                             PortfolioSection.Plans -> {
                                 item { PlansSection(confirmTrades = confirmTrades) }
+                            }
+                            PortfolioSection.Income -> {
+                                item { IncomeSection() }
                             }
                             PortfolioSection.Performance -> {
                                 item {
@@ -314,13 +328,13 @@ private fun PortfolioContent(
             confirmButton = {
                 TextButton(onClick = {
                     showExportChooser = false
-                    shareExport(context, ExportFormat.Csv, exportCsv())
+                    exportScope.launch { shareExport(context, ExportFormat.Csv, exportCsv()) }
                 }) { Text("CSV") }
             },
             dismissButton = {
                 TextButton(onClick = {
                     showExportChooser = false
-                    shareExport(context, ExportFormat.Json, exportJson())
+                    exportScope.launch { shareExport(context, ExportFormat.Json, exportJson()) }
                 }) { Text("JSON") }
             },
         )

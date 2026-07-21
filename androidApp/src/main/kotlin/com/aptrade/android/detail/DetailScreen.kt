@@ -1,6 +1,8 @@
 package com.aptrade.android.detail
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AssistChip
@@ -20,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -31,8 +36,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aptrade.android.AppGraph
@@ -41,16 +48,27 @@ import com.aptrade.android.l10n.tr
 import com.aptrade.android.portfolio.TradeSheet
 import com.aptrade.android.portfolio.TradeSheetInfo
 import com.aptrade.android.ui.ErrorPane
+import com.aptrade.android.ui.formatPercent
 import com.aptrade.android.ui.localizedLabel
+import com.aptrade.android.ui.money
 import com.aptrade.android.ui.chart.CandleChart
 import com.aptrade.android.ui.chart.CrosshairOverlay
 import com.aptrade.android.ui.chart.CrosshairTooltip
 import com.aptrade.android.ui.chart.LineChart
 import com.aptrade.android.ui.chart.crosshairReadout
 import com.aptrade.android.ui.chart.nearestIndex
+import com.aptrade.shared.application.FetchDividendEvents
+import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.Timeframe
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.l10n.L10n
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+private val dividendExDateFormatter: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.US).withZone(ZoneOffset.UTC)
 
 private val timeframeLabels = listOf(
     Timeframe.OneDay to "1D",
@@ -75,6 +93,7 @@ fun DetailScreen(symbol: String, confirmTrades: Boolean, onBack: () -> Unit) {
             nowEpochSeconds = { System.currentTimeMillis() / 1000 },
             notifyOrderFill = AppGraph.notifyOrderFill,
             fetchEarnings = AppGraph.fetchEarningsCalendar,
+            fetchDividendEvents = FetchDividendEvents(portfolio.repository),
         )
     }
     val state by viewModel.state.collectAsState()
@@ -267,6 +286,11 @@ fun DetailScreen(symbol: String, confirmTrades: Boolean, onBack: () -> Unit) {
                     Text("${next.day} · ${sessionLabel(next.session)}", style = MaterialTheme.typography.bodySmall)
                 }
             }
+
+            state.dividendInfo?.let { info ->
+                Spacer(Modifier.height(16.dp))
+                DividendCard(info)
+            }
         }
     }
 
@@ -293,5 +317,115 @@ fun DetailScreen(symbol: String, confirmTrades: Boolean, onBack: () -> Unit) {
             },
             onDismiss = { tradeSide = null },
         )
+    }
+}
+
+// MARK: - Dividends
+
+/** DIVIDENDS card: yield/annual-rate stat pair, a next-estimated-ex-date row (with an "Est."
+ *  badge, hidden when the projection is stale/absent), and a last-8 per-share mini bar chart.
+ *  Only ever rendered when [DetailUiState.dividendInfo] is non-null — crypto, non-payers, and
+ *  degraded fetches all present identically: no error state, no empty placeholder. Material3
+ *  port of desktop `DetailPane.kt`'s `DividendCard` (`AssetDetailView.dividendSection` on
+ *  macOS), styled after this app's own `IncomeScreen.kt` card idiom (`Surface` +
+ *  `surfaceVariant` fill) rather than the desktop designkit's `StatCard`. */
+@Composable
+private fun DividendCard(info: DividendInfo) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text(
+                tr(L10n.Key.AssetDividendSection).uppercase(Locale.US),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        tr(L10n.Key.AssetDividendYield).uppercase(Locale.US),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        formatPercent(info.yieldFraction * 100),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        tr(L10n.Key.AssetDividendRate).uppercase(Locale.US),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        money(info.trailingAnnualRate.amountText),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+            if (info.nextEstimatedExDateEpochSeconds != null) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        tr(L10n.Key.AssetNextExDate),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        dividendExDateFormatter.format(Instant.ofEpochSecond(info.nextEstimatedExDateEpochSeconds)),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Surface(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), shape = RoundedCornerShape(50)) {
+                        Text(
+                            tr(L10n.Key.IncomeEstimatedBadge).uppercase(Locale.US),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        )
+                    }
+                }
+            }
+            if (info.recentAmounts.isNotEmpty()) {
+                DividendMiniChart(info.recentAmounts)
+            }
+        }
+    }
+}
+
+/** A small bar mini-chart of the last (up to) 8 per-share amounts, oldest first — no axes or
+ *  labels, just the shape of the trend (bars read better than a continuous line for discrete
+ *  per-payout amounts). Material3 port of desktop `DetailPane.kt`'s `DividendMiniChart`. */
+@Composable
+private fun DividendMiniChart(amounts: List<Money>) {
+    val values = amounts.map { it.amount.doubleValue(false) }
+    val maxValue = values.maxOrNull() ?: 0.0
+    Row(
+        Modifier.fillMaxWidth().height(36.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        for (value in values) {
+            val barHeight = if (maxValue > 0.0) (36.0 * value / maxValue).coerceAtLeast(3.0) else 3.0
+            Box(
+                Modifier
+                    .weight(1f)
+                    .height(barHeight.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)),
+            )
+        }
     }
 }

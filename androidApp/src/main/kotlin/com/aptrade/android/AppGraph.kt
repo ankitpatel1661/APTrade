@@ -13,6 +13,7 @@ import com.aptrade.shared.application.ContributeToPie
 import com.aptrade.shared.application.ContributionOutcome
 import com.aptrade.shared.application.CreatePriceAlert
 import com.aptrade.shared.application.DeletePie
+import com.aptrade.shared.application.DividendOutcome
 import com.aptrade.shared.application.EarningsCalendarRepository
 import com.aptrade.shared.application.EmptyEarningsRepository
 import com.aptrade.shared.application.EvaluateAlerts
@@ -36,6 +37,7 @@ import com.aptrade.shared.application.MarketDataRepository
 import com.aptrade.shared.application.NewsRepository
 import com.aptrade.shared.application.PieStore
 import com.aptrade.shared.application.PortfolioStore
+import com.aptrade.shared.application.ProcessDueDividends
 import com.aptrade.shared.application.RebalancePie
 import com.aptrade.shared.application.ReconcilePieLedgers
 import com.aptrade.shared.application.RemoveFromWatchlist
@@ -120,6 +122,8 @@ object AppGraph {
             repository,
             FilePortfolioStore(File(dir, "portfolio.json").toPath()),
             FilePieStore(configDir().resolve("pies.json")),
+            schedulerStateStore,
+            isDripEnabled = { settingsStore.load().dripEnabled },
         )
     }
 
@@ -304,10 +308,37 @@ object AppGraph {
                     )
             }
         },
+        processDueDividends = { now -> portfolio.processDueDividends.execute(now) },
+        // Same L10n-here, coordinator-stays-ignorant split as notifyPieContribution above:
+        // the coordinator hands back the typed DividendOutcome(s) it produced (or, for a
+        // collapsed backfill run, the tallied count + summed cash), and only this
+        // (wiring-site) closure resolves the cash/DRIP/backfill-summary title+body via
+        // tr/trf. Mirrors desktop Main.kt's notifyDividendOutcome closure verbatim.
+        notifyDividendOutcome = { outcome ->
+            when (outcome) {
+                is DividendOutcome.Credited ->
+                    alertNotifier.notifyDividend(
+                        title = tr(L10n.Key.NotifDividendTitle),
+                        body = trf(L10n.Key.NotifDividendCashBodyFmt, outcome.symbol, outcome.cash.formatted),
+                    )
+                is DividendOutcome.Reinvested ->
+                    alertNotifier.notifyDividend(
+                        title = tr(L10n.Key.NotifDividendTitle),
+                        body = trf(L10n.Key.NotifDividendDripBodyFmt, outcome.symbol, outcome.cash.formatted),
+                    )
+            }
+        },
+        notifyDividendBackfillSummary = { count, totalCash ->
+            alertNotifier.notifyDividend(
+                title = tr(L10n.Key.NotifDividendTitle),
+                body = trf(L10n.Key.NotifDividendBackfillBodyFmt, count.toString(), totalCash.formatted),
+            )
+        },
         fetchWatchlist = fetchWatchlist,
         fetchMarketQuotes = fetchMarketQuotes,
         scope = scope,
         nowEpochSeconds = nowEpochSeconds,
+        calendar = marketCalendar,
     )
 
     // Settings-gated order-fill delivery (spec A2) — the Android port of desktop AppGraph's
@@ -368,9 +399,19 @@ internal fun buildNotifyOrderFill(
  *  class is that scope on Android (`AppGraph.portfolioMutex` has no equivalent — the desktop
  *  `AppGraph` is a single flat class, this one splits the portfolio-dependent slice out). */
 class PortfolioGraph(
-    repository: MarketDataRepository,
-    portfolioStore: PortfolioStore,
+    // repository/portfolioStore are public vals (M8.3 Task 2): IncomeScreen's viewModel { }
+    // factory builds IncomeViewModel straight from portfolio.repository/portfolio.portfolioStore/
+    // portfolio.marketCalendar, mirroring desktop AppGraph's flat portfolioStore/repository/
+    // marketCalendar vals that makeIncomeViewModel reads from.
+    val repository: MarketDataRepository,
+    val portfolioStore: PortfolioStore,
     pieStore: PieStore,
+    // M8.3 Task 4: [processDueDividends] below needs the scheduler's persisted state (first-run
+    // day marker) and a live settings read — both live outside this class, so they arrive as
+    // constructor params from AppGraph (which owns `schedulerStateStore`/`settingsStore`),
+    // mirroring desktop AppGraph's flat wiring exactly.
+    stateStore: SchedulerStateStore,
+    isDripEnabled: suspend () -> Boolean,
 ) {
     val fetchPortfolio = FetchPortfolio(portfolioStore)
 
@@ -401,4 +442,21 @@ class PortfolioGraph(
     val rebalancePie = RebalancePie(pieStore, portfolioStore, repository, portfolioMutex)
     val reconcilePieLedgers = ReconcilePieLedgers(pieStore, portfolioStore, portfolioMutex, marketCalendar)
     val simulateDCA = SimulateDCA(repository, marketCalendar)
+
+    // Dividend crediting (M8.3 Task 4, mirroring desktop's M8.2 Task 10). Shares the SAME
+    // portfolioMutex as every other mutating portfolio use case above (BuyAsset's co-holder
+    // doc contract) — the engine read-modify-writes portfolioStore just like a buy/sell/
+    // contribution does, so one shared lock is what makes them all mutually exclusive.
+    // `isDripEnabled` is `suspend` (Recorded divergence, see ProcessDueDividends' KDoc: Swift's
+    // `SettingsStore` is sync `UserDefaults`; Kotlin's store is suspend IO) and reads the live
+    // `dripEnabled` toggle fresh on every call — never captured once at construction time —
+    // since the user can flip it at any point during a run.
+    val processDueDividends = ProcessDueDividends(
+        portfolioStore = portfolioStore,
+        market = repository,
+        stateStore = stateStore,
+        calendar = marketCalendar,
+        portfolioMutex = portfolioMutex,
+        isDripEnabled = isDripEnabled,
+    )
 }
