@@ -208,6 +208,15 @@ struct ScreenerView: View {
             .task {
                 addedSymbols = Set(loadWatchlist().map(\.symbol))
             }
+            // macOS tab switching destroys this view's `@State` view model outright; an
+            // unstructured `Task { await viewModel.scan() }` fired from a button used to
+            // keep running after that teardown, orphaned, so returning to this tab and
+            // rescanning could fire TWO overlapping engines (8 parallel fetches instead
+            // of 4). `viewModel.startScan()` owns the task on the view model itself, and
+            // this `.onDisappear` cancels it the moment the view goes away.
+            .onDisappear {
+                viewModel.cancelScan()
+            }
         }
     }
 
@@ -318,20 +327,28 @@ struct ScreenerView: View {
         case .failed:
             scanBarAction(icon: "exclamationmark.triangle", tint: Theme.down,
                           message: tr(.screenerScanFailed), actionTitle: tr(.refresh)) {
-                Task { await viewModel.scan() }
+                viewModel.startScan()
             }
 
         case .idle:
             if let snapshot = viewModel.snapshot {
+                // `isSnapshotFresh` (true when the persisted snapshot was scanned on
+                // today's trading day) picks between two readings of the SAME idle+
+                // snapshot state: a stale snapshot reads as "not yet scanned today" (the
+                // scan icon + the same action label used in the never-scanned state
+                // below), a fresh one as "up to date, tap to refresh" (checkmark +
+                // refresh). No new strings — both label/icon pairs already exist
+                // elsewhere in this scan bar.
                 VStack(alignment: .leading, spacing: 6) {
                     scanBarAction(
-                        icon: "checkmark.circle", tint: Theme.gold,
+                        icon: viewModel.isSnapshotFresh ? "checkmark.circle" : "line.3.horizontal.decrease.circle",
+                        tint: Theme.gold,
                         message: String(format: tr(.screenerLastScanFmt),
                                         "\(snapshot.rows.count)",
                                         screenerScanTimeFormatter.string(from: snapshot.scannedAt)),
-                        actionTitle: tr(.refresh)
+                        actionTitle: viewModel.isSnapshotFresh ? tr(.refresh) : tr(.screenerScan)
                     ) {
-                        Task { await viewModel.scan() }
+                        viewModel.startScan()
                     }
                     if !snapshot.failedSymbols.isEmpty {
                         Text(String(format: tr(.screenerFailedNoteFmt), "\(snapshot.failedSymbols.count)"))
@@ -343,7 +360,7 @@ struct ScreenerView: View {
             } else {
                 scanBarAction(icon: "line.3.horizontal.decrease.circle", tint: Theme.gold,
                               message: tr(.screenerNotScanned), actionTitle: tr(.screenerScan)) {
-                    Task { await viewModel.scan() }
+                    viewModel.startScan()
                 }
             }
         }

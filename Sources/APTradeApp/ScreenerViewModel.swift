@@ -64,6 +64,14 @@ public final class ScreenerViewModel {
     private let calendar: MarketCalendar
     private let now: () -> Date
 
+    /// Owns the unstructured scan task started by `startScan()`. Holding it here (rather
+    /// than letting the view own an unstructured `Task { await viewModel.scan() }`) is
+    /// what lets `cancelScan()` actually stop a scan when the view that started it is
+    /// torn down (e.g. macOS tab switching destroys a `@State` view model) — a view-owned
+    /// `Task` has no such hook and keeps running orphaned, which is how a return-and-
+    /// rescan used to fire two overlapping engines.
+    private var scanTask: Task<Void, Never>?
+
     public init(
         engine: ScreenerScanEngine,
         snapshotStore: ScreenerSnapshotStore,
@@ -90,11 +98,16 @@ public final class ScreenerViewModel {
         recomputeResults()
     }
 
-    /// Runs a full-universe scan. Ignored while a scan is already in flight. On success,
-    /// the new snapshot is persisted and `results` are rebuilt; on failure (the engine can
-    /// only throw via cooperative cancellation — every per-symbol fetch failure is instead
-    /// recorded in `failedSymbols` and does not fail the scan) `scanState` becomes
-    /// `.failed` and the previous `snapshot` is left untouched.
+    /// Runs a full-universe scan. Ignored while a scan is already in flight (a same-state
+    /// guard that covers a caller invoking `scan()` directly, independent of the
+    /// stored-task guard `startScan()` adds below for view-driven calls). On success, the
+    /// new snapshot is persisted and `results` are rebuilt. On cancellation — the engine
+    /// only ever throws `CancellationError`, via cooperative `Task.checkCancellation()`
+    /// between batches; every per-symbol fetch failure is instead recorded in
+    /// `failedSymbols` and does not fail the scan — `scanState` reverts to `.idle` and
+    /// nothing is persisted, matching the spec's "interrupted → nothing persisted."
+    /// `.failed` is reserved for a genuine, non-cancellation engine throw: no such path
+    /// exists today, but the branch stays in place for when one does.
     public func scan() async {
         if case .scanning = scanState { return }
         scanState = .scanning(done: 0, total: symbols.count)
@@ -117,9 +130,35 @@ public final class ScreenerViewModel {
             snapshot = newSnapshot
             scanState = .idle
             recomputeResults()
+        } catch is CancellationError {
+            scanState = .idle
         } catch {
             scanState = .failed
         }
+    }
+
+    /// Owns the unstructured scan task so the view never has to. Re-entry guard is the
+    /// stored task itself — a second `startScan()` call while one is already owned here
+    /// is silently ignored — independent of (and in addition to) `scan()`'s own
+    /// state-based guard. Pair every call site with `cancelScan()` in the view's
+    /// `.onDisappear` so a scan started on this tab can't keep running (and racing a
+    /// fresh scan) after the view itself is torn down by tab switching.
+    public func startScan() {
+        guard scanTask == nil else { return }
+        scanTask = Task { @MainActor [weak self] in
+            await self?.scan()
+            self?.scanTask = nil
+        }
+    }
+
+    /// Cancels the in-flight scan task, if any, and immediately releases ownership of it
+    /// (so a subsequent `startScan()` isn't blocked by a task that's merely winding down).
+    /// Cancellation itself is cooperative — the engine only notices at its next
+    /// `Task.checkCancellation()` between batches — so the visible `scanState` reversion
+    /// to `.idle` happens asynchronously inside `scan()`'s catch clause, not here.
+    public func cancelScan() {
+        scanTask?.cancel()
+        scanTask = nil
     }
 
     public func select(_ selection: ScreenSelection) {

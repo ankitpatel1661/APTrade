@@ -212,9 +212,16 @@ final class ScreenerViewModelTests: XCTestCase {
         XCTAssertEqual(vm.scanState, .idle)
     }
 
-    // MARK: (d) engine throw -> .failed, previous snapshot retained
+    // MARK: (d) cancellation -> .idle, nothing persisted, previous snapshot retained
 
-    func test_d_engineThrow_setsFailed_andRetainsPreviousSnapshot() async {
+    /// The engine only ever throws `CancellationError` (via cooperative
+    /// `Task.checkCancellation()` between batches) — there is no genuine-failure path
+    /// today. Per the M9.1 fix-wave spec, an interrupted scan must revert to `.idle`
+    /// (nothing persisted), not `.failed`; `.failed` is reserved for a future
+    /// non-cancellation engine throw, which doesn't exist yet. This was `.failed` before
+    /// the fix, since a cancelled scan was the only way to observe the catch clause at
+    /// all.
+    func test_d_cancellation_revertsToIdle_andRetainsPreviousSnapshot() async {
         let priorSnapshot = ScreenerSnapshot(
             tradingDay: "2026-07-19", scannedAt: fixedNow.addingTimeInterval(-86_400),
             rows: [row(symbol: "OLD")], failedSymbols: []
@@ -227,9 +234,56 @@ final class ScreenerViewModelTests: XCTestCase {
         task.cancel()
         await task.value
 
-        XCTAssertEqual(vm.scanState, .failed)
+        XCTAssertEqual(vm.scanState, .idle)
         XCTAssertEqual(vm.snapshot, priorSnapshot)
         XCTAssertEqual(snapshotStore.saveCallCount, 0)
+    }
+
+    // MARK: startScan/cancelScan — VM-owned scan task (fixes the orphaned-scan /
+    // double-scan bug: macOS tab switching destroys the view's `@State` view model while
+    // a view-owned unstructured `Task { await viewModel.scan() }` kept scanning; the next
+    // scan then ran a SECOND overlapping engine).
+
+    /// (a) Cancelling mid-progress must revert to `.idle` with nothing persisted —
+    /// matching the spec's "interrupted → nothing persisted", exactly like a direct
+    /// `scan()` cancellation (test d above), but driven through the VM-owned task.
+    func test_cancelScan_midProgress_revertsToIdle_andPersistsNothing() async {
+        let market = FakeMarket()
+        market.delayNanoseconds = 30_000_000 // 30ms: keeps the first batch's fetch in flight
+        let snapshotStore = MemorySnapshotStore()
+        let symbols = (1...8).map { "SYM\($0)" } // two batches of 4
+        let vm = makeVM(market: market, snapshotStore: snapshotStore, symbols: symbols)
+
+        vm.startScan()
+        while vm.scanState == .idle { await Task.yield() }
+
+        vm.cancelScan()
+
+        while case .scanning = vm.scanState { await Task.yield() }
+
+        XCTAssertEqual(vm.scanState, .idle)
+        XCTAssertNil(vm.snapshot)
+        XCTAssertEqual(snapshotStore.saveCallCount, 0)
+    }
+
+    /// (b) A second `startScan()` while one is already owned by the view model must be a
+    /// no-op — guarded by the STORED TASK, not `scanState` — so only one full scan's
+    /// worth of fetches ever runs (the bug this fixes was exactly two full scans firing
+    /// at once: 8 parallel fetches instead of 4).
+    func test_startScan_reentrant_isIgnoredByStoredTaskGuard() async {
+        let market = FakeMarket()
+        market.delayNanoseconds = 30_000_000
+        let vm = makeVM(market: market, symbols: ["SYM1", "SYM2"])
+
+        vm.startScan()
+        while vm.scanState == .idle { await Task.yield() }
+
+        vm.startScan() // must be a no-op: a scan task is already stored
+
+        while case .scanning = vm.scanState { await Task.yield() }
+
+        XCTAssertEqual(market.callCount, 2, "only one scan's worth of fetches (2 symbols) ran")
+        XCTAssertEqual(vm.scanState, .idle)
     }
 
     // MARK: (e) re-entrant scan ignored
