@@ -116,4 +116,41 @@ class FileSchedulerStateStoreTest {
         assertEquals("2026-07-05", loaded.lastEarningsDay)
         assertEquals(null, loaded.lastContributionDay)
     }
+
+    @Test
+    fun `round-trips lastDividendDay and dividendsFirstRunDay`() = runTest {
+        val file = tempFile()
+        val store = FileSchedulerStateStore(file)
+        val state = SchedulerState(
+            lastStatus = MarketStatus.OPEN,
+            lastDigestDay = "2026-07-05",
+            lastEarningsDay = "2026-07-05",
+            lastContributionDay = "2026-07-05",
+            lastDividendDay = "2026-07-05",
+            dividendsFirstRunDay = "2026-06-01",
+        )
+        store.save(state)
+        assertEquals(state, store.load())
+    }
+
+    @Test
+    fun `old file without lastDividendDay or dividendsFirstRunDay loads fine with both defaulting to null`() = runTest {
+        // Back-compat pin (same family as the lastEarningsDay/lastContributionDay tests
+        // above): a schedulerState.json written before the dividend-check fields existed has
+        // only lastStatus/lastDigestDay/lastEarningsDay/lastContributionDay. Lenient decode
+        // must still succeed and default lastDividendDay/dividendsFirstRunDay to null rather
+        // than failing the whole-blob load. Hand-written legacy JSON literal -- no dividend
+        // keys present anywhere.
+        val file = tempFile()
+        file.writeText(
+            """{"lastStatus":"OPEN","lastDigestDay":"2026-07-05","lastEarningsDay":"2026-07-05","lastContributionDay":"2026-07-05"}""",
+        )
+        val loaded = FileSchedulerStateStore(file).load()
+        assertEquals(MarketStatus.OPEN, loaded.lastStatus)
+        assertEquals("2026-07-05", loaded.lastDigestDay)
+        assertEquals("2026-07-05", loaded.lastEarningsDay)
+        assertEquals("2026-07-05", loaded.lastContributionDay)
+        assertEquals(null, loaded.lastDividendDay)
+        assertEquals(null, loaded.dividendsFirstRunDay)
+    }
 }

@@ -42,6 +42,8 @@ class FileSettingsStore(private val file: Path) {
         val confirmTrades: Boolean = true,
         val analyticsSharing: Boolean = false,
         val language: String = AppLanguage.English.code,
+        val dripEnabled: Boolean = false,
+        val dividendNotifications: Boolean = true,
     )
 
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
@@ -73,6 +75,8 @@ class FileSettingsStore(private val file: Path) {
                 // flags), so a bad or missing code just falls back to English on its own.
                 language = AppLanguage.entries.firstOrNull { it.code == dto.language }
                     ?: AppLanguage.English,
+                dripEnabled = dto.dripEnabled,
+                dividendNotifications = dto.dividendNotifications,
             )
         } catch (e: SerializationException) {
             AppSettings()
@@ -98,6 +102,8 @@ class FileSettingsStore(private val file: Path) {
             confirmTrades = settings.confirmTrades,
             analyticsSharing = settings.analyticsSharing,
             language = settings.language.code,
+            dripEnabled = settings.dripEnabled,
+            dividendNotifications = settings.dividendNotifications,
         )
         val text = json.encodeToString(SettingsDTO.serializer(), dto)
         val temp = Files.createTempFile(file.parent, "settings", ".tmp")

@@ -39,6 +39,8 @@ class FileSchedulerStateStore(private val file: Path) : SchedulerStateStore {
         val lastDigestDay: String? = null,
         val lastEarningsDay: String? = null,
         val lastContributionDay: String? = null,
+        val lastDividendDay: String? = null,
+        val dividendsFirstRunDay: String? = null,
     )
 
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
@@ -58,6 +60,8 @@ class FileSchedulerStateStore(private val file: Path) : SchedulerStateStore {
                 lastDigestDay = dto.lastDigestDay,
                 lastEarningsDay = dto.lastEarningsDay,
                 lastContributionDay = dto.lastContributionDay,
+                lastDividendDay = dto.lastDividendDay,
+                dividendsFirstRunDay = dto.dividendsFirstRunDay,
             )
         } catch (e: SerializationException) {
             SchedulerState()
@@ -73,6 +77,8 @@ class FileSchedulerStateStore(private val file: Path) : SchedulerStateStore {
             lastDigestDay = state.lastDigestDay,
             lastEarningsDay = state.lastEarningsDay,
             lastContributionDay = state.lastContributionDay,
+            lastDividendDay = state.lastDividendDay,
+            dividendsFirstRunDay = state.dividendsFirstRunDay,
         )
         val text = json.encodeToString(SchedulerStateDTO.serializer(), dto)
         val temp = Files.createTempFile(file.parent, "schedulerState", ".tmp")

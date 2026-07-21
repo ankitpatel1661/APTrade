@@ -155,6 +155,11 @@ class DesktopMarketActivityCoordinator(
                     // never drift between them (Global Constraints correction 6).
                     runContributionCatchUpIfEnabled()
                 }
+                // No-op for now: the planner already fires this once per trading day
+                // (M8.2 Task 3), but wiring it to the dividend-processing engine and the
+                // tray notifier is M8.2 Task 10's job. Listed here only so the exhaustive
+                // `when` compiles.
+                ScheduledNotification.DividendCheckDue -> Unit
             }
         }
     }
