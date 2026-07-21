@@ -1,6 +1,7 @@
 package com.aptrade.android
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Info
@@ -34,12 +35,19 @@ import com.aptrade.shared.l10n.L10n
  *    affordance, vertical instead of horizontal dots — the closest core analog).
  *  - Search action: [Icons.Filled.Search] is present in core as-is, no substitution needed.
  *  - Calendar: [Icons.Filled.DateRange] is present in core as-is (Task 9), no substitution needed.
+ *  - Screener (M9.3 Task 3): `FilterList`/`FilterAlt` (the obvious funnel/filter glyph) is
+ *    material-icons-extended-only, same as the others above → [Icons.AutoMirrored.Filled.List]
+ *    (a screen narrows the full universe down to a filtered LIST of matching symbols — the
+ *    tab's own output — the closest core analog to "filter/funnel" available; the
+ *    AutoMirrored variant is used over the plain (deprecated) `Filled.List`, same as
+ *    [Icons.AutoMirrored.Filled.ArrowBack] elsewhere in this codebase).
  */
 enum class ShellTab(val route: String, val labelKey: L10n.Key) {
     Watchlist("watchlist", L10n.Key.Watchlist),
     Portfolio("portfolio", L10n.Key.Portfolio),
     News("news", L10n.Key.News),
     Calendar("calendar", L10n.Key.CalendarTab),
+    Screener("screener", L10n.Key.ScreenerTab),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -82,6 +90,7 @@ fun AppShell(
                                 ShellTab.Portfolio -> Icons.Filled.AccountBox
                                 ShellTab.News -> Icons.Filled.Info
                                 ShellTab.Calendar -> Icons.Filled.DateRange
+                                ShellTab.Screener -> Icons.AutoMirrored.Filled.List
                             }
                             Icon(icon, contentDescription = tr(tab.labelKey))
                         },

@@ -1,11 +1,11 @@
-package com.aptrade.desktop.calendar
+package com.aptrade.shared.infrastructure
 
 /** S&P 500 constituent display names (snapshot 2026-07-14, same Wikipedia constituents
- *  table `shared` SP500Symbols was generated from — refresh both together). Desktop-only
- *  by product decision: the Calendar pane shows "SYMBOL  Company Name"; the mobile apps
- *  deliberately show the symbol alone. Missing symbols (user-owned, non-index) simply
- *  render without a name. */
-internal val SP500Names: Map<String, String> = mapOf(
+ *  table `shared` SP500Symbols was generated from — refresh both together). Promoted to
+ *  jvmCommonMain for reuse across desktop and Android platforms (both JVM-based). Kept out
+ *  of commonMain to preserve iOS xcframework size — the ~500-entry table is only needed
+ *  where the screener and calendar panes render company names alongside symbols. */
+public val SP500Names: Map<String, String> = mapOf(
     "A" to "Agilent Technologies",
     "AAPL" to "Apple Inc.",
     "ABBV" to "AbbVie",

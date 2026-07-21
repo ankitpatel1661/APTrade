@@ -39,6 +39,7 @@ import com.aptrade.desktop.l10n.tr
 import com.aptrade.desktop.l10n.trf
 import com.aptrade.shared.application.CalendarDay
 import com.aptrade.shared.application.normalized
+import com.aptrade.shared.infrastructure.SP500Names
 import com.aptrade.shared.domain.EarningsEvent
 import com.aptrade.shared.domain.EarningsSession
 import com.aptrade.shared.domain.USMarketHoliday

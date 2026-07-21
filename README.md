@@ -111,7 +111,7 @@ Every app carries: a live watchlist, asset detail with candlestick/area charts a
 - **Custom builder** — a sheet AND-combines any number of conditions across 10 metrics (price, day change %, RSI 14, Bollinger %B, Bollinger bandwidth, % to 52-week high/low, relative volume, % vs SMA 50/200) with a live match count as you build; saved custom screens persist alongside the presets and can be edited or deleted.
 - **Sortable results** with an inline **add-to-watchlist** action per row — the Screener writes only to the same shared watchlist store every other tab uses (a symbol added here shows up on Watchlist immediately, and vice versa); it never touches the portfolio, and nothing about it is notification-driven.
 - **Fifth tab** alongside Watchlist / Portfolio / News / Calendar, with an iPhone-adapted row layout and horizontally-scrolling preset chips (`#if os(iOS)`); macOS keeps the full table columns and a static chip row.
-- **Platform status:** macOS + iPhone (M9.1) and Windows desktop (M9.2) shipped; Android (M9.3) still to come.
+- **Platform status:** macOS + iPhone (M9.1), Windows desktop (M9.2), and Android (M9.3) — all four platforms complete.
 
 ### Settings & appearance
 - A unified, persisted **settings** layer — every preference (notification toggles, security/privacy, trade confirmation, theme, accent) flows through one store with a forward-compatible decoder.
@@ -536,8 +536,7 @@ a `Failed` scan state) after 3 CONSECUTIVE rate-limited batches post-retry, wher
 reference has no such ceiling and simply keeps going. **Recorded divergence:** the builder
 renders as a **`Dialog` rather than a sheet**, matching desktop's existing dialog-based
 convention (the Pie wizard, rebalance preview) instead of macOS's sheet presentation.
-Suites at merge: macOS 560 / shared 587 / desktop 340 / android 221 (untouched — Android
-screener parity is M9.3).
+Suites at merge: macOS 560 / shared 587 / desktop 340 / android 267 (M9.3 complete).
 
 ## Project Structure
 
@@ -561,13 +560,6 @@ logo/                       Brand assets
 APTrade Lite is the foundation. Planned toward the full platform:
 
 - Real authentication (Apple Sign In), biometric gating, and cloud sync (Supabase)
-- **Technical screener (M9)** — scan the bundled S&P 500 universe with the existing
-  `TechnicalIndicators` math: 9 curated presets (RSI oversold/overbought, MACD bullish/
-  bearish cross, golden/death cross, Bollinger squeeze, near 52-week high/low) plus a
-  custom AND-condition builder, an on-demand throttled scan with a daily on-disk snapshot
-  cache, and results that add straight to the watchlist. **Shipped on macOS + iPhone
-  (M9.1) and Windows desktop (M9.2).** Android (M9.3) still to come — M9 stays open on
-  this roadmap until Android parity closes it.
 - **Windows parity — complete.** The `:desktopApp` Compose app now covers Watchlist +
   detail + palette (6a), a Portfolio tab with detail-screen indicators, performance/risk
   intelligence, and export (6b.1 + 6b.2), a News tab with per-symbol company news and

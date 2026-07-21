@@ -1,6 +1,7 @@
 package com.aptrade.desktop.calendar
 
 import com.aptrade.shared.domain.SP500Symbols
+import com.aptrade.shared.infrastructure.SP500Names
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
