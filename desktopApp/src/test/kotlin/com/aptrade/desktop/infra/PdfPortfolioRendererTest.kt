@@ -81,6 +81,21 @@ class PdfPortfolioRendererTest {
     }
 
     @Test
+    fun pdfContainsDividendIncomeSummaryRows() {
+        val export = oneHoldingExport().copy(
+            dividendsReceivedYTD = BigDecimal.parseString("500.25"),
+            projectedAnnualIncome = BigDecimal.parseString("1200"),
+        )
+        val bytes = renderPortfolioPdf(export)
+        val text = extractText(bytes)
+
+        assertTrue(text.contains("Dividends Received (YTD)"))
+        assertTrue(text.contains("Projected Annual Income"))
+        assertTrue(text.contains("$500.25"))
+        assertTrue(text.contains("$1,200.00"))
+    }
+
+    @Test
     fun pdfTableHeaderColumns() {
         val bytes = renderPortfolioPdf(oneHoldingExport())
         val text = extractText(bytes)

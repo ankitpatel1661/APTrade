@@ -73,6 +73,8 @@ fun renderPortfolioPdf(export: PortfolioExport): ByteArray {
             "Holdings Value" to formatMoney(export.holdingsValue.amount.toStringExpanded()),
             "Day P&L" to signedMoney(export.dayChange.amount.toStringExpanded()),
             "Unrealized P&L" to signedMoney(export.unrealizedPnL.amount.toStringExpanded()),
+            "Dividends Received (YTD)" to formatMoney(export.dividendsReceivedYTD.toStringExpanded()),
+            "Projected Annual Income" to formatMoney(export.projectedAnnualIncome.toStringExpanded()),
         )
         for ((label, value) in summary) {
             cursor.drawSummaryRow(label, value)

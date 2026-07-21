@@ -9,6 +9,10 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
+// 2026-07-12 12:00:00 UTC — the same fixed reference instant as Swift's
+// `PortfolioExportNamingTests.fixed`, so the two suites' fixtures line up.
+private const val FIXED_EPOCH_SECONDS = 1_783_857_600L
+
 private val aapl = Asset("AAPL", "Apple Inc.", AssetKind.Stock)
 private val btc = Asset("BTC-USD", "Bitcoin USD", AssetKind.Crypto)
 private fun qty(s: String): BigDecimal = BigDecimal.parseString(s)
@@ -183,5 +187,99 @@ class PortfolioExportTest {
             "CSV should render the zero-valued holding's allocation as plain '0'",
         )
         assertTrue(!csv.contains("E-"), "CSV should not contain scientific notation")
+    }
+
+    // MARK: - dividendsReceivedYTD / projectedAnnualIncome (M8.2 Task 11)
+
+    private fun qty(s: String): BigDecimal = BigDecimal.parseString(s)
+
+    /** A single-position portfolio (10 AAPL shares) with one Dividend transaction dated
+     *  inside the fixed reference year, crediting $5.00 (10 x $0.50) — the same
+     *  hand-computable fixture as Swift's `ExportUseCasesTests.portfolioWithDividend()`. */
+    private fun portfolioWithDividend(): Portfolio {
+        val position = Position(aapl, qty("10"), Money.usd("100"), Money.usd("0"))
+        val buy = Transaction(
+            id = "buy-1", symbol = "AAPL", side = TradeSide.Buy,
+            quantity = qty("10"), price = Money.usd("100"), epochSeconds = FIXED_EPOCH_SECONDS - 86_400L * 400,
+        )
+        val dividend = Transaction(
+            id = "div-1", symbol = "AAPL", side = TradeSide.Dividend,
+            quantity = qty("10"), price = Money.usd("0.50"), epochSeconds = FIXED_EPOCH_SECONDS,
+        )
+        return Portfolio(cash = Money.usd("50000"), positions = listOf(position), transactions = listOf(buy, dividend))
+    }
+
+    @Test
+    fun dividendsReceivedYTDSumsOnlyCurrentUtcYearDividendTransactions() {
+        val position = Position(aapl, qty("10"), Money.usd("100"), Money.usd("0"))
+        val transactions = listOf(
+            // 2025 dividend — excluded, prior calendar year.
+            Transaction(id = "t1", symbol = "AAPL", side = TradeSide.Dividend, quantity = qty("5"), price = Money.usd("2.00"), epochSeconds = 1_764_590_400L),
+            // Two 2026 dividends — included: 10 x 0.50 = 5.00, and 20 x 1.00 = 20.00 -> 25.00.
+            Transaction(id = "t2", symbol = "AAPL", side = TradeSide.Dividend, quantity = qty("10"), price = Money.usd("0.50"), epochSeconds = 1_772_366_400L),
+            Transaction(id = "t3", symbol = "AAPL", side = TradeSide.Dividend, quantity = qty("20"), price = Money.usd("1.00"), epochSeconds = 1_777_636_800L),
+            // A same-year buy — not a dividend, excluded regardless of amount.
+            Transaction(id = "t4", symbol = "AAPL", side = TradeSide.Buy, quantity = qty("10"), price = Money.usd("100"), epochSeconds = 1_775_044_800L),
+        )
+        val portfolio = Portfolio(cash = Money.usd("50000"), positions = listOf(position), transactions = transactions)
+
+        val export = PortfolioExport.from(portfolio, emptyMap(), "APTrade Portfolio", FIXED_EPOCH_SECONDS)
+
+        assertEquals(BigDecimal.parseString("25.00"), export.dividendsReceivedYTD)
+        assertEquals(BigDecimal.ZERO, export.projectedAnnualIncome, "no projection was supplied to this factory call")
+    }
+
+    @Test
+    fun fromPassesThroughSuppliedProjectedAnnualIncomeAlongsideLedgerDerivedYTD() {
+        val portfolio = portfolioWithDividend()
+
+        val export = PortfolioExport.from(
+            portfolio, emptyMap(), "APTrade Portfolio", FIXED_EPOCH_SECONDS,
+            projectedAnnualIncome = BigDecimal.parseString("7.50"),
+        )
+
+        assertEquals(BigDecimal.parseString("5.00"), export.dividendsReceivedYTD)
+        assertEquals(BigDecimal.parseString("7.50"), export.projectedAnnualIncome)
+    }
+
+    @Test
+    fun fromDefaultsProjectedAnnualIncomeToZeroWhenNotSupplied() {
+        val portfolio = portfolioWithDividend()
+
+        val export = PortfolioExport.from(portfolio, emptyMap(), "APTrade Portfolio", FIXED_EPOCH_SECONDS)
+
+        assertEquals(BigDecimal.parseString("5.00"), export.dividendsReceivedYTD,
+            "YTD dividends are ledger-derived and don't need a projection source")
+        assertEquals(BigDecimal.ZERO, export.projectedAnnualIncome)
+    }
+
+    @Test
+    fun renderJsonIncludesIncomeFields() {
+        val export = PortfolioExport.from(
+            portfolioWithDividend(), emptyMap(), "APTrade Portfolio", FIXED_EPOCH_SECONDS,
+            projectedAnnualIncome = BigDecimal.parseString("7.50"),
+        )
+
+        val root = Json.parseToJsonElement(export.renderJson()).jsonObject
+
+        assertEquals("5", root["dividendsReceivedYTD"]!!.jsonPrimitive.content)
+        assertEquals("7.5", root["projectedAnnualIncome"]!!.jsonPrimitive.content)
+    }
+
+    // MARK: - DTO legacy-JSON decode tolerance (a pre-M8.2 export blob lacks both new keys)
+
+    @Test
+    fun legacyJsonWithoutIncomeFieldsDecodesWithZeroDefaults() {
+        val legacyJson = """
+            {"generatedAtEpochSeconds":1700000000,"accountName":"Test Account","currencyCode":"USD",
+             "totalValue":"100100","cash":"91000","holdingsValue":"9100","dayChange":"50","unrealizedPnL":"100",
+             "holdings":[]}
+        """.trimIndent()
+
+        val dto = Json.decodeFromString(PortfolioExportDto.serializer(), legacyJson)
+
+        assertEquals("0", dto.dividendsReceivedYTD)
+        assertEquals("0", dto.projectedAnnualIncome)
+        assertEquals("Test Account", dto.accountName)
     }
 }

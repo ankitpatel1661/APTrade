@@ -10,6 +10,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
@@ -114,6 +115,7 @@ fun main() = application {
             scope = appScope,
             nowEpochSeconds = { System.currentTimeMillis() / 1000 },
             notifyOrderFill = graph.notifyOrderFill,
+            fetchDividendEvents = graph.fetchDividendEvents,
         )
     }
     // Time-based notifications (market open/close + daily digest), 60s cadence — a
@@ -440,6 +442,10 @@ private fun AppRoot(
     onUpdateNotificationSettings: ((com.aptrade.desktop.infra.AppSettings) -> com.aptrade.desktop.infra.AppSettings) -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(AppTab.Watchlist) }
+    // Composition-scoped coroutine launcher for the export buttons below — `exportSnapshot`/
+    // `exportCsv`/`exportJson` became `suspend` in M8.2 Task 11 (dividend-events fetch for
+    // `projectedAnnualIncome`), so their click handlers need somewhere to launch into.
+    val exportScope = rememberCoroutineScope()
     val watchState by watchlistViewModel.state.collectAsState()
     val portfolioState by portfolioViewModel.state.collectAsState()
     val newsState by newsViewModel.state.collectAsState()
@@ -525,14 +531,20 @@ private fun AppRoot(
                         onOpenTrade(TradeTarget(asset, side, row?.priceText))
                     },
                     onReset = portfolioViewModel::reset,
-                    onExportCsv = { saveTextFile("portfolio.csv", portfolioViewModel.exportCsv()) },
-                    onExportJson = { saveTextFile("portfolio.json", portfolioViewModel.exportJson()) },
+                    onExportCsv = {
+                        exportScope.launch { saveTextFile("portfolio.csv", portfolioViewModel.exportCsv()) }
+                    },
+                    onExportJson = {
+                        exportScope.launch { saveTextFile("portfolio.json", portfolioViewModel.exportJson()) }
+                    },
                     onExportPdf = {
-                        val now = System.currentTimeMillis() / 1000
-                        saveBinaryFile(
-                            exportFileName("pdf", now),
-                            renderPortfolioPdf(portfolioViewModel.exportSnapshot()),
-                        )
+                        exportScope.launch {
+                            val now = System.currentTimeMillis() / 1000
+                            saveBinaryFile(
+                                exportFileName("pdf", now),
+                                renderPortfolioPdf(portfolioViewModel.exportSnapshot()),
+                            )
+                        }
                     },
                     pendingExport = pendingExport,
                 )
