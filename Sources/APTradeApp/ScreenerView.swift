@@ -65,8 +65,11 @@ private func activeMetricColumn(for selection: ScreenSelection) -> ActiveMetricC
             return ActiveMetricColumn(titleKey: .metricVsSma50, value: { $0.pctVsSma50 },
                                        format: formatSignedPercent)
         case .bollingerSqueeze:
+            // Bandwidth/%B are RAW fractions everywhere (columns, presets, builder) —
+            // M9.2 must preserve. See the identical note on the custom-metric mapping
+            // below for the full rationale.
             return ActiveMetricColumn(titleKey: .metricBandwidth, value: { $0.bollingerBandwidth },
-                                       format: { formatUnsignedPercent($0 * 100) })
+                                       format: { formatPlain($0, decimals: 4) })
         case .near52wHigh:
             return ActiveMetricColumn(titleKey: .metricTo52wHigh, value: { $0.pctTo52wHigh },
                                        format: formatUnsignedPercent)
@@ -97,11 +100,18 @@ private func activeMetricColumn(for metric: ScreenerMetric) -> ActiveMetricColum
         return ActiveMetricColumn(titleKey: .metricRsi, value: { $0.rsi14 },
                                    format: { formatPlain($0, decimals: 1) })
     case .bollingerPercentB:
+        // Bandwidth/%B are RAW fractions everywhere (columns, presets, builder) — M9.2
+        // must preserve. `ScreenSelection`/`ScreenCondition` compare these two metrics as
+        // raw fractions (e.g. the bollingerSqueeze preset's `bandwidth < 0.05`), and the
+        // builder sheet's free-text threshold field is parsed as a raw `Double` with no
+        // ×100/÷100 conversion either — so a displayed "0.05" here is directly the number
+        // a user types into a custom screen's threshold, with no percent-unit translation
+        // in between.
         return ActiveMetricColumn(titleKey: .metricPercentB, value: { $0.bollingerPercentB },
-                                   format: { formatUnsignedPercent($0 * 100) })
+                                   format: { formatPlain($0, decimals: 4) })
     case .bollingerBandwidth:
         return ActiveMetricColumn(titleKey: .metricBandwidth, value: { $0.bollingerBandwidth },
-                                   format: { formatUnsignedPercent($0 * 100) })
+                                   format: { formatPlain($0, decimals: 4) })
     case .pctTo52wHigh:
         return ActiveMetricColumn(titleKey: .metricTo52wHigh, value: { $0.pctTo52wHigh },
                                    format: formatUnsignedPercent)
