@@ -1,7 +1,7 @@
 package com.aptrade.desktop
 
 import androidx.compose.ui.window.TrayState
-import com.aptrade.desktop.calendar.SP500Names
+import com.aptrade.shared.infrastructure.SP500Names
 import com.aptrade.desktop.infra.AppSettings
 import com.aptrade.desktop.infra.FileAlertStore
 import com.aptrade.desktop.infra.FileBookmarkStore
@@ -223,9 +223,9 @@ class AppGraph(
     // from (screening never mutates the portfolio, so it needs no mutex, matching Income's
     // factory above). [screenerSnapshotStore]/[screenStore] follow the SAME injected-Path,
     // atomic-write file-store shape as [pieStore]/[portfolioStore] (see
-    // `FileScreenerSnapshotStore`/`FileScreenStore`'s own KDoc). `SP500Names` is desktop-only
-    // (see its own KDoc on why: the Calendar tab is its only other consumer) — this is the
-    // one other spot that reads it, for the results table's company-name column.
+    // `FileScreenerSnapshotStore`/`FileScreenStore`'s own KDoc). `SP500Names` lives in
+    // shared jvmCommonMain (reused by desktop Calendar pane and Android screener) — see
+    // its KDoc on why it stays out of commonMain (xcframework size).
     val screenerScanEngine: ScreenerScanEngine = ScreenerScanEngine(repository, marketCalendar)
     val screenerSnapshotStore: FileScreenerSnapshotStore =
         FileScreenerSnapshotStore(resolveConfigDir().resolve("screener-snapshot.json"))
