@@ -102,7 +102,7 @@ final class ScreenBuilderModelTests: XCTestCase {
     // MARK: - Locale decimal parsing (comma decimal separator, e.g. DE/IT/ES iOS decimalPad)
 
     func test_isValid_true_thresholdWithCommaDecimalSeparator() {
-        let model = ScreenBuilderModel()
+        let model = ScreenBuilderModel(decimalSeparator: ",")
         model.name = "Screen"
         model.conditions[0].thresholdText = "1,5"
 
@@ -126,12 +126,36 @@ final class ScreenBuilderModelTests: XCTestCase {
     }
 
     func test_buildScreen_commaDecimalSeparator_parsesAsExpectedDouble() {
-        let model = ScreenBuilderModel()
+        let model = ScreenBuilderModel(decimalSeparator: ",")
         model.name = "Screen"
         model.conditions[0].metric = .rsi14
         model.conditions[0].comparison = .below
         model.conditions[0].thresholdText = "1,5"
 
+        XCTAssertEqual(model.buildScreen()?.conditions.first?.threshold, 1.5)
+    }
+
+    func test_isValid_false_dotDecimalLocale_USGroupedNumeral_1500_isInvalid() {
+        // EN locale uses "." as decimal separator; "1,500" is a US-style grouped numeral,
+        // not a decimal. With locale-gating, it should NOT be normalized to "1.500" →
+        // 1.5, but instead fail to parse. This test ensures the fix prevents silent
+        // corruption of grouped numerals.
+        let model = ScreenBuilderModel(decimalSeparator: ".")
+        model.name = "Screen"
+        model.conditions[0].thresholdText = "1,500"
+
+        XCTAssertFalse(model.isValid)
+        XCTAssertNil(model.buildScreen())
+    }
+
+    func test_isValid_true_commaDecimalLocale_1_5_stillParses() {
+        // Sanity check: comma-locale users typing "1,5" (a true decimal 1.5) should
+        // still parse correctly with the gated normalization.
+        let model = ScreenBuilderModel(decimalSeparator: ",")
+        model.name = "Screen"
+        model.conditions[0].thresholdText = "1,5"
+
+        XCTAssertTrue(model.isValid)
         XCTAssertEqual(model.buildScreen()?.conditions.first?.threshold, 1.5)
     }
 

@@ -44,9 +44,16 @@ public final class ScreenBuilderModel {
     public let screenId: String
     public let isEditing: Bool
 
+    /// The locale's decimal separator. Injected for testability; defaults to the system's
+    /// current locale separator. Used to gate comma-normalization in `parsedThreshold`:
+    /// only replace "," with "." when the locale's separator is ",".
+    public var decimalSeparator: String
+
     /// `existingScreen` nil creates a fresh screen (one blank condition row to start);
     /// non-nil pre-fills every field from the screen being edited.
-    public init(existingScreen: CustomScreen? = nil) {
+    public init(existingScreen: CustomScreen? = nil,
+                decimalSeparator: String = Locale.current.decimalSeparator ?? ".") {
+        self.decimalSeparator = decimalSeparator
         if let existingScreen {
             self.screenId = existingScreen.id
             self.name = existingScreen.name
@@ -67,7 +74,7 @@ public final class ScreenBuilderModel {
     /// parseable number — the exact three rules Task 8's brief calls out.
     public var isValid: Bool {
         !trimmedName.isEmpty && !conditions.isEmpty
-            && conditions.allSatisfy { Self.parsedThreshold($0.thresholdText) != nil }
+            && conditions.allSatisfy { parsedThreshold($0.thresholdText) != nil }
     }
 
     public func addCondition() {
@@ -84,7 +91,7 @@ public final class ScreenBuilderModel {
     public func buildScreen() -> CustomScreen? {
         guard isValid else { return nil }
         let built = conditions.compactMap { draft -> ScreenCondition? in
-            guard let threshold = Self.parsedThreshold(draft.thresholdText) else { return nil }
+            guard let threshold = parsedThreshold(draft.thresholdText) else { return nil }
             return ScreenCondition(metric: draft.metric, comparison: draft.comparison, threshold: threshold)
         }
         return CustomScreen(id: screenId, name: trimmedName, conditions: built)
@@ -97,7 +104,7 @@ public final class ScreenBuilderModel {
     /// threshold still sees a live count reflecting the rows that already parse.
     public var matchableConditions: [ScreenCondition] {
         conditions.compactMap { draft in
-            guard let threshold = Self.parsedThreshold(draft.thresholdText) else { return nil }
+            guard let threshold = parsedThreshold(draft.thresholdText) else { return nil }
             return ScreenCondition(metric: draft.metric, comparison: draft.comparison, threshold: threshold)
         }
     }
@@ -105,14 +112,18 @@ public final class ScreenBuilderModel {
     private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     /// Parses a threshold field's raw text as a `Double`. Normalizes a comma decimal
-    /// separator to a dot BEFORE parsing: the iOS decimal pad inserts the locale's own
-    /// separator, and this app ships DE/IT/ES, all of which use "," (e.g. "1,5") where
-    /// `Double.init(String)` only ever accepts ".". This is a simple, predictable
+    /// separator to a dot BEFORE parsing ONLY when the locale's decimal separator is ","
+    /// (e.g. DE/IT/ES locales). The iOS decimal pad inserts the locale's own separator,
+    /// and `Double.init(String)` only ever accepts ".". Gating on the locale prevents
+    /// silent corruption of US-style grouped numerals (e.g. "1,500" on EN locale now
+    /// correctly fails to parse instead of becoming 1.5). This is a simple, predictable
     /// normalization (not a full `NumberFormatter`/locale-aware parse) — good enough for
     /// a plain decimal threshold, and it correctly still rejects genuine garbage like
     /// "1,5.2" (becomes "1.5.2", which `Double.init` fails on either way).
-    private static func parsedThreshold(_ text: String) -> Double? {
-        let normalized = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
+    private func parsedThreshold(_ text: String) -> Double? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        // Only normalize comma to dot if the locale uses comma as decimal separator
+        let normalized = decimalSeparator == "," ? trimmed.replacingOccurrences(of: ",", with: ".") : trimmed
         return Double(normalized)
     }
 
