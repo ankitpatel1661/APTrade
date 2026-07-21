@@ -406,6 +406,12 @@ struct ScreenerView: View {
     private var content: some View {
         if viewModel.snapshot != nil && !viewModel.results.isEmpty {
             resultsList
+        } else if case .scanning = viewModel.scanState {
+            // A scan is already visibly in progress via the progress bar above — showing
+            // the "Scan the S&P 500…"/no-matches empty-state CTA underneath it here would
+            // read as a second, redundant invitation to do the very thing already
+            // happening. Render the neutral empty region instead (no icon, no text).
+            Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if viewModel.snapshot != nil {
             // Scanned before, but the active screen matches nothing in that snapshot.
             emptyState(icon: "tray", text: tr(.screenerNoMatches))
