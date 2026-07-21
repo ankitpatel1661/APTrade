@@ -171,9 +171,8 @@ private fun presetTitleKey(preset: PresetScreen): L10n.Key = when (preset) {
  * [onOpenDetail] routes through the shared `detail/{symbol}` NavHost destination (carries
  * Buy), matching how `AppNavHost` threads the same callback into Watchlist/Portfolio.
  *
- * The "+" new-screen chip and each saved custom screen's edit glyph are rendered here but
- * wired to no-ops — Task 4 adds the screen builder sheet and fills in [onNewScreen]/
- * [onEditScreen] for real.
+ * The "+" new-screen chip opens [ScreenBuilderSheet] (Task 4) in create mode; each saved
+ * custom screen's edit glyph opens the same sheet pre-filled for that screen.
  */
 @Composable
 fun ScreenerScreen(padding: PaddingValues, onOpenDetail: (String) -> Unit) {
@@ -210,6 +209,13 @@ fun ScreenerScreen(padding: PaddingValues, onOpenDetail: (String) -> Unit) {
         addedSymbols = AppGraph.fetchWatchlist.execute().map { it.symbol }.toSet()
     }
 
+    // `null` = no sheet shown; `New` = the "+" chip; `Edit(screen)` = a saved chip's edit
+    // glyph. `ScreenBuilderSheet` itself calls `onDismiss` after a successful Save or a
+    // confirmed Delete, so both `onSave`/`onDelete` below only need to drive the view model —
+    // clearing this state back to `null` is the sheet's job, not theirs. Mirrors desktop
+    // `ScreenerPane.kt`'s `ScreenBuilderTarget`.
+    var builderTarget by remember { mutableStateOf<ScreenBuilderTarget?>(null) }
+
     val activeColumn = activeMetricColumn(state.selection)
 
     Column(Modifier.padding(padding).fillMaxSize()) {
@@ -222,12 +228,8 @@ fun ScreenerScreen(padding: PaddingValues, onOpenDetail: (String) -> Unit) {
                 savedScreens = state.savedScreens,
                 onSelectPreset = { viewModel.select(ScreenSelection.Preset(it)) },
                 onSelectCustom = { viewModel.select(ScreenSelection.Custom(it)) },
-                onNewScreen = {
-                    // Task 4: opens the screen builder sheet in create mode.
-                },
-                onEditScreen = {
-                    // Task 4: opens the screen builder sheet pre-filled for this screen.
-                },
+                onNewScreen = { builderTarget = ScreenBuilderTarget.New },
+                onEditScreen = { screen -> builderTarget = ScreenBuilderTarget.Edit(screen) },
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
             ScanBar(
@@ -265,6 +267,30 @@ fun ScreenerScreen(padding: PaddingValues, onOpenDetail: (String) -> Unit) {
             )
         }
     }
+
+    val target = builderTarget
+    if (target != null) {
+        ScreenBuilderSheet(
+            existingScreen = (target as? ScreenBuilderTarget.Edit)?.screen,
+            matchCount = viewModel::matchCount,
+            onDismiss = { builderTarget = null },
+            onSave = { screen -> viewModel.saveScreen(screen) },
+            onDelete = if (target is ScreenBuilderTarget.Edit) {
+                { viewModel.deleteScreen(target.screen.id) }
+            } else {
+                null
+            },
+        )
+    }
+}
+
+/** Which mode [ScreenBuilderSheet] is showing, if any — `null` (no sheet), a brand-new screen,
+ *  or an edit of an existing saved one. A plain nullable `CustomScreen?` couldn't tell "new
+ *  screen" (`existingScreen = null`) apart from "no sheet shown" on its own. Mirrors desktop
+ *  `ScreenerPane.kt`'s `ScreenBuilderTarget`. */
+private sealed class ScreenBuilderTarget {
+    object New : ScreenBuilderTarget()
+    data class Edit(val screen: CustomScreen) : ScreenBuilderTarget()
 }
 
 // MARK: - Chips row
