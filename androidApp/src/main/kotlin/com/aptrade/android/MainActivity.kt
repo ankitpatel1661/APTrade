@@ -26,6 +26,7 @@ import com.aptrade.android.calendar.CalendarScreen
 import com.aptrade.android.detail.DetailScreen
 import com.aptrade.android.news.NewsScreen
 import com.aptrade.android.portfolio.PortfolioScreen
+import com.aptrade.android.screener.ScreenerScreen
 import com.aptrade.android.search.SearchScreen
 import com.aptrade.android.settings.SettingsScreen
 import com.aptrade.android.settings.SettingsViewModel
@@ -122,6 +123,10 @@ fun AppNavHost(settingsViewModel: SettingsViewModel) {
                     )
                     ShellTab.News -> NewsScreen(padding = padding)
                     ShellTab.Calendar -> CalendarScreen(padding = padding)
+                    ShellTab.Screener -> ScreenerScreen(
+                        padding = padding,
+                        onOpenDetail = { symbol -> navController.navigate("detail/$symbol") },
+                    )
                 }
             }
         }
