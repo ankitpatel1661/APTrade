@@ -45,6 +45,7 @@ import com.aptrade.shared.application.RemovePriceAlert
 import com.aptrade.shared.application.ResetPortfolio
 import com.aptrade.shared.application.SavePie
 import com.aptrade.shared.application.SchedulerStateStore
+import com.aptrade.shared.application.ScreenerScanEngine
 import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.application.SimulateDCA
 import com.aptrade.shared.application.ToggleBookmark
@@ -56,6 +57,8 @@ import com.aptrade.shared.infrastructure.FileAlertStore
 import com.aptrade.shared.infrastructure.FileBookmarkStore
 import com.aptrade.shared.infrastructure.FilePieStore
 import com.aptrade.shared.infrastructure.FilePortfolioStore
+import com.aptrade.shared.infrastructure.FileScreenerSnapshotStore
+import com.aptrade.shared.infrastructure.FileScreenStore
 import com.aptrade.shared.infrastructure.FileSchedulerStateStore
 import com.aptrade.shared.infrastructure.FileSettingsStore
 import com.aptrade.shared.infrastructure.FileWatchlistStore
@@ -249,6 +252,22 @@ object AppGraph {
     // (`MarketCalendar()`), used to key `fetchTodaysOwnEarnings`'s "today" against the exact
     // trading day the coordinator's own 60s tick considers current.
     private val marketCalendar: MarketCalendar by lazy { MarketCalendar() }
+
+    // Screener (M9.3 Task 2) — full-universe technical scans over the S&P 500. Shares the
+    // SAME market repository/[marketCalendar] every other read-only VM factory here reads
+    // from (screening never mutates the portfolio, so it needs no mutex, mirroring desktop
+    // AppGraph's screener wiring — desktopApp/.../AppGraph.kt:221-249). [screenerSnapshotStore]/
+    // [screenStore] follow the SAME injected-Path, atomic-write file-store shape as
+    // [pieStore]/[portfolioStore] above (see `FileScreenerSnapshotStore`/`FileScreenStore`'s
+    // own KDoc). No factory function here — unlike desktop's `makeScreenerViewModel`, the
+    // Android Screener screen (Task 3) constructs `ScreenerViewModel` directly via
+    // `viewModel { }`, per the `DetailScreen.kt:84` precedent — so only the engine + both
+    // stores are exposed as graph vals for that call site to read.
+    val screenerScanEngine: ScreenerScanEngine by lazy { ScreenerScanEngine(repository, marketCalendar) }
+    val screenerSnapshotStore: FileScreenerSnapshotStore by lazy {
+        FileScreenerSnapshotStore(configDir().resolve("screener-snapshot.json"))
+    }
+    val screenStore: FileScreenStore by lazy { FileScreenStore(configDir().resolve("screens.json")) }
 
     /**
      * Builds the market-activity coordinator (open/close + digest + earnings-day
