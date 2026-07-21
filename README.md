@@ -15,7 +15,7 @@ An ultra-premium **native investing platform across four OSes** — a SwiftUI fl
 ![Swift](https://img.shields.io/badge/Swift-6.0-D4A94E?logo=swift)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Multiplatform-D4A94E?logo=kotlin)
 ![Architecture](https://img.shields.io/badge/architecture-Clean-D4A94E)
-![Tests](https://img.shields.io/badge/macOS%20tests-554%20passing-46C98A)
+![Tests](https://img.shields.io/badge/macOS%20tests-560%20passing-46C98A)
 
 </div>
 
@@ -111,7 +111,7 @@ Every app carries: a live watchlist, asset detail with candlestick/area charts a
 - **Custom builder** — a sheet AND-combines any number of conditions across 10 metrics (price, day change %, RSI 14, Bollinger %B, Bollinger bandwidth, % to 52-week high/low, relative volume, % vs SMA 50/200) with a live match count as you build; saved custom screens persist alongside the presets and can be edited or deleted.
 - **Sortable results** with an inline **add-to-watchlist** action per row — the Screener writes only to the same shared watchlist store every other tab uses (a symbol added here shows up on Watchlist immediately, and vice versa); it never touches the portfolio, and nothing about it is notification-driven.
 - **Fifth tab** alongside Watchlist / Portfolio / News / Calendar, with an iPhone-adapted row layout and horizontally-scrolling preset chips (`#if os(iOS)`); macOS keeps the full table columns and a static chip row.
-- **Platform status:** macOS + iPhone shipped (M9.1); Windows desktop (M9.2) and Android (M9.3) still to come.
+- **Platform status:** macOS + iPhone (M9.1) and Windows desktop (M9.2) shipped; Android (M9.3) still to come.
 
 ### Settings & appearance
 - A unified, persisted **settings** layer — every preference (notification toggles, security/privacy, trade confirmation, theme, accent) flows through one store with a forward-compatible decoder.
@@ -193,7 +193,7 @@ The app ships as a bare SwiftPM executable. Launching the built binary directly 
 DEVELOPER_DIR=/Applications/Xcode.app swift test
 ```
 
-> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **554 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction, the all-priced gate + benchmark head-trim), the market calendar and earnings calendar, use cases, the market-activity planner (incl. earnings-check and Pie-contribution-check scheduling), alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the Finnhub earnings mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, the view models, Investment Plans (`PieMath` distribution/drift, `PieSchedule` cadence math, `PieBacktest` DCA-vs-lump-sum, contribution/rebalance use cases and catch-up, the `UserDefaultsPieStore`, and the coordinator's contribution notifications), the dividend & income engine (`DividendMath` shares-held/trailing-rate/cadence math, `ProcessDueDividends` backfill/dedup/DRIP-with-cash-fallback, the Income view model, and the export renderer's two new income rows), and the technical screener (`ScreenerMath`'s per-symbol snapshot and cross-flag math, the 9 preset screens and custom AND-evaluation, `ScreenerScanEngine`'s throttled batching/backoff/failure-isolation, the file-backed snapshot and screen stores, and the screener view model).
+> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **560 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction, the all-priced gate + benchmark head-trim), the market calendar and earnings calendar, use cases, the market-activity planner (incl. earnings-check and Pie-contribution-check scheduling), alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the Finnhub earnings mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, the view models, Investment Plans (`PieMath` distribution/drift, `PieSchedule` cadence math, `PieBacktest` DCA-vs-lump-sum, contribution/rebalance use cases and catch-up, the `UserDefaultsPieStore`, and the coordinator's contribution notifications), the dividend & income engine (`DividendMath` shares-held/trailing-rate/cadence math, `ProcessDueDividends` backfill/dedup/DRIP-with-cash-fallback, the Income view model, and the export renderer's two new income rows), and the technical screener (`ScreenerMath`'s per-symbol snapshot and cross-flag math, the 9 preset screens and custom AND-evaluation, `ScreenerScanEngine`'s throttled batching/backoff/failure-isolation, the file-backed snapshot and screen stores, and the screener view model).
 
 ### Building the shared Kotlin core
 
@@ -518,6 +518,27 @@ degrading to zero rather than failing when unwired; `dividendsReceivedYTD` is pu
 ledger arithmetic and always populates. Suites at merge: macOS 469 / shared 538 / desktop
 290 / android 195 (untouched — Android dividend/income parity is M8.3).
 
+**Technical Screener reaches the desktop app** (`:desktopApp`, M9.2), porting the macOS
+M9.1 reference onto the shared Kotlin core: `ScreenerMath` (per-symbol technical snapshot
+— SMA/EMA/RSI/Bollinger/MACD-cross/52-week values), the 9 preset screens plus custom
+AND-evaluation, the throttled/batched `ScreenerScanEngine`, and file-backed
+`FileScreenerSnapshotStore`/`FileScreenStore` drive a `ScreenerViewModel` behind a fifth
+**Screener** tab. A scan bar runs the on-demand S&P 500 scan with a `done / total`
+progress readout, a sortable results table shows the scan's technical snapshot per symbol
+with an inline add-to-watchlist action, chips switch between the 9 presets, and a **Screen
+Builder** dialog AND-combines the same 10 metrics as macOS with a live match count as you
+build, persisting custom screens alongside the presets. **Two documented engine
+divergences from the Swift reference**, both covered by shared-core tests: the Kotlin
+`ScreenerScanEngine` retries ONLY the symbols still failing after attempt 1 (a targeted
+retry) rather than the whole batch, so an already-successful symbol can never be
+reclobbered by a degrading retry; and it aborts the scan (`ScreenerScanAborted`, mapped to
+a `Failed` scan state) after 3 CONSECUTIVE rate-limited batches post-retry, where the Swift
+reference has no such ceiling and simply keeps going. **Recorded divergence:** the builder
+renders as a **`Dialog` rather than a sheet**, matching desktop's existing dialog-based
+convention (the Pie wizard, rebalance preview) instead of macOS's sheet presentation.
+Suites at merge: macOS 560 / shared 587 / desktop 340 / android 221 (untouched — Android
+screener parity is M9.3).
+
 ## Project Structure
 
 ```
@@ -545,7 +566,7 @@ APTrade Lite is the foundation. Planned toward the full platform:
   bearish cross, golden/death cross, Bollinger squeeze, near 52-week high/low) plus a
   custom AND-condition builder, an on-demand throttled scan with a daily on-disk snapshot
   cache, and results that add straight to the watchlist. **Shipped on macOS + iPhone
-  (M9.1).** Windows desktop (M9.2) and Android (M9.3) still to come — M9 stays open on
+  (M9.1) and Windows desktop (M9.2).** Android (M9.3) still to come — M9 stays open on
   this roadmap until Android parity closes it.
 - **Windows parity — complete.** The `:desktopApp` Compose app now covers Watchlist +
   detail + palette (6a), a Portfolio tab with detail-screen indicators, performance/risk

@@ -1,6 +1,7 @@
 package com.aptrade.desktop
 
 import androidx.compose.ui.window.TrayState
+import com.aptrade.desktop.calendar.SP500Names
 import com.aptrade.desktop.infra.AppSettings
 import com.aptrade.desktop.infra.FileAlertStore
 import com.aptrade.desktop.infra.FileBookmarkStore
@@ -12,6 +13,7 @@ import com.aptrade.desktop.infra.TrayNotifier
 import com.aptrade.desktop.income.IncomeViewModel
 import com.aptrade.desktop.plans.PieWizardViewModel
 import com.aptrade.desktop.plans.PlansViewModel
+import com.aptrade.desktop.screener.ScreenerViewModel
 import com.aptrade.shared.infrastructure.resolveConfigDir
 import com.aptrade.shared.application.AddToWatchlist
 import com.aptrade.shared.application.AlertStore
@@ -54,6 +56,7 @@ import com.aptrade.shared.application.RemovePriceAlert
 import com.aptrade.shared.application.ResetPortfolio
 import com.aptrade.shared.application.SavePie
 import com.aptrade.shared.application.SchedulerStateStore
+import com.aptrade.shared.application.ScreenerScanEngine
 import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.application.SimulateDCA
 import com.aptrade.shared.application.ToggleBookmark
@@ -61,10 +64,13 @@ import com.aptrade.shared.application.WatchlistStore
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.MarketCalendar
 import com.aptrade.shared.domain.Pie
+import com.aptrade.shared.domain.SP500Symbols
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.domain.WatchlistEntry
 import com.aptrade.shared.infrastructure.FilePieStore
 import com.aptrade.shared.infrastructure.FilePortfolioStore
+import com.aptrade.shared.infrastructure.FileScreenStore
+import com.aptrade.shared.infrastructure.FileScreenerSnapshotStore
 import com.aptrade.shared.infrastructure.FinnhubEarningsRepository
 import com.aptrade.shared.infrastructure.FinnhubNewsRepository
 import com.aptrade.shared.infrastructure.YahooMarketDataRepository
@@ -207,6 +213,36 @@ class AppGraph(
     ): IncomeViewModel = IncomeViewModel(
         portfolioStore = portfolioStore,
         marketDataRepository = repository,
+        calendar = marketCalendar,
+        scope = scope,
+        nowEpochSeconds = nowEpochSeconds,
+    )
+
+    // Screener (M9.2 Task 7) — full-universe technical scans over the S&P 500. Shares the
+    // SAME market repository/[marketCalendar] every other read-only VM factory here reads
+    // from (screening never mutates the portfolio, so it needs no mutex, matching Income's
+    // factory above). [screenerSnapshotStore]/[screenStore] follow the SAME injected-Path,
+    // atomic-write file-store shape as [pieStore]/[portfolioStore] (see
+    // `FileScreenerSnapshotStore`/`FileScreenStore`'s own KDoc). `SP500Names` is desktop-only
+    // (see its own KDoc on why: the Calendar tab is its only other consumer) — this is the
+    // one other spot that reads it, for the results table's company-name column.
+    val screenerScanEngine: ScreenerScanEngine = ScreenerScanEngine(repository, marketCalendar)
+    val screenerSnapshotStore: FileScreenerSnapshotStore =
+        FileScreenerSnapshotStore(resolveConfigDir().resolve("screener-snapshot.json"))
+    val screenStore: FileScreenStore = FileScreenStore(resolveConfigDir().resolve("screens.json"))
+
+    /** Builds a fresh [ScreenerViewModel] bound to [scope] — mirrors macOS's
+     *  `CompositionRoot.makeScreenerViewModel()` factory (there is no persistent, graph-owned
+     *  VM instance; each caller, e.g. `ScreenerPane`, owns its own scope/instance lifetime). */
+    fun makeScreenerViewModel(
+        scope: CoroutineScope,
+        nowEpochSeconds: () -> Long = { System.currentTimeMillis() / 1000 },
+    ): ScreenerViewModel = ScreenerViewModel(
+        engine = screenerScanEngine,
+        snapshotStore = screenerSnapshotStore,
+        screenStore = screenStore,
+        symbols = SP500Symbols.set.toList(),
+        names = SP500Names,
         calendar = marketCalendar,
         scope = scope,
         nowEpochSeconds = nowEpochSeconds,
