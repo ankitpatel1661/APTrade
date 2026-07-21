@@ -1,6 +1,7 @@
 package com.aptrade.desktop.portfolio
 
 import com.aptrade.desktop.designkit.formatMoney
+import com.aptrade.desktop.designkit.formatShares
 import com.aptrade.desktop.designkit.formatPercent
 import com.aptrade.desktop.designkit.signedMoney
 import com.aptrade.desktop.l10n.tr
@@ -482,7 +483,7 @@ class PortfolioViewModel(
                     symbol = position.asset.symbol,
                     name = position.asset.name,
                     kind = position.asset.kind,
-                    quantityText = position.quantity.toStringExpanded(),
+                    quantityText = formatShares(position.quantity),
                     averageCostText = formatMoney(position.averageCost.amountText),
                     marketValueText = marketValue.amountText,          // RAW — SuperscriptPrice consumer
                     unrealizedText = signedMoney(unrealized.amountText),
@@ -501,7 +502,7 @@ class PortfolioViewModel(
                     symbol = txn.symbol,
                     sideLabel = sideLabel(txn.side),
                     isBuy = txn.side == TradeSide.Buy,
-                    quantityText = txn.quantity.toStringExpanded(),
+                    quantityText = formatShares(txn.quantity),
                     priceText = formatMoney(txn.price.amountText),
                     epochSeconds = txn.epochSeconds,
                     dateText = Instant.ofEpochSecond(txn.epochSeconds).atZone(zoneId).format(transactionDateFormatter),

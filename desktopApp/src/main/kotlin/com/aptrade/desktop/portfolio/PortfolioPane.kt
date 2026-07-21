@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -424,7 +425,9 @@ private fun HoldingRow(
             }
             Spacer(Modifier.width(16.dp))
         }
-        Column(horizontalAlignment = Alignment.End) {
+        // Uniform min width keeps the BUY/SELL action column vertically aligned across
+        // rows — without it, each row's value width shifts the actions horizontally.
+        Column(Modifier.widthIn(min = 150.dp), horizontalAlignment = Alignment.End) {
             SuperscriptPrice(amountText = row.marketValueText, size = 18.sp)
             Spacer(Modifier.height(5.dp))
             Text(
@@ -446,18 +449,25 @@ private fun AllocationView(state: PortfolioUiState) {
         Spacer(Modifier.height(20.dp))
         AllocationDonutRow(state)
         Spacer(Modifier.height(24.dp))
-        AllocationGroupHeader(tr(L10n.Key.ByHolding))
-        Spacer(Modifier.height(12.dp))
-        for (slice in state.allocationByHolding) {
-            AllocationBar(label = slice.label, fraction = slice.fraction, fillColor = null)
-            Spacer(Modifier.height(14.dp))
-        }
-        Spacer(Modifier.height(10.dp))
-        AllocationGroupHeader(tr(L10n.Key.ByClass))
-        Spacer(Modifier.height(12.dp))
-        for (slice in state.allocationByKind) {
-            AllocationBar(label = sliceLabel(slice), fraction = slice.fraction, fillColor = kindColor(slice.id))
-            Spacer(Modifier.height(14.dp))
+        // By-holding and by-class share one row below the donut (mirrors the Income
+        // pane's side-by-side tables), so both groups are visible without scrolling.
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            Column(Modifier.weight(1f)) {
+                AllocationGroupHeader(tr(L10n.Key.ByHolding))
+                Spacer(Modifier.height(12.dp))
+                for (slice in state.allocationByHolding) {
+                    AllocationBar(label = slice.label, fraction = slice.fraction, fillColor = null)
+                    Spacer(Modifier.height(14.dp))
+                }
+            }
+            Column(Modifier.weight(1f)) {
+                AllocationGroupHeader(tr(L10n.Key.ByClass))
+                Spacer(Modifier.height(12.dp))
+                for (slice in state.allocationByKind) {
+                    AllocationBar(label = sliceLabel(slice), fraction = slice.fraction, fillColor = kindColor(slice.id))
+                    Spacer(Modifier.height(14.dp))
+                }
+            }
         }
         Spacer(Modifier.height(24.dp))
     }
