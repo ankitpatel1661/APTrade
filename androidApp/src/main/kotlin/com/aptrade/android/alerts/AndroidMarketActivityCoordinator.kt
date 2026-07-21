@@ -2,6 +2,7 @@ package com.aptrade.android.alerts
 
 import com.aptrade.android.ui.formatPercent
 import com.aptrade.shared.application.ContributionOutcome
+import com.aptrade.shared.application.DividendOutcome
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchWatchlist
 import com.aptrade.shared.application.MarketActivityPlanner
@@ -10,7 +11,10 @@ import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.ScheduledNotification
 import com.aptrade.shared.application.SchedulerStateStore
 import com.aptrade.shared.domain.EarningsEvent
+import com.aptrade.shared.domain.MarketCalendar
+import com.aptrade.shared.domain.Money
 import com.aptrade.shared.settings.AppSettings
+import com.ionspin.kotlin.bignum.decimal.BigDecimal
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -59,10 +63,29 @@ class AndroidMarketActivityCoordinator(
     // via `tr`/`trf` and calls into `AndroidAlertNotifier.notifyPieContribution`.
     private val executeDueContributions: suspend (nowEpochSeconds: Long) -> List<PieRunResult>,
     private val notifyPieContribution: suspend (outcome: ContributionOutcome) -> Unit,
+    // Dividend crediting (M8.3 Task 4, mirroring desktop's M8.2 Task 10). [processDueDividends]
+    // is the non-throwing, per-symbol-degrading crediting engine (`ProcessDueDividends.execute`),
+    // wrapped as a plain suspend closure — same "typed use case behind a closure" shape
+    // [executeDueContributions] already establishes. [notifyDividendOutcome]/
+    // [notifyDividendBackfillSummary] mirror [notifyPieContribution]'s "raw typed value -> Unit
+    // closure, no L10n access here" shape: AppGraph's `marketActivityCoordinator` factory
+    // resolves the cash/DRIP/backfill-summary title+body via `tr`/`trf` and calls into
+    // `AndroidAlertNotifier.notifyDividend`. Two closures (not one) because the backfill-collapse
+    // summary is NOT a single `DividendOutcome` — it's an aggregate (count + summed cash) this
+    // class computes itself; see [notifyDividendsDue]. Direct port of desktop's
+    // `DesktopMarketActivityCoordinator` dividend closures.
+    private val processDueDividends: suspend (nowEpochSeconds: Long) -> List<DividendOutcome>,
+    private val notifyDividendOutcome: suspend (outcome: DividendOutcome) -> Unit,
+    private val notifyDividendBackfillSummary: suspend (count: Int, totalCash: Money) -> Unit,
     private val fetchWatchlist: FetchWatchlist,
     private val fetchMarketQuotes: FetchMarketQuotes,
     private val scope: CoroutineScope,
     private val nowEpochSeconds: () -> Long,
+    // Used only by [runDividendCatchUp]'s carry-note-4 day marker (see its KDoc); stateless
+    // (MarketCalendar has no mutable state — see its own KDoc), so a fresh default instance
+    // computes the exact same trading day as [planner]'s internal calendar for any given
+    // instant. Real callers (AppGraph) pass the same shared instance used everywhere else.
+    private val calendar: MarketCalendar = MarketCalendar(),
     private val intervalMillis: Long = 60_000,
 ) {
     private var job: Job? = null
@@ -82,6 +105,9 @@ class AndroidMarketActivityCoordinator(
         if (job != null) return
         job = scope.launch {
             runContributionCatchUpIfEnabled()
+            // Dividend crediting is never settings-gated (see runDividendCatchUp's doc
+            // comment) — the catch-up always runs at launch, unlike the Pie catch-up above.
+            runDividendCatchUp()
             while (isActive) {
                 tick()
                 delay(intervalMillis)
@@ -110,6 +136,38 @@ class AndroidMarketActivityCoordinator(
             for (outcome in result.outcomes) {
                 notifyPieContribution(outcome)
             }
+        }
+    }
+
+    /**
+     * Runs the dividend-crediting engine once at launch — UNGATED (never conditioned on any
+     * settings toggle, unlike [runContributionCatchUpIfEnabled] immediately above this call in
+     * [start], which stays gated on `settings.pieContributions`). Dividend crediting is
+     * bookkeeping truth (cash owed to the user), not an optional notification, so it always
+     * runs; see [notifyDividendsDue]'s doc for why only the NOTIFICATION is settings-gated.
+     * Direct port of desktop's `runDividendCatchUp`.
+     *
+     * CARRY-NOTE 4 (Kotlin-only divergence from the Swift AS-BUILT `run()`, recorded per M8.2
+     * Task 10's brief, transcribed here for the Android port): after crediting, marks the
+     * scheduler's `lastDividendDay` to today's trading day so the SAME trading day's first
+     * `tick()` — which may still observe the market transitioning to OPEN later in the day —
+     * does not redundantly fire a second full Yahoo dividend sweep via `DividendCheckDue`.
+     * Swift's `run()` has no equivalent guard (its launch catch-up and the day's first tick
+     * both call `processDueDividends`, relying on the engine's own per-event ledger dedup to
+     * make the second call a cheap no-op); Kotlin additionally advances the day marker here to
+     * skip the redundant network round-trip entirely. Trade-off: an event Yahoo publishes
+     * between launch and market open credits same-day on Swift (its unguarded second call
+     * still re-sweeps and picks it up on the open tick), but only on the next trading day or
+     * next launch here (≤1 trading day of added latency; the engine's own dedup still keeps
+     * the eventual credit correct) — so this marker should not be "fixed" away without
+     * understanding that Swift difference.
+     */
+    private suspend fun runDividendCatchUp() {
+        notifyDividendsDue()
+        val today = calendar.tradingDay(nowEpochSeconds())
+        val state = stateStore.load()
+        if (state.lastDividendDay != today) {
+            stateStore.save(state.copy(lastDividendDay = today))
         }
     }
 
@@ -160,12 +218,53 @@ class AndroidMarketActivityCoordinator(
                     // of desktop's `ContributionCheckDue` handler (M7.2 Task 12).
                     runContributionCatchUpIfEnabled()
                 }
-                // No-op for now: the planner already fires this once per trading day
-                // (M8.2 Task 3), but wiring it to the dividend-processing engine and the
-                // notifier is M8.2 Task 10's job. Listed here only so the exhaustive `when`
-                // compiles. Direct port of desktop's identical placeholder branch.
-                ScheduledNotification.DividendCheckDue -> Unit
+                ScheduledNotification.DividendCheckDue -> notifyDividendsDue()
             }
+        }
+    }
+
+    /**
+     * Runs [processDueDividends] and notifies, IF `dividendNotifications` is on — crediting
+     * itself is ALWAYS unconditional (see [runDividendCatchUp]'s doc and the planner's
+     * ungated `DividendCheckDue` scheduling, which fires regardless of any settings toggle);
+     * only the notification below is settings-gated. Wrapped defensively in try/catch,
+     * mirroring [runContributionCatchUpIfEnabled]/the `EarningsCheckDue` handler's "never drop
+     * the whole tick" guard, even though `ProcessDueDividends.execute` is itself documented
+     * never to throw except [CancellationException]. Direct port of desktop's
+     * `notifyDividendsDue`.
+     *
+     * **Backfill collapsing.** Mirrors desktop's `notifyDividendsDue()` exactly: non-backfill
+     * (live) outcomes notify individually via [notifyDividendOutcome], but backfill outcomes
+     * are tallied (count + summed cash, via [Money.plus]) and collapsed into ONE summary via
+     * [notifyDividendBackfillSummary], emitted after the per-outcome notifications. Zero
+     * backfill outcomes emits no summary at all.
+     */
+    private suspend fun notifyDividendsDue() {
+        val outcomes = try {
+            processDueDividends(nowEpochSeconds())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emptyList()
+        }
+        if (!loadSettings().dividendNotifications) return
+
+        var backfillCount = 0
+        var totalBackfillCash = Money(BigDecimal.ZERO, "USD")
+        for (outcome in outcomes) {
+            val (isBackfill, cash) = when (outcome) {
+                is DividendOutcome.Credited -> outcome.isBackfill to outcome.cash
+                is DividendOutcome.Reinvested -> outcome.isBackfill to outcome.cash
+            }
+            if (isBackfill) {
+                backfillCount += 1
+                totalBackfillCash += cash
+            } else {
+                notifyDividendOutcome(outcome)
+            }
+        }
+        if (backfillCount > 0) {
+            notifyDividendBackfillSummary(backfillCount, totalBackfillCash)
         }
     }
 
