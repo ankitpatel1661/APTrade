@@ -45,14 +45,17 @@ import kotlin.test.assertTrue
  * `notifDividendBackfillBodyFmt` (added to the Swift catalog in later M8.1 fix commits), and
  * `activityDividend` (the uppercase "DIVIDEND" transaction chip, transcribed here for the
  * first time even though the Kotlin `TradeSide.Dividend` case predates this task) — bringing
- * the total to 328; the count below tracks the Kotlin-only total going forward, not the Swift
- * source count.
+ * the total to 328. M9.2 Task 5 (the Kotlin port of the M9.1 screener feature's L10n keys)
+ * added 37 more: the screener tab/scan-bar keys, 9 presets, 10 metrics, and the builder keys
+ * incl. `addToWatchlist` (`screenerRefresh` was skipped — it reuses the existing `Refresh`
+ * key, mirroring the Swift source's reuse decision) — bringing the total to 365; the count
+ * below tracks the Kotlin-only total going forward, not the Swift source count.
  */
 class L10nCatalogTest {
 
     @Test
-    fun `catalog has exactly 328 keys (205 macOS-transcribed + 12 desktop-only from Tasks 6-7 + 32 Kotlin-side additions + 52 Plans L10n from Task 10 + 1 Next key fix + 26 dividend and income keys from the M8_2 Kotlin L10n port)`() {
-        assertEquals(328, L10n.Key.entries.size)
+    fun `catalog has exactly 365 keys (205 macOS-transcribed + 12 desktop-only from Tasks 6-7 + 32 Kotlin-side additions + 52 Plans L10n from Task 10 + 1 Next key fix + 26 dividend and income keys from the M8_2 Kotlin L10n port + 37 screener keys from the M9_2 Kotlin L10n port)`() {
+        assertEquals(365, L10n.Key.entries.size)
     }
 
     @Test
