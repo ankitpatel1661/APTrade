@@ -9,6 +9,7 @@ import com.aptrade.desktop.infra.FileSettingsStore
 import com.aptrade.desktop.infra.FileWatchlistStore
 import com.aptrade.desktop.infra.FinnhubKeyConfig
 import com.aptrade.desktop.infra.TrayNotifier
+import com.aptrade.desktop.income.IncomeViewModel
 import com.aptrade.desktop.plans.PieWizardViewModel
 import com.aptrade.desktop.plans.PlansViewModel
 import com.aptrade.shared.infrastructure.resolveConfigDir
@@ -75,7 +76,7 @@ import kotlinx.coroutines.sync.withLock
 class AppGraph(
     private val repository: MarketDataRepository = YahooMarketDataRepository(),
     store: WatchlistStore = FileWatchlistStore(resolveConfigDir().resolve("watchlist.json")),
-    portfolioStore: PortfolioStore = FilePortfolioStore(resolveConfigDir().resolve("portfolio.json")),
+    private val portfolioStore: PortfolioStore = FilePortfolioStore(resolveConfigDir().resolve("portfolio.json")),
     val settingsStore: FileSettingsStore = FileSettingsStore(resolveConfigDir().resolve("settings.json")),
     val bookmarkStore: BookmarkStore = FileBookmarkStore(resolveConfigDir().resolve("bookmarks.json")),
     alertStore: AlertStore = FileAlertStore(resolveConfigDir().resolve("alerts.json")),
@@ -170,6 +171,22 @@ class AppGraph(
         savePie = savePie,
         simulateDCA = simulateDCA,
         searchAssets = fetchSearch,
+        calendar = marketCalendar,
+        scope = scope,
+        nowEpochSeconds = nowEpochSeconds,
+    )
+
+    /** Builds a fresh [IncomeViewModel] bound to [scope] — mirrors macOS's
+     *  `CompositionRoot.makeIncomeViewModel()` factory (there is no persistent, graph-owned VM
+     *  instance; each caller, e.g. `IncomePane`, owns its own scope/instance lifetime). Shares
+     *  the same `portfolioStore`/`repository`/[marketCalendar] every other read-only VM factory
+     *  here reads from — Income never mutates the portfolio, so it needs no mutex. */
+    fun makeIncomeViewModel(
+        scope: CoroutineScope,
+        nowEpochSeconds: () -> Long = { System.currentTimeMillis() / 1000 },
+    ): IncomeViewModel = IncomeViewModel(
+        portfolioStore = portfolioStore,
+        marketDataRepository = repository,
         calendar = marketCalendar,
         scope = scope,
         nowEpochSeconds = nowEpochSeconds,

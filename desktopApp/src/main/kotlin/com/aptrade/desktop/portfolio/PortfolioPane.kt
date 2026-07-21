@@ -51,18 +51,20 @@ import com.aptrade.desktop.designkit.LiveBadge
 import com.aptrade.desktop.designkit.StatTile
 import com.aptrade.desktop.designkit.SuperscriptPrice
 import com.aptrade.desktop.designkit.formatPercent
+import com.aptrade.desktop.income.IncomePane
 import com.aptrade.desktop.plans.PlansPane
 import com.aptrade.shared.l10n.L10n
 import com.aptrade.desktop.l10n.tr
 import com.aptrade.desktop.l10n.trf
 import com.aptrade.shared.domain.AllocationSlice
 
-/** The four content sections beneath the summary and chart. [Plans] (M7.2 Task 12) renders
- *  [com.aptrade.desktop.plans.PlansPane] instead of a section built inline in this file — the
- *  investment-Pies feature owns its own package, mirroring how Calendar/News own theirs rather
- *  than living inside PortfolioPane.kt. */
+/** The five content sections beneath the summary and chart. [Plans] (M7.2 Task 12) renders
+ *  [com.aptrade.desktop.plans.PlansPane] and [Income] (M8.2 Task 7) renders
+ *  [com.aptrade.desktop.income.IncomePane] instead of a section built inline in this file — the
+ *  investment-Pies and dividend-income features each own their own package, mirroring how
+ *  Calendar/News own theirs rather than living inside PortfolioPane.kt. */
 private enum class PortfolioSection {
-    Holdings, Allocation, Activity, Plans
+    Holdings, Allocation, Activity, Plans, Income
 }
 
 /** [PortfolioSection]'s display label. A plain function (not an enum property) because it
@@ -73,6 +75,7 @@ private fun PortfolioSection.label(): String = when (this) {
     PortfolioSection.Allocation -> tr(L10n.Key.AllocationSection)
     PortfolioSection.Activity -> tr(L10n.Key.ActivitySection)
     PortfolioSection.Plans -> tr(L10n.Key.PlansSection)
+    PortfolioSection.Income -> tr(L10n.Key.IncomeSection)
 }
 
 /** Portfolio tab: the Compose port of `Sources/APTradeApp/PortfolioView.swift`. A full-width
@@ -139,6 +142,7 @@ fun PortfolioPane(
                 PortfolioSection.Allocation -> AllocationView(state)
                 PortfolioSection.Activity -> ActivityView(state)
                 PortfolioSection.Plans -> PlansPane()
+                PortfolioSection.Income -> IncomePane()
             }
         }
     }
