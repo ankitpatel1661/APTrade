@@ -2,7 +2,6 @@ import SwiftUI
 import APTradeDomain
 
 struct WatchlistView: View {
-    var switcher: AnyView? = nil
     var onOpenSearch: (() -> Void)? = nil
     var onOpenAccount: (() -> Void)? = nil
     @State private var viewModel = CompositionRoot.makeWatchlistViewModel()
@@ -15,6 +14,17 @@ struct WatchlistView: View {
     private var chartSpring: Animation { .spring(response: 0.34, dampingFraction: 0.84) }
 
     var body: some View {
+        #if os(macOS)
+        macBody
+        #else
+        iosBody
+        #endif
+    }
+
+    // MARK: - iOS: full-window push (unchanged)
+
+    #if os(iOS)
+    private var iosBody: some View {
         NavigationStack {
             ZStack {
                 Theme.background.ignoresSafeArea()
@@ -40,10 +50,8 @@ struct WatchlistView: View {
             .navigationDestination(item: $selectedAsset) { asset in
                 AssetDetailView(asset: asset)
             }
-            #if os(iOS)
             .iosTopChrome(onSearch: { onOpenSearch?() }, onAccount: { onOpenAccount?() })
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .task {
                 await viewModel.onAppear()
                 await viewModel.runLiveUpdates()
@@ -57,23 +65,129 @@ struct WatchlistView: View {
                     onCreate: { condition in viewModel.addAlert(symbol: asset.symbol, condition: condition) },
                     onDelete: { id in viewModel.deleteAlert(id) }
                 )
-                #if os(iOS)
                 .presentationDetents([.medium, .large])
                 .presentationBackground(Theme.surface)
-                #endif
             }
         }
-        #if os(macOS)
+        .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
+    }
+    #endif
+
+    // MARK: - macOS: master–detail (Task 7)
+
+    #if os(macOS)
+    /// Kind toggle + live pulse, full width above the split — mirrors how `ScreenerView`
+    /// keeps its chips/scan bar full-width above its own split. Deliberately does NOT
+    /// include `addBar`: the search affordance travels with the rows into the narrow list
+    /// column instead (per the mockup's `.mlist`), since it's scoped to filtering what's
+    /// visible there, not a page-level control.
+    private var macTopBar: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top, spacing: 10) {
+                KindToggle(selection: $viewModel.selectedKind, counts: viewModel.counts)
+                Spacer()
+                HStack(spacing: 10) {
+                    if viewModel.isRefreshing {
+                        ProgressView().controlSize(.small)
+                    } else if viewModel.isLive {
+                        LiveBadge()
+                    }
+                }
+                .frame(width: 60, alignment: .trailing)
+            }
+            pulse
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 20)
+        .padding(.bottom, 18)
+    }
+
+    private var macBody: some View {
+        VStack(spacing: 0) {
+            macTopBar
+            if showChart && viewModel.averageSpark.count > 1 {
+                ExpandedValueCard(
+                    title: tr(.avgDayChangeTitle),
+                    values: viewModel.averageSpark,
+                    color: Theme.changeColor(viewModel.averageChange),
+                    format: { "\($0 >= 0 ? "+" : "")\($0.formatted(.number.precision(.fractionLength(2))))%" },
+                    changeStyle: .percentagePoints,
+                    onClose: { withAnimation(chartSpring) { showChart = false } }
+                )
+                .padding(.horizontal, 24)
+                .padding(.bottom, 16)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            Divider().overlay(Theme.hairline)
+            HStack(spacing: 0) {
+                listColumn
+                    .frame(width: 300)
+                    .overlay(alignment: .trailing) {
+                        Rectangle().fill(Theme.hairline).frame(width: 1)
+                    }
+                detailPane
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .background(Theme.background.ignoresSafeArea())
         .frame(minWidth: 560, minHeight: 640)
-        #endif
+        .task {
+            await viewModel.onAppear()
+            await viewModel.runLiveUpdates()
+        }
+        .refreshable { await viewModel.refresh() }
+        .sheet(item: $alertTarget) { asset in
+            PriceAlertSheet(
+                asset: asset,
+                currentPrice: viewModel.visibleRows.first { $0.asset.symbol == asset.symbol }?.quote?.price,
+                existing: viewModel.alerts(for: asset.symbol),
+                onCreate: { condition in viewModel.addAlert(symbol: asset.symbol, condition: condition) },
+                onDelete: { id in viewModel.deleteAlert(id) }
+            )
+        }
         .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
     }
 
-    // MARK: Header — toggle + day pulse
+    /// Search affordance + rows, ~300pt — the mockup's `.mlist`.
+    private var listColumn: some View {
+        VStack(spacing: 0) {
+            addBar
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
+            content
+        }
+    }
 
+    /// Selecting another row swaps this pane's content — `.id(asset.symbol)` forces SwiftUI
+    /// to tear down and rebuild `AssetDetailView` (and, with it, its own `@State`
+    /// `AssetDetailViewModel`/`AssetNewsViewModel`) per selection, exactly like a fresh
+    /// `navigationDestination` push used to: without it, swapping the bound `asset` while
+    /// the view's identity/position in the tree stays the same would let SwiftUI reuse the
+    /// OLD view model instead of loading the newly-selected symbol (the per-selection
+    /// lifecycle note from the 6a.5 Windows fidelity pass — `remember(symbol) { ... }` /
+    /// `DisposableEffect(symbol)` there, `.id(symbol)` here). No back affordance needed:
+    /// the pane simply swaps.
+    @ViewBuilder
+    private var detailPane: some View {
+        if let asset = selectedAsset {
+            AssetDetailView(asset: asset, embedded: true)
+                .id(asset.symbol)
+        } else {
+            // No "select a symbol" copy exists in L10n and this task may not add one —
+            // reuses the same neutral, textless empty region `ScreenerView.content` renders
+            // while a scan is already visibly in progress (no icon, no text, just the
+            // background showing through).
+            Color.clear
+        }
+    }
+    #endif
+
+    // MARK: Header — toggle + day pulse (iOS only after Task 7; macOS uses `macTopBar`)
+
+    #if os(iOS)
     private var header: some View {
         VStack(alignment: .leading, spacing: 18) {
-            #if os(iOS)
             VStack(alignment: .leading, spacing: 12) {
                 KindToggle(selection: $viewModel.selectedKind, counts: viewModel.counts)
                 HStack {
@@ -82,27 +196,6 @@ struct WatchlistView: View {
                     Spacer()
                 }
             }
-            #else
-            HStack(alignment: .top, spacing: 10) {
-                KindToggle(selection: $viewModel.selectedKind, counts: viewModel.counts)
-                Spacer()
-                HStack(alignment: .center, spacing: 10) {
-                    if let switcher { switcher }
-                    HStack(spacing: 10) {
-                        if viewModel.isRefreshing {
-                            ProgressView().controlSize(.small)
-                        } else if viewModel.isLive {
-                            LiveBadge()
-                        }
-                    }
-                    .frame(width: 60, alignment: .trailing)
-                    // Reserves the width Portfolio's Reset menu occupies, so the
-                    // switcher/Live cluster lands at the same x on both tabs.
-                    Color.clear.frame(width: 28, height: 1)
-                }
-            }
-            #endif
-
             pulse
             addBar
         }
@@ -110,6 +203,7 @@ struct WatchlistView: View {
         .padding(.top, 20)
         .padding(.bottom, 18)
     }
+    #endif
 
     private var pulse: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -170,6 +264,7 @@ struct WatchlistView: View {
                 WatchlistRow(
                     row: row,
                     isHovered: hoveredSymbol == row.id,
+                    isSelected: isRowSelected(row),
                     alertCount: viewModel.alerts(for: row.asset.symbol).count,
                     onOpen: { selectedAsset = row.asset },
                     onRemove: { viewModel.remove(symbol: row.asset.symbol) },
@@ -199,6 +294,18 @@ struct WatchlistView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .animation(.easeInOut(duration: 0.2), value: viewModel.selectedKind)
+    }
+
+    /// macOS only: is `row` the symbol currently shown in the detail pane? Always `false`
+    /// on iOS — the row's own selection state there is a transient push trigger, not a
+    /// persistent "currently viewed" marker, so it must never paint a lingering gold ring
+    /// on the row after popping back (iOS behavior stays unchanged).
+    private func isRowSelected(_ row: RowState) -> Bool {
+        #if os(macOS)
+        row.id == selectedAsset?.symbol
+        #else
+        false
+        #endif
     }
 
     private var emptyState: some View {
@@ -336,6 +443,7 @@ struct WatchlistView: View {
 private struct WatchlistRow: View {
     let row: RowState
     let isHovered: Bool
+    let isSelected: Bool
     let alertCount: Int
     let onOpen: () -> Void
     let onRemove: () -> Void
@@ -381,16 +489,24 @@ private struct WatchlistRow: View {
         }
         .padding(.vertical, 13)
         .padding(.horizontal, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isHovered ? Theme.surface : .clear)
-        )
+        .background {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Theme.surfaceHi)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Theme.gold.opacity(0.35), lineWidth: 1)
+                    )
+            } else if isHovered {
+                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.surface)
+            }
+        }
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(Theme.hairline)
                 .frame(height: 1)
                 .padding(.horizontal, 10)
-                .opacity(isHovered ? 0 : 1)
+                .opacity(isHovered || isSelected ? 0 : 1)
         }
         .contextMenu {
             Button(tr(.setPriceAlert), systemImage: "bell", action: onSetAlert)

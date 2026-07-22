@@ -9,6 +9,23 @@ private let dividendExDateFormatter: DateFormatter = {
     return f
 }()
 
+#if os(macOS)
+/// Enforces the standalone-window floor (full-window push / sheet presentations) so the
+/// detail view doesn't collapse below a legible size. Skipped when the view is hosted in a
+/// pane alongside a list column (`embedded: true`), where the pane itself is already sized
+/// by the enclosing split layout.
+private struct FullWindowFloor: ViewModifier {
+    let apply: Bool
+    func body(content: Content) -> some View {
+        if apply {
+            content.frame(minWidth: 560, minHeight: 560)
+        } else {
+            content
+        }
+    }
+}
+#endif
+
 struct AssetDetailView: View {
     enum ChartStyle: String, CaseIterable { case area = "Area", candles = "Candles" }
     enum Indicator: String, CaseIterable, Identifiable {
@@ -29,10 +46,12 @@ struct AssetDetailView: View {
     @State private var hoverPoint: PricePoint?
     @State private var chartStyle: ChartStyle = .area
     @State private var indicators: Set<Indicator> = []
+    private let embedded: Bool
 
-    init(asset: Asset) {
+    init(asset: Asset, embedded: Bool = false) {
         _viewModel = State(initialValue: CompositionRoot.makeDetailViewModel(for: asset))
         _newsVM = State(initialValue: CompositionRoot.makeAssetNewsViewModel(for: asset))
+        self.embedded = embedded
     }
 
     /// Colors the badge/chart by the selected timeframe's own move (points-derived),
@@ -79,7 +98,7 @@ struct AssetDetailView: View {
             }
         }
         #if os(macOS)
-        .frame(minWidth: 560, minHeight: 560)
+        .modifier(FullWindowFloor(apply: !embedded))
         #endif
     }
 

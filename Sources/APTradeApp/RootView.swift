@@ -10,14 +10,26 @@ public struct RootView: View {
     public init() {}
 
     enum Tab: String, CaseIterable {
-        case watchlist = "Watchlist", portfolio = "Portfolio", news = "News", calendar = "Calendar",
-             screener = "Screener"
+        case home = "Home", markets = "Markets", portfolio = "Portfolio", invest = "Invest"
     }
     private enum PanelRoute {
         case menu, profile, accountSettings, notifications, appearance, security, help, about, language
     }
 
-    @State private var tab: Tab = .watchlist
+    #if os(macOS)
+    /// The macOS sidebar's selection (Task 6): Home is a single item, the other three
+    /// destinations carry their own section directly — the sidebar item IS the section
+    /// picker, there is no separate pill row underneath it (unlike iOS, where `Tab`
+    /// switches a whole host view that owns its own pill switcher).
+    enum SidebarDestination: Hashable {
+        case home
+        case markets(MarketsView.Section)
+        case portfolio(PortfolioView.Section)
+        case invest(InvestView.Section)
+    }
+    #endif
+
+    @State private var tab: Tab = .home
     @State private var showAccountPanel = false
     @State private var panelRoute: PanelRoute = .menu
     @State private var isLoggedIn = true
@@ -26,7 +38,6 @@ public struct RootView: View {
     /// the Account Settings page appears, compared against it to enable Save.
     @State private var finnhubKeyDraft = ""
     @State private var scheduler = CompositionRoot.makeMarketActivityCoordinator()
-    @Namespace private var pill
 
     @State private var exportPortfolio = CompositionRoot.makeExportPortfolioUseCase()
     @State private var showExportDialog = false
@@ -42,6 +53,26 @@ public struct RootView: View {
     @State private var paletteVM = CompositionRoot.makeCommandPaletteViewModel()
     @State private var paletteAsset: Asset?
 
+    /// Cross-tab navigation requests from Home (Task 5): set + cleared by `MarketsView`/
+    /// `InvestView`'s own `onChange`, via `handleHomeNavigation(_:)` below. iOS only —
+    /// macOS routes Home navigation straight onto `sidebarSelection` (no request/clear
+    /// dance needed since the sidebar owns section selection directly).
+    @State private var marketsSectionRequest: MarketsView.Section?
+    @State private var investSectionRequest: InvestView.Section?
+
+    #if os(macOS)
+    /// The sidebar's current destination (Task 6). Persists per launch only, like `tab`.
+    @State private var sidebarSelection: SidebarDestination = .home
+    /// The macOS shell owns its OWN `PortfolioViewModel`/`PerformanceViewModel` instances
+    /// (separate from any `PortfolioView` elsewhere) so the Portfolio destination can
+    /// render `PortfolioSectionContent` directly without instantiating the full
+    /// `PortfolioView` host (which would bring back its own pill switcher, redundant with
+    /// the sidebar). See `macDestinationContent`.
+    @State private var portfolioViewModel = CompositionRoot.makePortfolioViewModel()
+    @State private var portfolioPerformanceVM = CompositionRoot.makePerformanceViewModel()
+    @State private var portfolioSelectedAsset: Asset?
+    #endif
+
     public var body: some View {
         #if os(iOS)
         iosBody
@@ -53,26 +84,25 @@ public struct RootView: View {
     #if os(iOS)
     private var iosBody: some View {
         TabView(selection: $tab) {
-            WatchlistView(onOpenSearch: { showPalette = true },
-                          onOpenAccount: { showAccountPanel = true })
-                .tabItem { Label(tr(.watchlist), systemImage: "eye") }
-                .tag(Tab.watchlist)
+            HomeView(onNavigate: { handleHomeNavigation($0) })
+                .tabItem { Label(tr(.homeTab), systemImage: "house.fill") }
+                .tag(Tab.home)
+            MarketsView(onOpenSearch: { showPalette = true },
+                        onOpenAccount: { showAccountPanel = true },
+                        externalSection: $marketsSectionRequest)
+                .tabItem { Label(tr(.marketsTab), systemImage: "chart.line.uptrend.xyaxis") }
+                .tag(Tab.markets)
             PortfolioView(onOpenSearch: { showPalette = true },
-                          onOpenAccount: { showAccountPanel = true })
+                          onOpenAccount: { showAccountPanel = true },
+                          onExport: { showExportDialog = true })
                 .tabItem { Label(tr(.portfolio), systemImage: "chart.pie") }
                 .tag(Tab.portfolio)
-            NewsView(onOpenSearch: { showPalette = true },
-                     onOpenAccount: { showAccountPanel = true })
-                .tabItem { Label(tr(.news), systemImage: "newspaper") }
-                .tag(Tab.news)
-            CalendarView(onOpenSearch: { showPalette = true },
-                         onOpenAccount: { showAccountPanel = true })
-                .tabItem { Label(tr(.calendarTab), systemImage: "calendar") }
-                .tag(Tab.calendar)
-            ScreenerView(onOpenSearch: { showPalette = true },
-                         onOpenAccount: { showAccountPanel = true })
-                .tabItem { Label(tr(.screenerTab), systemImage: "line.3.horizontal.decrease.circle") }
-                .tag(Tab.screener)
+            InvestView(onOpenSearch: { showPalette = true },
+                       onOpenAccount: { showAccountPanel = true },
+                       externalSection: $investSectionRequest,
+                       dripEnabled: $settingsVM.settings.dripEnabled)
+                .tabItem { Label(tr(.investTab), systemImage: "basket.fill") }
+                .tag(Tab.invest)
         }
         .tint(Theme.gold)
         .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
@@ -128,42 +158,10 @@ public struct RootView: View {
                     .frame(width: 0, height: 0)
                     .opacity(0)
                     .accessibilityHidden(true)
-                VStack(spacing: 0) {
-                    ZStack {
-                        if let appWordmarkImage = BrandImage.wordmark(accent: ThemeManager.shared.accent, isDark: ThemeManager.shared.isDark) {
-                            Image(platformImage: appWordmarkImage)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(height: 108)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                        }
-                        HStack(spacing: 10) {
-                            paletteButton
-                            themeToggleButton
-                            accountMenuButton
-                        }
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 18)
-                    .padding(.bottom, 4)
-                    // ONE fixed, centered switcher for all five tabs — hoisted out of the
-                    // per-view headers (each embedded it beside different-width siblings,
-                    // so its x-position shifted per tab; user-reported). Views receive no
-                    // switcher and render their headers without it, exactly like iOS.
-                    switcher
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.top, 8)
-                        .padding(.bottom, 4)
-                    Group {
-                        switch tab {
-                        case .watchlist: WatchlistView()
-                        case .portfolio: PortfolioView()
-                        case .news: NewsView()
-                        case .calendar: CalendarView()
-                        case .screener: ScreenerView()
-                        }
-                    }
+                HStack(spacing: 0) {
+                    sidebar
+                    macDestinationContent
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .allowsHitTesting(!showAccountPanel)
 
@@ -192,7 +190,10 @@ public struct RootView: View {
             }
             .animation(.spring(response: 0.34, dampingFraction: 0.88), value: showAccountPanel)
         }
-        .frame(minWidth: 560, minHeight: 680)
+        // Sidebar 208 + Screener's list column 520 + 1pt hairline + ~390pt legible
+        // detail pane = 1120 floor (bumped from 860; that width left the pane-hosted
+        // detail an unsatisfiable ~131pt at the Screener's list width).
+        .frame(minWidth: 1120, minHeight: 680)
         .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
         .task { await scheduler.run() }
         .confirmationDialog(tr(.exportPortfolioData), isPresented: $showExportDialog,
@@ -220,6 +221,221 @@ public struct RootView: View {
                             Button(tr(.done)) { paletteAsset = nil }
                         }
                     }
+            }
+        }
+    }
+
+    // MARK: - Sidebar (Task 6)
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            BrandMark(size: 14)
+                .padding(.horizontal, 14)
+                .padding(.top, 18)
+                .padding(.bottom, 18)
+
+            sidebarItem(icon: "house.fill", title: tr(.homeTab), selected: sidebarSelection == .home) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { sidebarSelection = .home }
+            }
+            .padding(.horizontal, 10)
+
+            groupLabel(tr(.marketsTab))
+            ForEach(MarketsView.Section.allCases, id: \.self) { section in
+                sidebarItem(icon: icon(for: section), title: section.title,
+                            selected: sidebarSelection == .markets(section)) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { sidebarSelection = .markets(section) }
+                }
+                .padding(.horizontal, 10)
+            }
+
+            groupLabel(tr(.portfolio))
+            ForEach(PortfolioView.Section.allCases, id: \.self) { section in
+                sidebarItem(icon: icon(for: section), title: section.title,
+                            selected: sidebarSelection == .portfolio(section)) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { sidebarSelection = .portfolio(section) }
+                }
+                .padding(.horizontal, 10)
+            }
+
+            groupLabel(tr(.investTab))
+            ForEach(InvestView.Section.allCases, id: \.self) { section in
+                sidebarItem(icon: icon(for: section), title: section.title,
+                            selected: sidebarSelection == .invest(section)) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { sidebarSelection = .invest(section) }
+                }
+                .padding(.horizontal, 10)
+            }
+
+            Spacer(minLength: 12)
+
+            Divider().overlay(Theme.hairline).padding(.horizontal, 10).padding(.bottom, 6)
+
+            sidebarFooterRow(icon: "magnifyingglass", title: tr(.sidebarSearch), trailing: "⌘K") {
+                showPalette = true
+            }
+            .padding(.horizontal, 10)
+
+            HStack(spacing: 8) {
+                sidebarFooterRow(icon: "gearshape", title: tr(.sidebarSettings), trailing: nil) {
+                    showAccountPanel = true
+                }
+                themeToggleButton
+            }
+            .padding(.horizontal, 10)
+            .padding(.bottom, 14)
+        }
+        .frame(width: 208)
+        .frame(maxHeight: .infinity)
+        .background(Theme.surface.opacity(0.55))
+        .overlay(Rectangle().frame(width: 1).foregroundStyle(Theme.hairline), alignment: .trailing)
+    }
+
+    /// One sidebar row — Home or a section item. Selected = `Theme.surfaceHi` fill with a
+    /// gold inset stroke ring (~0.35 opacity), gold-tinted glyph; mirrors the mockup's
+    /// `.sitem`/`.sitem.on` exactly, in Theme tokens.
+    private func sidebarItem(icon: String, title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Image(systemName: icon)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(selected ? Theme.gold : Theme.textSecondary)
+                    .frame(width: 16)
+                Text(title)
+                    .font(.system(size: 13, weight: selected ? .semibold : .medium))
+                    .foregroundStyle(selected ? Theme.textPrimary : Theme.textSecondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background {
+                if selected {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(Theme.surfaceHi)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .stroke(Theme.gold.opacity(0.35), lineWidth: 1)
+                        )
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Group headers — MARKETS / PORTFOLIO / INVEST — mirrors `sectionLabel`'s micro-caps
+    /// tertiary idiom (used by the account panel), at the sidebar's narrower inset.
+    private func groupLabel(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(.system(size: 9.5, weight: .bold))
+            .tracking(1.3)
+            .foregroundStyle(Theme.textTertiary)
+            .padding(.horizontal, 10)
+            .padding(.top, 14)
+            .padding(.bottom, 5)
+    }
+
+    /// Search / Settings footer rows — same row shape as `sidebarItem` but never "selected"
+    /// (they open overlays, not destinations) and can show a trailing hint (⌘K).
+    private func sidebarFooterRow(icon: String, title: String, trailing: String?, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Image(systemName: icon)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(width: 16)
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
+                Spacer(minLength: 0)
+                if let trailing {
+                    Text(trailing)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.textTertiary)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func icon(for section: MarketsView.Section) -> String {
+        switch section {
+        case .watchlist: return "list.bullet"
+        case .screener: return "scope"
+        case .calendar: return "calendar"
+        case .news: return "newspaper"
+        }
+    }
+
+    private func icon(for section: PortfolioView.Section) -> String {
+        switch section {
+        case .holdings: return "briefcase.fill"
+        case .allocation: return "chart.pie.fill"
+        case .activity: return "clock.arrow.circlepath"
+        case .performance: return "waveform.path.ecg"
+        }
+    }
+
+    private func icon(for section: InvestView.Section) -> String {
+        switch section {
+        case .plans: return "square.grid.2x2.fill"
+        case .income: return "banknote.fill"
+        }
+    }
+
+    // MARK: - Destination content (Task 6)
+
+    /// Reusing the Task-4 hosts (`MarketsView`/`PortfolioView`/`InvestView`) wholesale —
+    /// driving their `externalSection`/section state from the sidebar — was evaluated
+    /// first, since it would reuse everything through one code path. Rejected: each host
+    /// renders its OWN pill-row section switcher, which the sidebar already replaces, so
+    /// reusing them wholesale would show a redundant picker under every destination —
+    /// contradicting the mockup, where the sidebar IS the only section nav on desktop.
+    /// Instead, each host exposes the hoisted section-rendering it already uses internally
+    /// (`MarketsView.sectionView`, `InvestView.sectionView`, `PortfolioSectionContent`) and
+    /// this switch constructs the SAME content directly. Markets/Invest section views are
+    /// self-contained (each owns its own view model) so no shell-level state is needed for
+    /// them; Portfolio needs its own `PortfolioViewModel`/`PerformanceViewModel` instances,
+    /// owned above as `portfolioViewModel`/`portfolioPerformanceVM` — mirroring how
+    /// `PortfolioView` owns its own copies at host level for the iOS pill host.
+    @ViewBuilder
+    private var macDestinationContent: some View {
+        switch sidebarSelection {
+        case .home:
+            HomeViewMac(onNavigate: { handleHomeNavigation($0) })
+        case .markets(let section):
+            MarketsView.sectionView(section, onOpenSearch: { showPalette = true }, onOpenAccount: { showAccountPanel = true })
+        case .portfolio(let section):
+            NavigationStack {
+                VStack(spacing: 0) {
+                    // T6-review carried acceptance item: the sidebar destination originally
+                    // rendered ONLY `PortfolioSectionContent`, dropping the summary header
+                    // (total value, day/unrealized P&L, cash, the expandable P&L chart, reset)
+                    // that `PortfolioView` shows above its own section picker on iOS. Restored
+                    // here using the SAME hoisted header (`PortfolioSummaryHeader`, Task 7) —
+                    // no section picker beside it, since the sidebar itself is that picker.
+                    PortfolioSummaryHeader(viewModel: portfolioViewModel,
+                                           onExport: { showExportDialog = true })
+                    Divider().overlay(Theme.hairline)
+                    PortfolioSectionContent(section: section, viewModel: portfolioViewModel,
+                                            performanceVM: portfolioPerformanceVM,
+                                            selectedAsset: $portfolioSelectedAsset)
+                }
+                .navigationDestination(item: $portfolioSelectedAsset) { asset in
+                    AssetDetailView(asset: asset)
+                }
+            }
+            .task {
+                await portfolioViewModel.onAppear()
+                await portfolioViewModel.runLiveUpdates()
+            }
+            .onAppear { portfolioViewModel.reload() }
+        case .invest(let section):
+            NavigationStack {
+                InvestView.sectionView(section, dripEnabled: $settingsVM.settings.dripEnabled)
             }
         }
     }
@@ -275,10 +491,24 @@ public struct RootView: View {
     private func handlePaletteSelection(_ result: PaletteResult) {
         switch result {
         case .navigate(_, _, let destination):
+            #if os(macOS)
+            // macOS (Task 6): `tab` no longer drives any content — the sidebar's
+            // `sidebarSelection` does. Markets/Portfolio/Invest land on each
+            // destination's default (first-listed) section.
             switch destination {
-            case .watchlist: tab = .watchlist
-            case .portfolio: tab = .portfolio
+            case .home: sidebarSelection = .home
+            case .markets: sidebarSelection = .markets(.watchlist)
+            case .portfolio: sidebarSelection = .portfolio(.holdings)
+            case .invest: sidebarSelection = .invest(.plans)
             }
+            #else
+            switch destination {
+            case .home: tab = .home
+            case .markets: tab = .markets
+            case .portfolio: tab = .portfolio
+            case .invest: tab = .invest
+            }
+            #endif
         case .asset(let asset):
             paletteAsset = asset
         }
@@ -290,18 +520,43 @@ public struct RootView: View {
         paletteVM.reset()
     }
 
-    private var paletteButton: some View {
-        Button {
-            showPalette = true
-        } label: {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.gold)
-                .frame(width: 28, height: 28)
-                .background(Theme.surface, in: Circle())
-                .overlay(Circle().stroke(Theme.gold.opacity(0.4), lineWidth: 1))
+    /// Routes a Home row/card tap onto the right destination + (where applicable) nested
+    /// section — the single place both platforms' Home bodies delegate to. On iOS, only
+    /// `RootView` owns `tab` and the per-tab section-request bindings; on macOS (Task 6),
+    /// only `RootView` owns `sidebarSelection`, which the sidebar itself also writes, so
+    /// Home navigation sets it directly — no request/clear dance needed since there's no
+    /// separate host view to notify.
+    private func handleHomeNavigation(_ destination: HomeDestination) {
+        #if os(macOS)
+        switch destination {
+        case .marketsWatchlist: sidebarSelection = .markets(.watchlist)
+        case .marketsScreener:  sidebarSelection = .markets(.screener)
+        case .marketsCalendar:  sidebarSelection = .markets(.calendar)
+        case .marketsNews:      sidebarSelection = .markets(.news)
+        case .investIncome:     sidebarSelection = .invest(.income)
+        case .portfolio:        sidebarSelection = .portfolio(.holdings)
         }
-        .buttonStyle(.plain)
+        #else
+        switch destination {
+        case .marketsWatchlist:
+            tab = .markets
+            marketsSectionRequest = .watchlist
+        case .marketsScreener:
+            tab = .markets
+            marketsSectionRequest = .screener
+        case .marketsCalendar:
+            tab = .markets
+            marketsSectionRequest = .calendar
+        case .marketsNews:
+            tab = .markets
+            marketsSectionRequest = .news
+        case .investIncome:
+            tab = .invest
+            investSectionRequest = .income
+        case .portfolio:
+            tab = .portfolio
+        }
+        #endif
     }
 
     private var themeToggleButton: some View {
@@ -314,20 +569,6 @@ public struct RootView: View {
                 .frame(width: 28, height: 28)
                 .background(Theme.surface, in: Circle())
                 .overlay(Circle().stroke(Theme.gold.opacity(0.4), lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var accountMenuButton: some View {
-        Button {
-            showAccountPanel.toggle()
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(showAccountPanel ? Theme.bgBottom : Theme.gold)
-                .frame(width: 28, height: 28)
-                .background(showAccountPanel ? AnyShapeStyle(Theme.goldGradient) : AnyShapeStyle(Theme.surface), in: Circle())
-                .overlay(Circle().stroke(Theme.gold.opacity(showAccountPanel ? 0 : 0.4), lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
@@ -369,23 +610,31 @@ public struct RootView: View {
 
             Divider().overlay(Theme.hairline)
 
+            // Settings honesty pass (M10.1 Task 8): app-level settings first (Appearance,
+            // Language, Notifications — things that change how the app itself looks/talks),
+            // then identity/account settings (Profile, Account Settings, Security &
+            // Privacy), then Help/About. Export moved to Portfolio · Holdings and DRIP
+            // moved to Invest · Income (see `PortfolioSummaryHeader.exportButton` and
+            // `IncomeSection.dripCard`) — this panel no longer hosts either.
             VStack(alignment: .leading, spacing: 2) {
-                accountRow(icon: "person.crop.circle", title: tr(.profile)) { panelRoute = .profile }
-                accountRow(icon: "gearshape", title: tr(.accountSettings)) { panelRoute = .accountSettings }
-                accountRow(icon: "bell", title: tr(.notifications)) { panelRoute = .notifications }
                 accountRow(icon: "paintpalette", title: tr(.appearance)) { panelRoute = .appearance }
                 accountRow(icon: "globe", title: tr(.language)) { panelRoute = .language }
+                accountRow(icon: "bell", title: tr(.notifications)) { panelRoute = .notifications }
             }
             .padding(.top, 10)
 
             Divider().overlay(Theme.hairline).padding(.vertical, 10)
 
             VStack(alignment: .leading, spacing: 2) {
+                accountRow(icon: "person.crop.circle", title: tr(.profile)) { panelRoute = .profile }
+                accountRow(icon: "gearshape", title: tr(.accountSettings)) { panelRoute = .accountSettings }
                 accountRow(icon: "lock.shield", title: tr(.securityAndPrivacy)) { panelRoute = .security }
-                accountRow(icon: "square.and.arrow.up", title: tr(.exportPortfolioData)) {
-                    close()
-                    showExportDialog = true
-                }
+            }
+            .padding(.top, 2)
+
+            Divider().overlay(Theme.hairline).padding(.vertical, 10)
+
+            VStack(alignment: .leading, spacing: 2) {
                 accountRow(icon: "questionmark.circle", title: tr(.helpAndSupport)) { panelRoute = .help }
                 accountRow(icon: "info.circle", title: tr(.aboutAPTrade)) { panelRoute = .about }
             }
@@ -439,14 +688,11 @@ public struct RootView: View {
                 detailField(label: tr(.tradingMode), value: tr(.simulatedPaperTrading))
                 detailField(label: tr(.startingBalance), value: "$100,000.00")
                 detailField(label: tr(.displayCurrency), value: "USD ($)")
-                detailField(label: tr(.defaultTab), value: tr(.watchlist))
+                detailField(label: tr(.defaultTab), value: tr(.homeTab))
                 detailField(label: tr(.biometricLogin), value: tr(.enabledTouchID))
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
-
-            toggleRow(icon: "arrow.triangle.2.circlepath", title: tr(.settingsDrip),
-                      subtitle: tr(.settingsDripFooter), isOn: $settingsVM.settings.dripEnabled)
 
             #if os(iOS)
             // Finnhub key entry — iOS only: the sandboxed config.json isn't user-reachable,
@@ -839,46 +1085,6 @@ public struct RootView: View {
         .background(Color.clear)
     }
 
-    private func tabTitle(_ tab: Tab) -> String {
-        switch tab {
-        case .watchlist: return tr(.watchlist)
-        case .portfolio: return tr(.portfolio)
-        case .news:      return tr(.news)
-        case .calendar:  return tr(.calendarTab)
-        case .screener:  return tr(.screenerTab)
-        }
-    }
-
-    private var switcher: some View {
-        HStack(spacing: 4) {
-            ForEach(Tab.allCases, id: \.self) { item in
-                let selected = tab == item
-                Button {
-                    withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { tab = item }
-                } label: {
-                    Text(tabTitle(item))
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(selected ? Theme.textPrimary : Theme.textSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 8)
-                        .background {
-                            if selected {
-                                Capsule().fill(Theme.surfaceHi)
-                                    .overlay(Capsule().stroke(Theme.gold.opacity(0.40), lineWidth: 1))
-                                    .matchedGeometryEffect(id: "tab", in: pill)
-                            }
-                        }
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(4)
-        .background(Theme.surface, in: Capsule())
-        .overlay(Capsule().stroke(Theme.hairline, lineWidth: 1))
-    }
 }
 
 #if os(iOS)

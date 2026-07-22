@@ -17,8 +17,10 @@ private final class PaletteFakeRepo: MarketDataRepository, @unchecked Sendable {
     }
 }
 
-private let goWatchlist = PaletteResult.navigate(label: "Go to Watchlist", icon: "list.bullet", destination: .watchlist)
-private let goPortfolio = PaletteResult.navigate(label: "Go to Portfolio", icon: "chart.pie", destination: .portfolio)
+private let goHome = PaletteResult.navigate(label: "Home", icon: "house.fill", destination: .home)
+private let goMarkets = PaletteResult.navigate(label: "Markets", icon: "chart.line.uptrend.xyaxis", destination: .markets)
+private let goPortfolio = PaletteResult.navigate(label: "Portfolio", icon: "chart.pie", destination: .portfolio)
+private let goInvest = PaletteResult.navigate(label: "Invest", icon: "basket.fill", destination: .invest)
 
 @MainActor
 final class CommandPaletteViewModelTests: XCTestCase {
@@ -28,14 +30,14 @@ final class CommandPaletteViewModelTests: XCTestCase {
 
     func test_emptyQuery_showsStaticNavResults() {
         let vm = makeVM(PaletteFakeRepo())
-        XCTAssertEqual(vm.results, [goWatchlist, goPortfolio])
+        XCTAssertEqual(vm.results, [goHome, goMarkets, goPortfolio, goInvest])
     }
 
     func test_updateQuery_matchingNavLabel_includesIt() async throws {
         let vm = makeVM(PaletteFakeRepo())
-        vm.updateQuery("watch")
+        vm.updateQuery("home")
         try await Task.sleep(for: .milliseconds(300))
-        XCTAssertEqual(vm.results, [goWatchlist])
+        XCTAssertEqual(vm.results, [goHome])
     }
 
     func test_updateQuery_includesSearchResults() async throws {
@@ -59,13 +61,13 @@ final class CommandPaletteViewModelTests: XCTestCase {
 
     func test_moveSelection_clampsAtBothEnds() {
         let vm = makeVM(PaletteFakeRepo())
-        // Static results give two rows: indices 0...1.
+        // Static results give four rows: indices 0...3.
         vm.moveSelection(-5)
         XCTAssertEqual(vm.selectedIndex, 0)
         vm.moveSelection(1)
         XCTAssertEqual(vm.selectedIndex, 1)
         vm.moveSelection(5)
-        XCTAssertEqual(vm.selectedIndex, 1)
+        XCTAssertEqual(vm.selectedIndex, 3)
     }
 
     func test_moveSelection_onEmptyResults_doesNothing() async throws {
@@ -79,7 +81,7 @@ final class CommandPaletteViewModelTests: XCTestCase {
 
     func test_activateSelected_returnsSelectedResult_orNilWhenEmpty() async throws {
         let vm = makeVM(PaletteFakeRepo())
-        XCTAssertEqual(vm.activateSelected(), goWatchlist)
+        XCTAssertEqual(vm.activateSelected(), goHome)
         vm.updateQuery("nomatch-xyz")
         try await Task.sleep(for: .milliseconds(300))
         XCTAssertNil(vm.activateSelected())
@@ -95,6 +97,6 @@ final class CommandPaletteViewModelTests: XCTestCase {
         vm.reset()
         XCTAssertEqual(vm.query, "")
         XCTAssertEqual(vm.selectedIndex, 0)
-        XCTAssertEqual(vm.results, [goWatchlist, goPortfolio])
+        XCTAssertEqual(vm.results, [goHome, goMarkets, goPortfolio, goInvest])
     }
 }

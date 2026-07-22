@@ -15,7 +15,7 @@ An ultra-premium **native investing platform across four OSes** — a SwiftUI fl
 ![Swift](https://img.shields.io/badge/Swift-6.0-D4A94E?logo=swift)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Multiplatform-D4A94E?logo=kotlin)
 ![Architecture](https://img.shields.io/badge/architecture-Clean-D4A94E)
-![Tests](https://img.shields.io/badge/macOS%20tests-560%20passing-46C98A)
+![Tests](https://img.shields.io/badge/macOS%20tests-586%20passing-46C98A)
 
 </div>
 
@@ -76,13 +76,13 @@ Every app carries: a live watchlist, asset detail with candlestick/area charts a
 - **Keyboard-first** — arrow keys move the selection, Return opens it, Escape dismisses; every result is also clickable. Selecting an asset opens it in an isolated detail sheet without disturbing the tab you're on.
 
 ### News
-- **Market headlines** in a dedicated News tab — **General**, **Crypto**, and **Merger** categories, backed by Finnhub, each a tap away.
+- **Market headlines** in the News section of Markets (its own tab on Windows/Android until M10.2/3) — **General**, **Crypto**, and **Merger** categories, backed by Finnhub, each a tap away.
 - **Per-symbol company news** woven into every asset's detail view, showing the latest headlines for that ticker with the same row and bookmark behavior.
 - **Filter** the feed instantly by headline or source, **bookmark** any article, and flip to a **Saved** view that persists across launches. Tapping a headline opens it in your default browser.
 - **No-key state** — without a Finnhub key the app degrades gracefully to a "connect a news source" prompt; the key lives only in `~/.config/aptrade/config.json`, never in the bundle.
 
 ### Calendar & earnings
-- **Calendar tab** — a dedicated tab showing **holiday and half-day banners** for the visible range, driven by a computed, US-DST-aware NYSE `MarketCalendar` (statutory holidays with observed-weekend shifts, plus the day-before-July-4th, day-after-Thanksgiving, and Christmas Eve 1pm-ET half-days) — no hard-coded date table.
+- **Calendar section of Markets** (its own tab on Windows/Android until M10.2/3) — **holiday and half-day banners** for the visible range, driven by a computed, US-DST-aware NYSE `MarketCalendar` (statutory holidays with observed-weekend shifts, plus the day-before-July-4th, day-after-Thanksgiving, and Christmas Eve 1pm-ET half-days) — no hard-coded date table.
 - **Earnings list** — upcoming **S&P 500 + your-watchlist** earnings grouped by trading day, each row showing the ticker, company name, reporting **session** (before open / after close), and EPS estimate; symbols you hold are flagged. Backed by a shared `FinnhubEarningsRepository` (`/calendar/earnings`, 6-hour TTL cache) and a `FetchEarningsCalendar` use case (`.execute` / `.nextEarnings` / `.ownedToday`).
 - **Next-earnings stat** on every asset's detail view, plus a settings-gated **earnings-day notification** that rides the same market-hours scheduler as the open/close and daily-digest alerts.
 - **No-key state** — without a Finnhub key the earnings list degrades to an empty state (an `EmptyEarningsRepository` fallback); the holiday/half-day banners still render, since the calendar is computed locally.
@@ -110,7 +110,7 @@ Every app carries: a live watchlist, asset detail with candlestick/area charts a
 - **9 curated presets** — RSI Oversold / Overbought, MACD Bullish Cross / Bearish Cross, Golden Cross, Death Cross, Bollinger Squeeze, and Near 52-Week High / Low, each evaluated directly off the scan's precomputed technical snapshot (RSI 14, MACD cross flags, Bollinger %B/bandwidth, 52-week range position).
 - **Custom builder** — a sheet AND-combines any number of conditions across 10 metrics (price, day change %, RSI 14, Bollinger %B, Bollinger bandwidth, % to 52-week high/low, relative volume, % vs SMA 50/200) with a live match count as you build; saved custom screens persist alongside the presets and can be edited or deleted.
 - **Sortable results** with an inline **add-to-watchlist** action per row — the Screener writes only to the same shared watchlist store every other tab uses (a symbol added here shows up on Watchlist immediately, and vice versa); it never touches the portfolio, and nothing about it is notification-driven.
-- **Fifth tab** alongside Watchlist / Portfolio / News / Calendar, with an iPhone-adapted row layout and horizontally-scrolling preset chips (`#if os(iOS)`); macOS keeps the full table columns and a static chip row.
+- **Screener in Markets** — reachable from the Markets destination on both iPhone and macOS, with an iPhone-adapted row layout and horizontally-scrolling preset chips (`#if os(iOS)`); macOS keeps the full table columns and a static chip row.
 - **Platform status:** macOS + iPhone (M9.1), Windows desktop (M9.2), and Android (M9.3) — all four platforms complete.
 
 ### Settings & appearance
@@ -193,7 +193,7 @@ The app ships as a bare SwiftPM executable. Launching the built binary directly 
 DEVELOPER_DIR=/Applications/Xcode.app swift test
 ```
 
-> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **560 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction, the all-priced gate + benchmark head-trim), the market calendar and earnings calendar, use cases, the market-activity planner (incl. earnings-check and Pie-contribution-check scheduling), alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the Finnhub earnings mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, the view models, Investment Plans (`PieMath` distribution/drift, `PieSchedule` cadence math, `PieBacktest` DCA-vs-lump-sum, contribution/rebalance use cases and catch-up, the `UserDefaultsPieStore`, and the coordinator's contribution notifications), the dividend & income engine (`DividendMath` shares-held/trailing-rate/cadence math, `ProcessDueDividends` backfill/dedup/DRIP-with-cash-fallback, the Income view model, and the export renderer's two new income rows), and the technical screener (`ScreenerMath`'s per-symbol snapshot and cross-flag math, the 9 preset screens and custom AND-evaluation, `ScreenerScanEngine`'s throttled batching/backoff/failure-isolation, the file-backed snapshot and screen stores, and the screener view model).
+> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **586 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction, the all-priced gate + benchmark head-trim), the market calendar and earnings calendar, use cases, the market-activity planner (incl. earnings-check and Pie-contribution-check scheduling), alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the Finnhub earnings mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, the view models, the IA restructure (Home dashboard, four-tab shell, macOS sidebar + master-detail, Alerts center), Investment Plans (`PieMath` distribution/drift, `PieSchedule` cadence math, `PieBacktest` DCA-vs-lump-sum, contribution/rebalance use cases and catch-up, the `UserDefaultsPieStore`, and the coordinator's contribution notifications), the dividend & income engine (`DividendMath` shares-held/trailing-rate/cadence math, `ProcessDueDividends` backfill/dedup/DRIP-with-cash-fallback, the Income view model, and the export renderer's two new income rows), and the technical screener (`ScreenerMath`'s per-symbol snapshot and cross-flag math, the 9 preset screens and custom AND-evaluation, `ScreenerScanEngine`'s throttled batching/backoff/failure-isolation, the file-backed snapshot and screen stores, and the screener view model).
 
 ### Building the shared Kotlin core
 
@@ -560,6 +560,7 @@ logo/                       Brand assets
 APTrade Lite is the foundation. Planned toward the full platform:
 
 - Real authentication (Apple Sign In), biometric gating, and cloud sync (Supabase)
+- **IA Restructure — Milestone 10, in progress.** macOS + iPhone (M10.1) complete: a four-destination redesign (Home · Markets · Portfolio · Invest) with a **Home dashboard** (summary cards, top movers, market summary), a new **macOS sidebar** with master-detail panes, a unified **Alerts center** reached from Home, and tool re-homing (Screener moves to Markets; Plans/Income move out of Portfolio into the new Invest destination; Export re-homes to the Portfolio header; DRIP re-homes to Income). Windows and Android (M10.2 + M10.3) pending — all four platforms will ship the new IA at feature parity.
 - **Windows parity — complete.** The `:desktopApp` Compose app now covers Watchlist +
   detail + palette (6a), a Portfolio tab with detail-screen indicators, performance/risk
   intelligence, and export (6b.1 + 6b.2), a News tab with per-symbol company news and

@@ -1,0 +1,1055 @@
+<meta charset="utf-8">
+<title>APTrade — IA redesign mockups</title>
+<style>
+  :root {
+    --page-bg: #F4F1EA;
+    --page-ink: #1E1C18;
+    --page-ink2: #605A4F;
+    --page-card: #FBFAF7;
+    --page-line: #DFD9CD;
+    --gold-deep: #A9772A; --gold-mid: #D4A94E; --gold-light: #F2DDA0;
+    --up: #46C98A; --down: #E06A5E;
+    /* app frame tokens — always dark, the app's own world */
+    --bg-top: #0C0B09; --bg-bot: #050504;
+    --surface: #16140F; --surface-hi: #211D15;
+    --ink: #F4F1EA; --ink2: #9C968A; --ink3: #615C51;
+    --hairline: rgba(156,150,138,.18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --page-bg: #12100C; --page-ink: #F4F1EA; --page-ink2: #9C968A; --page-card: #191612; --page-line: #2A251C; }
+  }
+  :root[data-theme="dark"] { --page-bg: #12100C; --page-ink: #F4F1EA; --page-ink2: #9C968A; --page-card: #191612; --page-line: #2A251C; }
+  :root[data-theme="light"] { --page-bg: #F4F1EA; --page-ink: #1E1C18; --page-ink2: #605A4F; --page-card: #FBFAF7; --page-line: #DFD9CD; }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page-bg); color: var(--page-ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; line-height: 1.5; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 48px 24px 80px; }
+  .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .14em; color: var(--gold-deep); text-transform: uppercase; }
+  h1 { font-size: 30px; font-weight: 800; margin: 6px 0 8px; letter-spacing: -.02em; text-wrap: balance; }
+  .lede { color: var(--page-ink2); max-width: 62ch; margin: 0 0 8px; }
+  h2 { font-size: 20px; font-weight: 750; margin: 56px 0 4px; letter-spacing: -.01em; }
+  .sub-p { color: var(--page-ink2); font-size: 14px; margin: 0 0 20px; max-width: 66ch; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  .duo { display: flex; gap: 36px; align-items: flex-start; flex-wrap: wrap; }
+  .notes { flex: 1 1 260px; min-width: 240px; position: sticky; top: 24px; }
+  .note { border-left: 2px solid var(--gold-mid); padding: 2px 0 2px 14px; margin: 0 0 18px; }
+  .note b { display: block; font-size: 13px; }
+  .note p { margin: 2px 0 0; font-size: 13px; color: var(--page-ink2); }
+  .note .tag { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .1em; color: var(--gold-deep); text-transform: uppercase; margin-bottom: 2px; }
+
+  /* ---------- phone frame ---------- */
+  .phone { flex: 0 0 auto; width: 375px; height: 780px; border-radius: 44px; padding: 10px;
+    background: #000; box-shadow: 0 24px 60px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.06); }
+  .phone-screen { position: relative; width: 100%; height: 100%; border-radius: 36px; overflow: hidden;
+    background: linear-gradient(180deg, var(--bg-top), var(--bg-bot));
+    color: var(--ink); display: flex; flex-direction: column; font-size: 14px; }
+  .screens { flex: 1; position: relative; overflow: hidden; }
+  .screen { position: absolute; inset: 0; overflow-y: auto; padding: 14px 16px 12px; display: none; scrollbar-width: none; }
+  .screen.active { display: block; }
+  .sub { display: none; }
+  .sub.active { display: block; }
+
+  /* ---------- shared app atoms ---------- */
+  .appbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px 4px; }
+  .brand { font-weight: 800; letter-spacing: .06em; font-size: 13px;
+    background: linear-gradient(100deg, var(--gold-deep), var(--gold-mid), var(--gold-light));
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .appbar .acts { display: flex; gap: 8px; }
+  .cbtn { width: 26px; height: 26px; border-radius: 50%; background: var(--surface);
+    border: 1px solid rgba(212,169,78,.4); display: grid; place-items: center; color: var(--gold-mid); font-size: 12px; }
+  .cbtn.badged { position: relative; }
+  .cbtn.badged::after { content: ""; position: absolute; top: 1px; right: 1px; width: 7px; height: 7px;
+    border-radius: 50%; background: var(--gold-mid); border: 1.5px solid var(--bg-top); }
+
+  .pills { display: flex; gap: 6px; margin: 10px 0 14px; overflow-x: auto; scrollbar-width: none; }
+  .pill { flex: 0 0 auto; font-size: 12px; font-weight: 600; color: var(--ink2);
+    padding: 6px 13px; border-radius: 999px; background: transparent; border: 1px solid transparent; cursor: pointer; user-select: none; }
+  .pill.on { color: var(--ink); background: var(--surface-hi); border-color: rgba(212,169,78,.4); }
+  .pill:focus-visible { outline: 2px solid var(--gold-mid); outline-offset: 1px; }
+
+  .card { background: var(--surface); border: 1px solid var(--hairline); border-radius: 16px; padding: 14px 16px; margin-bottom: 12px; }
+  .microlabel { font-size: 9.5px; font-weight: 700; letter-spacing: .13em; color: var(--ink3); text-transform: uppercase; }
+
+  .money { font-variant-numeric: tabular-nums; font-weight: 750; }
+  .money sup { font-size: .55em; font-weight: 700; vertical-align: .5em; letter-spacing: 0; }
+  .chgpill { display: inline-block; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+    padding: 2px 8px; border-radius: 999px; border: 1px solid; }
+  .chgpill.up { color: var(--up); border-color: rgba(70,201,138,.45); background: rgba(70,201,138,.08); }
+  .chgpill.dn { color: var(--down); border-color: rgba(224,106,94,.45); background: rgba(224,106,94,.08); }
+  .chgpill.gold { color: var(--gold-mid); border-color: rgba(212,169,78,.45); background: rgba(212,169,78,.08); }
+
+  .row { display: flex; align-items: center; gap: 10px; padding: 10px 2px; border-bottom: 1px solid var(--hairline); }
+  .row:last-child { border-bottom: none; }
+  .row .sym { width: 74px; flex: 0 0 auto; }
+  .row .sym b { display: block; font-size: 13px; letter-spacing: .02em; }
+  .row .sym span { font-size: 10.5px; color: var(--ink3); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .spark { flex: 1; min-width: 0; }
+  .row .quote { text-align: right; margin-left: auto; }
+  .row .quote .money { font-size: 13px; display: block; }
+
+  .tabbar { display: flex; border-top: 1px solid var(--hairline); background: rgba(5,5,4,.85); backdrop-filter: blur(6px); }
+  .tab { flex: 1; text-align: center; padding: 10px 0 16px; color: var(--ink3); font-size: 10px; font-weight: 650; cursor: pointer; user-select: none; }
+  .tab .ic { display: block; font-size: 17px; margin-bottom: 2px; filter: grayscale(1) opacity(.55); }
+  .tab.on { color: var(--gold-mid); }
+  .tab.on .ic { filter: none; }
+  .tab:focus-visible, .sitem:focus-visible { outline: 2px solid var(--gold-mid); outline-offset: -2px; border-radius: 8px; }
+
+  .today li { display: flex; gap: 10px; align-items: baseline; padding: 7px 0; border-bottom: 1px solid var(--hairline); font-size: 12.5px; }
+  .today li:last-child { border-bottom: none; }
+  .today { list-style: none; margin: 6px 0 0; padding: 0; }
+  .today .when { color: var(--ink3); font-size: 10.5px; margin-left: auto; white-space: nowrap; }
+
+  .qgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .qcard { background: var(--surface); border: 1px solid var(--hairline); border-radius: 14px; padding: 12px 14px; }
+  .qcard b { font-size: 12.5px; display: block; }
+  .qcard span { font-size: 10.5px; color: var(--ink3); }
+
+  .toggle { width: 34px; height: 20px; border-radius: 999px; background: linear-gradient(100deg, var(--gold-deep), var(--gold-mid)); position: relative; flex: 0 0 auto; }
+  .toggle::after { content: ""; position: absolute; top: 2px; right: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; }
+
+  .donut { width: 84px; height: 84px; border-radius: 50%; flex: 0 0 auto;
+    background: conic-gradient(var(--gold-mid) 0 58%, #8A6BC1 58% 82%, #4A90B8 82% 100%); display: grid; place-items: center; }
+  .donut i { width: 56px; height: 56px; border-radius: 50%; background: var(--surface); }
+  .donut.alloc { background: conic-gradient(var(--gold-mid) 0 62%, #4A90B8 62% 88%, #8A6BC1 88% 100%); }
+
+  .searchfield { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--hairline);
+    border-radius: 999px; padding: 8px 14px; color: var(--ink3); font-size: 12.5px; margin-bottom: 4px; }
+
+  .scanbar { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--hairline);
+    border-radius: 12px; padding: 9px 12px; margin-bottom: 10px; font-size: 11.5px; color: var(--ink2); }
+  .scanbtn { margin-left: auto; font-size: 11px; font-weight: 800; letter-spacing: .03em; color: #16140F;
+    background: linear-gradient(100deg, var(--gold-deep), var(--gold-mid), var(--gold-light));
+    border-radius: 999px; padding: 5px 14px; white-space: nowrap; }
+  .sessionchip { font-size: 9px; font-weight: 800; letter-spacing: .08em; padding: 2px 7px; border-radius: 999px;
+    border: 1px solid rgba(212,169,78,.45); color: var(--gold-mid); }
+
+  .bars { display: flex; align-items: flex-end; gap: 4px; height: 74px; padding: 4px 2px 0; }
+  .bars i { flex: 1; background: var(--gold-mid); border-radius: 3px 3px 0 0; opacity: .85; }
+  .bars i.proj { background: transparent; border: 1.5px dashed rgba(212,169,78,.6); background: rgba(212,169,78,.12); }
+  .bars-x { display: flex; gap: 4px; font-size: 8px; color: var(--ink3); padding: 3px 2px 0; }
+  .bars-x span { flex: 1; text-align: center; }
+
+  .stattiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .stattiles .stat { margin: 0; }
+  .stat { background: var(--surface); border: 1px solid var(--hairline); border-radius: 10px; padding: 8px 10px; }
+  .stat .microlabel { font-size: 8.5px; }
+  .stat .v { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .hbar { display: flex; align-items: center; gap: 8px; font-size: 11.5px; padding: 5px 0; }
+  .hbar b { width: 64px; flex: 0 0 auto; font-size: 11.5px; }
+  .hbar .track { flex: 1; height: 6px; border-radius: 999px; background: var(--surface-hi); overflow: hidden; }
+  .hbar .track i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--gold-deep), var(--gold-mid)); }
+  .hbar .pc { width: 44px; text-align: right; color: var(--ink2); font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+
+  .newsrow { padding: 9px 0; border-bottom: 1px solid var(--hairline); display: flex; gap: 10px; align-items: flex-start; }
+  .newsrow:last-child { border-bottom: none; }
+  .newsrow .txt { flex: 1; min-width: 0; }
+  .newsrow b { font-size: 12.5px; font-weight: 650; display: block; line-height: 1.35; }
+  .newsrow span { font-size: 10.5px; color: var(--ink3); }
+  .newsrow .bk { color: var(--gold-mid); font-size: 13px; flex: 0 0 auto; padding-top: 2px; }
+
+  .ledger li { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--hairline); font-size: 12px; }
+  .ledger li:last-child { border-bottom: none; }
+  .ledger { list-style: none; margin: 4px 0 0; padding: 0; }
+  .ledger .when { color: var(--ink3); font-size: 10.5px; margin-left: auto; white-space: nowrap; }
+  .sidechip { font-size: 9px; font-weight: 800; letter-spacing: .06em; padding: 2px 7px; border-radius: 5px; flex: 0 0 auto; }
+  .sidechip.buy { color: var(--up); border: 1px solid rgba(70,201,138,.45); }
+  .sidechip.sell { color: var(--down); border: 1px solid rgba(224,106,94,.45); }
+  .sidechip.div { color: var(--gold-mid); border: 1px solid rgba(212,169,78,.45); }
+
+  /* ---------- desktop frame ---------- */
+  .desk { width: 100%; max-width: 1100px; height: 680px; border-radius: 14px; overflow: hidden;
+    background: linear-gradient(180deg, var(--bg-top), var(--bg-bot)); color: var(--ink);
+    border: 1px solid rgba(255,255,255,.07); box-shadow: 0 24px 60px rgba(0,0,0,.3); display: flex; font-size: 13px; position: relative; }
+  .side { width: 208px; flex: 0 0 auto; border-right: 1px solid var(--hairline); padding: 18px 10px 12px;
+    display: flex; flex-direction: column; background: rgba(22,20,15,.5); overflow-y: auto; scrollbar-width: none; }
+  .side .brand { font-size: 14px; padding: 0 10px 14px; }
+  .sgroup { margin-bottom: 12px; }
+  .sglabel { font-size: 9px; font-weight: 800; letter-spacing: .15em; color: var(--ink3); text-transform: uppercase; padding: 0 10px 4px; }
+  .sitem { display: flex; align-items: center; gap: 9px; padding: 6px 10px; border-radius: 9px; color: var(--ink2); font-weight: 550; cursor: pointer; user-select: none; }
+  .sitem .ic { font-size: 13px; width: 16px; text-align: center; filter: grayscale(1) opacity(.6); }
+  .sitem.on { background: var(--surface-hi); color: var(--ink); box-shadow: inset 0 0 0 1px rgba(212,169,78,.35); }
+  .sitem.on .ic { filter: none; }
+  .side .foot { margin-top: auto; border-top: 1px solid var(--hairline); padding-top: 8px; }
+  .dcontent { flex: 1; min-width: 0; position: relative; }
+  .dview { position: absolute; inset: 0; display: none; }
+  .dview.active { display: flex; }
+  .dpane { flex: 1; min-width: 0; padding: 20px 26px; overflow-y: auto; scrollbar-width: thin; }
+  .dhead { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+  .dhead h3 { margin: 0; font-size: 19px; letter-spacing: .01em; }
+  .dhead .live { margin-left: auto; font-size: 9.5px; color: var(--gold-mid); letter-spacing: .1em; font-weight: 800; }
+  .dhead .hint2 { font-size: 11px; color: var(--ink3); }
+
+  .thead { display: flex; gap: 10px; font-size: 9.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink3); padding: 6px 2px; border-bottom: 1px solid var(--hairline); }
+  .trow { display: flex; gap: 10px; align-items: center; padding: 9px 2px; border-bottom: 1px solid var(--hairline); font-size: 12.5px; }
+  .trow:last-child { border-bottom: none; }
+  .c-sym { width: 66px; flex: 0 0 auto; font-weight: 750; }
+  .c-name { flex: 1; min-width: 0; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .c-num { width: 86px; flex: 0 0 auto; text-align: right; font-variant-numeric: tabular-nums; }
+  .c-star { width: 26px; flex: 0 0 auto; text-align: center; color: var(--gold-mid); }
+  .sorted { color: var(--gold-mid); }
+
+  /* desktop watchlist master-detail */
+  .mlist { width: 300px; flex: 0 0 auto; border-right: 1px solid var(--hairline); padding: 16px 14px; overflow-y: auto; scrollbar-width: none; }
+  .mdetail { flex: 1; min-width: 0; padding: 18px 24px; overflow-y: auto; display: flex; flex-direction: column; scrollbar-width: none; }
+  .dtitle { display: flex; align-items: baseline; gap: 12px; }
+  .dtitle h3 { margin: 0; font-size: 22px; letter-spacing: .01em; }
+  .dtitle .nm { color: var(--ink2); font-size: 12px; }
+  .bigmoney { font-size: 30px; margin: 8px 0 2px; }
+  .tframes { display: flex; gap: 14px; margin: 12px 0 8px; font-size: 11px; font-weight: 700; color: var(--ink3); }
+  .tframes span.on { color: var(--gold-mid); border-bottom: 2px solid var(--gold-mid); padding-bottom: 2px; }
+  .statgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
+  .buybtn { align-self: flex-start; margin-top: 14px; font-size: 12px; font-weight: 800; letter-spacing: .04em; color: #16140F;
+    background: linear-gradient(100deg, var(--gold-deep), var(--gold-mid), var(--gold-light));
+    border-radius: 999px; padding: 8px 22px; }
+
+  .dhgrid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; margin-top: 14px; }
+  .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+  /* command palette overlay */
+  .palov { position: absolute; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: flex-start; justify-content: center; padding-top: 90px; z-index: 5; }
+  .palov.show { display: flex; }
+  .pal { width: 460px; background: var(--surface); border: 1px solid rgba(212,169,78,.35); border-radius: 14px; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,.5); }
+  .pal .pin { display: flex; gap: 10px; padding: 13px 16px; border-bottom: 1px solid var(--hairline); color: var(--ink); font-size: 14px; }
+  .pal .pin span { color: var(--ink3); }
+  .pal .prow { display: flex; gap: 10px; align-items: center; padding: 10px 16px; font-size: 12.5px; border-bottom: 1px solid var(--hairline); }
+  .pal .prow:last-child { border-bottom: none; }
+  .pal .prow.sel { background: var(--surface-hi); }
+  .pal .k { margin-left: auto; font-size: 10px; color: var(--ink3); }
+
+  .caption { font-size: 12px; color: var(--page-ink2); margin-top: 12px; max-width: 76ch; }
+  .hint { display: inline-block; font-size: 11px; font-weight: 700; color: var(--gold-deep);
+    border: 1px solid var(--gold-mid); border-radius: 999px; padding: 2px 10px; margin-left: 8px; vertical-align: 2px; }
+
+  table.moved { border-collapse: collapse; font-size: 13px; margin-top: 16px; }
+  table.moved th, table.moved td { text-align: left; padding: 7px 18px 7px 0; border-bottom: 1px solid var(--page-line); vertical-align: top; }
+  table.moved th { font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--page-ink2); }
+  table.moved td b { font-weight: 650; }
+  .arrow { color: var(--gold-deep); }
+
+  @media (max-width: 900px) {
+    .notes { position: static; }
+    .desk { height: auto; min-height: 680px; flex-direction: column; }
+    .side { width: 100%; flex-direction: row; flex-wrap: wrap; overflow: visible; }
+    .side .foot { margin-top: 0; border-top: none; }
+    .dcontent { min-height: 620px; }
+    .mlist { width: 42%; }
+    .twocol, .dhgrid { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .screen.active, .dview.active, .sub.active { animation: fadein .18s ease; }
+    @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+  }
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">APTrade · Design proposal · v2</div>
+  <h1>Every screen of the regroup</h1>
+  <p class="lede">A new <b>Home</b>, the five tabs and six buried sections regrouped into <b>Home · Markets · Portfolio · Invest</b>. Every destination is mocked: on the phone, tap the tab bar <i>and the section pills</i>; on the desktop, click every sidebar item — including Search. Same gold-on-black system, exact Theme.swift tokens.</p>
+
+  <h2>Phone <span class="hint">tap tabs and pills</span></h2>
+  <p class="sub-p">iPhone and Android render this identically (TabView / NavigationBar). Four tabs; no tab hides more than four sections.</p>
+
+  <div class="duo">
+    <div class="phone"><div class="phone-screen">
+      <div class="appbar">
+        <span class="brand">AP·TRADE</span>
+        <span class="acts"><span class="cbtn">⌕</span><span class="cbtn badged">🔔</span><span class="cbtn">⋯</span></span>
+      </div>
+      <div class="screens">
+
+        <!-- ============ HOME ============ -->
+        <div class="screen active" id="scr-home">
+          <div class="microlabel">Portfolio value</div>
+          <div class="money num" style="font-size:34px">$100,177<sup>17</sup></div>
+          <div style="margin:2px 0 10px"><span class="chgpill up">▲ +$209.26 · +0.21%</span>
+            <span style="font-size:10.5px;color:var(--ink3)">&nbsp;today</span></div>
+          <svg viewBox="0 0 340 64" width="100%" height="64" aria-hidden="true">
+            <defs><linearGradient id="gfill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#D4A94E" stop-opacity=".35"/><stop offset="1" stop-color="#D4A94E" stop-opacity="0"/>
+            </linearGradient></defs>
+            <path d="M0,46 L30,42 L60,48 L90,38 L120,40 L150,30 L180,34 L210,24 L240,28 L270,18 L300,22 L340,12 L340,64 L0,64 Z" fill="url(#gfill)"/>
+            <path d="M0,46 L30,42 L60,48 L90,38 L120,40 L150,30 L180,34 L210,24 L240,28 L270,18 L300,22 L340,12" fill="none" stroke="#D4A94E" stroke-width="2"/>
+            <circle cx="340" cy="12" r="3" fill="#F2DDA0"/>
+          </svg>
+          <div style="display:flex;gap:14px;margin:8px 0 14px">
+            <div><span class="microlabel">Total return</span><div class="money num" style="font-size:13px;color:var(--up)">+18.4%</div></div>
+            <div><span class="microlabel">Cash</span><div class="money num" style="font-size:13px">$43,190<sup>01</sup></div></div>
+            <div><span class="microlabel">Income YTD</span><div class="money num" style="font-size:13px">$412<sup>88</sup></div></div>
+          </div>
+          <div class="card">
+            <div class="microlabel">Today</div>
+            <ul class="today">
+              <li><span style="color:var(--up)">●</span> Market open <span class="when">closes 4:00 PM</span></li>
+              <li><span class="chgpill up">▲ 3.2%</span> <b>NVDA</b> leads your holdings <span class="when">now</span></li>
+              <li><span class="chgpill dn">▼ 1.8%</span> <b>TSLA</b> biggest faller <span class="when">now</span></li>
+              <li>⏱ <b>MSFT</b> reports earnings <span class="when">after close</span></li>
+              <li>💰 <b>AAPL</b> dividend · est. $12.40 <span class="when">Thu</span></li>
+            </ul>
+          </div>
+          <div class="qgrid">
+            <div class="qcard"><b>Screener</b><span>Scan ran today · 27 matches</span></div>
+            <div class="qcard"><b>Alerts</b><span>4 active · NVDA near $190</span></div>
+            <div class="qcard"><b>Calendar</b><span>3 earnings this week</span></div>
+            <div class="qcard"><b>News</b><span>12 new for your symbols</span></div>
+          </div>
+        </div>
+
+        <!-- ============ MARKETS ============ -->
+        <div class="screen" id="scr-markets">
+          <div class="searchfield">⌕&nbsp; Search any symbol — AAPL, VOO, SOL-USD…</div>
+          <div class="pills">
+            <span class="pill on" data-sub="m-watch">Watchlist</span>
+            <span class="pill" data-sub="m-screener">Screener</span>
+            <span class="pill" data-sub="m-calendar">Calendar</span>
+            <span class="pill" data-sub="m-news">News</span>
+          </div>
+
+          <div class="sub active" id="m-watch">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin:2px 0 6px">
+              <span class="microlabel">Stocks · avg +0.6%</span>
+              <span style="font-size:9.5px;color:var(--gold-mid);letter-spacing:.1em;font-weight:800">● LIVE</span>
+            </div>
+            <div class="card" style="padding:6px 14px">
+              <div class="row"><div class="sym"><b>AAPL</b><span>Apple Inc.</span></div>
+                <svg class="spark" viewBox="0 0 120 28" height="28"><path d="M0,20 L20,16 L40,18 L60,12 L80,14 L100,8 L120,10" fill="none" stroke="#46C98A" stroke-width="1.5"/></svg>
+                <div class="quote"><span class="money num">$226<sup>41</sup></span><span class="chgpill up">+1.2%</span></div></div>
+              <div class="row"><div class="sym"><b>NVDA</b><span>NVIDIA Corp.</span></div>
+                <svg class="spark" viewBox="0 0 120 28" height="28"><path d="M0,24 L20,20 L40,14 L60,16 L80,10 L100,6 L120,4" fill="none" stroke="#46C98A" stroke-width="1.5"/></svg>
+                <div class="quote"><span class="money num">$189<sup>77</sup></span><span class="chgpill up">+3.2%</span></div></div>
+              <div class="row"><div class="sym"><b>TSLA</b><span>Tesla, Inc.</span></div>
+                <svg class="spark" viewBox="0 0 120 28" height="28"><path d="M0,8 L20,12 L40,10 L60,16 L80,14 L100,20 L120,22" fill="none" stroke="#E06A5E" stroke-width="1.5"/></svg>
+                <div class="quote"><span class="money num">$241<sup>05</sup></span><span class="chgpill dn">−1.8%</span></div></div>
+              <div class="row"><div class="sym"><b>SPY</b><span>SPDR S&amp;P 500</span></div>
+                <svg class="spark" viewBox="0 0 120 28" height="28"><path d="M0,18 L20,17 L40,15 L60,16 L80,12 L100,13 L120,10" fill="none" stroke="#46C98A" stroke-width="1.5"/></svg>
+                <div class="quote"><span class="money num">$652<sup>30</sup></span><span class="chgpill up">+0.5%</span></div></div>
+              <div class="row"><div class="sym"><b>ETH-USD</b><span>Ethereum USD</span></div>
+                <svg class="spark" viewBox="0 0 120 28" height="28"><path d="M0,14 L20,10 L40,16 L60,12 L80,18 L100,15 L120,17" fill="none" stroke="#E06A5E" stroke-width="1.5"/></svg>
+                <div class="quote"><span class="money num">$1,930<sup>53</sup></span><span class="chgpill dn">−0.4%</span></div></div>
+            </div>
+          </div>
+
+          <div class="sub" id="m-screener">
+            <div class="scanbar">✓ Scanned today · 503 symbols <span class="scanbtn">Rescan</span></div>
+            <div class="pills" style="margin-top:0">
+              <span class="pill on">RSI Oversold</span><span class="pill">MACD Bullish</span><span class="pill">Golden Cross</span><span class="pill">＋</span>
+            </div>
+            <div class="card" style="padding:6px 14px">
+              <div class="row"><div class="sym" style="width:96px"><b>INTC</b><span>Intel Corp.</span></div>
+                <div class="quote" style="margin-left:auto;text-align:right"><span class="money num">$31<sup>08</sup></span><span class="chgpill dn">−0.9%</span></div>
+                <div style="width:64px;text-align:right;flex:0 0 auto"><span class="microlabel">RSI</span><div class="money num" style="font-size:12.5px">24.1</div></div>
+                <span style="color:var(--gold-mid)">☆</span></div>
+              <div class="row"><div class="sym" style="width:96px"><b>NKE</b><span>Nike, Inc.</span></div>
+                <div class="quote" style="margin-left:auto;text-align:right"><span class="money num">$68<sup>44</sup></span><span class="chgpill dn">−1.4%</span></div>
+                <div style="width:64px;text-align:right;flex:0 0 auto"><span class="microlabel">RSI</span><div class="money num" style="font-size:12.5px">26.7</div></div>
+                <span style="color:var(--gold-mid)">☆</span></div>
+              <div class="row"><div class="sym" style="width:96px"><b>PFE</b><span>Pfizer Inc.</span></div>
+                <div class="quote" style="margin-left:auto;text-align:right"><span class="money num">$24<sup>90</sup></span><span class="chgpill up">+0.3%</span></div>
+                <div style="width:64px;text-align:right;flex:0 0 auto"><span class="microlabel">RSI</span><div class="money num" style="font-size:12.5px">28.2</div></div>
+                <span style="color:var(--gold-mid)">★</span></div>
+            </div>
+            <div class="caption" style="color:var(--ink3);font-size:10.5px;margin-top:8px">27 matches · sorted by RSI ascending · tap a row for detail</div>
+          </div>
+
+          <div class="sub" id="m-calendar">
+            <div class="card" style="display:flex;justify-content:space-between;align-items:center">
+              <div><b style="font-size:12.5px">This week</b>
+                <div style="font-size:10.5px;color:var(--ink3)">Jul 20 – 24 · market open all 5 days</div></div>
+              <span class="sessionchip">3 EARNINGS</span>
+            </div>
+            <div class="card" style="padding:6px 14px">
+              <div class="row"><div class="sym" style="width:96px"><b>MSFT</b><span>Microsoft</span></div>
+                <span class="sessionchip">AMC</span>
+                <div class="quote"><span style="font-size:11px;color:var(--ink2)">Tue, Jul 22</span></div></div>
+              <div class="row"><div class="sym" style="width:96px"><b>TSLA</b><span>Tesla, Inc.</span></div>
+                <span class="sessionchip">AMC</span>
+                <div class="quote"><span style="font-size:11px;color:var(--ink2)">Wed, Jul 23</span></div></div>
+              <div class="row"><div class="sym" style="width:96px"><b>INTC</b><span>Intel Corp.</span></div>
+                <span class="sessionchip">BMO</span>
+                <div class="quote"><span style="font-size:11px;color:var(--ink2)">Thu, Jul 24</span></div></div>
+            </div>
+            <div class="card">
+              <div class="microlabel">Next holiday</div>
+              <div style="font-size:12.5px;margin-top:4px"><b>Labor Day</b> · market closed <span style="color:var(--ink3)">Mon, Sep 7</span></div>
+            </div>
+          </div>
+
+          <div class="sub" id="m-news">
+            <div class="pills" style="margin-top:0">
+              <span class="pill on">All</span><span class="pill">Saved</span><span class="pill">Apple</span><span class="pill">Crypto</span><span class="pill">＋</span>
+            </div>
+            <div class="card" style="padding:4px 14px">
+              <div class="newsrow"><div class="txt"><b>Nvidia supply chain ramps for next-gen data-center GPUs</b>
+                <span>Reuters · 24 min ago · NVDA</span></div><span class="bk">☆</span></div>
+              <div class="newsrow"><div class="txt"><b>Apple's services revenue seen hitting new record this quarter</b>
+                <span>Bloomberg · 1 h ago · AAPL</span></div><span class="bk">★</span></div>
+              <div class="newsrow"><div class="txt"><b>ETF inflows accelerate as S&amp;P 500 nears all-time high</b>
+                <span>MarketWatch · 2 h ago · SPY</span></div><span class="bk">☆</span></div>
+              <div class="newsrow"><div class="txt"><b>Ethereum staking yields drift lower after protocol update</b>
+                <span>CoinDesk · 3 h ago · ETH</span></div><span class="bk">☆</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============ PORTFOLIO ============ -->
+        <div class="screen" id="scr-portfolio">
+          <div class="pills">
+            <span class="pill on" data-sub="p-hold">Holdings</span>
+            <span class="pill" data-sub="p-alloc">Allocation</span>
+            <span class="pill" data-sub="p-act">Activity</span>
+            <span class="pill" data-sub="p-perf">Performance</span>
+          </div>
+
+          <div class="sub active" id="p-hold">
+            <div class="card">
+              <div style="display:flex;justify-content:space-between;align-items:baseline">
+                <div><div class="microlabel">Market value</div>
+                  <div class="money num" style="font-size:24px">$56,987<sup>16</sup></div></div>
+                <span class="cbtn" title="Export">⤴</span>
+              </div>
+              <div style="margin-top:4px"><span class="chgpill up">▲ +$177.17 unrealized</span></div>
+            </div>
+            <div class="card" style="padding:6px 14px">
+              <div class="row"><div class="sym" style="width:110px"><b>AAPL</b><span>100.7648 @ $326.59</span></div>
+                <div class="quote"><span class="money num">$33,024<sup>67</sup></span><span class="chgpill up">+8.2%</span></div></div>
+              <div class="row"><div class="sym" style="width:110px"><b>NVDA</b><span>10 @ $742.09</span></div>
+                <div class="quote"><span class="money num">$18,977<sup>00</sup></span><span class="chgpill up">+15.6%</span></div></div>
+              <div class="row"><div class="sym" style="width:110px"><b>ETH-USD</b><span>1 @ $1,932.94</span></div>
+                <div class="quote"><span class="money num">$1,930<sup>53</sup></span><span class="chgpill dn">−0.1%</span></div></div>
+            </div>
+            <div class="card">
+              <div class="microlabel">Top movers today</div>
+              <div style="display:flex;gap:8px;margin-top:8px">
+                <span class="chgpill up">NVDA +3.2%</span><span class="chgpill up">AAPL +1.2%</span><span class="chgpill dn">ETH −0.4%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="sub" id="p-alloc">
+            <div class="card" style="display:flex;gap:18px;align-items:center">
+              <div class="donut alloc"><i></i></div>
+              <div style="flex:1">
+                <div class="microlabel">By asset class</div>
+                <div style="font-size:12px;margin-top:6px;line-height:1.9">
+                  <span style="color:var(--gold-mid)">●</span> Stocks 62% &nbsp;
+                  <span style="color:#4A90B8">●</span> ETFs 26% &nbsp;
+                  <span style="color:#8A6BC1">●</span> Crypto 12%
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="microlabel">By holding</div>
+              <div style="margin-top:6px">
+                <div class="hbar"><b>AAPL</b><div class="track"><i style="width:58%"></i></div><span class="pc">58.0%</span></div>
+                <div class="hbar"><b>NVDA</b><div class="track"><i style="width:33%"></i></div><span class="pc">33.3%</span></div>
+                <div class="hbar"><b>ETH-USD</b><div class="track"><i style="width:3.4%"></i></div><span class="pc">3.4%</span></div>
+                <div class="hbar"><b>SPY</b><div class="track"><i style="width:5.3%"></i></div><span class="pc">5.3%</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sub" id="p-act">
+            <div class="card" style="display:flex;gap:16px">
+              <div><span class="microlabel">Realized P&amp;L</span><div class="money num" style="font-size:15px;color:var(--up)">+$61.90</div></div>
+              <div><span class="microlabel">Transactions</span><div class="money num" style="font-size:15px">23</div></div>
+            </div>
+            <div class="card" style="padding:8px 14px">
+              <ul class="ledger">
+                <li><span class="sidechip div">DIV</span><b>AAPL</b>&nbsp;+$12.40 · DRIP 0.0549 sh <span class="when">Jul 10</span></li>
+                <li><span class="sidechip buy">BUY</span><b>NVDA</b>&nbsp;2 @ $186.20 <span class="when">Jul 8</span></li>
+                <li><span class="sidechip sell">SELL</span><b>TSLA</b>&nbsp;5 @ $248.11 <span class="when">Jul 1</span></li>
+                <li><span class="sidechip buy">BUY</span><b>AAPL</b>&nbsp;0.7648 @ $221.34 · Pie <span class="when">Jun 30</span></li>
+                <li><span class="sidechip div">DIV</span><b>SPY</b>&nbsp;+$38.10 · cash <span class="when">Jun 28</span></li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="sub" id="p-perf">
+            <div class="stattiles" style="margin-bottom:12px">
+              <div class="stat"><span class="microlabel">Total return</span><div class="v" style="color:var(--up)">+18.4%</div></div>
+              <div class="stat"><span class="microlabel">CAGR</span><div class="v" style="color:var(--up)">+12.1%</div></div>
+              <div class="stat"><span class="microlabel">Volatility</span><div class="v">14.2%</div></div>
+              <div class="stat"><span class="microlabel">Max drawdown</span><div class="v" style="color:var(--down)">−4.7%</div></div>
+              <div class="stat"><span class="microlabel">Sharpe</span><div class="v">1.31</div></div>
+              <div class="stat"><span class="microlabel">Beta / Alpha</span><div class="v">0.92 / +2.3%</div></div>
+            </div>
+            <div class="card">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <span class="microlabel">vs benchmark</span>
+                <span style="font-size:10px;font-weight:700"><span style="color:var(--gold-mid)">SPY</span> · <span style="color:var(--ink3)">QQQ</span> · <span style="color:var(--ink3)">VTI</span></span>
+              </div>
+              <svg viewBox="0 0 300 80" width="100%" height="80" aria-hidden="true" style="margin-top:6px">
+                <path d="M0,62 L40,58 L80,60 L120,50 L160,52 L200,42 L240,44 L300,34" fill="none" stroke="#9C968A" stroke-width="1.5" stroke-dasharray="1 3"/>
+                <path d="M0,60 L40,54 L80,57 L120,44 L160,47 L200,34 L240,37 L300,22" fill="none" stroke="#D4A94E" stroke-width="2"/>
+                <circle cx="300" cy="22" r="3" fill="#F2DDA0"/>
+              </svg>
+              <div style="font-size:10px;color:var(--ink3)"><span style="color:var(--gold-mid)">— Portfolio</span> &nbsp; <span>┄ SPY (normalized)</span></div>
+            </div>
+            <div class="card" style="display:flex;justify-content:space-between;align-items:center">
+              <div><b style="font-size:12.5px">Diversification</b>
+                <div style="font-size:10.5px;color:var(--ink3)">Effective holdings 6.2 · single-name concentration flagged</div></div>
+              <span class="chgpill gold">Moderate</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============ INVEST ============ -->
+        <div class="screen" id="scr-invest">
+          <div class="pills">
+            <span class="pill on" data-sub="i-plans">Plans</span>
+            <span class="pill" data-sub="i-income">Income</span>
+          </div>
+
+          <div class="sub active" id="i-plans">
+            <div class="card" style="display:flex;gap:16px;align-items:center">
+              <div class="donut"><i></i></div>
+              <div style="flex:1">
+                <b style="font-size:13.5px">Tech Growth</b>
+                <div style="font-size:10.5px;color:var(--ink3);margin:2px 0 6px">$250 monthly · next Mon, Jul 27</div>
+                <div style="font-size:11px"><span style="color:var(--gold-mid)">● AAPL 58%</span> · <span style="color:#8A6BC1">● NVDA 24%</span> · <span style="color:#4A90B8">● MSFT 18%</span></div>
+              </div>
+            </div>
+            <div class="card" style="display:flex;gap:16px;align-items:center">
+              <div class="donut" style="background:conic-gradient(var(--gold-mid) 0 40%, #4A90B8 40% 75%, #8A6BC1 75% 100%)"><i></i></div>
+              <div style="flex:1">
+                <b style="font-size:13.5px">Dividend Core</b>
+                <div style="font-size:10.5px;color:var(--ink3);margin:2px 0 6px">$100 monthly · next Aug 1</div>
+                <div style="font-size:11px"><span style="color:var(--gold-mid)">● SPY 40%</span> · <span style="color:#4A90B8">● VTI 35%</span> · <span style="color:#8A6BC1">● KO 25%</span></div>
+              </div>
+            </div>
+            <div class="card" style="text-align:center;color:var(--gold-mid);font-weight:700;font-size:12.5px;border-style:dashed">＋ New plan</div>
+          </div>
+
+          <div class="sub" id="i-income">
+            <div class="card" style="display:flex;gap:14px">
+              <div><span class="microlabel">Income YTD</span><div class="money num" style="font-size:14px">$412<sup>88</sup></div></div>
+              <div><span class="microlabel">Annual rate</span><div class="money num" style="font-size:14px">$1,020<sup>00</sup></div></div>
+              <div><span class="microlabel">Yield on cost</span><div class="money num" style="font-size:14px">2.1%</div></div>
+            </div>
+            <div class="card">
+              <div class="microlabel">Monthly income · dashed = projected</div>
+              <div class="bars">
+                <i style="height:34%"></i><i style="height:20%"></i><i style="height:48%"></i><i style="height:26%"></i>
+                <i style="height:38%"></i><i style="height:58%"></i><i style="height:42%"></i>
+                <i class="proj" style="height:48%"></i><i class="proj" style="height:30%"></i><i class="proj" style="height:62%"></i>
+                <i class="proj" style="height:36%"></i><i class="proj" style="height:66%"></i>
+              </div>
+              <div class="bars-x"><span>J</span><span>F</span><span>M</span><span>A</span><span>M</span><span>J</span><span>J</span><span>A</span><span>S</span><span>O</span><span>N</span><span>D</span></div>
+            </div>
+            <div class="card">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div><b style="font-size:12.5px">Reinvest dividends (DRIP)</b>
+                  <div style="font-size:10.5px;color:var(--ink3)">Payouts buy fractional shares automatically</div></div>
+                <span class="toggle"></span>
+              </div>
+            </div>
+            <div class="card">
+              <div class="microlabel">Upcoming</div>
+              <ul class="today">
+                <li>💰 <b>AAPL</b> · est. $12.40 <span class="when">Thu, Jul 24</span></li>
+                <li>💰 <b>SPY</b> · est. $38.10 <span class="when">Jul 31</span></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tabbar" role="tablist">
+        <span class="tab on" data-screen="scr-home" role="tab" tabindex="0"><span class="ic">⌂</span>Home</span>
+        <span class="tab" data-screen="scr-markets" role="tab" tabindex="0"><span class="ic">📈</span>Markets</span>
+        <span class="tab" data-screen="scr-portfolio" role="tab" tabindex="0"><span class="ic">◕</span>Portfolio</span>
+        <span class="tab" data-screen="scr-invest" role="tab" tabindex="0"><span class="ic">🥧</span>Invest</span>
+      </div>
+    </div></div>
+
+    <div class="notes" id="phone-notes">
+      <div class="note" data-for="scr-home"><span class="tag">New · Home</span>
+        <b>The dashboard the spec always promised</b>
+        <p>Opens on "how am I doing" — value hero, day change, and a Today feed pulling from Calendar, Income, and your movers. The bell opens the new all-alerts list.</p></div>
+      <div class="note" data-for="scr-markets" style="display:none"><span class="tag">Regrouped · Markets</span>
+        <b>Everything market-facing in one place</b>
+        <p>Watchlist is the default pill; Screener, Calendar, and News are one tap away. Try all four pills — each is mocked. A visible search field replaces the buried magnifier.</p></div>
+      <div class="note" data-for="scr-portfolio" style="display:none"><span class="tag">Slimmed · Portfolio</span>
+        <b>Four sections, all about what you own</b>
+        <p>Holdings, Allocation, Activity, Performance — all four pills are mocked. Export moves here from the account menu. Same order on every platform.</p></div>
+      <div class="note" data-for="scr-invest" style="display:none"><span class="tag">Promoted · Invest</span>
+        <b>Plans and Income become first-class</b>
+        <p>Both pills are mocked: pie cards with next contribution, and the income screen with the monthly chart (dashed projections) and the DRIP toggle moved beside its effect.</p></div>
+    </div>
+  </div>
+
+  <h2>Desktop — macOS &amp; Windows <span class="hint">click every sidebar item</span></h2>
+  <p class="sub-p">The same grouping as an always-visible left sidebar — all eleven destinations are mocked, plus Search (⌘K) opening the command palette. Opening a symbol keeps you in context (master–detail) instead of replacing the window.</p>
+
+  <div class="desk">
+    <div class="side">
+      <div class="brand">AP·TRADE</div>
+      <div class="sgroup"><span class="sitem on" data-view="dv-home" tabindex="0"><span class="ic">⌂</span>Home</span></div>
+      <div class="sgroup"><div class="sglabel">Markets</div>
+        <span class="sitem" data-view="dv-watch" tabindex="0"><span class="ic">☰</span>Watchlist</span>
+        <span class="sitem" data-view="dv-screener" tabindex="0"><span class="ic">◎</span>Screener</span>
+        <span class="sitem" data-view="dv-calendar" tabindex="0"><span class="ic">▦</span>Calendar</span>
+        <span class="sitem" data-view="dv-news" tabindex="0"><span class="ic">✎</span>News</span></div>
+      <div class="sgroup"><div class="sglabel">Portfolio</div>
+        <span class="sitem" data-view="dv-holdings" tabindex="0"><span class="ic">◧</span>Holdings</span>
+        <span class="sitem" data-view="dv-alloc" tabindex="0"><span class="ic">◔</span>Allocation</span>
+        <span class="sitem" data-view="dv-activity" tabindex="0"><span class="ic">≡</span>Activity</span>
+        <span class="sitem" data-view="dv-perf" tabindex="0"><span class="ic">∿</span>Performance</span></div>
+      <div class="sgroup"><div class="sglabel">Invest</div>
+        <span class="sitem" data-view="dv-plans" tabindex="0"><span class="ic">◕</span>Plans</span>
+        <span class="sitem" data-view="dv-income" tabindex="0"><span class="ic">$</span>Income</span></div>
+      <div class="foot">
+        <span class="sitem" id="s-search" tabindex="0"><span class="ic">⌕</span>Search <span style="margin-left:auto;font-size:10px;color:var(--ink3)">⌘K</span></span>
+        <span class="sitem" data-view="dv-settings" tabindex="0"><span class="ic">⚙</span>Settings</span>
+      </div>
+    </div>
+
+    <div class="dcontent">
+
+      <!-- command palette overlay -->
+      <div class="palov" id="palov">
+        <div class="pal">
+          <div class="pin">⌕ <b>nvda</b><span>|</span></div>
+          <div class="prow sel"><b>NVDA</b> <span style="color:var(--ink2)">NVIDIA Corporation</span> <span class="chgpill up" style="margin-left:auto">+3.2%</span></div>
+          <div class="prow"><span style="color:var(--ink2)">Go to</span> <b>Portfolio · Holdings</b> <span class="k">↵</span></div>
+          <div class="prow"><span style="color:var(--ink2)">Go to</span> <b>Screener</b> <span class="k">↵</span></div>
+        </div>
+      </div>
+
+      <!-- HOME -->
+      <div class="dview active" id="dv-home"><div class="dpane">
+        <div class="microlabel">Portfolio value</div>
+        <div style="display:flex;align-items:baseline;gap:16px">
+          <span class="money num" style="font-size:34px">$100,177<sup>17</sup></span>
+          <span class="chgpill up">▲ +$209.26 · +0.21% today</span>
+        </div>
+        <svg viewBox="0 0 800 70" width="100%" height="70" aria-hidden="true" style="margin-top:6px">
+          <path d="M0,52 L60,48 L120,54 L180,42 L240,45 L300,34 L360,38 L420,27 L480,31 L540,20 L600,25 L660,15 L720,19 L800,10 L800,70 L0,70 Z" fill="rgba(212,169,78,.16)"/>
+          <path d="M0,52 L60,48 L120,54 L180,42 L240,45 L300,34 L360,38 L420,27 L480,31 L540,20 L600,25 L660,15 L720,19 L800,10" fill="none" stroke="#D4A94E" stroke-width="2"/>
+          <circle cx="800" cy="10" r="3" fill="#F2DDA0"/>
+        </svg>
+        <div class="dhgrid">
+          <div class="card" style="margin:0"><div class="microlabel">Today</div>
+            <ul class="today">
+              <li><span style="color:var(--up)">●</span> Market open <span class="when">closes 4:00 PM ET</span></li>
+              <li><span class="chgpill up">▲ 3.2%</span> <b>NVDA</b> leads your holdings <span class="when">now</span></li>
+              <li><span class="chgpill dn">▼ 1.8%</span> <b>TSLA</b> biggest faller <span class="when">now</span></li>
+              <li>⏱ <b>MSFT</b> reports earnings <span class="when">after close</span></li>
+              <li>💰 <b>AAPL</b> dividend · est. $12.40 <span class="when">Thursday</span></li>
+              <li>◎ Screener: <b>RSI Oversold</b> · 27 matches <span class="when">today</span></li>
+            </ul></div>
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div class="card" style="margin:0;display:flex;gap:18px">
+              <div><span class="microlabel">Total return</span><div class="money num" style="color:var(--up)">+18.4%</div></div>
+              <div><span class="microlabel">Cash</span><div class="money num">$43,190<sup>01</sup></div></div>
+              <div><span class="microlabel">Income YTD</span><div class="money num">$412<sup>88</sup></div></div>
+            </div>
+            <div class="card" style="margin:0"><div class="microlabel">Alerts · 4 active</div>
+              <ul class="today">
+                <li>🔔 <b>NVDA</b> above $190.00 <span class="when">armed</span></li>
+                <li>🔔 <b>AAPL</b> −3% day move <span class="when">armed</span></li>
+              </ul></div>
+          </div>
+        </div>
+      </div></div>
+
+      <!-- WATCHLIST master-detail -->
+      <div class="dview" id="dv-watch">
+        <div class="mlist">
+          <div class="searchfield" style="margin-bottom:10px">⌕&nbsp; Search symbols…</div>
+          <div class="row"><div class="sym"><b>AAPL</b><span>Apple Inc.</span></div>
+            <div class="quote"><span class="money num">$226<sup>41</sup></span><span class="chgpill up">+1.2%</span></div></div>
+          <div class="row" style="background:var(--surface-hi);border-radius:10px;padding:10px 8px;box-shadow:inset 0 0 0 1px rgba(212,169,78,.35)">
+            <div class="sym"><b>NVDA</b><span>NVIDIA Corp.</span></div>
+            <div class="quote"><span class="money num">$189<sup>77</sup></span><span class="chgpill up">+3.2%</span></div></div>
+          <div class="row"><div class="sym"><b>TSLA</b><span>Tesla, Inc.</span></div>
+            <div class="quote"><span class="money num">$241<sup>05</sup></span><span class="chgpill dn">−1.8%</span></div></div>
+          <div class="row"><div class="sym"><b>SPY</b><span>SPDR S&amp;P 500</span></div>
+            <div class="quote"><span class="money num">$652<sup>30</sup></span><span class="chgpill up">+0.5%</span></div></div>
+          <div class="row"><div class="sym"><b>ETH-USD</b><span>Ethereum USD</span></div>
+            <div class="quote"><span class="money num">$1,930<sup>53</sup></span><span class="chgpill dn">−0.4%</span></div></div>
+        </div>
+        <div class="mdetail">
+          <div class="dtitle"><h3>NVDA</h3><span class="nm">NVIDIA Corporation · NASDAQ</span>
+            <span style="margin-left:auto;font-size:9.5px;color:var(--gold-mid);letter-spacing:.1em;font-weight:800">● LIVE</span></div>
+          <div class="bigmoney money num">$189<sup>77</sup> <span class="chgpill up" style="font-size:12px;vertical-align:6px">▲ +3.2%</span></div>
+          <div class="tframes"><span class="on">1D</span><span>1W</span><span>1M</span><span>3M</span><span>YTD</span><span>1Y</span><span>5Y</span><span>MAX</span></div>
+          <svg viewBox="0 0 560 150" width="100%" height="150" aria-hidden="true">
+            <defs><linearGradient id="dfill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#46C98A" stop-opacity=".28"/><stop offset="1" stop-color="#46C98A" stop-opacity="0"/>
+            </linearGradient></defs>
+            <g stroke="rgba(156,150,138,.12)"><line x1="0" y1="37" x2="560" y2="37"/><line x1="0" y1="75" x2="560" y2="75"/><line x1="0" y1="112" x2="560" y2="112"/></g>
+            <path d="M0,118 L40,110 L80,120 L120,98 L160,104 L200,84 L240,92 L280,70 L320,78 L360,58 L400,66 L440,44 L480,52 L520,34 L560,28 L560,150 L0,150 Z" fill="url(#dfill)"/>
+            <path d="M0,118 L40,110 L80,120 L120,98 L160,104 L200,84 L240,92 L280,70 L320,78 L360,58 L400,66 L440,44 L480,52 L520,34 L560,28" fill="none" stroke="#46C98A" stroke-width="2"/>
+            <circle cx="560" cy="28" r="3.5" fill="#46C98A"/>
+          </svg>
+          <div class="statgrid">
+            <div class="stat"><span class="microlabel">Open</span><div class="v">$184.02</div></div>
+            <div class="stat"><span class="microlabel">Day range</span><div class="v">183.77 – 190.12</div></div>
+            <div class="stat"><span class="microlabel">RSI 14</span><div class="v">63.8</div></div>
+            <div class="stat"><span class="microlabel">Next earnings</span><div class="v">Aug 27</div></div>
+          </div>
+          <span class="buybtn">BUY&nbsp;·&nbsp;NVDA</span>
+        </div>
+      </div>
+
+      <!-- SCREENER -->
+      <div class="dview" id="dv-screener"><div class="dpane">
+        <div class="dhead"><h3>Screener</h3><span class="hint2">S&amp;P 500 · on-demand scan</span><span class="live">● SCANNED TODAY</span></div>
+        <div class="scanbar" style="max-width:520px">✓ Scanned today · 503 symbols · 0 failed <span class="scanbtn">Rescan</span></div>
+        <div class="pills" style="margin-top:4px">
+          <span class="pill on">RSI Oversold</span><span class="pill">RSI Overbought</span><span class="pill">MACD Bullish</span>
+          <span class="pill">Golden Cross</span><span class="pill">Bollinger Squeeze</span><span class="pill">Near 52W High</span>
+          <span class="pill">My value screen ✎</span><span class="pill">＋</span>
+        </div>
+        <div class="thead"><span class="c-sym">Symbol</span><span class="c-name">Company</span>
+          <span class="c-num">Price</span><span class="c-num">Day %</span><span class="c-num sorted">RSI 14 ↑</span><span class="c-star">＋</span></div>
+        <div class="trow"><span class="c-sym">INTC</span><span class="c-name">Intel Corporation</span>
+          <span class="c-num money">$31<sup>08</sup></span><span class="c-num" style="color:var(--down)">−0.9%</span><span class="c-num sorted">24.1</span><span class="c-star">☆</span></div>
+        <div class="trow"><span class="c-sym">NKE</span><span class="c-name">Nike, Inc.</span>
+          <span class="c-num money">$68<sup>44</sup></span><span class="c-num" style="color:var(--down)">−1.4%</span><span class="c-num sorted">26.7</span><span class="c-star">☆</span></div>
+        <div class="trow"><span class="c-sym">PFE</span><span class="c-name">Pfizer Inc.</span>
+          <span class="c-num money">$24<sup>90</sup></span><span class="c-num" style="color:var(--up)">+0.3%</span><span class="c-num sorted">28.2</span><span class="c-star">★</span></div>
+        <div class="trow"><span class="c-sym">MRK</span><span class="c-name">Merck &amp; Co.</span>
+          <span class="c-num money">$81<sup>63</sup></span><span class="c-num" style="color:var(--down)">−0.2%</span><span class="c-num sorted">29.5</span><span class="c-star">☆</span></div>
+        <div class="trow"><span class="c-sym">KO</span><span class="c-name">The Coca-Cola Company</span>
+          <span class="c-num money">$61<sup>17</sup></span><span class="c-num" style="color:var(--up)">+0.1%</span><span class="c-num sorted">29.9</span><span class="c-star">☆</span></div>
+        <div class="caption" style="color:var(--ink3);font-size:11px">27 matches · click a column to sort · click a row → detail opens beside the list, exactly like Watchlist</div>
+      </div></div>
+
+      <!-- CALENDAR -->
+      <div class="dview" id="dv-calendar"><div class="dpane">
+        <div class="dhead"><h3>Calendar</h3><span class="hint2">market days &amp; S&amp;P 500 earnings</span></div>
+        <div class="twocol">
+          <div class="card" style="margin:0">
+            <div class="microlabel">This week · Jul 20–24</div>
+            <ul class="today">
+              <li><b>Mon 20</b> market open <span class="when">9:30 – 4:00</span></li>
+              <li><b>Tue 21</b> market open · <span class="sessionchip">AMC</span> MSFT <span class="when">9:30 – 4:00</span></li>
+              <li><b>Wed 22</b> market open · <span class="sessionchip">AMC</span> TSLA <span class="when">9:30 – 4:00</span></li>
+              <li><b>Thu 23</b> market open · <span class="sessionchip">BMO</span> INTC <span class="when">9:30 – 4:00</span></li>
+              <li><b>Fri 24</b> market open <span class="when">9:30 – 4:00</span></li>
+            </ul>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div class="card" style="margin:0">
+              <div class="microlabel">Your symbols reporting</div>
+              <ul class="today">
+                <li><b>MSFT</b> Microsoft <span class="sessionchip">AMC</span> <span class="when">Tue, Jul 21</span></li>
+                <li><b>TSLA</b> Tesla, Inc. <span class="sessionchip">AMC</span> <span class="when">Wed, Jul 22</span></li>
+                <li><b>INTC</b> Intel Corp. <span class="sessionchip">BMO</span> <span class="when">Thu, Jul 23</span></li>
+              </ul>
+            </div>
+            <div class="card" style="margin:0">
+              <div class="microlabel">Next holiday</div>
+              <div style="font-size:13px;margin-top:4px"><b>Labor Day</b> · market closed <span style="color:var(--ink3)">Mon, Sep 7</span></div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+
+      <!-- NEWS -->
+      <div class="dview" id="dv-news"><div class="dpane">
+        <div class="dhead"><h3>News</h3><span class="hint2">Finnhub · your symbols first</span></div>
+        <div class="pills" style="margin-top:0">
+          <span class="pill on">All</span><span class="pill">Saved</span><span class="pill">Apple</span><span class="pill">Crypto</span><span class="pill">＋ New tab</span>
+        </div>
+        <div class="twocol">
+          <div class="card" style="margin:0;padding:4px 16px">
+            <div class="newsrow"><div class="txt"><b>Nvidia supply chain ramps for next-gen data-center GPUs</b>
+              <span>Reuters · 24 min ago · NVDA</span></div><span class="bk">☆</span></div>
+            <div class="newsrow"><div class="txt"><b>Apple's services revenue seen hitting new record this quarter</b>
+              <span>Bloomberg · 1 h ago · AAPL</span></div><span class="bk">★</span></div>
+            <div class="newsrow"><div class="txt"><b>ETF inflows accelerate as S&amp;P 500 nears all-time high</b>
+              <span>MarketWatch · 2 h ago · SPY</span></div><span class="bk">☆</span></div>
+            <div class="newsrow"><div class="txt"><b>Ethereum staking yields drift lower after protocol update</b>
+              <span>CoinDesk · 3 h ago · ETH</span></div><span class="bk">☆</span></div>
+            <div class="newsrow"><div class="txt"><b>Tesla misses on deliveries; analysts split on demand recovery</b>
+              <span>CNBC · 4 h ago · TSLA</span></div><span class="bk">☆</span></div>
+          </div>
+          <div class="card" style="margin:0">
+            <div class="microlabel">Preview</div>
+            <b style="display:block;font-size:14px;margin:8px 0 4px;line-height:1.4">Apple's services revenue seen hitting new record this quarter</b>
+            <span style="font-size:11px;color:var(--ink3)">Bloomberg · 1 h ago</span>
+            <p style="font-size:12px;color:var(--ink2);line-height:1.6">Analysts expect the App Store, iCloud, and advertising to push services past $27B for the quarter, offsetting slower hardware growth ahead of the fall lineup…</p>
+            <span class="chgpill gold">Open article ↗</span>
+          </div>
+        </div>
+      </div></div>
+
+      <!-- HOLDINGS -->
+      <div class="dview" id="dv-holdings"><div class="dpane">
+        <div class="dhead"><h3>Holdings</h3><span class="hint2">paper portfolio</span>
+          <span style="margin-left:auto" class="chgpill gold">⤴ Export</span></div>
+        <div style="display:flex;gap:18px;align-items:baseline;margin-bottom:10px">
+          <span class="money num" style="font-size:28px">$56,987<sup>16</sup></span>
+          <span class="chgpill up">▲ +$177.17 unrealized</span>
+          <span style="font-size:11px;color:var(--ink3)">Cash $43,190.01</span>
+        </div>
+        <div class="thead"><span class="c-sym">Symbol</span><span class="c-name">Position</span>
+          <span class="c-num">Value</span><span class="c-num">Avg cost</span><span class="c-num">Return</span><span class="c-star"></span></div>
+        <div class="trow"><span class="c-sym">AAPL</span><span class="c-name">100.7648 shares</span>
+          <span class="c-num money">$33,024<sup>67</sup></span><span class="c-num">$326.59</span><span class="c-num" style="color:var(--up)">+8.2%</span><span class="c-star"></span></div>
+        <div class="trow"><span class="c-sym">NVDA</span><span class="c-name">10 shares</span>
+          <span class="c-num money">$18,977<sup>00</sup></span><span class="c-num">$742.09</span><span class="c-num" style="color:var(--up)">+15.6%</span><span class="c-star"></span></div>
+        <div class="trow"><span class="c-sym">SPY</span><span class="c-name">4.6 shares</span>
+          <span class="c-num money">$3,000<sup>58</sup></span><span class="c-num">$641.20</span><span class="c-num" style="color:var(--up)">+1.7%</span><span class="c-star"></span></div>
+        <div class="trow"><span class="c-sym">ETH-USD</span><span class="c-name">1 coin</span>
+          <span class="c-num money">$1,930<sup>53</sup></span><span class="c-num">$1,932.94</span><span class="c-num" style="color:var(--down)">−0.1%</span><span class="c-star"></span></div>
+        <div class="card" style="margin-top:14px">
+          <div class="microlabel">Top movers today</div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <span class="chgpill up">NVDA +3.2%</span><span class="chgpill up">AAPL +1.2%</span><span class="chgpill up">SPY +0.5%</span><span class="chgpill dn">ETH −0.4%</span>
+          </div>
+        </div>
+      </div></div>
+
+      <!-- ALLOCATION -->
+      <div class="dview" id="dv-alloc"><div class="dpane">
+        <div class="dhead"><h3>Allocation</h3><span class="hint2">by class and by holding</span></div>
+        <div class="twocol">
+          <div class="card" style="margin:0;display:flex;gap:22px;align-items:center">
+            <div class="donut alloc" style="width:120px;height:120px"><i style="width:82px;height:82px"></i></div>
+            <div>
+              <div class="microlabel">By asset class</div>
+              <div style="font-size:13px;margin-top:8px;line-height:2">
+                <span style="color:var(--gold-mid)">●</span> Stocks · 62%<br>
+                <span style="color:#4A90B8">●</span> ETFs · 26%<br>
+                <span style="color:#8A6BC1">●</span> Crypto · 12%
+              </div>
+            </div>
+          </div>
+          <div class="card" style="margin:0">
+            <div class="microlabel">By holding</div>
+            <div style="margin-top:8px">
+              <div class="hbar"><b>AAPL</b><div class="track"><i style="width:58%"></i></div><span class="pc">58.0%</span></div>
+              <div class="hbar"><b>NVDA</b><div class="track"><i style="width:33.3%"></i></div><span class="pc">33.3%</span></div>
+              <div class="hbar"><b>SPY</b><div class="track"><i style="width:5.3%"></i></div><span class="pc">5.3%</span></div>
+              <div class="hbar"><b>ETH-USD</b><div class="track"><i style="width:3.4%"></i></div><span class="pc">3.4%</span></div>
+            </div>
+            <div class="caption" style="color:var(--ink3);font-size:11px;margin-top:10px">Both columns render side-by-side — the M9.1 macOS layout, now on every desktop.</div>
+          </div>
+        </div>
+      </div></div>
+
+      <!-- ACTIVITY -->
+      <div class="dview" id="dv-activity"><div class="dpane">
+        <div class="dhead"><h3>Activity</h3><span class="hint2">realized P&amp;L · full ledger</span></div>
+        <div style="display:flex;gap:14px;margin-bottom:12px">
+          <div class="stat"><span class="microlabel">Realized P&amp;L</span><div class="v" style="color:var(--up)">+$61.90</div></div>
+          <div class="stat"><span class="microlabel">Transactions</span><div class="v">23</div></div>
+          <div class="stat"><span class="microlabel">Dividends collected</span><div class="v">$412.88</div></div>
+        </div>
+        <div class="card" style="padding:8px 16px">
+          <ul class="ledger">
+            <li><span class="sidechip div">DIV</span><b>AAPL</b>&nbsp;+$12.40 · reinvested 0.0549 sh (DRIP) <span class="when">Jul 10, 2026</span></li>
+            <li><span class="sidechip buy">BUY</span><b>NVDA</b>&nbsp;2 @ $186.20 <span class="when">Jul 8, 2026</span></li>
+            <li><span class="sidechip sell">SELL</span><b>TSLA</b>&nbsp;5 @ $248.11 · realized +$34.55 <span class="when">Jul 1, 2026</span></li>
+            <li><span class="sidechip buy">BUY</span><b>AAPL</b>&nbsp;0.7648 @ $221.34 · Pie: Tech Growth <span class="when">Jun 30, 2026</span></li>
+            <li><span class="sidechip div">DIV</span><b>SPY</b>&nbsp;+$38.10 · cash <span class="when">Jun 28, 2026</span></li>
+            <li><span class="sidechip buy">BUY</span><b>SPY</b>&nbsp;1.2 @ $638.90 · Pie: Dividend Core <span class="when">Jun 1, 2026</span></li>
+          </ul>
+        </div>
+      </div></div>
+
+      <!-- PERFORMANCE -->
+      <div class="dview" id="dv-perf"><div class="dpane">
+        <div class="dhead"><h3>Performance</h3><span class="hint2">trade-aware equity curve</span></div>
+        <div class="stattiles" style="grid-template-columns:repeat(6,1fr);margin-bottom:14px">
+          <div class="stat"><span class="microlabel">Total return</span><div class="v" style="color:var(--up)">+18.4%</div></div>
+          <div class="stat"><span class="microlabel">CAGR</span><div class="v" style="color:var(--up)">+12.1%</div></div>
+          <div class="stat"><span class="microlabel">Volatility</span><div class="v">14.2%</div></div>
+          <div class="stat"><span class="microlabel">Max drawdown</span><div class="v" style="color:var(--down)">−4.7%</div></div>
+          <div class="stat"><span class="microlabel">Sharpe</span><div class="v">1.31</div></div>
+          <div class="stat"><span class="microlabel">Beta / Alpha</span><div class="v">0.92 / +2.3%</div></div>
+        </div>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span class="microlabel">Portfolio vs benchmark · normalized</span>
+            <span style="font-size:11px;font-weight:700"><span style="color:var(--gold-mid)">SPY</span> &nbsp;·&nbsp; <span style="color:var(--ink3)">QQQ</span> &nbsp;·&nbsp; <span style="color:var(--ink3)">VTI</span></span>
+          </div>
+          <svg viewBox="0 0 720 130" width="100%" height="130" aria-hidden="true" style="margin-top:8px">
+            <g stroke="rgba(156,150,138,.1)"><line x1="0" y1="32" x2="720" y2="32"/><line x1="0" y1="65" x2="720" y2="65"/><line x1="0" y1="98" x2="720" y2="98"/></g>
+            <path d="M0,104 L90,98 L180,101 L270,88 L360,92 L450,76 L540,80 L630,64 L720,58" fill="none" stroke="#9C968A" stroke-width="1.5" stroke-dasharray="2 4"/>
+            <path d="M0,102 L90,92 L180,97 L270,76 L360,82 L450,58 L540,64 L630,40 L720,30" fill="none" stroke="#D4A94E" stroke-width="2.2"/>
+            <circle cx="720" cy="30" r="3.5" fill="#F2DDA0"/>
+          </svg>
+          <div style="font-size:11px;color:var(--ink3)"><span style="color:var(--gold-mid)">— Portfolio</span> &nbsp;&nbsp; <span>┄ SPY</span></div>
+        </div>
+        <div class="card" style="display:flex;justify-content:space-between;align-items:center">
+          <div><b style="font-size:13px">Diversification score</b>
+            <div style="font-size:11px;color:var(--ink3)">Effective holdings 6.2 (Herfindahl) · AAPL concentration flagged at 58% of holdings</div></div>
+          <span class="chgpill gold">Moderate</span>
+        </div>
+      </div></div>
+
+      <!-- PLANS -->
+      <div class="dview" id="dv-plans"><div class="dpane">
+        <div class="dhead"><h3>Plans</h3><span class="hint2">automated pie investing</span>
+          <span style="margin-left:auto" class="chgpill gold">＋ New plan</span></div>
+        <div class="twocol">
+          <div class="card" style="margin:0;display:flex;gap:18px;align-items:center">
+            <div class="donut" style="width:104px;height:104px"><i style="width:70px;height:70px"></i></div>
+            <div style="flex:1">
+              <b style="font-size:15px">Tech Growth</b>
+              <div style="font-size:11px;color:var(--ink3);margin:3px 0 8px">$250 monthly · next contribution Mon, Jul 27</div>
+              <div class="hbar"><b>AAPL</b><div class="track"><i style="width:58%"></i></div><span class="pc">58%</span></div>
+              <div class="hbar"><b>NVDA</b><div class="track"><i style="width:24%"></i></div><span class="pc">24%</span></div>
+              <div class="hbar"><b>MSFT</b><div class="track"><i style="width:18%"></i></div><span class="pc">18%</span></div>
+            </div>
+          </div>
+          <div class="card" style="margin:0;display:flex;gap:18px;align-items:center">
+            <div class="donut" style="width:104px;height:104px;background:conic-gradient(var(--gold-mid) 0 40%, #4A90B8 40% 75%, #8A6BC1 75% 100%)"><i style="width:70px;height:70px"></i></div>
+            <div style="flex:1">
+              <b style="font-size:15px">Dividend Core</b>
+              <div style="font-size:11px;color:var(--ink3);margin:3px 0 8px">$100 monthly · next contribution Aug 1</div>
+              <div class="hbar"><b>SPY</b><div class="track"><i style="width:40%"></i></div><span class="pc">40%</span></div>
+              <div class="hbar"><b>VTI</b><div class="track"><i style="width:35%"></i></div><span class="pc">35%</span></div>
+              <div class="hbar"><b>KO</b><div class="track"><i style="width:25%"></i></div><span class="pc">25%</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="caption" style="color:var(--ink3);font-size:11px;margin-top:12px">Contributions execute on schedule and appear in Activity tagged with their pie — exactly as shipped; only the location is new.</div>
+      </div></div>
+
+      <!-- INCOME -->
+      <div class="dview" id="dv-income"><div class="dpane">
+        <div class="dhead"><h3>Income</h3><span class="hint2">dividends &amp; projections</span></div>
+        <div style="display:flex;gap:14px;margin-bottom:12px;align-items:center">
+          <div class="stat"><span class="microlabel">Income YTD</span><div class="v">$412.88</div></div>
+          <div class="stat"><span class="microlabel">Annual rate</span><div class="v">$1,020.00</div></div>
+          <div class="stat"><span class="microlabel">Yield on cost</span><div class="v">2.1%</div></div>
+          <div class="card" style="margin:0 0 0 auto;display:flex;gap:12px;align-items:center;padding:8px 14px">
+            <div><b style="font-size:12px">DRIP</b><div style="font-size:10px;color:var(--ink3)">reinvest payouts</div></div>
+            <span class="toggle"></span>
+          </div>
+        </div>
+        <div class="twocol">
+          <div class="card" style="margin:0">
+            <div class="microlabel">Monthly income · dashed = projected</div>
+            <div class="bars" style="height:96px">
+              <i style="height:34%"></i><i style="height:20%"></i><i style="height:48%"></i><i style="height:26%"></i>
+              <i style="height:38%"></i><i style="height:58%"></i><i style="height:42%"></i>
+              <i class="proj" style="height:48%"></i><i class="proj" style="height:30%"></i><i class="proj" style="height:62%"></i>
+              <i class="proj" style="height:36%"></i><i class="proj" style="height:66%"></i>
+            </div>
+            <div class="bars-x"><span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span><span>Sep</span><span>Oct</span><span>Nov</span><span>Dec</span></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div class="card" style="margin:0">
+              <div class="microlabel">Upcoming</div>
+              <ul class="today">
+                <li>💰 <b>AAPL</b> · est. $12.40 <span class="when">Thu, Jul 24</span></li>
+                <li>💰 <b>SPY</b> · est. $38.10 <span class="when">Jul 31</span></li>
+                <li>💰 <b>KO</b> · est. $4.20 <span class="when">Aug 14</span></li>
+              </ul>
+            </div>
+            <div class="card" style="margin:0">
+              <div class="microlabel">Income by holding · trailing 12 m</div>
+              <div style="margin-top:6px">
+                <div class="hbar"><b>SPY</b><div class="track"><i style="width:64%"></i></div><span class="pc">$264</span></div>
+                <div class="hbar"><b>AAPL</b><div class="track"><i style="width:28%"></i></div><span class="pc">$116</span></div>
+                <div class="hbar"><b>KO</b><div class="track"><i style="width:8%"></i></div><span class="pc">$33</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+
+      <!-- SETTINGS -->
+      <div class="dview" id="dv-settings"><div class="dpane">
+        <div class="dhead"><h3>Settings</h3><span class="hint2">app settings first · account below</span></div>
+        <div class="twocol">
+          <div class="card" style="margin:0">
+            <div class="microlabel">Appearance</div>
+            <ul class="today">
+              <li>🌙 <b>Dark</b> <span class="when" style="color:var(--gold-mid)">✓ selected</span></li>
+              <li>☀️ Light <span class="when"></span></li>
+              <li>🎨 Accent · Champagne Gold <span class="when">4 options</span></li>
+              <li>🌐 Language · English <span class="when">EN · DE · IT · ES</span></li>
+            </ul>
+          </div>
+          <div class="card" style="margin:0">
+            <div class="microlabel">Notifications</div>
+            <ul class="today">
+              <li>Price alerts <span class="when"><span class="toggle" style="display:inline-block;vertical-align:middle"></span></span></li>
+              <li>Order fills <span class="when"><span class="toggle" style="display:inline-block;vertical-align:middle"></span></span></li>
+              <li>Earnings reports <span class="when"><span class="toggle" style="display:inline-block;vertical-align:middle"></span></span></li>
+              <li>Dividends <span class="when"><span class="toggle" style="display:inline-block;vertical-align:middle"></span></span></li>
+            </ul>
+          </div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <div class="microlabel">Account</div>
+          <div style="font-size:12px;color:var(--ink2);margin-top:6px">Profile · Security &amp; Privacy · Help · About — unchanged, but no longer sharing a menu with Export (now in Portfolio) or DRIP (now in Income).</div>
+        </div>
+      </div></div>
+
+    </div>
+  </div>
+  <p class="caption">All eleven destinations plus Settings are one click deep, always visible. <b>Search (⌘K)</b> opens the command palette overlay — click it in the sidebar to preview. Screener and Watchlist rows open detail beside their list (master–detail), not over the whole window.</p>
+
+  <h2>What moved where</h2>
+  <table class="moved">
+    <tr><th>Thing</th><th>Today</th><th>Proposed</th></tr>
+    <tr><td><b>Opening screen</b></td><td>Watchlist</td><td class="num"><span class="arrow">→</span> Home dashboard</td></tr>
+    <tr><td><b>Plans &amp; Income</b></td><td>Portfolio sections 5–6 of 6</td><td><span class="arrow">→</span> Invest tab, sections 1–2</td></tr>
+    <tr><td><b>Screener · Calendar · News</b></td><td>Three separate top-level tabs</td><td><span class="arrow">→</span> Sections under Markets</td></tr>
+    <tr><td><b>Alerts overview</b></td><td>None (per-symbol bell only)</td><td><span class="arrow">→</span> Bell on Home · all alerts listed</td></tr>
+    <tr><td><b>Export portfolio</b></td><td>Account "⋯" menu</td><td><span class="arrow">→</span> Portfolio header</td></tr>
+    <tr><td><b>DRIP toggle</b></td><td>Account Settings page</td><td><span class="arrow">→</span> Invest · Income, beside its effect</td></tr>
+    <tr><td><b>macOS wordmark</b></td><td>108pt header on every screen</td><td><span class="arrow">→</span> Corner mark · ~120pt reclaimed</td></tr>
+  </table>
+
+  <p class="caption" style="max-width:66ch">Open questions: does <b>News</b> deserve to stay top-level on phone instead of living under Markets? Is <b>"Invest"</b> the right tab name ("Plans", "Income", "Auto-invest")? Desktop sidebar: full labels always, or collapsible to icons?</p>
+</div>
+
+<script>
+  // phone: bottom tabs
+  document.querySelectorAll('.tab').forEach(function (tab) {
+    function activate() {
+      document.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('on'); });
+      tab.classList.add('on');
+      document.querySelectorAll('.screen').forEach(function (s) { s.classList.remove('active'); });
+      document.getElementById(tab.dataset.screen).classList.add('active');
+      document.querySelectorAll('#phone-notes .note').forEach(function (n) {
+        n.style.display = n.dataset.for === tab.dataset.screen ? '' : 'none';
+      });
+    }
+    tab.addEventListener('click', activate);
+    tab.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } });
+  });
+  // phone: section pills (only pills with data-sub switch sub-views)
+  document.querySelectorAll('.pill[data-sub]').forEach(function (pill) {
+    function activate() {
+      var screen = pill.closest('.screen');
+      screen.querySelectorAll('.pill[data-sub]').forEach(function (p) { p.classList.remove('on'); });
+      pill.classList.add('on');
+      screen.querySelectorAll('.sub').forEach(function (s) { s.classList.remove('active'); });
+      screen.querySelector('#' + pill.dataset.sub).classList.add('active');
+    }
+    pill.addEventListener('click', activate);
+    pill.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } });
+  });
+  // desktop: sidebar views
+  document.querySelectorAll('.sitem[data-view]').forEach(function (item) {
+    function activate() {
+      document.getElementById('palov').classList.remove('show');
+      document.querySelectorAll('.sitem').forEach(function (s) { s.classList.remove('on'); });
+      item.classList.add('on');
+      document.querySelectorAll('.dview').forEach(function (v) { v.classList.remove('active'); });
+      document.getElementById(item.dataset.view).classList.add('active');
+    }
+    item.addEventListener('click', activate);
+    item.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } });
+  });
+  // desktop: search palette overlay
+  var searchItem = document.getElementById('s-search');
+  var palov = document.getElementById('palov');
+  searchItem.addEventListener('click', function () { palov.classList.toggle('show'); });
+  searchItem.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); palov.classList.toggle('show'); } });
+  palov.addEventListener('click', function (e) { if (e.target === palov) palov.classList.remove('show'); });
+</script>

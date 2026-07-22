@@ -412,6 +412,37 @@ enum L10n {
         case screenerSaveScreen = "Save Screen"
         case screenerDeleteScreen = "Delete Screen"
         case addToWatchlist = "Add to Watchlist"
+
+        // MARK: IA restructure (M10.1) — Home / Markets / Invest tabs, Alerts center
+        case homeTab = "Home"
+        case marketsTab = "Markets"
+        case investTab = "Invest"
+        case todaySection = "Today"
+        case portfolioValue = "Portfolio Value"
+        case marketOpenStatus = "Market open"
+        case marketClosedStatus = "Market closed"
+        case closesAtFmt = "closes %@"
+        case opensAtFmt = "opens %@"
+        case leadsHoldingsFmt = "%@ leads your holdings"
+        case biggestFallerFmt = "%@ biggest faller"
+        case reportsEarningsFmt = "%@ reports earnings"
+        case earningsSessionAfterClose = "after close"
+        case earningsSessionBeforeOpen = "before open"
+        case dividendEstFmt = "%@ dividend · est. %@"
+        case screenerFreshFmt = "Screener: %@ · %@ matches"
+        case alertsCenterTitle = "Alerts"
+        case alertsActiveFmt = "%@ active"
+        case alertsEmpty = "No alerts yet. Set one from any symbol row or detail page."
+        case alertArmed = "armed"
+        case quickNewsFmt = "%@ new for your symbols"
+        case quickEarningsWeekFmt = "%@ earnings this week"
+        case incomeYtdLabel = "Income YTD"
+        case dripCardTitle = "Reinvest dividends (DRIP)"
+        case dripCardSubtitle = "Payouts buy fractional shares automatically"
+
+        // MARK: macOS sidebar (M10.1 Task 6)
+        case sidebarSearch = "Search"
+        case sidebarSettings = "Settings"
     }
 
     static let table: [Key: [AppLanguage: String]] = [
@@ -1278,6 +1309,68 @@ enum L10n {
                                 .italian: "Elimina filtro", .spanish: "Eliminar filtro"],
         .addToWatchlist: [.english: "Add to Watchlist", .german: "Zur Beobachtungsliste hinzufügen",
                           .italian: "Aggiungi alla lista di controllo", .spanish: "Añadir a la lista de seguimiento"],
+
+        // MARK: IA restructure (M10.1) — Home / Markets / Invest tabs, Alerts center
+        .homeTab: [.english: "Home", .german: "Start",
+                   .italian: "Home", .spanish: "Inicio"],
+        .marketsTab: [.english: "Markets", .german: "Märkte",
+                      .italian: "Mercati", .spanish: "Mercados"],
+        .investTab: [.english: "Invest", .german: "Investieren",
+                     .italian: "Investi", .spanish: "Invertir"],
+        .todaySection: [.english: "Today", .german: "Heute",
+                        .italian: "Oggi", .spanish: "Hoy"],
+        .portfolioValue: [.english: "Portfolio Value", .german: "Portfoliowert",
+                          .italian: "Valore del portafoglio", .spanish: "Valor de la cartera"],
+        .marketOpenStatus: [.english: "Market open", .german: "Markt geöffnet",
+                            .italian: "Mercato aperto", .spanish: "Mercado abierto"],
+        .marketClosedStatus: [.english: "Market closed", .german: "Markt geschlossen",
+                              .italian: "Mercato chiuso", .spanish: "Mercado cerrado"],
+        .closesAtFmt: [.english: "closes %@", .german: "schließt %@",
+                       .italian: "chiude %@", .spanish: "cierra %@"],
+        .opensAtFmt: [.english: "opens %@", .german: "öffnet %@",
+                      .italian: "apre %@", .spanish: "abre %@"],
+        .leadsHoldingsFmt: [.english: "%@ leads your holdings", .german: "%@ führt Ihr Portfolio an",
+                            .italian: "%@ guida le tue posizioni", .spanish: "%@ lidera tus posiciones"],
+        .biggestFallerFmt: [.english: "%@ biggest faller", .german: "%@ größter Verlierer",
+                            .italian: "%@ maggior ribasso", .spanish: "%@ mayor caída"],
+        .reportsEarningsFmt: [.english: "%@ reports earnings", .german: "%@ veröffentlicht Quartalszahlen",
+                              .italian: "%@ pubblica i risultati", .spanish: "%@ presenta resultados"],
+        .earningsSessionAfterClose: [.english: "after close", .german: "nach Handelsschluss",
+                                     .italian: "dopo la chiusura", .spanish: "tras el cierre"],
+        .earningsSessionBeforeOpen: [.english: "before open", .german: "vor Handelsbeginn",
+                                     .italian: "prima dell'apertura", .spanish: "antes de la apertura"],
+        .dividendEstFmt: [.english: "%@ dividend · est. %@", .german: "%@ Dividende · ca. %@",
+                          .italian: "%@ dividendo · stim. %@", .spanish: "%@ dividendo · est. %@"],
+        .screenerFreshFmt: [.english: "Screener: %@ · %@ matches", .german: "Screener: %@ · %@ Treffer",
+                            .italian: "Screener: %@ · %@ risultati", .spanish: "Screener: %@ · %@ resultados"],
+        .alertsCenterTitle: [.english: "Alerts", .german: "Alarme",
+                             .italian: "Avvisi", .spanish: "Alertas"],
+        .alertsActiveFmt: [.english: "%@ active", .german: "%@ aktiv",
+                           .italian: "%@ attivi", .spanish: "%@ activas"],
+        .alertsEmpty: [.english: "No alerts yet. Set one from any symbol row or detail page.",
+                       .german: "Noch keine Alarme. Legen Sie einen über eine Symbolzeile oder die Detailseite an.",
+                       .italian: "Ancora nessun avviso. Impostane uno dalla riga di un simbolo o dalla pagina dei dettagli.",
+                       .spanish: "Aún no hay alertas. Configura una desde la fila de un símbolo o la página de detalle."],
+        .alertArmed: [.english: "armed", .german: "aktiviert",
+                      .italian: "attivato", .spanish: "activada"],
+        .quickNewsFmt: [.english: "%@ new for your symbols", .german: "%@ neu für Ihre Symbole",
+                        .italian: "%@ nuove per i tuoi simboli", .spanish: "%@ nuevas para tus símbolos"],
+        .quickEarningsWeekFmt: [.english: "%@ earnings this week", .german: "%@ Quartalsberichte diese Woche",
+                                .italian: "%@ trimestrali questa settimana", .spanish: "%@ informes trimestrales esta semana"],
+        .incomeYtdLabel: [.english: "Income YTD", .german: "Erträge YTD",
+                          .italian: "Reddito YTD", .spanish: "Ingresos YTD"],
+        .dripCardTitle: [.english: "Reinvest dividends (DRIP)", .german: "Dividenden reinvestieren (DRIP)",
+                         .italian: "Reinvesti dividendi (DRIP)", .spanish: "Reinvertir dividendos (DRIP)"],
+        .dripCardSubtitle: [.english: "Payouts buy fractional shares automatically",
+                            .german: "Ausschüttungen kaufen automatisch Bruchteilsaktien",
+                            .italian: "I pagamenti acquistano automaticamente quote frazionarie",
+                            .spanish: "Los pagos compran automáticamente acciones fraccionarias"],
+
+        // MARK: macOS sidebar (M10.1 Task 6)
+        .sidebarSearch: [.english: "Search", .german: "Suche",
+                         .italian: "Cerca", .spanish: "Buscar"],
+        .sidebarSettings: [.english: "Settings", .german: "Einstellungen",
+                           .italian: "Impostazioni", .spanish: "Ajustes"],
     ]
 }
 
