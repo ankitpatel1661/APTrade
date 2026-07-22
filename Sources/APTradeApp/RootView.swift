@@ -408,12 +408,22 @@ public struct RootView: View {
             MarketsView.sectionView(section, onOpenSearch: { showPalette = true }, onOpenAccount: { showAccountPanel = true })
         case .portfolio(let section):
             NavigationStack {
-                PortfolioSectionContent(section: section, viewModel: portfolioViewModel,
-                                        performanceVM: portfolioPerformanceVM,
-                                        selectedAsset: $portfolioSelectedAsset)
-                    .navigationDestination(item: $portfolioSelectedAsset) { asset in
-                        AssetDetailView(asset: asset)
-                    }
+                VStack(spacing: 0) {
+                    // T6-review carried acceptance item: the sidebar destination originally
+                    // rendered ONLY `PortfolioSectionContent`, dropping the summary header
+                    // (total value, day/unrealized P&L, cash, the expandable P&L chart, reset)
+                    // that `PortfolioView` shows above its own section picker on iOS. Restored
+                    // here using the SAME hoisted header (`PortfolioSummaryHeader`, Task 7) —
+                    // no section picker beside it, since the sidebar itself is that picker.
+                    PortfolioSummaryHeader(viewModel: portfolioViewModel)
+                    Divider().overlay(Theme.hairline)
+                    PortfolioSectionContent(section: section, viewModel: portfolioViewModel,
+                                            performanceVM: portfolioPerformanceVM,
+                                            selectedAsset: $portfolioSelectedAsset)
+                }
+                .navigationDestination(item: $portfolioSelectedAsset) { asset in
+                    AssetDetailView(asset: asset)
+                }
             }
             .task {
                 await portfolioViewModel.onAppear()

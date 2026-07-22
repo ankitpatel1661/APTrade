@@ -16,44 +16,20 @@ struct PortfolioView: View {
         }
     }
 
-    var switcher: AnyView? = nil
     var onOpenSearch: (() -> Void)? = nil
     var onOpenAccount: (() -> Void)? = nil
     @State private var viewModel = CompositionRoot.makePortfolioViewModel()
     @State private var performanceVM = CompositionRoot.makePerformanceViewModel()
     @State private var selectedAsset: Asset?
-    @State private var showResetConfirm = false
-    @State private var showChart = false
     @State private var section: Section = .holdings
     @Namespace private var sectionPill
-
-    /// Unrealized P&L over time, reconstructed from real historical prices — a far more
-    /// meaningful curve than total account value, which is dominated by constant cash.
-    private var pnlValues: [Double] {
-        viewModel.performance.map { ($0.pnl.amount as NSDecimalNumber).doubleValue }
-    }
-    private var pnlDates: [Date] { viewModel.performance.map { $0.date } }
 
     var body: some View {
         NavigationStack {
             ZStack {
                 Theme.background.ignoresSafeArea()
                 VStack(spacing: 0) {
-                    summary
-                    if showChart && pnlValues.count > 1 {
-                        expandedChart
-                            #if os(iOS)
-                            .padding(.horizontal, 16)
-                            // The card must render at its full content height even when the
-                            // non-scrolling column overflows the viewport; the holdings List
-                            // below is the flexible element that should yield space first.
-                            .layoutPriority(1)
-                            #else
-                            .padding(.horizontal, 24)
-                            #endif
-                            .padding(.bottom, 16)
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                    }
+                    PortfolioSummaryHeader(viewModel: viewModel)
                     // Always visible, not gated on holdings — Activity and Performance are
                     // useful reads even with zero holdings, so the picker doesn't wait on them.
                     sectionPicker
@@ -75,11 +51,6 @@ struct PortfolioView: View {
                 await viewModel.runLiveUpdates()
             }
             .refreshable { await viewModel.refresh() }
-            .confirmationDialog(tr(.resetPortfolioConfirm),
-                                isPresented: $showResetConfirm, titleVisibility: .visible) {
-                Button(tr(.reset), role: .destructive) { Task { await viewModel.reset() } }
-                Button(tr(.cancel), role: .cancel) {}
-            }
         }
         #if os(macOS)
         .frame(minWidth: 560, minHeight: 640)
@@ -88,7 +59,177 @@ struct PortfolioView: View {
         .onAppear { viewModel.reload() }
     }
 
+    // MARK: - Section switcher
+
+    private var sectionPicker: some View {
+        #if os(iOS)
+        // iPhone: the four labels don't fit one line as a static row (they wrap), so
+        // make the row horizontally scrollable with each label pinned to a single line.
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) { sectionButtons }
+        }
+        #else
+        HStack(spacing: 6) {
+            sectionButtons
+            Spacer()
+        }
+        #endif
+    }
+
+    @ViewBuilder
+    private var sectionButtons: some View {
+        ForEach(Section.allCases, id: \.self) { item in
+            let selected = section == item
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { section = item }
+            } label: {
+                Text(item.title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .foregroundStyle(selected ? Theme.textPrimary : Theme.textSecondary)
+                    .padding(.horizontal, 14).padding(.vertical, 6)
+                    .background {
+                        if selected {
+                            Capsule().fill(Theme.surfaceHi)
+                                .overlay(Capsule().stroke(Theme.gold.opacity(0.40), lineWidth: 1))
+                                .matchedGeometryEffect(id: "section", in: sectionPill)
+                        }
+                    }
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    /// Delegates to `PortfolioSectionContent` (Task 6 hoist) — the SAME section-rendering
+    /// code the macOS sidebar constructs directly from its own view-model instances (see
+    /// `RootView.macBody`), so the iOS pill host and the macOS sidebar never drift apart.
+    private var content: some View {
+        PortfolioSectionContent(section: section, viewModel: viewModel, performanceVM: performanceVM, selectedAsset: $selectedAsset)
+    }
+}
+
+// MARK: - Shared value/formatting helpers
+//
+// Free functions (not instance methods), mirroring `HomeView.swift`'s established
+// convention: both `PortfolioView` (its own summary/chart chrome) and
+// `PortfolioSectionContent` below (Task 6's hoisted section renderer, used by both the iOS
+// pill host and the macOS sidebar) call these without needing a shared base type. Each
+// touches `Theme` and/or `tr(_:)`, both `@MainActor`-isolated, so — unlike instance members
+// of a `View`-conforming type, which infer `@MainActor` from the protocol conformance —
+// these free functions need the annotation explicitly.
+
+@MainActor
+private func metric(label: String, money: Money, colored: Bool) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+        Text(label.uppercased())
+            .font(.system(size: 10, weight: .semibold)).tracking(1.0)
+            .foregroundStyle(Theme.textTertiary)
+        Text(signed(money, showsSign: colored))
+            .font(.system(size: 16, weight: .semibold).monospacedDigit())
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .foregroundStyle(colored ? pnlColor(money) : Theme.textPrimary)
+    }
+}
+
+@MainActor
+private func pnlColor(_ money: Money) -> Color {
+    if money.amount > 0 { return Theme.up }
+    if money.amount < 0 { return Theme.down }
+    return Theme.textPrimary
+}
+
+private func signed(_ money: Money, showsSign: Bool) -> String {
+    guard showsSign, money.amount > 0 else { return money.formatted }
+    return "+" + money.formatted
+}
+
+/// `allocationByKind` slices are identified by `AssetKind.rawValue` ("stock"/"etf"/"crypto");
+/// map to `Theme`'s accent colors for the donut/legend.
+@MainActor
+private func kindColor(_ id: String) -> Color {
+    switch id {
+    case AssetKind.stock.rawValue: return Theme.gold
+    case AssetKind.etf.rawValue: return Theme.goldDeep
+    case AssetKind.crypto.rawValue: return Theme.silver
+    default: return Theme.textTertiary
+    }
+}
+
+/// Maps an allocation slice's raw `AssetKind` id to the localized asset-class label rather
+/// than the view model's English-only `AllocationSlice.label`. Falls back to the raw label
+/// for any unrecognized id.
+@MainActor
+private func assetClassLabel(_ slice: AllocationSlice) -> String {
+    switch slice.id {
+    case AssetKind.stock.rawValue: return tr(.stocksLabel)
+    case AssetKind.etf.rawValue: return tr(.etfsLabel)
+    case AssetKind.crypto.rawValue: return tr(.cryptoLabel)
+    default: return slice.label
+    }
+}
+
+// MARK: - Portfolio summary header (Task 6 hoist, Task 7 restore)
+
+/// Total value, day/unrealized P&L, cash, the expandable P&L chart, and the reset
+/// affordance — hoisted out of `PortfolioView`'s old `summary`/`expandedChart` (M10.1
+/// Task 7) from explicit view-model input, the SAME shape Task 6 used for
+/// `PortfolioSectionContent` below: so the macOS sidebar's Portfolio destination can render
+/// byte-for-byte the same header above `PortfolioSectionContent` that `PortfolioView`
+/// renders above its own section picker (Task 6 hoisted the section content but dropped
+/// this header from the macOS destination entirely — a carried T6-review acceptance item
+/// this restores). Owns `showChart`/`showResetConfirm` itself: both are pure view-layer
+/// toggle state, private to this one header, never shared with a caller.
+struct PortfolioSummaryHeader: View {
+    let viewModel: PortfolioViewModel
+    @State private var showChart = false
+    @State private var showResetConfirm = false
+
     private var chartSpring: Animation { .spring(response: 0.34, dampingFraction: 0.84) }
+
+    /// Unrealized P&L over time, reconstructed from real historical prices — a far more
+    /// meaningful curve than total account value, which is dominated by constant cash.
+    private var pnlValues: [Double] {
+        viewModel.performance.map { ($0.pnl.amount as NSDecimalNumber).doubleValue }
+    }
+    private var pnlDates: [Date] { viewModel.performance.map { $0.date } }
+
+    /// Green when the value series ends higher than it began, red when lower — so the chart
+    /// and sparkline are colored by the direction they actually show. Falls back to the
+    /// day's P&L sign when the series is flat or too short to have a direction.
+    private var trendColor: Color {
+        guard let first = pnlValues.first, let last = pnlValues.last, first != last else {
+            return pnlColor(viewModel.valuation.unrealizedPnL)
+        }
+        return last > first ? Theme.up : Theme.down
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            summary
+            if showChart && pnlValues.count > 1 {
+                expandedChart
+                    #if os(iOS)
+                    .padding(.horizontal, 16)
+                    // The card must render at its full content height even when the
+                    // non-scrolling column overflows the viewport; the holdings List
+                    // below is the flexible element that should yield space first.
+                    .layoutPriority(1)
+                    #else
+                    .padding(.horizontal, 24)
+                    #endif
+                    .padding(.bottom, 16)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .confirmationDialog(tr(.resetPortfolioConfirm),
+                            isPresented: $showResetConfirm, titleVisibility: .visible) {
+            Button(tr(.reset), role: .destructive) { Task { await viewModel.reset() } }
+            Button(tr(.cancel), role: .cancel) {}
+        }
+    }
 
     private var expandedChart: some View {
         VStack(spacing: 10) {
@@ -161,7 +302,6 @@ struct PortfolioView: View {
                 }
                 #else
                 HStack(alignment: .center, spacing: 10) {
-                    if let switcher { switcher }
                     HStack(spacing: 10) {
                         if viewModel.isRefreshing {
                             ProgressView().controlSize(.small)
@@ -232,127 +372,6 @@ struct PortfolioView: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .frame(width: 28, alignment: .trailing)
-    }
-
-    // MARK: - Section switcher
-
-    private var sectionPicker: some View {
-        #if os(iOS)
-        // iPhone: the four labels don't fit one line as a static row (they wrap), so
-        // make the row horizontally scrollable with each label pinned to a single line.
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) { sectionButtons }
-        }
-        #else
-        HStack(spacing: 6) {
-            sectionButtons
-            Spacer()
-        }
-        #endif
-    }
-
-    @ViewBuilder
-    private var sectionButtons: some View {
-        ForEach(Section.allCases, id: \.self) { item in
-            let selected = section == item
-            Button {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { section = item }
-            } label: {
-                Text(item.title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(1)
-                    .fixedSize()
-                    .foregroundStyle(selected ? Theme.textPrimary : Theme.textSecondary)
-                    .padding(.horizontal, 14).padding(.vertical, 6)
-                    .background {
-                        if selected {
-                            Capsule().fill(Theme.surfaceHi)
-                                .overlay(Capsule().stroke(Theme.gold.opacity(0.40), lineWidth: 1))
-                                .matchedGeometryEffect(id: "section", in: sectionPill)
-                        }
-                    }
-                    .contentShape(Capsule())
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    /// Delegates to `PortfolioSectionContent` (Task 6 hoist) — the SAME section-rendering
-    /// code the macOS sidebar constructs directly from its own view-model instances (see
-    /// `RootView.macBody`), so the iOS pill host and the macOS sidebar never drift apart.
-    private var content: some View {
-        PortfolioSectionContent(section: section, viewModel: viewModel, performanceVM: performanceVM, selectedAsset: $selectedAsset)
-    }
-
-    /// Green when the value series ends higher than it began, red when lower — so the chart
-    /// and sparkline are colored by the direction they actually show. Falls back to the
-    /// day's P&L sign when the series is flat or too short to have a direction.
-    private var trendColor: Color {
-        guard let first = pnlValues.first, let last = pnlValues.last, first != last else {
-            return pnlColor(viewModel.valuation.unrealizedPnL)
-        }
-        return last > first ? Theme.up : Theme.down
-    }
-}
-
-// MARK: - Shared value/formatting helpers
-//
-// Free functions (not instance methods), mirroring `HomeView.swift`'s established
-// convention: both `PortfolioView` (its own summary/chart chrome) and
-// `PortfolioSectionContent` below (Task 6's hoisted section renderer, used by both the iOS
-// pill host and the macOS sidebar) call these without needing a shared base type. Each
-// touches `Theme` and/or `tr(_:)`, both `@MainActor`-isolated, so — unlike instance members
-// of a `View`-conforming type, which infer `@MainActor` from the protocol conformance —
-// these free functions need the annotation explicitly.
-
-@MainActor
-private func metric(label: String, money: Money, colored: Bool) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
-        Text(label.uppercased())
-            .font(.system(size: 10, weight: .semibold)).tracking(1.0)
-            .foregroundStyle(Theme.textTertiary)
-        Text(signed(money, showsSign: colored))
-            .font(.system(size: 16, weight: .semibold).monospacedDigit())
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
-            .foregroundStyle(colored ? pnlColor(money) : Theme.textPrimary)
-    }
-}
-
-@MainActor
-private func pnlColor(_ money: Money) -> Color {
-    if money.amount > 0 { return Theme.up }
-    if money.amount < 0 { return Theme.down }
-    return Theme.textPrimary
-}
-
-private func signed(_ money: Money, showsSign: Bool) -> String {
-    guard showsSign, money.amount > 0 else { return money.formatted }
-    return "+" + money.formatted
-}
-
-/// `allocationByKind` slices are identified by `AssetKind.rawValue` ("stock"/"etf"/"crypto");
-/// map to `Theme`'s accent colors for the donut/legend.
-@MainActor
-private func kindColor(_ id: String) -> Color {
-    switch id {
-    case AssetKind.stock.rawValue: return Theme.gold
-    case AssetKind.etf.rawValue: return Theme.goldDeep
-    case AssetKind.crypto.rawValue: return Theme.silver
-    default: return Theme.textTertiary
-    }
-}
-
-/// Maps an allocation slice's raw `AssetKind` id to the localized asset-class label rather
-/// than the view model's English-only `AllocationSlice.label`. Falls back to the raw label
-/// for any unrecognized id.
-@MainActor
-private func assetClassLabel(_ slice: AllocationSlice) -> String {
-    switch slice.id {
-    case AssetKind.stock.rawValue: return tr(.stocksLabel)
-    case AssetKind.etf.rawValue: return tr(.etfsLabel)
-    case AssetKind.crypto.rawValue: return tr(.cryptoLabel)
-    default: return slice.label
     }
 }
 

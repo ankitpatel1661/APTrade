@@ -184,6 +184,17 @@ struct ScreenerView: View {
     @State private var selectedAsset: Asset?
 
     var body: some View {
+        #if os(macOS)
+        macBody
+        #else
+        iosBody
+        #endif
+    }
+
+    // MARK: - iOS: full-window push (unchanged)
+
+    #if os(iOS)
+    private var iosBody: some View {
         NavigationStack {
             ZStack {
                 Theme.background.ignoresSafeArea()
@@ -203,17 +214,10 @@ struct ScreenerView: View {
                     onSave: { viewModel.saveScreen($0) },
                     onDelete: builderTarget.map { screen in { viewModel.deleteScreen(id: screen.id) } }
                 )
-                #if os(iOS)
                 .presentationBackground(Theme.surface)
-                #endif
             }
-            #if os(iOS)
             .iosTopChrome(onSearch: { onOpenSearch?() }, onAccount: { onOpenAccount?() })
             .navigationBarTitleDisplayMode(.inline)
-            #endif
-            #if os(macOS)
-            .frame(minWidth: 560, minHeight: 640)
-            #endif
             .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
             .task {
                 addedSymbols = Set(loadWatchlist().map(\.symbol))
@@ -229,6 +233,72 @@ struct ScreenerView: View {
             }
         }
     }
+    #endif
+
+    // MARK: - macOS: master–detail (Task 7)
+
+    #if os(macOS)
+    /// Scan bar + chips stay full-width above the split (unchanged from the pre-Task-7
+    /// single-pane layout); only the results table becomes the list column below, mirroring
+    /// `WatchlistView`'s treatment.
+    private var macBody: some View {
+        VStack(spacing: 0) {
+            header
+            Divider().overlay(Theme.hairline)
+            HStack(spacing: 0) {
+                content
+                    // Wider than Watchlist's ~300pt: the results table keeps its full,
+                    // unshrunk column set (symbol/name/price/day%/active metric/add-star),
+                    // so the list column needs enough room for all of them to stay legible
+                    // rather than overlap — this is the "constrained" width, not a redesign
+                    // of the columns themselves.
+                    .frame(width: 520)
+                    .overlay(alignment: .trailing) {
+                        Rectangle().fill(Theme.hairline).frame(width: 1)
+                    }
+                detailPane
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .background(Theme.background.ignoresSafeArea())
+        .sheet(isPresented: $showBuilder) {
+            ScreenBuilderSheet(
+                existingScreen: builderTarget,
+                matchCount: { viewModel.matchCount(for: $0) },
+                onSave: { viewModel.saveScreen($0) },
+                onDelete: builderTarget.map { screen in { viewModel.deleteScreen(id: screen.id) } }
+            )
+        }
+        .frame(minWidth: 560, minHeight: 640)
+        .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
+        .task {
+            addedSymbols = Set(loadWatchlist().map(\.symbol))
+        }
+        // Same orphaned-scan-task guard as before Task 7 (see the historical note this
+        // replaced): `viewModel.startScan()` owns the task on the view model itself, and
+        // this `.onDisappear` cancels it the moment the view goes away — swapping sidebar
+        // destinations tears this view down exactly like tab switching used to.
+        .onDisappear {
+            viewModel.cancelScan()
+        }
+    }
+
+    /// Selecting another row swaps this pane's content — `.id(asset.symbol)` forces a fresh
+    /// `AssetDetailView` (and its own `@State` view models) per selection, same rationale
+    /// and mechanism as `WatchlistView.detailPane`.
+    @ViewBuilder
+    private var detailPane: some View {
+        if let asset = selectedAsset {
+            AssetDetailView(asset: asset)
+                .id(asset.symbol)
+        } else {
+            // No fitting "select a symbol" copy exists in L10n — reuses the same neutral,
+            // textless empty region as `WatchlistView.detailPane`/this file's own
+            // scanning-in-progress state below.
+            Color.clear
+        }
+    }
+    #endif
 
     // MARK: Header — switcher + chips + scan bar
 
@@ -517,7 +587,8 @@ struct ScreenerView: View {
     }
 
     private func macRow(_ row: ScreenerSnapshotRow) -> some View {
-        HStack(spacing: 10) {
+        let isSelected = selectedAsset?.symbol == row.symbol
+        return HStack(spacing: 10) {
             Button {
                 selectedAsset = asset(for: row)
             } label: {
@@ -550,6 +621,20 @@ struct ScreenerView: View {
             addButton(for: row)
         }
         .padding(.vertical, 9)
+        .padding(.horizontal, 8)
+        .background {
+            // Same surface-hi + gold inset ring idiom as the sidebar's selected item and
+            // `WatchlistRow`'s selected state (Task 7) — "same macOS master–detail
+            // treatment" applies to row styling too, not just the split itself.
+            if isSelected {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Theme.surfaceHi)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Theme.gold.opacity(0.35), lineWidth: 1)
+                    )
+            }
+        }
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.hairline).frame(height: 1)
         }
