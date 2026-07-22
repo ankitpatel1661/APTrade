@@ -63,9 +63,11 @@ final class AlertsCenterViewModel {
     }
 
     /// Full `Asset` for tap-through to `AssetDetailView`. Looked up in the watchlist; falls
-    /// back to a minimal placeholder (name = symbol, kind = `.stock`) if the symbol isn't
+    /// back to a minimal placeholder (name = symbol, kind inferred from suffix) if the symbol isn't
     /// — or is no longer — on the watchlist, so navigation never fails outright.
     func asset(for symbol: String) -> Asset {
-        loadWatchlist().first { $0.symbol == symbol } ?? Asset(symbol: symbol, name: symbol, kind: .stock)
+        // Crypto assets use "-USD" suffix (BTC-USD, ETH-USD) per CompositionRoot convention.
+        let kind: AssetKind = symbol.hasSuffix("-USD") ? .crypto : .stock
+        return loadWatchlist().first { $0.symbol == symbol } ?? Asset(symbol: symbol, name: symbol, kind: kind)
     }
 }

@@ -118,4 +118,14 @@ final class AlertsCenterViewModelTests: XCTestCase {
 
         XCTAssertEqual(asset.symbol, "ZZZZ")
     }
+
+    func test_asset_infersCryptoKind_fromUSDSuffix_whenNotOnWatchlist() {
+        let vm = makeVM(watchlist: VMFakeStore([]))
+
+        let cryptoAsset = vm.asset(for: "BTC-USD")
+        let stockAsset = vm.asset(for: "AAPL")
+
+        XCTAssertEqual(cryptoAsset.kind, .crypto)
+        XCTAssertEqual(stockAsset.kind, .stock)
+    }
 }
