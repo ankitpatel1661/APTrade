@@ -8,6 +8,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -33,8 +34,11 @@ import com.aptrade.desktop.detail.DetailScreen
 import com.aptrade.desktop.news.NewsPane
 import com.aptrade.desktop.news.NewsViewModel
 import com.aptrade.desktop.portfolio.PortfolioPane
+import com.aptrade.desktop.portfolio.PortfolioSection
 import com.aptrade.desktop.portfolio.PortfolioViewModel
 import com.aptrade.desktop.portfolio.TradeDialog
+import com.aptrade.desktop.income.IncomePane
+import com.aptrade.desktop.plans.PlansPane
 import com.aptrade.desktop.screener.ScreenerPane
 import com.aptrade.shared.application.ContributionOutcome
 import com.aptrade.shared.application.DividendOutcome
@@ -51,7 +55,9 @@ import com.aptrade.desktop.l10n.tr
 import com.aptrade.desktop.l10n.trf
 import com.aptrade.desktop.ui.AccountPanel
 import com.aptrade.desktop.ui.AppShell
-import com.aptrade.desktop.ui.AppTab
+import com.aptrade.desktop.ui.InvestSection
+import com.aptrade.desktop.ui.MarketsSection
+import com.aptrade.desktop.ui.SidebarDestination
 import com.aptrade.desktop.watchlist.PriceAlertSheet
 import com.aptrade.desktop.watchlist.WatchlistPane
 import com.aptrade.desktop.watchlist.WatchlistViewModel
@@ -359,7 +365,16 @@ fun main() = application {
         },
     ) {
         LaunchedEffect(Unit) {
-            window.minimumSize = Dimension(1000, 680)
+            // Min-width floor, re-derived (constraint 6 — do not copy Swift's number, derive
+            // independently from THIS shell's real columns): 208dp rail + the widest list
+            // column this shell will host once Task 6 lands conditional master-detail
+            // (Screener's ~520dp table, wider than Watchlist's ~300dp) + 1dp hairline divider
+            // + a legible ~390dp detail pane = 1119dp, bumped to 1120. That happens to land on
+            // the same figure as `RootView.macBody`'s 1120 (208 + 520 + 1 + ~390) — not copied,
+            // just the same real column proportions on both shells. The previous floor
+            // (1000×680) was smaller than this derivation, so it's bumped up; height (680)
+            // already matched and is unchanged.
+            window.minimumSize = Dimension(1120, 680)
             watchlistViewModel.start()
             portfolioViewModel.start()
             marketActivityCoordinator.start()
@@ -442,7 +457,9 @@ private fun AppRoot(
     notificationSettings: com.aptrade.desktop.infra.AppSettings,
     onUpdateNotificationSettings: ((com.aptrade.desktop.infra.AppSettings) -> com.aptrade.desktop.infra.AppSettings) -> Unit,
 ) {
-    var selectedTab by remember { mutableStateOf(AppTab.Watchlist) }
+    // The sidebar's current destination (M10.2 Task 3) — replaces the old `selectedTab: AppTab`.
+    // Home is the default; Task 4 fills in its content (a placeholder renders until then).
+    var sidebarSelection by remember { mutableStateOf<SidebarDestination>(SidebarDestination.Home) }
     // Composition-scoped coroutine launcher for the export buttons below — `exportSnapshot`/
     // `exportCsv`/`exportJson` became `suspend` in M8.2 Task 11 (dividend-events fetch for
     // `projectedAnnualIncome`), so their click handlers need somewhere to launch into.
@@ -454,19 +471,20 @@ private fun AppRoot(
     val addFieldState by addFieldViewModel.state.collectAsState()
 
     // Lazy first-visit start for the News VM: fire its single fetch only once the user opens
-    // the News tab, and never again. Guarded by a one-shot flag so re-entering the tab is free.
+    // the News section, and never again. Guarded by a one-shot flag so re-entering it is free.
+    // Re-keyed to `sidebarSelection` (M10.2 Task 3, was `selectedTab`).
     var newsStarted by remember { mutableStateOf(false) }
-    LaunchedEffect(selectedTab) {
-        if (selectedTab == AppTab.News && !newsStarted) {
+    LaunchedEffect(sidebarSelection) {
+        if (sidebarSelection == SidebarDestination.Markets(MarketsSection.News) && !newsStarted) {
             newsStarted = true
             newsViewModel.start()
         }
     }
-    // Mirrors newsStarted exactly: the Calendar tab's single 14-day load fires only once the
-    // user opens it.
+    // Mirrors newsStarted exactly: the Calendar section's single 14-day load fires only once
+    // the user opens it. Re-keyed to `sidebarSelection` (M10.2 Task 3, was `selectedTab`).
     var calendarStarted by remember { mutableStateOf(false) }
-    LaunchedEffect(selectedTab) {
-        if (selectedTab == AppTab.Calendar && !calendarStarted) {
+    LaunchedEffect(sidebarSelection) {
+        if (sidebarSelection == SidebarDestination.Markets(MarketsSection.Calendar) && !calendarStarted) {
             calendarStarted = true
             calendarViewModel.load()
         }
@@ -474,110 +492,137 @@ private fun AppRoot(
 
     Box(Modifier.fillMaxSize()) {
         AppShell(
-            selectedTab = selectedTab,
-            onTabSelect = { selectedTab = it },
+            selection = sidebarSelection,
+            onSelect = { sidebarSelection = it },
             onOpenPalette = onOpenPalette,
             onOpenAccount = onOpenAccount,
+            isDarkMode = isDarkMode,
+            onToggleTheme = onSelectTheme,
         ) {
-            when (selectedTab) {
-                AppTab.Watchlist ->
-                    if (openSymbol != null) {
-                        DetailScreen(
-                            symbol = openSymbol,
-                            // Pass the held position row (or null) from portfolio state — the
-                            // detail screen's YOUR POSITION card reads it directly; no second store.
-                            heldPosition = portfolioState.holdings.firstOrNull { it.symbol == openSymbol },
-                            onBack = onBack,
-                            onBuy = { asset, priceText ->
-                                onOpenTrade(TradeTarget(asset, TradeSide.Buy, priceText))
-                            },
-                        )
-                    } else {
-                        WatchlistPane(
-                            state = watchState,
-                            onKindSelect = watchlistViewModel::onKindSelect,
-                            onSelect = { symbol ->
-                                watchlistViewModel.onSelect(symbol)
-                                onOpenDetail(symbol)
-                            },
-                            onAdd = watchlistViewModel::onAdd,
-                            onRemove = watchlistViewModel::onRemove,
-                            onSetAlert = { symbol ->
-                                // Watchlist rows only (macOS parity: no detail-screen alert
-                                // entry) — resolve the row's name/kind into the Asset the
-                                // sheet's header needs.
-                                watchState.rows.firstOrNull { it.symbol == symbol }?.let { row ->
-                                    onOpenAlert(Asset(symbol = row.symbol, name = row.name, kind = row.kind))
-                                }
-                            },
-                            suggestQuery = addFieldState.query,
-                            suggestResults = addFieldState.results,
-                            onSuggestQueryChange = addFieldViewModel::onQueryChange,
-                            onSuggestReset = addFieldViewModel::reset,
+            // Every destination/section is wrapped in `key(...)` (the Swift U5 lesson,
+            // pre-empted here rather than fixed later): switching `sidebarSelection` must
+            // fully tear down whatever the previous section composed, not just swap the data
+            // a surviving subtree reads — otherwise a future pane that pushes its own local
+            // state (e.g. a Watchlist/Screener in-pane detail after Task 6, or a pushed pie
+            // detail inside Plans) could keep that state alive across a section switch, the
+            // exact bug Swift's `.invest(let section)` case hit when only the enum's
+            // associated value changed and the surrounding NavigationStack was never rebuilt.
+            when (val destination = sidebarSelection) {
+                is SidebarDestination.Home -> key(destination) {
+                    // Task 4 replaces this with HomePane(); minimal placeholder until then.
+                    Box(Modifier.fillMaxSize())
+                }
+                is SidebarDestination.Markets -> key(destination.section) {
+                    when (destination.section) {
+                        MarketsSection.Watchlist ->
+                            if (openSymbol != null) {
+                                DetailScreen(
+                                    symbol = openSymbol,
+                                    // Pass the held position row (or null) from portfolio state — the
+                                    // detail screen's YOUR POSITION card reads it directly; no second store.
+                                    heldPosition = portfolioState.holdings.firstOrNull { it.symbol == openSymbol },
+                                    onBack = onBack,
+                                    onBuy = { asset, priceText ->
+                                        onOpenTrade(TradeTarget(asset, TradeSide.Buy, priceText))
+                                    },
+                                )
+                            } else {
+                                WatchlistPane(
+                                    state = watchState,
+                                    onKindSelect = watchlistViewModel::onKindSelect,
+                                    onSelect = { symbol ->
+                                        watchlistViewModel.onSelect(symbol)
+                                        onOpenDetail(symbol)
+                                    },
+                                    onAdd = watchlistViewModel::onAdd,
+                                    onRemove = watchlistViewModel::onRemove,
+                                    onSetAlert = { symbol ->
+                                        // Watchlist rows only (macOS parity: no detail-screen alert
+                                        // entry) — resolve the row's name/kind into the Asset the
+                                        // sheet's header needs.
+                                        watchState.rows.firstOrNull { it.symbol == symbol }?.let { row ->
+                                            onOpenAlert(Asset(symbol = row.symbol, name = row.name, kind = row.kind))
+                                        }
+                                    },
+                                    suggestQuery = addFieldState.query,
+                                    suggestResults = addFieldState.results,
+                                    onSuggestQueryChange = addFieldViewModel::onQueryChange,
+                                    onSuggestReset = addFieldViewModel::reset,
+                                )
+                            }
+                        MarketsSection.Screener ->
+                            if (openSymbol != null) {
+                                // Same shared detail navigation Watchlist uses above (reviewer
+                                // fix: an earlier version rendered DetailScreen from pane-local
+                                // state, which meant no `tradeTarget`/`onOpenTrade` was reachable
+                                // and the Buy button never showed here — the Swift reference
+                                // shows it unconditionally for every caller). Routing through
+                                // this shared `openSymbol`/`onOpenDetail` path gives Buy AND
+                                // `heldPosition` parity with Watchlist for free.
+                                DetailScreen(
+                                    symbol = openSymbol,
+                                    heldPosition = portfolioState.holdings.firstOrNull { it.symbol == openSymbol },
+                                    onBack = onBack,
+                                    onBuy = { asset, priceText ->
+                                        onOpenTrade(TradeTarget(asset, TradeSide.Buy, priceText))
+                                    },
+                                )
+                            } else {
+                                ScreenerPane(onOpenDetail = onOpenDetail)
+                            }
+                        MarketsSection.Calendar -> CalendarPane(calendarViewModel)
+                        MarketsSection.News -> NewsPane(
+                            state = newsState,
+                            onSetCategory = newsViewModel::setCategory,
+                            onSetShowingSaved = newsViewModel::setShowingSaved,
+                            onSetFilter = newsViewModel::setFilter,
+                            onRefresh = newsViewModel::refresh,
+                            onToggleBookmark = newsViewModel::toggleBookmark,
                         )
                     }
-                AppTab.Portfolio -> PortfolioPane(
-                    state = portfolioState,
-                    onSetSpan = portfolioViewModel::setSpan,
-                    onSetBenchmark = portfolioViewModel::setBenchmark,
-                    onOpenDetail = onOpenDetail,
-                    onTrade = { symbol, side ->
-                        // Held-asset trades: reuse the row's name/kind + live price from state.
-                        val row = portfolioState.holdings.firstOrNull { it.symbol == symbol }
-                        val asset = Asset(
-                            symbol = symbol,
-                            name = row?.name ?: symbol,
-                            kind = row?.kind ?: com.aptrade.shared.domain.AssetKind.Stock,
-                        )
-                        onOpenTrade(TradeTarget(asset, side, row?.priceText))
-                    },
-                    onReset = portfolioViewModel::reset,
-                    onExportCsv = {
-                        exportScope.launch { saveTextFile("portfolio.csv", portfolioViewModel.exportCsv()) }
-                    },
-                    onExportJson = {
-                        exportScope.launch { saveTextFile("portfolio.json", portfolioViewModel.exportJson()) }
-                    },
-                    onExportPdf = {
-                        exportScope.launch {
-                            val now = System.currentTimeMillis() / 1000
-                            saveBinaryFile(
-                                exportFileName("pdf", now),
-                                renderPortfolioPdf(portfolioViewModel.exportSnapshot()),
+                }
+                is SidebarDestination.Portfolio -> key(destination.section) {
+                    PortfolioPane(
+                        state = portfolioState,
+                        section = destination.section,
+                        onSetSpan = portfolioViewModel::setSpan,
+                        onSetBenchmark = portfolioViewModel::setBenchmark,
+                        onOpenDetail = onOpenDetail,
+                        onTrade = { symbol, side ->
+                            // Held-asset trades: reuse the row's name/kind + live price from state.
+                            val row = portfolioState.holdings.firstOrNull { it.symbol == symbol }
+                            val asset = Asset(
+                                symbol = symbol,
+                                name = row?.name ?: symbol,
+                                kind = row?.kind ?: com.aptrade.shared.domain.AssetKind.Stock,
                             )
-                        }
-                    },
-                    pendingExport = pendingExport,
-                )
-                AppTab.News -> NewsPane(
-                    state = newsState,
-                    onSetCategory = newsViewModel::setCategory,
-                    onSetShowingSaved = newsViewModel::setShowingSaved,
-                    onSetFilter = newsViewModel::setFilter,
-                    onRefresh = newsViewModel::refresh,
-                    onToggleBookmark = newsViewModel::toggleBookmark,
-                )
-                AppTab.Calendar -> CalendarPane(calendarViewModel)
-                AppTab.Screener ->
-                    if (openSymbol != null) {
-                        // Same shared detail navigation the Watchlist tab uses above (reviewer
-                        // fix: an earlier version rendered DetailScreen from pane-local state,
-                        // which meant no `tradeTarget`/`onOpenTrade` was reachable and the Buy
-                        // button never showed here — the Swift reference shows it
-                        // unconditionally for every caller). Routing through this shared
-                        // `openSymbol`/`onOpenDetail` path gives Buy AND `heldPosition` parity
-                        // with Watchlist for free.
-                        DetailScreen(
-                            symbol = openSymbol,
-                            heldPosition = portfolioState.holdings.firstOrNull { it.symbol == openSymbol },
-                            onBack = onBack,
-                            onBuy = { asset, priceText ->
-                                onOpenTrade(TradeTarget(asset, TradeSide.Buy, priceText))
-                            },
-                        )
-                    } else {
-                        ScreenerPane(onOpenDetail = onOpenDetail)
+                            onOpenTrade(TradeTarget(asset, side, row?.priceText))
+                        },
+                        onReset = portfolioViewModel::reset,
+                        onExportCsv = {
+                            exportScope.launch { saveTextFile("portfolio.csv", portfolioViewModel.exportCsv()) }
+                        },
+                        onExportJson = {
+                            exportScope.launch { saveTextFile("portfolio.json", portfolioViewModel.exportJson()) }
+                        },
+                        onExportPdf = {
+                            exportScope.launch {
+                                val now = System.currentTimeMillis() / 1000
+                                saveBinaryFile(
+                                    exportFileName("pdf", now),
+                                    renderPortfolioPdf(portfolioViewModel.exportSnapshot()),
+                                )
+                            }
+                        },
+                        pendingExport = pendingExport,
+                    )
+                }
+                is SidebarDestination.Invest -> key(destination.section) {
+                    when (destination.section) {
+                        InvestSection.Plans -> PlansPane()
+                        InvestSection.Income -> IncomePane()
                     }
+                }
             }
         }
 
@@ -595,9 +640,10 @@ private fun AppRoot(
 
         // The account/settings panel overlays the shell. It self-consumes Esc on its own panel
         // (TradeDialog pattern), so it never competes with the window's palette Esc. The Export
-        // Portfolio Data row switches to the Portfolio tab AND raises the one-shot pendingExport
-        // trigger, which PortfolioPane consumes to auto-open its Export… chooser — the earlier
-        // DEVIATION (row only switched tabs) is now resolved.
+        // Portfolio Data row switches to the Portfolio destination (Holdings — the natural
+        // entry section, mirroring `handleHomeNavigation`'s `.portfolio: sidebarSelection =
+        // .portfolio(.holdings)` on macOS) AND raises the one-shot pendingExport trigger, which
+        // PortfolioPane consumes to auto-open its Export… chooser.
         if (accountOpen) {
             AccountPanel(
                 accent = accent,
@@ -607,7 +653,7 @@ private fun AppRoot(
                 language = language,
                 onSelectLanguage = onSelectLanguage,
                 onExportPortfolio = {
-                    selectedTab = AppTab.Portfolio
+                    sidebarSelection = SidebarDestination.Portfolio(PortfolioSection.Holdings)
                     pendingExport.value = true
                     onCloseAccount()
                 },
