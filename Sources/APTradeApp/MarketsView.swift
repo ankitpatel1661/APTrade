@@ -46,7 +46,11 @@ struct MarketsView: View {
             }
         }
         .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
-        .onChange(of: externalSection?.wrappedValue) { _, requested in
+        // `initial: true`: TabView builds tabs lazily, so a section request set in the same
+        // transaction as the tab switch is already the baseline by the time onChange installs —
+        // without firing on first mount, that request lands on the default section and is
+        // never cleared, wedging same-section requests for the rest of the session.
+        .onChange(of: externalSection?.wrappedValue, initial: true) { _, requested in
             guard let requested else { return }
             withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { section = requested }
             externalSection?.wrappedValue = nil

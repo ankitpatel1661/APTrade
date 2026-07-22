@@ -1333,7 +1333,7 @@ enum L10n {
                             .italian: "%@ guida le tue posizioni", .spanish: "%@ lidera tus posiciones"],
         .biggestFallerFmt: [.english: "%@ biggest faller", .german: "%@ größter Verlierer",
                             .italian: "%@ maggior ribasso", .spanish: "%@ mayor caída"],
-        .reportsEarningsFmt: [.english: "%@ reports earnings", .german: "%@ berichtet Quartalszahlen",
+        .reportsEarningsFmt: [.english: "%@ reports earnings", .german: "%@ veröffentlicht Quartalszahlen",
                               .italian: "%@ pubblica i risultati", .spanish: "%@ presenta resultados"],
         .earningsSessionAfterClose: [.english: "after close", .german: "nach Handelsschluss",
                                      .italian: "dopo la chiusura", .spanish: "tras el cierre"],
@@ -1362,7 +1362,7 @@ enum L10n {
         .dripCardTitle: [.english: "Reinvest dividends (DRIP)", .german: "Dividenden reinvestieren (DRIP)",
                          .italian: "Reinvesti dividendi (DRIP)", .spanish: "Reinvertir dividendos (DRIP)"],
         .dripCardSubtitle: [.english: "Payouts buy fractional shares automatically",
-                            .german: "Ausschüttungen kaufen automatisch Bruchteilsanteile",
+                            .german: "Ausschüttungen kaufen automatisch Bruchteilsaktien",
                             .italian: "I pagamenti acquistano automaticamente quote frazionarie",
                             .spanish: "Los pagos compran automáticamente acciones fraccionarias"],
 

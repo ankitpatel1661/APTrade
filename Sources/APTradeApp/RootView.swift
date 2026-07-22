@@ -688,7 +688,7 @@ public struct RootView: View {
                 detailField(label: tr(.tradingMode), value: tr(.simulatedPaperTrading))
                 detailField(label: tr(.startingBalance), value: "$100,000.00")
                 detailField(label: tr(.displayCurrency), value: "USD ($)")
-                detailField(label: tr(.defaultTab), value: tr(.watchlist))
+                detailField(label: tr(.defaultTab), value: tr(.homeTab))
                 detailField(label: tr(.biometricLogin), value: tr(.enabledTouchID))
             }
             .padding(.horizontal, 20)

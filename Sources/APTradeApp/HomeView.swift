@@ -119,6 +119,20 @@ private func dividendRowText(symbol: String, amount: String) -> Text {
     return Text(prefix) + Text(symbol).fontWeight(.bold) + Text(String(format: rest, amount))
 }
 
+/// Same idea as `dividendRowText`, for `screenerFreshFmt`'s two placeholders (preset name,
+/// match count) — bolds only the leading preset name (the first "%@"), matching the
+/// font-weight treatment every other Today row gives its leading symbol/name.
+@MainActor
+private func screenerFreshRowText(name: String, matches: String) -> Text {
+    let format = tr(.screenerFreshFmt)
+    guard let range = format.range(of: "%@") else {
+        return Text(String(format: format, name, matches))
+    }
+    let prefix = String(format[format.startIndex..<range.lowerBound])
+    let rest = String(format[range.upperBound...])
+    return Text(prefix) + Text(name).fontWeight(.bold) + Text(String(format: rest, matches))
+}
+
 // MARK: - Hero sparkline
 
 /// The hero's gold area sparkline — same Canvas technique as `Sparkline` (soft gradient
@@ -282,7 +296,7 @@ private func homeFeedRow(_ item: HomeFeedItem, onNavigate: @escaping (HomeDestin
             HStack(spacing: 10) {
                 Image(systemName: "scope")
                     .font(.system(size: 11)).foregroundStyle(Theme.gold).frame(width: 16)
-                Text(String(format: tr(.screenerFreshFmt), presetDisplayName(name), "\(matches)"))
+                screenerFreshRowText(name: presetDisplayName(name), matches: "\(matches)")
                     .font(.system(size: 13)).foregroundStyle(Theme.textPrimary)
                 Spacer()
             }
@@ -397,24 +411,28 @@ struct HomeView: View {
     }
 
     private var hero: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(tr(.portfolioValue).uppercased())
-                .font(.system(size: 10, weight: .bold)).tracking(1.4)
-                .foregroundStyle(Theme.textTertiary)
-            SuperscriptPrice(money: vm.totalValue, size: 32)
-            HStack(spacing: 6) {
-                Text(signedMoney(vm.dayChange))
-                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(Theme.changeColor(vm.dayChangePercent))
-                ChangePill(percent: vm.dayChangePercent)
-                Text(tr(.todaySection).lowercased())
-                    .font(.system(size: 10.5))
+        Button { onNavigate(.portfolio) } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(tr(.portfolioValue).uppercased())
+                    .font(.system(size: 10, weight: .bold)).tracking(1.4)
                     .foregroundStyle(Theme.textTertiary)
+                SuperscriptPrice(money: vm.totalValue, size: 32)
+                HStack(spacing: 6) {
+                    Text(signedMoney(vm.dayChange))
+                        .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(Theme.changeColor(vm.dayChangePercent))
+                    ChangePill(percent: vm.dayChangePercent)
+                    Text(tr(.todaySection).lowercased())
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Theme.textTertiary)
+                }
+                HomeHeroSpark(values: vm.sparkValues)
+                    .frame(height: 60)
+                    .padding(.top, 4)
             }
-            HomeHeroSpark(values: vm.sparkValues)
-                .frame(height: 60)
-                .padding(.top, 4)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
     private var quickCardsGrid: some View {
@@ -535,26 +553,30 @@ struct HomeViewMac: View {
     }
 
     private var hero: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(tr(.portfolioValue).uppercased())
-                .font(.system(size: 10, weight: .bold)).tracking(1.4)
-                .foregroundStyle(Theme.textTertiary)
-            HStack(alignment: .firstTextBaseline, spacing: 16) {
-                SuperscriptPrice(money: vm.totalValue, size: 34)
-                HStack(spacing: 6) {
-                    Text(signedMoney(vm.dayChange))
-                        .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(Theme.changeColor(vm.dayChangePercent))
-                    ChangePill(percent: vm.dayChangePercent)
-                    Text(tr(.todaySection).lowercased())
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.textTertiary)
+        Button { onNavigate(.portfolio) } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(tr(.portfolioValue).uppercased())
+                    .font(.system(size: 10, weight: .bold)).tracking(1.4)
+                    .foregroundStyle(Theme.textTertiary)
+                HStack(alignment: .firstTextBaseline, spacing: 16) {
+                    SuperscriptPrice(money: vm.totalValue, size: 34)
+                    HStack(spacing: 6) {
+                        Text(signedMoney(vm.dayChange))
+                            .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(Theme.changeColor(vm.dayChangePercent))
+                        ChangePill(percent: vm.dayChangePercent)
+                        Text(tr(.todaySection).lowercased())
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.textTertiary)
+                    }
                 }
+                HomeHeroSpark(values: vm.sparkValues)
+                    .frame(height: 70)
+                    .padding(.top, 4)
             }
-            HomeHeroSpark(values: vm.sparkValues)
-                .frame(height: 70)
-                .padding(.top, 4)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
     private var statsCard: some View {
