@@ -263,10 +263,6 @@ fun main() = application {
     // The right-anchored account/settings panel (⋯ button). Hoisted here so it overlays the
     // whole window like the palette; it self-consumes Esc on its own panel, never the window's.
     var accountOpen by remember { mutableStateOf(false) }
-    // One-shot trigger for the ⋯ panel's "Export Portfolio Data" row: flipping it true switches
-    // to the Portfolio tab AND has PortfolioPane auto-open the export chooser (the pane consumes
-    // and clears it). Hoisted here so the account panel and the pane share one signal.
-    val pendingExport = remember { mutableStateOf(false) }
     // The open price-alert sheet's target symbol, hoisted like tradeTarget so it overlays the
     // whole window. The sheet self-consumes Esc on its own panel (TradeDialog pattern).
     var alertTarget by remember { mutableStateOf<Asset?>(null) }
@@ -433,7 +429,6 @@ fun main() = application {
                     accountOpen = accountOpen,
                     onOpenAccount = { accountOpen = true },
                     onCloseAccount = { accountOpen = false },
-                    pendingExport = pendingExport,
                     accent = DK.accent.value,
                     onSelectAccent = { theme -> selectAccent(theme) },
                     isDarkMode = DK.isDark.value,
@@ -482,7 +477,6 @@ private fun AppRoot(
     accountOpen: Boolean,
     onOpenAccount: () -> Unit,
     onCloseAccount: () -> Unit,
-    pendingExport: androidx.compose.runtime.MutableState<Boolean>,
     accent: com.aptrade.desktop.designkit.AccentTheme,
     onSelectAccent: (com.aptrade.desktop.designkit.AccentTheme) -> Unit,
     isDarkMode: Boolean,
@@ -671,13 +665,15 @@ private fun AppRoot(
                                 )
                             }
                         },
-                        pendingExport = pendingExport,
                     )
                 }
                 is SidebarDestination.Invest -> key(destination.section) {
                     when (destination.section) {
                         InvestSection.Plans -> PlansPane()
-                        InvestSection.Income -> IncomePane()
+                        InvestSection.Income -> IncomePane(
+                            notificationSettings = notificationSettings,
+                            onUpdateNotificationSettings = onUpdateNotificationSettings,
+                        )
                     }
                 }
             }
@@ -725,11 +721,10 @@ private fun AppRoot(
         }
 
         // The account/settings panel overlays the shell. It self-consumes Esc on its own panel
-        // (TradeDialog pattern), so it never competes with the window's palette Esc. The Export
-        // Portfolio Data row switches to the Portfolio destination (Holdings — the natural
-        // entry section, mirroring `handleHomeNavigation`'s `.portfolio: sidebarSelection =
-        // .portfolio(.holdings)` on macOS) AND raises the one-shot pendingExport trigger, which
-        // PortfolioPane consumes to auto-open its Export… chooser.
+        // (TradeDialog pattern), so it never competes with the window's palette Esc. M10.2 Task 7
+        // (the settings-honesty pass, Swift M10.1 Task 8's desktop twin) re-homes Export Portfolio
+        // Data to PortfolioPane's own summary-header button and DRIP to IncomePane's header card —
+        // this panel no longer triggers either, so it needs no export/DRIP wiring of its own.
         if (accountOpen) {
             AccountPanel(
                 accent = accent,
@@ -738,11 +733,6 @@ private fun AppRoot(
                 onSelectTheme = onSelectTheme,
                 language = language,
                 onSelectLanguage = onSelectLanguage,
-                onExportPortfolio = {
-                    onSidebarSelectionChange(SidebarDestination.Portfolio(PortfolioSection.Holdings))
-                    pendingExport.value = true
-                    onCloseAccount()
-                },
                 onClose = onCloseAccount,
                 notificationSettings = notificationSettings,
                 onUpdateNotificationSettings = onUpdateNotificationSettings,

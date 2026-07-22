@@ -72,9 +72,15 @@ private enum class AccountPage { Root, Appearance, Language, About, Notification
  *  Row behavior mirrors the macOS account sheet: Appearance → accent page, Language → the
  *  real language picker (increment 6e Task 5), Notifications → the real push/email toggle
  *  page (increment 6d.1), Security & Privacy / Profile / Account Settings / Help & Support →
- *  their real pages (increment 6d.2 Task 3), Export Portfolio Data → [onExportPortfolio],
- *  About → logo + tagline page. Every row is now functional — no page still falls through to
- *  a placeholder. No Sign Out row: desktop has no auth. */
+ *  their real pages (increment 6d.2 Task 3), About → logo + tagline page. Every row is now
+ *  functional — no page still falls through to a placeholder. No Sign Out row: desktop has no
+ *  auth.
+ *
+ *  M10.2 Task 7 (the settings-honesty pass, Swift M10.1 Task 8's desktop twin): Export
+ *  Portfolio Data and the DRIP toggle no longer live here — Export moved to
+ *  [com.aptrade.desktop.portfolio.PortfolioPane]'s summary header (a circular button beside
+ *  Reset) and DRIP moved to [com.aptrade.desktop.income.IncomePane]'s header card, mirroring
+ *  `RootView.accountMenuPage`'s doc comment on macOS exactly. */
 @Composable
 fun AccountPanel(
     accent: AccentTheme,
@@ -83,7 +89,6 @@ fun AccountPanel(
     onSelectTheme: (Boolean) -> Unit,
     language: AppLanguage,
     onSelectLanguage: (AppLanguage) -> Unit,
-    onExportPortfolio: () -> Unit,
     onClose: () -> Unit,
     notificationSettings: AppSettings,
     onUpdateNotificationSettings: ((AppSettings) -> AppSettings) -> Unit,
@@ -136,7 +141,6 @@ fun AccountPanel(
                     onProfile = { page = AccountPage.Profile },
                     onAccountSettings = { page = AccountPage.AccountSettings },
                     onHelp = { page = AccountPage.Help },
-                    onExport = onExportPortfolio,
                     onClose = onClose,
                 )
                 AccountPage.Appearance -> AppearancePage(
@@ -164,11 +168,7 @@ fun AccountPanel(
                     onClose = onClose,
                 )
                 AccountPage.Profile -> ProfilePage(onBack = { page = AccountPage.Root })
-                AccountPage.AccountSettings -> AccountSettingsPage(
-                    settings = notificationSettings,
-                    onUpdate = onUpdateNotificationSettings,
-                    onBack = { page = AccountPage.Root },
-                )
+                AccountPage.AccountSettings -> AccountSettingsPage(onBack = { page = AccountPage.Root })
                 AccountPage.Help -> HelpPage(onBack = { page = AccountPage.Root }, onClose = onClose)
             }
         }
@@ -179,19 +179,21 @@ fun AccountPanel(
 
 // MARK: - Root
 
-/** The account row list, in macOS order. Every row is functional as of increment 6e Task 5
- *  (Language is the last one to gain a real destination — see the [AccountPanel] doc
- *  comment). Labels resolve via [tr] at render time (a `val ... get() =`, not a constructor
- *  literal) so they recompose on language change, matching [com.aptrade.desktop.detail
- *  .IndicatorOverlays]'s `Indicator.label` pattern from Wave 2. */
+/** The account row list — reordered (M10.2 Task 7, the settings-honesty pass) to mirror
+ *  `RootView.accountMenuPage`'s macOS order exactly: app-level settings first (things that
+ *  change how the app itself looks/talks — Appearance, Language, Notifications), then
+ *  identity/account settings (Profile, Account Settings, Security & Privacy), then Help/About.
+ *  Export Portfolio Data and the DRIP toggle no longer appear here at all — see [AccountPanel]'s
+ *  doc comment for where they live now. Labels resolve via [tr] at render time (a
+ *  `val ... get() =`, not a constructor literal) so they recompose on language change, matching
+ *  [com.aptrade.desktop.detail.IndicatorOverlays]'s `Indicator.label` pattern from Wave 2. */
 private enum class AccountRow(private val key: L10n.Key) {
-    Profile(L10n.Key.Profile),
-    AccountSettings(L10n.Key.AccountSettings),
-    Notifications(L10n.Key.Notifications),
     Appearance(L10n.Key.Appearance),
     Language(L10n.Key.Language),
+    Notifications(L10n.Key.Notifications),
+    Profile(L10n.Key.Profile),
+    AccountSettings(L10n.Key.AccountSettings),
     SecurityPrivacy(L10n.Key.SecurityAndPrivacy),
-    ExportPortfolioData(L10n.Key.ExportPortfolioData),
     HelpSupport(L10n.Key.HelpAndSupport),
     AboutAPTrade(L10n.Key.AboutAPTrade),
     ;
@@ -209,7 +211,6 @@ private fun RootList(
     onProfile: () -> Unit,
     onAccountSettings: () -> Unit,
     onHelp: () -> Unit,
-    onExport: () -> Unit,
     onClose: () -> Unit,
 ) {
     PanelHeader(title = tr(L10n.Key.Account), onLeading = onClose, leadingGlyph = "✕")
@@ -225,7 +226,6 @@ private fun RootList(
                 AccountRow.Profile -> onProfile()
                 AccountRow.AccountSettings -> onAccountSettings()
                 AccountRow.HelpSupport -> onHelp()
-                AccountRow.ExportPortfolioData -> onExport()
             }
         }
     }
@@ -658,23 +658,22 @@ private fun ProfilePage(onBack: () -> Unit) {
  *  Security page's Biometric Login toggle (verified against `RootView.swift:403`, which reads
  *  `tr(.enabledTouchID)` — a fixed L10n string, not `settingsVM.settings.biometricLogin`).
  *
- *  DRIP (M8.2 Task 9) is the one functional row here — mirroring macOS's placement exactly
- *  (`RootView.swift:434-435`: `toggleRow(... tr(.settingsDrip), subtitle: tr(.settingsDripFooter),
- *  isOn: $settingsVM.settings.dripEnabled)`, appended after the detail fields). It lives in
- *  this account/trading group rather than Notifications because it changes money behavior
- *  (cash vs. reinvest on dividend receipt), not notification delivery — see
- *  AppSettings.dripEnabled's doc comment. */
+ *  DRIP (M8.2 Task 9) used to be the one functional row here, but M10.2 Task 7 (the
+ *  settings-honesty pass, Swift M10.1 Task 8's desktop twin) re-homes it to
+ *  [com.aptrade.desktop.income.IncomePane]'s header card — same reasoning as macOS's
+ *  `accountMenuPage` doc comment: DRIP changes money behavior (cash vs. reinvest on dividend
+ *  receipt), and Income is where that behavior is felt, not this settings list. This page is
+ *  now purely decorative detail fields again, no bound toggle. */
 @Composable
-private fun AccountSettingsPage(
-    settings: AppSettings,
-    onUpdate: ((AppSettings) -> AppSettings) -> Unit,
-    onBack: () -> Unit,
-) {
+private fun AccountSettingsPage(onBack: () -> Unit) {
     // Trading Mode / Default Tab / Biometric Login VALUES route through tr() too, matching
-    // macOS exactly (RootView.swift:398-403: tr(.simulatedPaperTrading), tr(.watchlist),
+    // macOS exactly (RootView.swift:398-403: tr(.simulatedPaperTrading), tr(.homeTab),
     // tr(.enabledTouchID)) — these are keyed display strings, not free-form personal data.
     // Starting Balance and Display Currency values stay literal, same as macOS
-    // (RootView.swift:399-400 pass raw "$100,000.00" / "USD ($)" literals).
+    // (RootView.swift:399-400 pass raw "$100,000.00" / "USD ($)" literals). Default Tab's
+    // value follows the M10.1/M10.2 IA restructure: the four/five-tab shell's landing
+    // destination is Home now, not the old Watchlist tab (`RootView.swift:699` reads
+    // `tr(.homeTab)`) — a stale carry-over fixed here (M10.2 Task 7).
     PanelHeader(title = tr(L10n.Key.AccountSettings), onLeading = onBack, leadingGlyph = "‹")
     Spacer(Modifier.height(16.dp))
     DetailField(label = tr(L10n.Key.TradingMode), value = tr(L10n.Key.SimulatedPaperTrading))
@@ -683,16 +682,9 @@ private fun AccountSettingsPage(
     Spacer(Modifier.height(14.dp))
     DetailField(label = tr(L10n.Key.DisplayCurrency), value = "USD ($)")
     Spacer(Modifier.height(14.dp))
-    DetailField(label = tr(L10n.Key.DefaultTab), value = tr(L10n.Key.Watchlist))
+    DetailField(label = tr(L10n.Key.DefaultTab), value = tr(L10n.Key.HomeTab))
     Spacer(Modifier.height(14.dp))
     DetailField(label = tr(L10n.Key.BiometricLogin), value = tr(L10n.Key.EnabledTouchID))
-    Spacer(Modifier.height(14.dp))
-    ToggleRow(
-        title = tr(L10n.Key.SettingsDrip),
-        subtitle = tr(L10n.Key.SettingsDripFooter),
-        checked = settings.dripEnabled,
-        onCheckedChange = { checked -> onUpdate { it.copy(dripEnabled = checked) } },
-    )
 }
 
 // MARK: - Help & Support

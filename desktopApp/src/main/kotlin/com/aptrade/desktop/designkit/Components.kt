@@ -144,6 +144,70 @@ fun SunIcon(tint: Color = DK.textPrimary, modifier: Modifier = Modifier.size(16.
     }
 }
 
+/** A hand-drawn "export" glyph — SF Symbol "square.and.arrow.up" stand-in for
+ *  [com.aptrade.desktop.portfolio.PortfolioPane]'s circular Export button (M10.2 Task 7
+ *  re-home from the account "⋯" menu), same Canvas-drawn-icon approach as [MoonIcon]/[SunIcon].
+ *  An upward arrow rising out of an open-top tray (the tray's top edge is left open, only the
+ *  left/bottom/right edges are stroked). */
+@Composable
+fun ExportIcon(tint: Color = DK.textPrimary, modifier: Modifier = Modifier.size(16.dp)) {
+    androidx.compose.foundation.Canvas(modifier) {
+        val stroke = 1.4.dp.toPx()
+        val cap = androidx.compose.ui.graphics.StrokeCap.Round
+        val join = androidx.compose.ui.graphics.StrokeJoin.Round
+
+        // Open-top tray: left edge down, round the bottom-left corner, across the bottom,
+        // round the bottom-right corner, up the right edge — no top edge, so the arrow reads
+        // as "leaving" the tray rather than sitting inside a closed box.
+        val trayTop = size.height * 0.60f
+        val trayBottom = size.height * 0.86f
+        val trayLeft = size.width * 0.16f
+        val trayRight = size.width * 0.84f
+        val corner = size.width * 0.10f
+        val trayPath = androidx.compose.ui.graphics.Path().apply {
+            moveTo(trayLeft, trayTop)
+            lineTo(trayLeft, trayBottom - corner)
+            quadraticTo(trayLeft, trayBottom, trayLeft + corner, trayBottom)
+            lineTo(trayRight - corner, trayBottom)
+            quadraticTo(trayRight, trayBottom, trayRight, trayBottom - corner)
+            lineTo(trayRight, trayTop)
+        }
+        drawPath(
+            trayPath,
+            color = tint,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke, cap = cap, join = join),
+        )
+
+        // Upward arrow: a vertical shaft topped with a chevron head, centered over the tray.
+        val cx = size.width * 0.5f
+        val shaftTop = size.height * 0.10f
+        val shaftBottom = size.height * 0.56f
+        drawLine(
+            color = tint,
+            start = androidx.compose.ui.geometry.Offset(cx, shaftBottom),
+            end = androidx.compose.ui.geometry.Offset(cx, shaftTop),
+            strokeWidth = stroke,
+            cap = cap,
+        )
+        val headSpan = size.width * 0.16f
+        val headDrop = size.height * 0.16f
+        drawLine(
+            color = tint,
+            start = androidx.compose.ui.geometry.Offset(cx, shaftTop),
+            end = androidx.compose.ui.geometry.Offset(cx - headSpan, shaftTop + headDrop),
+            strokeWidth = stroke,
+            cap = cap,
+        )
+        drawLine(
+            color = tint,
+            start = androidx.compose.ui.geometry.Offset(cx, shaftTop),
+            end = androidx.compose.ui.geometry.Offset(cx + headSpan, shaftTop + headDrop),
+            strokeWidth = stroke,
+            cap = cap,
+        )
+    }
+}
+
 /**
  * The full "AP Trade" lockup — champagne original for the default accent in dark mode, otherwise
  * recolored per accent and mode (macOS `recoloredBrandImage` port): gold pixels onto the active

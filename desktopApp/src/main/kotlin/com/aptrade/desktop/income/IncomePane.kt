@@ -11,10 +11,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,7 +27,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,6 +37,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -41,11 +47,13 @@ import androidx.compose.ui.unit.sp
 import com.aptrade.desktop.AppGraph
 import com.aptrade.desktop.LocalAppGraph
 import com.aptrade.desktop.designkit.DK
+import com.aptrade.desktop.designkit.DKSwitch
 import com.aptrade.desktop.designkit.InterFamily
 import com.aptrade.desktop.designkit.formatMoney
 import com.aptrade.desktop.designkit.formatPercent
 import com.aptrade.desktop.designkit.formatShares
 import com.aptrade.desktop.income.State as IncomeState
+import com.aptrade.desktop.infra.AppSettings
 import com.aptrade.desktop.l10n.tr
 import com.aptrade.shared.l10n.L10n
 import kotlinx.coroutines.CoroutineScope
@@ -83,9 +91,22 @@ private fun monthLabel(key: String): String = try {
  *
  *  Desktop has no wide/narrow split the way the Swift `#if os(iOS)` branch does — the desktop
  *  window is always "wide", so Upcoming and Income-by-Holding always render side by side (the
- *  Swift `#else` branch) whenever both lists are non-empty. */
+ *  Swift `#else` branch) whenever both lists are non-empty.
+ *
+ *  M10.2 Task 7 (the settings-honesty pass, Swift M10.1 Task 8's desktop twin): the DRIP
+ *  toggle re-homes here from the account "⋯" panel — [notificationSettings]/
+ *  [onUpdateNotificationSettings] are the SAME hoisted `AppSettings` + load-merge-save seam
+ *  `AccountPanel`'s Notifications page already uses (threaded down from `Main.kt`/`AppRoot`),
+ *  so there is still only ONE persisted `dripEnabled` field, never a second copy. Per
+ *  `IncomeSection.swift`'s doc comment, the DRIP card is this pane's own reachability floor:
+ *  it must render even before the user has ever received or projected a dividend (turning
+ *  DRIP on ahead of a first payout is the common case, not an edge case) — so it renders
+ *  ABOVE the loading/empty/ledger split below, not conditioned on it. */
 @Composable
-fun IncomePane() {
+fun IncomePane(
+    notificationSettings: AppSettings,
+    onUpdateNotificationSettings: ((AppSettings) -> AppSettings) -> Unit,
+) {
     val graph: AppGraph = LocalAppGraph.current
     val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
     val viewModel = remember { graph.makeIncomeViewModel(scope) }
@@ -94,13 +115,51 @@ fun IncomePane() {
 
     val state: IncomeState by viewModel.state.collectAsState()
 
-    when {
-        state.isLoading && state.cards == null -> LoadingState()
-        // No dividend has ever been received and none is projected — the whole section would
-        // otherwise render as a wall of zeroed cards and empty lists. Mirrors
-        // IncomeSection.swift's `isEmptyLedger`.
-        state.history.isEmpty() && state.upcoming.isEmpty() -> EmptyIncomeState()
-        else -> IncomeContent(state)
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        DripCard(
+            checked = notificationSettings.dripEnabled,
+            onCheckedChange = { checked -> onUpdateNotificationSettings { it.copy(dripEnabled = checked) } },
+        )
+        when {
+            state.isLoading && state.cards == null -> LoadingState()
+            // No dividend has ever been received and none is projected — the ledger portion
+            // would otherwise render as a wall of zeroed cards and empty lists. Mirrors
+            // IncomeSection.swift's `isEmptyLedger`.
+            state.history.isEmpty() && state.upcoming.isEmpty() -> EmptyIncomeState()
+            else -> IncomeContent(state)
+        }
+    }
+}
+
+/** Bold title + subtitle + gold [DKSwitch], bound to the same [AppSettings.dripEnabled] field
+ *  the account panel used to host — mirrors `IncomeSection.swift`'s `dripCard` (surface fill,
+ *  16dp radius, hairline stroke) exactly, including its title/subtitle type weights. */
+@Composable
+private fun DripCard(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(DK.surface)
+            .border(1.dp, DK.hairline, RoundedCornerShape(16.dp))
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                tr(L10n.Key.DripCardTitle),
+                style = TextStyle(fontFamily = InterFamily, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = DK.textPrimary),
+            )
+            Text(
+                tr(L10n.Key.DripCardSubtitle),
+                style = TextStyle(fontFamily = InterFamily, fontSize = 11.sp, fontWeight = FontWeight.Normal, color = DK.textTertiary),
+            )
+        }
+        DKSwitch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
@@ -141,10 +200,14 @@ private fun BanknoteGlyph() {
     }
 }
 
+/** M10.2 Task 7: no longer applies its own page padding — [IncomePane] wraps the DRIP card
+ *  AND this content in one outer `Column` now (so the DRIP card sits flush with the ledger
+ *  below it, same 20dp rhythm), so this inner `Column` only needs its OWN inter-section
+ *  spacing, not a second copy of the page margins. */
 @Composable
 private fun IncomeContent(state: IncomeState) {
     Column(
-        Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(vertical = 16.dp),
+        Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         state.cards?.let { SummaryCardsGrid(it) }
@@ -216,6 +279,11 @@ private const val MONTH_BAR_MAX_HEIGHT_DP = 120
 @Composable
 private fun MonthlyChart(months: List<MonthBar>) {
     val maxAmount = months.maxOfOrNull { it.amount.amount.doubleValue(false) } ?: 0.0
+    // Which bar's tooltip is showing (M10.1 UAT U6 desktop twin) — macOS sets/clears this on
+    // hover (`IncomeSection.swift`'s `activeMonthID`, itself mirroring `WatchlistView
+    // .hoveredSymbol`'s idiom); desktop has the same pointer-hover affordance the watchlist
+    // row already uses, so the same onPointerEvent Enter/Exit pair applies here.
+    var activeMonthId by remember { mutableStateOf<String?>(null) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -225,40 +293,119 @@ private fun MonthlyChart(months: List<MonthBar>) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        SectionHeader(tr(L10n.Key.IncomeMonthlyTitle))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+            SectionHeader(tr(L10n.Key.IncomeMonthlyTitle))
+            Spacer(Modifier.weight(1f))
+            // Subtle max-value axis label (M10.1 UAT U6) — no new copy, just the tallest
+            // bar's own already-formatted amount, read straight off the data the bars
+            // themselves are already scaled against.
+            months.maxByOrNull { it.amount.amount.doubleValue(false) }?.let { maxMonth ->
+                Text(
+                    formatMoney(maxMonth.amount.amountText),
+                    style = TextStyle(
+                        fontFamily = InterFamily, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                        color = DK.textTertiary, fontFeatureSettings = "tnum",
+                    ),
+                )
+            }
+        }
         Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            // Headroom for a tooltip floating above whichever bar is active, without
+            // clipping against the chart's own bounds — mirrors IncomeSection.swift's
+            // `.padding(.top, 32)` on this same row.
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 32.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
-            for (bar in months) MonthBarColumn(bar, maxAmount)
+            for (bar in months) {
+                MonthBarColumn(
+                    bar = bar,
+                    maxAmount = maxAmount,
+                    isActive = activeMonthId == bar.id,
+                    onHoverChange = { hovering ->
+                        activeMonthId = when {
+                            hovering -> bar.id
+                            activeMonthId == bar.id -> null
+                            else -> activeMonthId
+                        }
+                    },
+                )
+            }
         }
         LegendRow()
     }
 }
 
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
-private fun MonthBarColumn(bar: MonthBar, maxAmount: Double) {
+private fun MonthBarColumn(bar: MonthBar, maxAmount: Double, isActive: Boolean, onHoverChange: (Boolean) -> Unit) {
     val value = bar.amount.amount.doubleValue(false)
     val fraction = if (maxAmount > 0.0) (value / maxAmount).toFloat().coerceIn(0f, 1f) else 0f
     val barHeight = (MONTH_BAR_MAX_HEIGHT_DP.dp * fraction).coerceAtLeast(2.dp)
-    Column(
-        modifier = Modifier.width(22.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Box(Modifier.width(22.dp).height(MONTH_BAR_MAX_HEIGHT_DP.dp), contentAlignment = Alignment.BottomCenter) {
-            if (bar.isProjected) {
-                ProjectedBar(Modifier.width(22.dp).height(barHeight))
-            } else {
-                Box(
-                    Modifier.width(22.dp).height(barHeight).clip(RoundedCornerShape(3.dp)).background(DK.gold),
-                )
+    Box {
+        Column(
+            modifier = Modifier
+                .width(22.dp)
+                .onPointerEvent(PointerEventType.Enter) { onHoverChange(true) }
+                .onPointerEvent(PointerEventType.Exit) { onHoverChange(false) },
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Box(Modifier.width(22.dp).height(MONTH_BAR_MAX_HEIGHT_DP.dp), contentAlignment = Alignment.BottomCenter) {
+                if (bar.isProjected) {
+                    ProjectedBar(Modifier.width(22.dp).height(barHeight))
+                } else {
+                    Box(
+                        Modifier
+                            .width(22.dp)
+                            .height(barHeight)
+                            .clip(RoundedCornerShape(3.dp))
+                            // Active bar reads lighter gold — matches IncomeSection.swift's
+                            // `isActive ? Theme.goldLight : Theme.gold` exactly (DK.goldLight
+                            // is the same accent-family highlight stop).
+                            .background(if (isActive) DK.goldLight else DK.gold),
+                    )
+                }
             }
+            Text(
+                monthLabel(bar.id),
+                style = TextStyle(fontFamily = InterFamily, fontSize = 8.sp, fontWeight = FontWeight.SemiBold, color = DK.textTertiary),
+            )
         }
+        // Month + exact amount on hover (M10.1 UAT U6) — no amount is shown anywhere else on
+        // this chart, only relative bar height. Same floating-readout idiom as
+        // `ExpandedValueCard`'s hover tooltip (rounded surface-hi card, hairline stroke).
+        if (isActive) {
+            // -30dp matches IncomeSection.swift's `monthTooltip(bar).fixedSize().offset(y: -30)`
+            // exactly, same headroom the enclosing Row's `padding(top = 32.dp)` reserves for it.
+            MonthTooltip(bar, modifier = Modifier.align(Alignment.TopCenter).offset(y = (-30).dp))
+        }
+    }
+}
+
+@Composable
+private fun MonthTooltip(bar: MonthBar, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .wrapContentSize()
+            .clip(RoundedCornerShape(8.dp))
+            .background(DK.surfaceHi)
+            .border(1.dp, DK.hairline, RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            formatMoney(bar.amount.amountText),
+            maxLines = 1,
+            style = TextStyle(
+                fontFamily = InterFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                color = DK.textPrimary, fontFeatureSettings = "tnum",
+            ),
+        )
         Text(
             monthLabel(bar.id),
-            style = TextStyle(fontFamily = InterFamily, fontSize = 8.sp, fontWeight = FontWeight.SemiBold, color = DK.textTertiary),
+            style = TextStyle(fontFamily = InterFamily, fontSize = 9.sp, fontWeight = FontWeight.Medium, color = DK.textSecondary),
         )
     }
 }

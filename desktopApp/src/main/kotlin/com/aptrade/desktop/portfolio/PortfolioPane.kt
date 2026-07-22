@@ -15,14 +15,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +39,8 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -96,7 +97,12 @@ fun PortfolioSection.label(): String = when (this) {
  *  rather than always-visible; see the [PortfolioSection] KDoc). All state is read from
  *  [PortfolioUiState]; trades are raised through [onTrade], which the host opens as a
  *  [TradeDialog] overlaying the whole window. Row clicks open the existing full-window detail
- *  via [onOpenDetail]. */
+ *  via [onOpenDetail].
+ *
+ *  M10.2 Task 7: the header's Export entry point is now a plain in-pane button (the circular
+ *  idiom below) — the account "⋯" panel used to trigger it remotely via a hoisted one-shot
+ *  flag; that cross-pane wiring is gone now that the account panel no longer hosts an Export
+ *  row at all (see `ui.AccountPanel`'s doc comment). */
 @Composable
 fun PortfolioPane(
     state: PortfolioUiState,
@@ -113,9 +119,6 @@ fun PortfolioPane(
     onExportCsv: () -> Unit,
     onExportJson: () -> Unit,
     onExportPdf: () -> Unit,
-    /** One-shot trigger raised by the host (⋯ panel's Export row): when it flips true, the
-     *  export chooser auto-opens on this pane. The pane consumes and clears it. */
-    pendingExport: MutableState<Boolean> = remember { mutableStateOf(false) },
 ) {
     var showResetConfirm by remember { mutableStateOf(false) }
 
@@ -132,7 +135,6 @@ fun PortfolioPane(
             onExportCsv = onExportCsv,
             onExportJson = onExportJson,
             onExportPdf = onExportPdf,
-            pendingExport = pendingExport,
         )
         Box(Modifier.fillMaxWidth().height(1.dp).background(DK.hairline))
         // Holdings keeps its own dedicated empty state; Allocation/Activity/Performance must
@@ -172,17 +174,8 @@ private fun SummaryHeader(
     onExportCsv: () -> Unit,
     onExportJson: () -> Unit,
     onExportPdf: () -> Unit,
-    pendingExport: MutableState<Boolean>,
 ) {
     var exportOpen by remember { mutableStateOf(false) }
-    // Consume the host's one-shot Export trigger: open the chooser here, then clear the flag
-    // so a later ⋯ → Export re-fires it.
-    LaunchedEffect(pendingExport.value) {
-        if (pendingExport.value) {
-            exportOpen = true
-            pendingExport.value = false
-        }
-    }
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(top = 20.dp, bottom = 18.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -216,7 +209,7 @@ private fun SummaryHeader(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 if (state.holdings.isNotEmpty()) LiveBadge()
                 Box {
-                    TextButton(tr(L10n.Key.ExportEllipsis), DK.textSecondary) { exportOpen = true }
+                    ExportButton(onClick = { exportOpen = true })
                     if (exportOpen) {
                         ExportChooser(
                             onDismiss = { exportOpen = false },
@@ -262,6 +255,29 @@ private fun SignedMoneyPill(text: String, positive: Boolean?) {
             .border(1.dp, color.copy(alpha = 0.24f), RoundedCornerShape(7.dp))
             .padding(horizontal = 8.dp, vertical = 4.dp),
     )
+}
+
+/** Export entry point (M10.2 Task 7, re-homed from the account "⋯" menu) — the same circular
+ *  idiom `ui.AppShell`'s `ThemeToggleButton` and the Swift twin's `PortfolioSummaryHeader
+ *  .exportButton` both use: a 28dp gold-ringed circle over [DK.surface] with a centered glyph.
+ *  `contentDescription` carries [L10n.Key.ExportPortfolioData] so the button reads correctly
+ *  to accessibility tooling even though the visible label is gone (icon-only, matching Swift's
+ *  `.accessibilityLabel(tr(.exportPortfolioData))`). */
+@Composable
+private fun ExportButton(onClick: () -> Unit) {
+    val label = tr(L10n.Key.ExportPortfolioData)
+    Box(
+        modifier = Modifier
+            .size(28.dp)
+            .clip(RoundedCornerShape(50))
+            .background(DK.surface)
+            .border(1.dp, DK.gold.copy(alpha = 0.4f), RoundedCornerShape(50))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() }
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        com.aptrade.desktop.designkit.ExportIcon(tint = DK.gold, modifier = Modifier.size(13.dp))
+    }
 }
 
 /** The unified export menu: a small DK-styled popup panel anchored under the "Export…" button
@@ -422,22 +438,35 @@ private fun AllocationView(state: PortfolioUiState) {
         Spacer(Modifier.height(20.dp))
         AllocationDonutRow(state)
         Spacer(Modifier.height(24.dp))
-        // By-holding and by-class share one row below the donut (mirrors the Income
-        // pane's side-by-side tables), so both groups are visible without scrolling.
+        // By-class and by-holding share one row below the donut (mirrors the Income pane's
+        // side-by-side tables), so both groups are visible without scrolling.
+        //
+        // M10.1 UAT U4 (macOS's twin fix — see PortfolioView.swift's byClassColumn/
+        // allocationView comments): an even 50/50 split left the by-class column (only ever
+        // 2-3 rows: Stocks/ETFs/Crypto) far wider than its content needs. Capping it at
+        // ~260dp (~30% of this shell's 1120dp-minimum content width, the same ratio macOS
+        // derived) while by-holding takes the remaining ~70% via `weight(1f)` approximates
+        // that ratio without hardcoding a literal percentage of a runtime-measured width.
+        // By-class also comes FIRST now (macOS order: `byClassColumn` before
+        // `byHoldingColumn`), not by-holding — this pane had them swapped.
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            Column(Modifier.widthIn(max = 260.dp)) {
+                AllocationGroupHeader(tr(L10n.Key.ByClass))
+                Spacer(Modifier.height(12.dp))
+                for (slice in state.allocationByKind) {
+                    AllocationBar(label = sliceLabel(slice), fraction = slice.fraction, fillColor = kindColor(slice.id))
+                    // Tightened vs. by-holding's 14dp (mirrors macOS's byClassColumn using a
+                    // tighter 10dp row spacing than byHoldingColumn's 14dp) — by-class only
+                    // ever has 2-3 rows, so a smaller gap reads as a compact, purpose-built
+                    // group rather than stretching to match the taller by-holding list.
+                    Spacer(Modifier.height(10.dp))
+                }
+            }
             Column(Modifier.weight(1f)) {
                 AllocationGroupHeader(tr(L10n.Key.ByHolding))
                 Spacer(Modifier.height(12.dp))
                 for (slice in state.allocationByHolding) {
                     AllocationBar(label = slice.label, fraction = slice.fraction, fillColor = null)
-                    Spacer(Modifier.height(14.dp))
-                }
-            }
-            Column(Modifier.weight(1f)) {
-                AllocationGroupHeader(tr(L10n.Key.ByClass))
-                Spacer(Modifier.height(12.dp))
-                for (slice in state.allocationByKind) {
-                    AllocationBar(label = sliceLabel(slice), fraction = slice.fraction, fillColor = kindColor(slice.id))
                     Spacer(Modifier.height(14.dp))
                 }
             }
