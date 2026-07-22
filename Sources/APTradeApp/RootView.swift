@@ -10,14 +10,13 @@ public struct RootView: View {
     public init() {}
 
     enum Tab: String, CaseIterable {
-        case watchlist = "Watchlist", portfolio = "Portfolio", news = "News", calendar = "Calendar",
-             screener = "Screener"
+        case home = "Home", markets = "Markets", portfolio = "Portfolio", invest = "Invest"
     }
     private enum PanelRoute {
         case menu, profile, accountSettings, notifications, appearance, security, help, about, language
     }
 
-    @State private var tab: Tab = .watchlist
+    @State private var tab: Tab = .home
     @State private var showAccountPanel = false
     @State private var panelRoute: PanelRoute = .menu
     @State private var isLoggedIn = true
@@ -53,26 +52,23 @@ public struct RootView: View {
     #if os(iOS)
     private var iosBody: some View {
         TabView(selection: $tab) {
-            WatchlistView(onOpenSearch: { showPalette = true },
-                          onOpenAccount: { showAccountPanel = true })
-                .tabItem { Label(tr(.watchlist), systemImage: "eye") }
-                .tag(Tab.watchlist)
+            // Task 5 builds the real Home dashboard (hero + quick stats + Today feed).
+            // Placeholder keeps the tab wired and navigable in the meantime.
+            Theme.background.ignoresSafeArea()
+                .tabItem { Label(tr(.homeTab), systemImage: "house.fill") }
+                .tag(Tab.home)
+            MarketsView(onOpenSearch: { showPalette = true },
+                        onOpenAccount: { showAccountPanel = true })
+                .tabItem { Label(tr(.marketsTab), systemImage: "chart.line.uptrend.xyaxis") }
+                .tag(Tab.markets)
             PortfolioView(onOpenSearch: { showPalette = true },
                           onOpenAccount: { showAccountPanel = true })
                 .tabItem { Label(tr(.portfolio), systemImage: "chart.pie") }
                 .tag(Tab.portfolio)
-            NewsView(onOpenSearch: { showPalette = true },
-                     onOpenAccount: { showAccountPanel = true })
-                .tabItem { Label(tr(.news), systemImage: "newspaper") }
-                .tag(Tab.news)
-            CalendarView(onOpenSearch: { showPalette = true },
-                         onOpenAccount: { showAccountPanel = true })
-                .tabItem { Label(tr(.calendarTab), systemImage: "calendar") }
-                .tag(Tab.calendar)
-            ScreenerView(onOpenSearch: { showPalette = true },
-                         onOpenAccount: { showAccountPanel = true })
-                .tabItem { Label(tr(.screenerTab), systemImage: "line.3.horizontal.decrease.circle") }
-                .tag(Tab.screener)
+            InvestView(onOpenSearch: { showPalette = true },
+                       onOpenAccount: { showAccountPanel = true })
+                .tabItem { Label(tr(.investTab), systemImage: "basket.fill") }
+                .tag(Tab.invest)
         }
         .tint(Theme.gold)
         .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
@@ -155,13 +151,18 @@ public struct RootView: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.top, 8)
                         .padding(.bottom, 4)
+                    // Task 6 replaces this shell with the sidebar + master-detail layout;
+                    // this is a minimal mechanical mapping onto the new four-destination
+                    // Tab enum so macOS keeps compiling in the meantime. Markets/Invest
+                    // don't have their real macOS section hosts yet — Watchlist stands in
+                    // for Markets (its first section) and Home/Invest render an empty
+                    // placeholder. No polish; macOS UAT happens after Task 6.
                     Group {
                         switch tab {
-                        case .watchlist: WatchlistView()
+                        case .home: EmptyView()
+                        case .markets: WatchlistView()
                         case .portfolio: PortfolioView()
-                        case .news: NewsView()
-                        case .calendar: CalendarView()
-                        case .screener: ScreenerView()
+                        case .invest: EmptyView()
                         }
                     }
                 }
@@ -276,8 +277,10 @@ public struct RootView: View {
         switch result {
         case .navigate(_, _, let destination):
             switch destination {
-            case .watchlist: tab = .watchlist
+            case .home: tab = .home
+            case .markets: tab = .markets
             case .portfolio: tab = .portfolio
+            case .invest: tab = .invest
             }
         case .asset(let asset):
             paletteAsset = asset
@@ -841,11 +844,10 @@ public struct RootView: View {
 
     private func tabTitle(_ tab: Tab) -> String {
         switch tab {
-        case .watchlist: return tr(.watchlist)
+        case .home:      return tr(.homeTab)
+        case .markets:   return tr(.marketsTab)
         case .portfolio: return tr(.portfolio)
-        case .news:      return tr(.news)
-        case .calendar:  return tr(.calendarTab)
-        case .screener:  return tr(.screenerTab)
+        case .invest:    return tr(.investTab)
         }
     }
 

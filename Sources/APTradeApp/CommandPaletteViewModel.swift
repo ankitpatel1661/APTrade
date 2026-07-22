@@ -5,7 +5,7 @@ import APTradeDomain
 /// Where a `.navigate` palette result sends the user. Kept local to the palette so this
 /// file never has to import or reach into `RootView`'s private `Tab` type.
 enum PaletteDestination: Equatable {
-    case watchlist, portfolio
+    case home, markets, portfolio, invest
 }
 
 /// One row the command palette can show: a static navigation shortcut, or a search result.
@@ -34,8 +34,10 @@ final class CommandPaletteViewModel {
     /// language while the palette is open.
     private static var staticResults: [PaletteResult] {
         [
-            .navigate(label: tr(.goToWatchlist), icon: "list.bullet", destination: .watchlist),
-            .navigate(label: tr(.goToPortfolio), icon: "chart.pie", destination: .portfolio)
+            .navigate(label: tr(.homeTab), icon: "house.fill", destination: .home),
+            .navigate(label: tr(.marketsTab), icon: "chart.line.uptrend.xyaxis", destination: .markets),
+            .navigate(label: tr(.portfolio), icon: "chart.pie", destination: .portfolio),
+            .navigate(label: tr(.investTab), icon: "basket.fill", destination: .invest)
         ]
     }
 
