@@ -2,6 +2,7 @@ package com.aptrade.desktop
 
 import androidx.compose.ui.window.TrayState
 import com.aptrade.shared.infrastructure.SP500Names
+import com.aptrade.desktop.alerts.AlertsCenterViewModel
 import com.aptrade.desktop.infra.AppSettings
 import com.aptrade.desktop.infra.FileAlertStore
 import com.aptrade.desktop.infra.FileBookmarkStore
@@ -303,6 +304,20 @@ class AppGraph(
         isNotifyEnabled = { settingsStore.load().priceAlerts },
     )
     val marketActivityPlanner = MarketActivityPlanner()
+
+    /** Builds a fresh [AlertsCenterViewModel] bound to [scope] — mirrors
+     *  [makeScreenerViewModel]/[makeHomeViewModel]'s factory shape: no persistent,
+     *  graph-owned VM instance; the dialog (M10.2 Task 5's `AlertsCenterDialog`) owns its
+     *  own scope/instance lifetime, a fresh one each time it's opened. Reuses the SAME
+     *  [loadAlerts]/[removePriceAlert]/[fetchWatchlist] use cases
+     *  `WatchlistViewModel`/`PriceAlertSheet` already read from — one store per concern,
+     *  no second cache. */
+    fun makeAlertsCenterViewModel(scope: CoroutineScope): AlertsCenterViewModel = AlertsCenterViewModel(
+        loadAlerts = { loadAlerts.execute() },
+        removeAlert = { id -> removePriceAlert.execute(id) },
+        loadWatchlist = { fetchWatchlist.execute() },
+        scope = scope,
+    )
 
     // Settings-gated order-fill delivery — mirrors macOS's `NotifyOrderFillUseCase`
     // (Sources/APTradeApplication/SettingsUseCases.swift): read `settings.orderFills`

@@ -26,6 +26,7 @@ import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import com.aptrade.desktop.alerts.AlertsCenterDialog
 import com.aptrade.desktop.calendar.CalendarPane
 import com.aptrade.desktop.calendar.CalendarViewModel
 import com.aptrade.desktop.calendar.sessionLabel
@@ -255,6 +256,10 @@ fun main() = application {
     // The open price-alert sheet's target symbol, hoisted like tradeTarget so it overlays the
     // whole window. The sheet self-consumes Esc on its own panel (TradeDialog pattern).
     var alertTarget by remember { mutableStateOf<Asset?>(null) }
+    // The Alerts center dialog (M10.2 Task 5), hoisted the SAME way as accountOpen/paletteOpen:
+    // a plain window-level boolean, passed down as a prop rather than local state inside
+    // AppRoot, so every overlay's open/close state lives at one consistent level.
+    var alertsCenterOpen by remember { mutableStateOf(false) }
     // Push/email notification toggles (increment 6d.1's Notifications page), hoisted here so
     // both AccountPanel and the load-at-startup effect below share the one in-memory copy.
     // Starts at AppSettings() defaults and is overwritten once the startup load resolves —
@@ -413,6 +418,9 @@ fun main() = application {
                     alertTarget = alertTarget,
                     onOpenAlert = { asset -> alertTarget = asset },
                     onCloseAlert = { alertTarget = null },
+                    alertsCenterOpen = alertsCenterOpen,
+                    onOpenAlertsCenter = { alertsCenterOpen = true },
+                    onCloseAlertsCenter = { alertsCenterOpen = false },
                     notificationSettings = notificationSettings,
                     onUpdateNotificationSettings = { mutate -> updateNotificationSettings(mutate) },
                 )
@@ -455,6 +463,9 @@ private fun AppRoot(
     alertTarget: Asset?,
     onOpenAlert: (Asset) -> Unit,
     onCloseAlert: () -> Unit,
+    alertsCenterOpen: Boolean,
+    onOpenAlertsCenter: () -> Unit,
+    onCloseAlertsCenter: () -> Unit,
     notificationSettings: com.aptrade.desktop.infra.AppSettings,
     onUpdateNotificationSettings: ((com.aptrade.desktop.infra.AppSettings) -> com.aptrade.desktop.infra.AppSettings) -> Unit,
 ) {
@@ -525,16 +536,16 @@ private fun AppRoot(
                         vm = homeViewModel,
                         portfolioState = portfolioState,
                         onSetPortfolioSpan = portfolioViewModel::setSpan,
-                        // Task 5 hasn't built AlertsCenterViewModel yet — the Alerts card's
-                        // 2-row preview reads the raw alert list directly via the SAME
-                        // AppGraph.loadAlerts use case Task 5's dialog will also read from.
+                        // The Alerts card's 2-row preview reads the raw alert list directly
+                        // (its own lightweight polling loop, HomePane's own concern) via the
+                        // SAME AppGraph.loadAlerts use case the Alerts center dialog's
+                        // AlertsCenterViewModel also reads from (M10.2 Task 5) — one store,
+                        // two independent readers, never a second cache.
                         loadAlerts = graph.loadAlerts::execute,
                         // Constraint 3: Home-row navigation writes sidebarSelection directly,
                         // no request/clear dance.
                         onNavigate = { sidebarSelection = it },
-                        onOpenAlerts = {
-                            // Task 5 wires the real Alerts Center dialog here.
-                        },
+                        onOpenAlerts = onOpenAlertsCenter,
                     )
                 }
                 is SidebarDestination.Markets -> key(destination.section) {
@@ -735,6 +746,27 @@ private fun AppRoot(
                 onCreate = { condition -> watchlistViewModel.createAlert(asset.symbol, condition) },
                 onDelete = { id -> watchlistViewModel.deleteAlert(id) },
                 onDismiss = onCloseAlert,
+            )
+        }
+
+        // The Alerts center overlays everything like the trade/alert-sheet dialogs above
+        // (M10.2 Task 5), and likewise renders via a real Dialog that consumes its own Esc.
+        if (alertsCenterOpen) {
+            AlertsCenterDialog(
+                onDismiss = onCloseAlertsCenter,
+                onSelectSymbol = { symbol ->
+                    // `openSymbol` only renders a DetailScreen under
+                    // `SidebarDestination.Markets(MarketsSection.Watchlist)` today (see the
+                    // `when` above) — routing sidebarSelection there explicitly is what makes
+                    // this tap-through's detail screen actually show, rather than opening
+                    // `openSymbol` underneath whatever destination happened to be selected
+                    // (e.g. Portfolio/Plans, where it renders nothing). This closes the
+                    // known palette-no-op gap for THIS path only (the Alerts center); it does
+                    // not fix the general gap for every other `onOpenDetail` caller.
+                    sidebarSelection = SidebarDestination.Markets(MarketsSection.Watchlist)
+                    onOpenDetail(symbol)
+                    onCloseAlertsCenter()
+                },
             )
         }
     }

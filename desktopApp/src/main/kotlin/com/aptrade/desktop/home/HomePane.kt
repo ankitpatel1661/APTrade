@@ -53,6 +53,7 @@ import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.designkit.InterFamily
 import com.aptrade.desktop.designkit.StatTile
 import com.aptrade.desktop.designkit.SuperscriptPrice
+import com.aptrade.desktop.designkit.alertSummary
 import com.aptrade.desktop.designkit.crosshairIndex
 import com.aptrade.desktop.designkit.formatMoney
 import com.aptrade.desktop.designkit.signedMoney
@@ -68,7 +69,6 @@ import com.aptrade.desktop.screener.presetTitleKey
 import com.aptrade.desktop.ui.InvestSection
 import com.aptrade.desktop.ui.MarketsSection
 import com.aptrade.desktop.ui.SidebarDestination
-import com.aptrade.desktop.watchlist.alertSummary
 import com.aptrade.shared.application.HomeFeedItem
 import com.aptrade.shared.application.HomeState
 import com.aptrade.shared.domain.PriceAlert
