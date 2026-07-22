@@ -36,6 +36,9 @@ struct IncomeSection: View {
     /// `InvestView` rather than this view instantiating its own `SettingsViewModel`
     /// (there'd then be two independent copies of the same persisted setting).
     let dripEnabled: Binding<Bool>
+    /// Which monthly bar's tooltip is showing (M10.1 UAT U6) — macOS sets/clears it on
+    /// hover (mirrors `WatchlistView.hoveredSymbol`'s idiom), iOS toggles it on tap.
+    @State private var activeMonthID: String?
 
     var body: some View {
         content
@@ -169,7 +172,18 @@ struct IncomeSection: View {
             .map { ($0.amount.amount as NSDecimalNumber).doubleValue }
             .max() ?? 0
         return VStack(alignment: .leading, spacing: 14) {
-            sectionHeader(tr(.incomeMonthlyTitle))
+            HStack(alignment: .firstTextBaseline) {
+                sectionHeader(tr(.incomeMonthlyTitle))
+                Spacer()
+                // Subtle max-value axis label (M10.1 UAT U6) — no new copy, just the
+                // tallest bar's own already-formatted amount, read straight off the data
+                // the bars themselves are already scaled against.
+                if let maxMonth = viewModel.months.max(by: { $0.amount.amount < $1.amount.amount }) {
+                    Text(maxMonth.amount.formatted)
+                        .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(Theme.textTertiary)
+                }
+            }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .bottom, spacing: 8) {
                     ForEach(viewModel.months) { bar in
@@ -177,6 +191,9 @@ struct IncomeSection: View {
                     }
                 }
                 .frame(height: 120)
+                // Headroom for a tooltip floating above whichever bar is active, without
+                // clipping against the chart's own bounds.
+                .padding(.top, 32)
             }
             legendRow
         }
@@ -188,6 +205,7 @@ struct IncomeSection: View {
     private func monthBarColumn(_ bar: IncomeViewModel.MonthBar, maxAmount: Double) -> some View {
         let value = (bar.amount.amount as NSDecimalNumber).doubleValue
         let fraction = maxAmount > 0 ? value / maxAmount : 0
+        let isActive = activeMonthID == bar.id
         return VStack(spacing: 6) {
             GeometryReader { geo in
                 // Projected months render as a dashed outline with a faint fill so they
@@ -203,7 +221,7 @@ struct IncomeSection: View {
                             )
                     } else {
                         RoundedRectangle(cornerRadius: 3, style: .continuous)
-                            .fill(Theme.gold)
+                            .fill(isActive ? Theme.goldLight : Theme.gold)
                     }
                 }
                 .frame(height: max(2, geo.size.height * fraction))
@@ -215,6 +233,42 @@ struct IncomeSection: View {
                 .fixedSize()
         }
         .frame(width: 22)
+        // Month + exact amount on hover/tap (M10.1 UAT U6) — no amount is shown anywhere
+        // else on this chart, only relative bar height. Same floating-readout idiom as
+        // `ExpandedValueCard.hoverTooltip` (rounded surface-hi card, hairline stroke).
+        .overlay(alignment: .top) {
+            if isActive {
+                monthTooltip(bar).fixedSize().offset(y: -30)
+            }
+        }
+        #if os(macOS)
+        .onHover { hovering in
+            if hovering { activeMonthID = bar.id }
+            else if activeMonthID == bar.id { activeMonthID = nil }
+        }
+        #else
+        // iOS: tap toggles the same tooltip (task allows tap OR long-press; tap is the
+        // simpler, more discoverable of the two for a bar this narrow).
+        .onTapGesture {
+            activeMonthID = (activeMonthID == bar.id) ? nil : bar.id
+        }
+        #endif
+    }
+
+    private func monthTooltip(_ bar: IncomeViewModel.MonthBar) -> some View {
+        VStack(spacing: 2) {
+            Text(bar.amount.formatted)
+                .font(.system(size: 11, weight: .bold).monospacedDigit())
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1)
+            Text(monthLabel(bar.id))
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(Theme.textSecondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(Theme.surfaceHi, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
     }
 
     private var legendRow: some View {

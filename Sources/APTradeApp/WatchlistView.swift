@@ -119,15 +119,26 @@ struct WatchlistView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
             Divider().overlay(Theme.hairline)
+            // Conditional split (M10.1 UAT U2): no selection → the list takes the full
+            // content width (no partition, no mostly-empty detail pane); selecting a row
+            // opens the ~300pt list + detail split. `selectedAsset != nil` is the single
+            // switch driving both the list's width and the detail pane's presence, so they
+            // can never disagree (a narrowed list with no detail showing, or vice versa).
             HStack(spacing: 0) {
                 listColumn
-                    .frame(width: 300)
+                    .frame(maxWidth: selectedAsset == nil ? .infinity : 300)
                     .overlay(alignment: .trailing) {
-                        Rectangle().fill(Theme.hairline).frame(width: 1)
+                        if selectedAsset != nil {
+                            Rectangle().fill(Theme.hairline).frame(width: 1)
+                        }
                     }
-                detailPane
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if selectedAsset != nil {
+                    detailPane
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
             }
+            .animation(chartSpring, value: selectedAsset?.symbol)
         }
         .background(Theme.background.ignoresSafeArea())
         .frame(minWidth: 560, minHeight: 640)
@@ -166,13 +177,18 @@ struct WatchlistView: View {
     /// the view's identity/position in the tree stays the same would let SwiftUI reuse the
     /// OLD view model instead of loading the newly-selected symbol (the per-selection
     /// lifecycle note from the 6a.5 Windows fidelity pass — `remember(symbol) { ... }` /
-    /// `DisposableEffect(symbol)` there, `.id(symbol)` here). No back affordance needed:
-    /// the pane simply swaps.
+    /// `DisposableEffect(symbol)` there, `.id(symbol)` here). A ✕ in the pane's top-right
+    /// corner (M10.1 UAT U2) — same circular idiom as `ExpandedValueCard`'s close button —
+    /// returns the split to full width; clicking the already-selected row again
+    /// (`WatchlistRow`'s `onOpen`, wired below) does the same.
     @ViewBuilder
     private var detailPane: some View {
         if let asset = selectedAsset {
-            AssetDetailView(asset: asset, embedded: true)
-                .id(asset.symbol)
+            ZStack(alignment: .topTrailing) {
+                AssetDetailView(asset: asset, embedded: true)
+                    .id(asset.symbol)
+                closeDetailButton
+            }
         } else {
             // No "select a symbol" copy exists in L10n and this task may not add one —
             // reuses the same neutral, textless empty region `ScreenerView.content` renders
@@ -180,6 +196,21 @@ struct WatchlistView: View {
             // background showing through).
             Color.clear
         }
+    }
+
+    private var closeDetailButton: some View {
+        Button {
+            withAnimation(chartSpring) { selectedAsset = nil }
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Theme.textSecondary)
+                .frame(width: 24, height: 24)
+                .background(Theme.surfaceHi, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .padding(12)
+        .help(tr(.done))
     }
     #endif
 
@@ -266,7 +297,7 @@ struct WatchlistView: View {
                     isHovered: hoveredSymbol == row.id,
                     isSelected: isRowSelected(row),
                     alertCount: viewModel.alerts(for: row.asset.symbol).count,
-                    onOpen: { selectedAsset = row.asset },
+                    onOpen: { toggleSelection(row.asset) },
                     onRemove: { viewModel.remove(symbol: row.asset.symbol) },
                     onSetAlert: { alertTarget = row.asset }
                 )
@@ -294,6 +325,22 @@ struct WatchlistView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .animation(.easeInOut(duration: 0.2), value: viewModel.selectedKind)
+    }
+
+    /// Row tap handler shared by both platforms. macOS (M10.1 UAT U2): tapping the row
+    /// already shown in the detail pane closes it back to full width — the same "tap
+    /// again to close" affordance as the ✕ button — otherwise it opens/switches the pane.
+    /// iOS: always a plain push (no split, no "currently open" concept to toggle against).
+    private func toggleSelection(_ asset: Asset) {
+        #if os(macOS)
+        if selectedAsset?.symbol == asset.symbol {
+            withAnimation(chartSpring) { selectedAsset = nil }
+        } else {
+            selectedAsset = asset
+        }
+        #else
+        selectedAsset = asset
+        #endif
     }
 
     /// macOS only: is `row` the symbol currently shown in the detail pane? Always `false`

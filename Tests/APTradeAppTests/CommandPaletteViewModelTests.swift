@@ -17,27 +17,18 @@ private final class PaletteFakeRepo: MarketDataRepository, @unchecked Sendable {
     }
 }
 
-private let goHome = PaletteResult.navigate(label: "Home", icon: "house.fill", destination: .home)
-private let goMarkets = PaletteResult.navigate(label: "Markets", icon: "chart.line.uptrend.xyaxis", destination: .markets)
-private let goPortfolio = PaletteResult.navigate(label: "Portfolio", icon: "chart.pie", destination: .portfolio)
-private let goInvest = PaletteResult.navigate(label: "Invest", icon: "basket.fill", destination: .invest)
-
 @MainActor
 final class CommandPaletteViewModelTests: XCTestCase {
     private func makeVM(_ repo: PaletteFakeRepo) -> CommandPaletteViewModel {
         CommandPaletteViewModel(searchAssets: SearchAssetsUseCase(repository: repo))
     }
 
-    func test_emptyQuery_showsStaticNavResults() {
+    /// M10.1 UAT U7: the palette's static "Go to Home/Markets/Portfolio/Invest" rows are
+    /// gone (redundant with the sidebar/tabs) — an untouched, just-opened palette now shows
+    /// nothing until the user types.
+    func test_emptyQuery_showsNoResults() {
         let vm = makeVM(PaletteFakeRepo())
-        XCTAssertEqual(vm.results, [goHome, goMarkets, goPortfolio, goInvest])
-    }
-
-    func test_updateQuery_matchingNavLabel_includesIt() async throws {
-        let vm = makeVM(PaletteFakeRepo())
-        vm.updateQuery("home")
-        try await Task.sleep(for: .milliseconds(300))
-        XCTAssertEqual(vm.results, [goHome])
+        XCTAssertEqual(vm.results, [])
     }
 
     func test_updateQuery_includesSearchResults() async throws {
@@ -50,24 +41,32 @@ final class CommandPaletteViewModelTests: XCTestCase {
         XCTAssertEqual(vm.results, [.asset(aapl)])
     }
 
-    func test_updateQuery_searchFailure_resolvesToNavMatchesOnly() async throws {
+    func test_updateQuery_searchFailure_resolvesToEmptyResults() async throws {
         let repo = PaletteFakeRepo()
         repo.searchError = AppError.network
         let vm = makeVM(repo)
         vm.updateQuery("portfolio")
         try await Task.sleep(for: .milliseconds(300))
-        XCTAssertEqual(vm.results, [goPortfolio])
+        XCTAssertEqual(vm.results, [])
     }
 
-    func test_moveSelection_clampsAtBothEnds() {
-        let vm = makeVM(PaletteFakeRepo())
-        // Static results give four rows: indices 0...3.
+    func test_moveSelection_clampsAtBothEnds() async throws {
+        let repo = PaletteFakeRepo()
+        repo.searchResults = [
+            Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock),
+            Asset(symbol: "AMZN", name: "Amazon.com Inc.", kind: .stock),
+            Asset(symbol: "AMD", name: "Advanced Micro Devices", kind: .stock)
+        ]
+        let vm = makeVM(repo)
+        vm.updateQuery("a")
+        try await Task.sleep(for: .milliseconds(300))
+        // Three matching rows: indices 0...2.
         vm.moveSelection(-5)
         XCTAssertEqual(vm.selectedIndex, 0)
         vm.moveSelection(1)
         XCTAssertEqual(vm.selectedIndex, 1)
         vm.moveSelection(5)
-        XCTAssertEqual(vm.selectedIndex, 3)
+        XCTAssertEqual(vm.selectedIndex, 2)
     }
 
     func test_moveSelection_onEmptyResults_doesNothing() async throws {
@@ -80,11 +79,15 @@ final class CommandPaletteViewModelTests: XCTestCase {
     }
 
     func test_activateSelected_returnsSelectedResult_orNilWhenEmpty() async throws {
-        let vm = makeVM(PaletteFakeRepo())
-        XCTAssertEqual(vm.activateSelected(), goHome)
-        vm.updateQuery("nomatch-xyz")
-        try await Task.sleep(for: .milliseconds(300))
+        let repo = PaletteFakeRepo()
+        let aapl = Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock)
+        repo.searchResults = [aapl]
+        let vm = makeVM(repo)
+        // No query yet — no results, nothing to activate.
         XCTAssertNil(vm.activateSelected())
+        vm.updateQuery("aapl")
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(vm.activateSelected(), .asset(aapl))
     }
 
     func test_reset_clearsQueryResultsAndSelection() async throws {
@@ -97,6 +100,6 @@ final class CommandPaletteViewModelTests: XCTestCase {
         vm.reset()
         XCTAssertEqual(vm.query, "")
         XCTAssertEqual(vm.selectedIndex, 0)
-        XCTAssertEqual(vm.results, [goHome, goMarkets, goPortfolio, goInvest])
+        XCTAssertEqual(vm.results, [])
     }
 }

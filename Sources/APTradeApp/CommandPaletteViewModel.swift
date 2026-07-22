@@ -2,44 +2,31 @@ import Foundation
 import APTradeApplication
 import APTradeDomain
 
-/// Where a `.navigate` palette result sends the user. Kept local to the palette so this
-/// file never has to import or reach into `RootView`'s private `Tab` type.
-enum PaletteDestination: Equatable {
-    case home, markets, portfolio, invest
-}
-
-/// One row the command palette can show: a static navigation shortcut, or a search result.
+/// One row the command palette can show — a search result. (Prior to M10.1 UAT U7 this
+/// also carried `.navigate` rows for Home/Markets/Portfolio/Invest; removed as redundant
+/// with the sidebar/tabs. Kept as a single-case enum, rather than collapsing to a bare
+/// `Asset`, so `CommandPaletteView`'s rendering switch and `RootView.handlePaletteSelection`
+/// need no structural changes beyond dropping the `.navigate` arm.)
 enum PaletteResult: Identifiable, Equatable {
-    case navigate(label: String, icon: String, destination: PaletteDestination)
     case asset(Asset)
 
     var id: String {
         switch self {
-        case .navigate(let label, _, _): return "nav-\(label)"
         case .asset(let asset): return "asset-\(asset.symbol)"
         }
     }
 }
 
-/// Drives the ⌘K command palette: combines two static navigation shortcuts with a
-/// debounced asset search, and tracks which row is keyboard-selected. No business logic —
-/// only orchestrates the existing `SearchAssetsUseCase`.
+/// Drives the ⌘K command palette: a debounced asset search, tracking which row is
+/// keyboard-selected. No business logic — only orchestrates the existing
+/// `SearchAssetsUseCase`. Symbol-search only (M10.1 UAT U7) — the palette no longer offers
+/// static "Go to Home/Markets/Portfolio/Invest" navigation shortcuts, which duplicated the
+/// sidebar (macOS) / tab bar (iOS).
 @MainActor
 @Observable
 final class CommandPaletteViewModel {
     private let searchAssets: SearchAssetsUseCase
     private var searchTask: Task<Void, Never>?
-
-    /// Computed (not cached) so the labels re-translate live when the user switches
-    /// language while the palette is open.
-    private static var staticResults: [PaletteResult] {
-        [
-            .navigate(label: tr(.homeTab), icon: "house.fill", destination: .home),
-            .navigate(label: tr(.marketsTab), icon: "chart.line.uptrend.xyaxis", destination: .markets),
-            .navigate(label: tr(.portfolio), icon: "chart.pie", destination: .portfolio),
-            .navigate(label: tr(.investTab), icon: "basket.fill", destination: .invest)
-        ]
-    }
 
     var query: String = ""
     private(set) var results: [PaletteResult] = []
@@ -47,32 +34,27 @@ final class CommandPaletteViewModel {
 
     init(searchAssets: SearchAssetsUseCase) {
         self.searchAssets = searchAssets
-        self.results = Self.staticResults
     }
 
-    /// Empty query shows the static shortcuts immediately. A non-empty query debounces
-    /// 250ms, then combines shortcuts whose label matches with live asset search results.
-    /// Cancels any in-flight search on every keystroke. Best-effort: a failing search
-    /// resolves to just the matching shortcuts, never a crash.
+    /// Empty query shows no results — there are no static shortcuts to fall back to
+    /// anymore. A non-empty query debounces 250ms, then resolves to live asset search
+    /// results. Cancels any in-flight search on every keystroke. Best-effort: a failing
+    /// search resolves to no results, never a crash.
     func updateQuery(_ text: String) {
         query = text
         searchTask?.cancel()
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else {
-            results = Self.staticResults
+            results = []
             selectedIndex = 0
             return
         }
         searchTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled, let self else { return }
-            let navMatches = Self.staticResults.filter { result in
-                guard case .navigate(let label, _, _) = result else { return false }
-                return label.localizedCaseInsensitiveContains(trimmed)
-            }
             let assets = (try? await self.searchAssets(query: trimmed)) ?? []
             guard !Task.isCancelled else { return }
-            self.results = navMatches + assets.map(PaletteResult.asset)
+            self.results = assets.map(PaletteResult.asset)
             self.selectedIndex = 0
         }
     }
@@ -94,7 +76,7 @@ final class CommandPaletteViewModel {
     func reset() {
         searchTask?.cancel()
         query = ""
-        results = Self.staticResults
+        results = []
         selectedIndex = 0
     }
 }

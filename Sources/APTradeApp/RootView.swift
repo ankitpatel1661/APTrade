@@ -195,6 +195,17 @@ public struct RootView: View {
         // detail an unsatisfiable ~131pt at the Screener's list width).
         .frame(minWidth: 1120, minHeight: 680)
         .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
+        // M10.1 UAT U5 (general guard, verified against the SAME bug class as the Invest
+        // fix above): `portfolioSelectedAsset` is hoisted here on `RootView`, not local to
+        // `PortfolioSectionContent`, so it survives even when the Portfolio destination's
+        // `NavigationStack` IS torn down (e.g. leaving Portfolio for Home, then returning) —
+        // a fresh NavigationStack would immediately re-push the stale asset on mount purely
+        // because the bound item was still non-nil. Clearing it on ANY sidebar destination
+        // change (not just within Portfolio) closes both that case and the within-Portfolio
+        // case (e.g. Holdings → Allocation, same switch case/NavigationStack instance):
+        // setting the bound item to nil is itself what pops `.navigationDestination(item:)`,
+        // no `.id()`/stack teardown required here.
+        .onChange(of: sidebarSelection) { _, _ in portfolioSelectedAsset = nil }
         .task { await scheduler.run() }
         .confirmationDialog(tr(.exportPortfolioData), isPresented: $showExportDialog,
                             titleVisibility: .visible) {
@@ -434,9 +445,21 @@ public struct RootView: View {
             }
             .onAppear { portfolioViewModel.reload() }
         case .invest(let section):
+            // `.id(section)` (M10.1 UAT U5): without it, switching Invest sections (e.g.
+            // Plans → Income) keeps this SAME `NavigationStack` instance alive — the
+            // `switch`'s `.invest` case doesn't change, only `section`'s associated value
+            // does, so SwiftUI never tears the branch down. `PlansSection` can push a pie
+            // detail via its own `.navigationDestination(item:)`; that push is registered
+            // on this NavigationStack, which then keeps showing it on top even after the
+            // switch's child content swaps from `PlansSection` to `IncomeSection` — Income
+            // is only reachable after popping back manually (the reported bug). Keying the
+            // stack to `section` forces a fresh `NavigationStack` (and hence an empty push
+            // history) on every section change, so a pushed pie detail can never survive a
+            // sidebar section switch.
             NavigationStack {
                 InvestView.sectionView(section, dripEnabled: $settingsVM.settings.dripEnabled)
             }
+            .id(section)
         }
     }
     #endif
@@ -489,26 +512,11 @@ public struct RootView: View {
     }
 
     private func handlePaletteSelection(_ result: PaletteResult) {
+        // M10.1 UAT U7: the palette's static "Go to Home/Markets/Portfolio/Invest" rows
+        // (and the `PaletteDestination`/`tab`-or-`sidebarSelection` routing they drove) are
+        // gone — redundant with the sidebar (macOS) / tab bar (iOS). Symbol selection is
+        // the only result kind left.
         switch result {
-        case .navigate(_, _, let destination):
-            #if os(macOS)
-            // macOS (Task 6): `tab` no longer drives any content — the sidebar's
-            // `sidebarSelection` does. Markets/Portfolio/Invest land on each
-            // destination's default (first-listed) section.
-            switch destination {
-            case .home: sidebarSelection = .home
-            case .markets: sidebarSelection = .markets(.watchlist)
-            case .portfolio: sidebarSelection = .portfolio(.holdings)
-            case .invest: sidebarSelection = .invest(.plans)
-            }
-            #else
-            switch destination {
-            case .home: tab = .home
-            case .markets: tab = .markets
-            case .portfolio: tab = .portfolio
-            case .invest: tab = .invest
-            }
-            #endif
         case .asset(let asset):
             paletteAsset = asset
         }

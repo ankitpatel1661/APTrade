@@ -188,6 +188,110 @@ private struct HomeHeroSpark: View {
     }
 }
 
+// MARK: - Hero P&L chart (M10.1 UAT U1)
+
+/// The Home hero's rich P&L chart — the SAME `ExpandedValueCard`/span-bar composition
+/// `PortfolioSummaryHeader.expandedChart` uses on the Portfolio tab, duplicated here (not
+/// shared/moved) per that task's explicit call: Portfolio keeps its own chart and state
+/// completely untouched. Home owns a dedicated `PortfolioViewModel` instance purely to
+/// drive this chart — the exact same `onAppear()`/`loadPerformance()`/`setSpan()` wiring
+/// Portfolio's header uses, just a second instance (mirrors `HomeViewMac.alertsVM` already
+/// owning its own `AlertsCenterViewModel` for one card's data). Renders EXPANDED by
+/// default: Home is a glance dashboard, not a drill-down, so there's no separate collapsed
+/// entry point to open it from — closing still collapses to a plain full-width sparkline
+/// (tap to reopen), the same afforded interaction Portfolio's own chart offers, just with
+/// the default flipped.
+private struct HomeHeroPnLChart: View {
+    let viewModel: PortfolioViewModel
+    /// `HomeViewModel.sparkValues` (the Performance tab's own equity-curve reconstruction,
+    /// trailing ≤30 points) — shown only until `viewModel`'s OWN performance series has
+    /// loaded, so the hero never shows a blank gap during this dedicated instance's first
+    /// fetch.
+    let fallbackValues: [Double]
+    @State private var showChart = true
+
+    private var chartSpring: Animation { .spring(response: 0.34, dampingFraction: 0.84) }
+
+    private var pnlValues: [Double] {
+        viewModel.performance.map { ($0.pnl.amount as NSDecimalNumber).doubleValue }
+    }
+    private var pnlDates: [Date] { viewModel.performance.map { $0.date } }
+
+    /// Same direction-of-series-over-fallback-to-day-sign rule as
+    /// `PortfolioSummaryHeader.trendColor`.
+    private var trendColor: Color {
+        guard let first = pnlValues.first, let last = pnlValues.last, first != last else {
+            return pnlColor(viewModel.valuation.unrealizedPnL)
+        }
+        return last > first ? Theme.up : Theme.down
+    }
+
+    var body: some View {
+        Group {
+            if pnlValues.count > 1 {
+                if showChart {
+                    VStack(spacing: 10) {
+                        ExpandedValueCard(
+                            title: tr(.portfolioUnrealizedPnLChartTitle),
+                            values: pnlValues,
+                            dates: pnlDates,
+                            color: trendColor,
+                            format: { Money(amount: Decimal($0), currencyCode: viewModel.valuation.totalValue.currencyCode).formatted },
+                            changeStyle: .money,
+                            stats: [
+                                ChartStatItem(label: tr(.dayPnL),
+                                              value: signed(viewModel.valuation.dayChange, showsSign: true),
+                                              color: pnlColor(viewModel.valuation.dayChange)),
+                                ChartStatItem(label: tr(.unrealizedPnL),
+                                              value: signed(viewModel.valuation.unrealizedPnL, showsSign: true),
+                                              color: pnlColor(viewModel.valuation.unrealizedPnL))
+                            ],
+                            onClose: { withAnimation(chartSpring) { showChart = false } }
+                        )
+                        spanBar
+                    }
+                } else {
+                    Button { withAnimation(chartSpring) { showChart = true } } label: {
+                        Sparkline(values: pnlValues, color: trendColor)
+                            .frame(maxWidth: .infinity, minHeight: 60)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            } else {
+                HomeHeroSpark(values: fallbackValues)
+                    .frame(height: 60)
+            }
+        }
+        .task { await viewModel.onAppear() }
+    }
+
+    /// 1D · 1W · 1M · 1Y · MAX selector — identical to `PortfolioSummaryHeader.spanBar`.
+    private var spanBar: some View {
+        HStack(spacing: 0) {
+            ForEach(PortfolioSpan.allCases) { item in
+                let selected = viewModel.span == item
+                Button {
+                    Task { await viewModel.setSpan(item) }
+                } label: {
+                    VStack(spacing: 6) {
+                        Text(item.rawValue)
+                            .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(selected ? Theme.gold : Theme.textSecondary)
+                        Capsule()
+                            .fill(selected ? Theme.gold : .clear)
+                            .frame(height: 2)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: viewModel.span)
+    }
+}
+
 // MARK: - Shared building blocks (hero stats trio, Today feed rows)
 
 @MainActor
@@ -373,6 +477,9 @@ struct HomeView: View {
     var onNavigate: (HomeDestination) -> Void = { _ in }
 
     @State private var vm = CompositionRoot.makeHomeViewModel()
+    /// Drives ONLY the hero's rich P&L chart (M10.1 UAT U1) — a dedicated
+    /// `PortfolioViewModel` instance, independent of `vm`'s own equity-curve summary.
+    @State private var heroChartVM = CompositionRoot.makePortfolioViewModel()
     @State private var showAlerts = false
 
     var body: some View {
@@ -411,28 +518,29 @@ struct HomeView: View {
     }
 
     private var hero: some View {
-        Button { onNavigate(.portfolio) } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(tr(.portfolioValue).uppercased())
-                    .font(.system(size: 10, weight: .bold)).tracking(1.4)
-                    .foregroundStyle(Theme.textTertiary)
-                SuperscriptPrice(money: vm.totalValue, size: 32)
-                HStack(spacing: 6) {
-                    Text(signedMoney(vm.dayChange))
-                        .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(Theme.changeColor(vm.dayChangePercent))
-                    ChangePill(percent: vm.dayChangePercent)
-                    Text(tr(.todaySection).lowercased())
-                        .font(.system(size: 10.5))
+        VStack(alignment: .leading, spacing: 6) {
+            Button { onNavigate(.portfolio) } label: {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(tr(.portfolioValue).uppercased())
+                        .font(.system(size: 10, weight: .bold)).tracking(1.4)
                         .foregroundStyle(Theme.textTertiary)
+                    SuperscriptPrice(money: vm.totalValue, size: 32)
+                    HStack(spacing: 6) {
+                        Text(signedMoney(vm.dayChange))
+                            .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(Theme.changeColor(vm.dayChangePercent))
+                        ChangePill(percent: vm.dayChangePercent)
+                        Text(tr(.todaySection).lowercased())
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Theme.textTertiary)
+                    }
                 }
-                HomeHeroSpark(values: vm.sparkValues)
-                    .frame(height: 60)
-                    .padding(.top, 4)
+                .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            HomeHeroPnLChart(viewModel: heroChartVM, fallbackValues: vm.sparkValues)
+                .padding(.top, 4)
         }
-        .buttonStyle(.plain)
     }
 
     private var quickCardsGrid: some View {
@@ -520,6 +628,9 @@ struct HomeViewMac: View {
     /// text) — `vm.alertCount` already covers the header count, this just needs the actual
     /// alert content `HomeViewModel` doesn't carry. Same load path `AlertsCenterView` uses.
     @State private var alertsVM = CompositionRoot.makeAlertsCenterViewModel()
+    /// Drives ONLY the hero's rich P&L chart (M10.1 UAT U1) — a dedicated
+    /// `PortfolioViewModel` instance, independent of `vm`'s own equity-curve summary.
+    @State private var heroChartVM = CompositionRoot.makePortfolioViewModel()
     @State private var showAlerts = false
 
     var body: some View {
@@ -553,30 +664,31 @@ struct HomeViewMac: View {
     }
 
     private var hero: some View {
-        Button { onNavigate(.portfolio) } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(tr(.portfolioValue).uppercased())
-                    .font(.system(size: 10, weight: .bold)).tracking(1.4)
-                    .foregroundStyle(Theme.textTertiary)
-                HStack(alignment: .firstTextBaseline, spacing: 16) {
-                    SuperscriptPrice(money: vm.totalValue, size: 34)
-                    HStack(spacing: 6) {
-                        Text(signedMoney(vm.dayChange))
-                            .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                            .foregroundStyle(Theme.changeColor(vm.dayChangePercent))
-                        ChangePill(percent: vm.dayChangePercent)
-                        Text(tr(.todaySection).lowercased())
-                            .font(.system(size: 11))
-                            .foregroundStyle(Theme.textTertiary)
+        VStack(alignment: .leading, spacing: 8) {
+            Button { onNavigate(.portfolio) } label: {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(tr(.portfolioValue).uppercased())
+                        .font(.system(size: 10, weight: .bold)).tracking(1.4)
+                        .foregroundStyle(Theme.textTertiary)
+                    HStack(alignment: .firstTextBaseline, spacing: 16) {
+                        SuperscriptPrice(money: vm.totalValue, size: 34)
+                        HStack(spacing: 6) {
+                            Text(signedMoney(vm.dayChange))
+                                .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                                .foregroundStyle(Theme.changeColor(vm.dayChangePercent))
+                            ChangePill(percent: vm.dayChangePercent)
+                            Text(tr(.todaySection).lowercased())
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.textTertiary)
+                        }
                     }
                 }
-                HomeHeroSpark(values: vm.sparkValues)
-                    .frame(height: 70)
-                    .padding(.top, 4)
+                .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            HomeHeroPnLChart(viewModel: heroChartVM, fallbackValues: vm.sparkValues)
+                .padding(.top, 4)
         }
-        .buttonStyle(.plain)
     }
 
     private var statsCard: some View {

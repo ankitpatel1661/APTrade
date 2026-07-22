@@ -241,10 +241,16 @@ struct ScreenerView: View {
     /// Scan bar + chips stay full-width above the split (unchanged from the pre-Task-7
     /// single-pane layout); only the results table becomes the list column below, mirroring
     /// `WatchlistView`'s treatment.
+    /// Same spring idiom `WatchlistView.chartSpring` uses for its own split transitions.
+    private var splitSpring: Animation { .spring(response: 0.34, dampingFraction: 0.84) }
+
     private var macBody: some View {
         VStack(spacing: 0) {
             header
             Divider().overlay(Theme.hairline)
+            // Conditional split (M10.1 UAT U3): no selection → the results table takes the
+            // full content width; selecting a row opens the 520pt table + detail split.
+            // Mirrors `WatchlistView.macBody`'s identical treatment.
             HStack(spacing: 0) {
                 content
                     // Wider than Watchlist's ~300pt: the results table keeps its full,
@@ -252,13 +258,19 @@ struct ScreenerView: View {
                     // so the list column needs enough room for all of them to stay legible
                     // rather than overlap — this is the "constrained" width, not a redesign
                     // of the columns themselves.
-                    .frame(width: 520)
+                    .frame(maxWidth: selectedAsset == nil ? .infinity : 520)
                     .overlay(alignment: .trailing) {
-                        Rectangle().fill(Theme.hairline).frame(width: 1)
+                        if selectedAsset != nil {
+                            Rectangle().fill(Theme.hairline).frame(width: 1)
+                        }
                     }
-                detailPane
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if selectedAsset != nil {
+                    detailPane
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
             }
+            .animation(splitSpring, value: selectedAsset?.symbol)
         }
         .background(Theme.background.ignoresSafeArea())
         .sheet(isPresented: $showBuilder) {
@@ -285,18 +297,37 @@ struct ScreenerView: View {
 
     /// Selecting another row swaps this pane's content — `.id(asset.symbol)` forces a fresh
     /// `AssetDetailView` (and its own `@State` view models) per selection, same rationale
-    /// and mechanism as `WatchlistView.detailPane`.
+    /// and mechanism as `WatchlistView.detailPane`. A ✕ in the top-right corner (M10.1 UAT
+    /// U3) returns the split to full width — same idiom as `WatchlistView.detailPane`.
     @ViewBuilder
     private var detailPane: some View {
         if let asset = selectedAsset {
-            AssetDetailView(asset: asset, embedded: true)
-                .id(asset.symbol)
+            ZStack(alignment: .topTrailing) {
+                AssetDetailView(asset: asset, embedded: true)
+                    .id(asset.symbol)
+                closeDetailButton
+            }
         } else {
             // No fitting "select a symbol" copy exists in L10n — reuses the same neutral,
             // textless empty region as `WatchlistView.detailPane`/this file's own
             // scanning-in-progress state below.
             Color.clear
         }
+    }
+
+    private var closeDetailButton: some View {
+        Button {
+            withAnimation(splitSpring) { selectedAsset = nil }
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Theme.textSecondary)
+                .frame(width: 24, height: 24)
+                .background(Theme.surfaceHi, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .padding(12)
+        .help(tr(.done))
     }
     #endif
 
@@ -590,7 +621,14 @@ struct ScreenerView: View {
         let isSelected = selectedAsset?.symbol == row.symbol
         return HStack(spacing: 10) {
             Button {
-                selectedAsset = asset(for: row)
+                // Clicking the already-selected row again closes the detail pane back to
+                // full width (M10.1 UAT U3) — same "tap again to close" affordance as
+                // `WatchlistView.toggleSelection`.
+                if isSelected {
+                    withAnimation(splitSpring) { selectedAsset = nil }
+                } else {
+                    selectedAsset = asset(for: row)
+                }
             } label: {
                 HStack(spacing: 10) {
                     Text(row.symbol)

@@ -35,7 +35,11 @@ struct CommandPaletteView: View {
             if !viewModel.results.isEmpty {
                 Divider().overlay(Theme.hairline)
                 resultList
-            } else {
+            } else if !viewModel.query.trimmingCharacters(in: .whitespaces).isEmpty {
+                // Symbol-search only now (M10.1 UAT U7 — the static nav rows are gone), so
+                // an untouched, just-opened palette has an empty query AND empty results;
+                // "No matches" only reads correctly once the user has actually typed
+                // something that failed to match.
                 Text(tr(.noMatches))
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.textSecondary)
@@ -91,14 +95,6 @@ struct CommandPaletteView: View {
     private func resultRow(_ result: PaletteResult, isSelected: Bool) -> some View {
         HStack(spacing: 12) {
             switch result {
-            case .navigate(let label, let icon, _):
-                Image(systemName: icon)
-                    .foregroundStyle(Theme.gold)
-                    .frame(width: 20)
-                Text(label)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Theme.textPrimary)
-                Spacer()
             case .asset(let asset):
                 VStack(alignment: .leading, spacing: 2) {
                     Text(asset.name)

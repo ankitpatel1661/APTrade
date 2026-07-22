@@ -140,14 +140,17 @@ private func metric(label: String, money: Money, colored: Bool) -> some View {
     }
 }
 
+/// Not `private`: reused by `HomeView.swift`'s `HomeHeroPnLChart` (M10.1 UAT U1), which
+/// duplicates Portfolio's expandable P&L chart component on Home but shares this and
+/// `signed(_:showsSign:)` below rather than re-implementing the same P&L-sign mapping twice.
 @MainActor
-private func pnlColor(_ money: Money) -> Color {
+func pnlColor(_ money: Money) -> Color {
     if money.amount > 0 { return Theme.up }
     if money.amount < 0 { return Theme.down }
     return Theme.textPrimary
 }
 
-private func signed(_ money: Money, showsSign: Bool) -> String {
+func signed(_ money: Money, showsSign: Bool) -> String {
     guard showsSign, money.amount > 0 else { return money.formatted }
     return "+" + money.formatted
 }
@@ -482,8 +485,14 @@ struct PortfolioSectionContent: View {
                 }
                 .padding(.horizontal, 24).padding(.top, 18)
 
+                // M10.1 UAT U4: was an even 50/50 split, which left the by-class column
+                // (only ever 2-3 rows: Stocks/ETFs/Crypto) far wider than its content
+                // needs, stretching the label↔percentage gap inside each row. Capping it
+                // at ~260pt (~30% of the window's 1120pt-minimum content width) while
+                // by-holding keeps the remaining ~70% approximates the ratio without
+                // hardcoding a literal percentage of a runtime-measured width.
                 HStack(alignment: .top, spacing: 20) {
-                    byClassColumn.frame(maxWidth: .infinity, alignment: .topLeading)
+                    byClassColumn.frame(maxWidth: 260, alignment: .topLeading)
                     byHoldingColumn.frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .padding(.horizontal, 24)
@@ -507,7 +516,18 @@ struct PortfolioSectionContent: View {
                     Text(assetClassLabel(slice))
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Theme.textPrimary)
+                    // M10.1 UAT U4 (macOS only — this row is shared but the finding and its
+                    // fix are scoped to the macOS wide layout below): a bare `Spacer()`
+                    // stretched to the column's full (previously 50%-of-window) width,
+                    // pushing the percentage far from its own label. Capping the spacer
+                    // keeps a small, consistent gap instead — the row hugs its own content
+                    // rather than the column's width. iOS's narrower donut-adjacent layout
+                    // never showed this gap, so it keeps the original uncapped spacer.
+                    #if os(macOS)
+                    Spacer(minLength: 8).frame(maxWidth: 16)
+                    #else
                     Spacer()
+                    #endif
                     Text("\(slice.fraction * 100, specifier: "%.1f")%")
                         .font(.system(size: 13, weight: .semibold).monospacedDigit())
                         .foregroundStyle(Theme.textSecondary)
