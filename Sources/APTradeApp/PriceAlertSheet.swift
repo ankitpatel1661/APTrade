@@ -114,7 +114,7 @@ struct PriceAlertSheet: View {
                     Image(systemName: alert.isTriggered ? "bell.slash" : "bell.fill")
                         .font(.system(size: 12))
                         .foregroundStyle(alert.isTriggered ? Theme.textTertiary : Theme.gold)
-                    Text(conditionSummary(alert.condition))
+                    Text(alert.condition.localizedSummary)
                         .font(.system(size: 13))
                         .foregroundStyle(alert.isTriggered ? Theme.textTertiary : Theme.textPrimary)
                         .strikethrough(alert.isTriggered)
@@ -129,20 +129,6 @@ struct PriceAlertSheet: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 8)
             }
-        }
-    }
-
-    /// Display summary for an existing alert's condition — `AlertCondition` is a domain
-    /// enum whose own `summary` returns English prose, so this view-side mapping
-    /// localizes the label while leaving the embedded money/percent formatting untouched.
-    private func conditionSummary(_ condition: AlertCondition) -> String {
-        switch condition {
-        case .priceAbove(let money):
-            return String(format: tr(.priceAboveSummaryFormat), money.formatted)
-        case .priceBelow(let money):
-            return String(format: tr(.priceBelowSummaryFormat), money.formatted)
-        case .percentChange(let pct):
-            return String(format: tr(.percentMoveSummaryFormat), "\(abs(pct.value))")
         }
     }
 

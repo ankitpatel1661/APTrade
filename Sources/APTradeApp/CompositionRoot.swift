@@ -205,6 +205,18 @@ enum CompositionRoot {
         CommandPaletteViewModel(searchAssets: SearchAssetsUseCase(repository: makeRepository()))
     }
 
+    /// Drives the Alerts center: ALL alerts across every symbol, reached from Home's bell
+    /// (Task 5). Reuses the exact same `AlertStore`-backed load/remove use cases
+    /// `makeWatchlistViewModel()` wires, plus the same `LoadWatchlistUseCase` for
+    /// resolving a tapped alert's symbol back to a full `Asset`.
+    static func makeAlertsCenterViewModel() -> AlertsCenterViewModel {
+        AlertsCenterViewModel(
+            loadAlerts: { LoadAlertsUseCase(store: alertStore)() },
+            removeAlert: { RemovePriceAlertUseCase(store: alertStore)(id: $0) },
+            loadWatchlist: { LoadWatchlistUseCase(store: makeStore())() }
+        )
+    }
+
     /// Drives the Plans tab: the Pie list, detail sheet, one-off contributions, and
     /// manual rebalancing. Mirrors `makePortfolioViewModel`'s wiring — same shared
     /// `portfolioStore`, a dedicated `pieStore`, and a fresh `MarketDataRepository`.
