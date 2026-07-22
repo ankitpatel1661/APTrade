@@ -31,73 +31,113 @@ private let incomeDateFormatter: DateFormatter = {
 /// `@Bindable`.
 struct IncomeSection: View {
     @StateObject private var viewModel = CompositionRoot.makeIncomeViewModel()
+    /// M10.1 Task 8: DRIP re-homed here from Account Settings — bound to the SAME
+    /// `settingsVM.settings.dripEnabled` field `RootView` owns, threaded down through
+    /// `InvestView` rather than this view instantiating its own `SettingsViewModel`
+    /// (there'd then be two independent copies of the same persisted setting).
+    let dripEnabled: Binding<Bool>
 
     var body: some View {
         content
             .task { await viewModel.load() }
     }
 
+    /// The DRIP header card (M10.1 Task 8) is now the section's own reachability floor:
+    /// unlike the summary grid/chart/history, it must render even before the user has ever
+    /// received or projected a dividend — someone turning DRIP on ahead of their first
+    /// payout is the common case, not an edge case. So `content` always wraps `dripCard`
+    /// in the same ScrollView, switching only the content BELOW it between the empty state
+    /// and the full ledger — rather than the old all-or-nothing `emptyState`/`list` split,
+    /// which would have hidden the toggle entirely for a brand-new portfolio.
     @ViewBuilder
     private var content: some View {
         if viewModel.isLoading && viewModel.cards == nil {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if isEmptyLedger {
-            emptyState
         } else {
-            list
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    dripCard
+                    if isEmptyLedger {
+                        emptyState
+                    } else {
+                        ledger
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 16)
+            }
         }
     }
 
-    /// No dividend has ever been received and none is projected — the whole section would
+    /// No dividend has ever been received and none is projected — the ledger portion would
     /// otherwise render as a wall of zeroed cards and empty lists.
     private var isEmptyLedger: Bool {
         viewModel.history.isEmpty && viewModel.upcoming.isEmpty
     }
 
-    private var list: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                if let cards = viewModel.cards {
-                    summaryGrid(cards)
-                }
-                if !viewModel.months.isEmpty {
-                    monthlyChart
-                }
-#if os(iOS)
-                if !viewModel.upcoming.isEmpty {
-                    upcomingCard
-                }
-                if !viewModel.holdings.isEmpty {
-                    holdingsCard
-                }
-#else
-                // Wide layout: upcoming + per-holding share one row, so both tables are
-                // visible without scrolling and neither stretches symbol-to-price across
-                // the whole window.
-                if !viewModel.upcoming.isEmpty, !viewModel.holdings.isEmpty {
-                    HStack(alignment: .top, spacing: 20) {
-                        upcomingCard.frame(maxWidth: .infinity, alignment: .topLeading)
-                        holdingsCard.frame(maxWidth: .infinity, alignment: .topLeading)
-                    }
-                } else if !viewModel.upcoming.isEmpty {
-                    upcomingCard
-                } else if !viewModel.holdings.isEmpty {
-                    holdingsCard
-                }
-#endif
-                if !viewModel.history.isEmpty {
-                    historyCard
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 16)
+    @ViewBuilder
+    private var ledger: some View {
+        if let cards = viewModel.cards {
+            summaryGrid(cards)
         }
+        if !viewModel.months.isEmpty {
+            monthlyChart
+        }
+#if os(iOS)
+        if !viewModel.upcoming.isEmpty {
+            upcomingCard
+        }
+        if !viewModel.holdings.isEmpty {
+            holdingsCard
+        }
+#else
+        // Wide layout: upcoming + per-holding share one row, so both tables are
+        // visible without scrolling and neither stretches symbol-to-price across
+        // the whole window.
+        if !viewModel.upcoming.isEmpty, !viewModel.holdings.isEmpty {
+            HStack(alignment: .top, spacing: 20) {
+                upcomingCard.frame(maxWidth: .infinity, alignment: .topLeading)
+                holdingsCard.frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+        } else if !viewModel.upcoming.isEmpty {
+            upcomingCard
+        } else if !viewModel.holdings.isEmpty {
+            holdingsCard
+        }
+#endif
+        if !viewModel.history.isEmpty {
+            historyCard
+        }
+    }
+
+    /// Bold title + subtitle + gold toggle, bound to the same `settingsVM.settings
+    /// .dripEnabled` field the account panel used to host — mirrors `monthlyChart`'s card
+    /// chrome (surface fill, hairline stroke) and `RootView.toggleRow`'s switch styling.
+    private var dripCard: some View {
+        HStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(tr(.dripCardTitle))
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Theme.textPrimary)
+                Text(tr(.dripCardSubtitle))
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            Spacer(minLength: 12)
+            Toggle("", isOn: dripEnabled)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .tint(Theme.gold)
+                .controlSize(.small)
+        }
+        .padding(16)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
     }
 
     private var emptyState: some View {
         VStack(spacing: 12) {
-            Spacer()
             Image(systemName: "banknote")
                 .font(.system(size: 32, weight: .light))
                 .foregroundStyle(Theme.textTertiary)
@@ -105,10 +145,9 @@ struct IncomeSection: View {
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
-            Spacer()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(40)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 60)
     }
 
     // MARK: - Summary cards

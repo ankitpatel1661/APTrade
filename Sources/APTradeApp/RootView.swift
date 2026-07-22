@@ -93,12 +93,14 @@ public struct RootView: View {
                 .tabItem { Label(tr(.marketsTab), systemImage: "chart.line.uptrend.xyaxis") }
                 .tag(Tab.markets)
             PortfolioView(onOpenSearch: { showPalette = true },
-                          onOpenAccount: { showAccountPanel = true })
+                          onOpenAccount: { showAccountPanel = true },
+                          onExport: { showExportDialog = true })
                 .tabItem { Label(tr(.portfolio), systemImage: "chart.pie") }
                 .tag(Tab.portfolio)
             InvestView(onOpenSearch: { showPalette = true },
                        onOpenAccount: { showAccountPanel = true },
-                       externalSection: $investSectionRequest)
+                       externalSection: $investSectionRequest,
+                       dripEnabled: $settingsVM.settings.dripEnabled)
                 .tabItem { Label(tr(.investTab), systemImage: "basket.fill") }
                 .tag(Tab.invest)
         }
@@ -415,7 +417,8 @@ public struct RootView: View {
                     // that `PortfolioView` shows above its own section picker on iOS. Restored
                     // here using the SAME hoisted header (`PortfolioSummaryHeader`, Task 7) —
                     // no section picker beside it, since the sidebar itself is that picker.
-                    PortfolioSummaryHeader(viewModel: portfolioViewModel)
+                    PortfolioSummaryHeader(viewModel: portfolioViewModel,
+                                           onExport: { showExportDialog = true })
                     Divider().overlay(Theme.hairline)
                     PortfolioSectionContent(section: section, viewModel: portfolioViewModel,
                                             performanceVM: portfolioPerformanceVM,
@@ -432,7 +435,7 @@ public struct RootView: View {
             .onAppear { portfolioViewModel.reload() }
         case .invest(let section):
             NavigationStack {
-                InvestView.sectionView(section)
+                InvestView.sectionView(section, dripEnabled: $settingsVM.settings.dripEnabled)
             }
         }
     }
@@ -607,23 +610,31 @@ public struct RootView: View {
 
             Divider().overlay(Theme.hairline)
 
+            // Settings honesty pass (M10.1 Task 8): app-level settings first (Appearance,
+            // Language, Notifications — things that change how the app itself looks/talks),
+            // then identity/account settings (Profile, Account Settings, Security &
+            // Privacy), then Help/About. Export moved to Portfolio · Holdings and DRIP
+            // moved to Invest · Income (see `PortfolioSummaryHeader.exportButton` and
+            // `IncomeSection.dripCard`) — this panel no longer hosts either.
             VStack(alignment: .leading, spacing: 2) {
-                accountRow(icon: "person.crop.circle", title: tr(.profile)) { panelRoute = .profile }
-                accountRow(icon: "gearshape", title: tr(.accountSettings)) { panelRoute = .accountSettings }
-                accountRow(icon: "bell", title: tr(.notifications)) { panelRoute = .notifications }
                 accountRow(icon: "paintpalette", title: tr(.appearance)) { panelRoute = .appearance }
                 accountRow(icon: "globe", title: tr(.language)) { panelRoute = .language }
+                accountRow(icon: "bell", title: tr(.notifications)) { panelRoute = .notifications }
             }
             .padding(.top, 10)
 
             Divider().overlay(Theme.hairline).padding(.vertical, 10)
 
             VStack(alignment: .leading, spacing: 2) {
+                accountRow(icon: "person.crop.circle", title: tr(.profile)) { panelRoute = .profile }
+                accountRow(icon: "gearshape", title: tr(.accountSettings)) { panelRoute = .accountSettings }
                 accountRow(icon: "lock.shield", title: tr(.securityAndPrivacy)) { panelRoute = .security }
-                accountRow(icon: "square.and.arrow.up", title: tr(.exportPortfolioData)) {
-                    close()
-                    showExportDialog = true
-                }
+            }
+            .padding(.top, 2)
+
+            Divider().overlay(Theme.hairline).padding(.vertical, 10)
+
+            VStack(alignment: .leading, spacing: 2) {
                 accountRow(icon: "questionmark.circle", title: tr(.helpAndSupport)) { panelRoute = .help }
                 accountRow(icon: "info.circle", title: tr(.aboutAPTrade)) { panelRoute = .about }
             }
@@ -682,9 +693,6 @@ public struct RootView: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
-
-            toggleRow(icon: "arrow.triangle.2.circlepath", title: tr(.settingsDrip),
-                      subtitle: tr(.settingsDripFooter), isOn: $settingsVM.settings.dripEnabled)
 
             #if os(iOS)
             // Finnhub key entry — iOS only: the sandboxed config.json isn't user-reachable,

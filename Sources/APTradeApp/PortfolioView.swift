@@ -18,6 +18,12 @@ struct PortfolioView: View {
 
     var onOpenSearch: (() -> Void)? = nil
     var onOpenAccount: (() -> Void)? = nil
+    /// Re-homed from the account "⋯" menu (M10.1 Task 8): the Holdings header now carries
+    /// the export entry point directly, since export acts on the portfolio it sits above.
+    /// The export STATE/dialogs still live on `RootView` (the flow itself is unchanged) —
+    /// this is just the closure that triggers them, threaded the same way as
+    /// `onOpenSearch`/`onOpenAccount`.
+    var onExport: (() -> Void)? = nil
     @State private var viewModel = CompositionRoot.makePortfolioViewModel()
     @State private var performanceVM = CompositionRoot.makePerformanceViewModel()
     @State private var selectedAsset: Asset?
@@ -29,7 +35,7 @@ struct PortfolioView: View {
             ZStack {
                 Theme.background.ignoresSafeArea()
                 VStack(spacing: 0) {
-                    PortfolioSummaryHeader(viewModel: viewModel)
+                    PortfolioSummaryHeader(viewModel: viewModel, onExport: onExport)
                     // Always visible, not gated on holdings — Activity and Performance are
                     // useful reads even with zero holdings, so the picker doesn't wait on them.
                     sectionPicker
@@ -184,6 +190,12 @@ private func assetClassLabel(_ slice: AllocationSlice) -> String {
 /// toggle state, private to this one header, never shared with a caller.
 struct PortfolioSummaryHeader: View {
     let viewModel: PortfolioViewModel
+    /// M10.1 Task 8: the export entry point (re-homed from the account "⋯" menu), rendered
+    /// as a circular button — matches `HomeView`'s `bellButton`/`RootView`'s
+    /// `themeToggleButton` idiom — beside `resetMenu`. Optional and hidden when nil so
+    /// callers that don't wire export (none currently) degrade silently rather than
+    /// showing a dead button.
+    var onExport: (() -> Void)? = nil
     @State private var showChart = false
     @State private var showResetConfirm = false
 
@@ -296,8 +308,9 @@ struct PortfolioSummaryHeader: View {
                 Spacer()
                 #if os(iOS)
                 // iOS: no top switcher (bottom tab bar); keep the reset control only.
-                HStack {
+                HStack(spacing: 10) {
                     Spacer()
+                    exportButton
                     resetMenu
                 }
                 #else
@@ -310,6 +323,7 @@ struct PortfolioSummaryHeader: View {
                         }
                     }
                     .frame(width: 60, alignment: .trailing)
+                    exportButton
                     resetMenu
                 }
                 #endif
@@ -354,6 +368,25 @@ struct PortfolioSummaryHeader: View {
         .padding(.horizontal, 24)
         .padding(.top, 20)
         .padding(.bottom, 18)
+    }
+
+    /// Export entry point (M10.1 Task 8, re-homed from the account "⋯" menu) — the same
+    /// circular idiom used by `HomeView`'s alerts bell: gold glyph over `Theme.surface`
+    /// with a gold ring, shared verbatim between the macOS and iOS header clusters.
+    @ViewBuilder
+    private var exportButton: some View {
+        if let onExport {
+            Button(action: onExport) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.gold)
+                    .frame(width: 28, height: 28)
+                    .background(Theme.surface, in: Circle())
+                    .overlay(Circle().stroke(Theme.gold.opacity(0.4), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(tr(.exportPortfolioData))
+        }
     }
 
     /// Overflow menu offering portfolio reset — shared verbatim between the macOS and

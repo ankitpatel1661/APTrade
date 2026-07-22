@@ -25,6 +25,11 @@ struct InvestView: View {
     /// to that section and clears itself. Additive/optional — existing call sites that omit
     /// it behave exactly as before.
     var externalSection: Binding<Section?>? = nil
+    /// M10.1 Task 8: DRIP re-homed from Account Settings to the Income section's header
+    /// card. Bound to the SAME `settingsVM.settings.dripEnabled` field `RootView` owns —
+    /// threaded down here rather than duplicating a `SettingsViewModel` instance, exactly
+    /// as `onOpenSearch`/`onOpenAccount` thread `RootView`'s closures.
+    var dripEnabled: Binding<Bool>
     @State private var section: Section = .plans
     @Namespace private var sectionPill
 
@@ -100,18 +105,19 @@ struct InvestView: View {
 
     @ViewBuilder
     private var content: some View {
-        InvestView.sectionView(section)
+        InvestView.sectionView(section, dripEnabled: dripEnabled)
     }
 
     /// The section → view mapping, hoisted (Task 6) so the macOS sidebar can construct
     /// IDENTICAL section content to this host's own `content` without duplicating the
-    /// switch — both sections are self-contained (own their own view models).
+    /// switch — both sections are self-contained (own their own view models), except Income
+    /// which additionally needs the `dripEnabled` binding threaded through (Task 8).
     @MainActor
     @ViewBuilder
-    static func sectionView(_ section: Section) -> some View {
+    static func sectionView(_ section: Section, dripEnabled: Binding<Bool>) -> some View {
         switch section {
         case .plans:  PlansSection()
-        case .income: IncomeSection()
+        case .income: IncomeSection(dripEnabled: dripEnabled)
         }
     }
 }
