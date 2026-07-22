@@ -326,4 +326,72 @@ enum CompositionRoot {
             }
         }
     }
+
+    /// Drives the Home dashboard: PURE aggregation over the same engines Portfolio,
+    /// Watchlist, Performance, Income, Calendar, Screener, and Alerts already expose —
+    /// every closure below wraps an EXISTING use case/pipeline rather than recomputing
+    /// anything. See `HomeViewModel`'s own doc comment for the failure-isolation contract
+    /// each of these feeds into.
+    static func makeHomeViewModel() -> HomeViewModel {
+        let repo = makeRepository()
+        // Shared with the screener snapshot's freshness check below so "today" agrees
+        // with the same trading calendar everywhere.
+        let calendar = MarketCalendar()
+        let fetchEarnings = makeFetchEarningsUseCase()
+        let ownSymbols = ownSymbolsProvider()
+        // Captured into locals so the `@Sendable` (non-MainActor) closures below don't
+        // reference these MainActor-isolated static properties directly — both store
+        // protocols are themselves `Sendable`, so the local copies capture cleanly
+        // without hopping actors (mirrors `settingsStoreForDrip` in
+        // `makeMarketActivityCoordinator` above).
+        let store = portfolioStore
+        let dividendEventsRepo = sharedDividendEventsRepository
+
+        return HomeViewModel(
+            // `FetchPortfolioUseCase` never actually throws — the closure is typed
+            // `throws` only so tests can inject a failing double for isolation coverage.
+            loadPortfolio: { FetchPortfolioUseCase(store: store)() },
+            fetchQuotes: FetchQuotesUseCase(repository: repo),
+            ownSymbols: ownSymbols,
+            // The Performance tab's own equity-curve reconstruction, reused verbatim —
+            // same defaults `makePerformanceViewModel()` starts on (1Y vs. SPY).
+            fetchPerformanceReport: {
+                await ComputePerformanceMetricsUseCase(repository: repo, store: store)(
+                    timeframe: .oneYear, benchmark: "SPY")
+            },
+            // Reuses the SAME pipeline `makeIncomeViewModel()` wires (fetchPortfolio,
+            // fetchQuotes, the shared dividend-events repository) — Home never
+            // recomputes dividend math, it just reads `IncomeViewModel`'s own outputs.
+            // `IncomeViewModel` is `@MainActor`, so every touch point below hops
+            // explicitly via `await` from this non-isolated `@Sendable` closure.
+            loadIncomeSummary: {
+                let incomeVM = await IncomeViewModel(
+                    fetchPortfolio: FetchPortfolioUseCase(store: store),
+                    fetchQuotes: FetchQuotesUseCase(repository: repo),
+                    dividendEventsRepository: dividendEventsRepo)
+                await incomeVM.load()
+                let receivedYTD = await incomeVM.cards?.receivedYTD ?? Money(amount: 0)
+                let nextDividend = await incomeVM.upcoming.first
+                return HomeIncomeSummary(receivedYTD: receivedYTD, nextDividend: nextDividend)
+            },
+            // Restricted to owned+watched symbols (unlike `execute`'s own owned-∪-index
+            // universe) by filtering with the SAME `normalized` dot/dash-blind key
+            // `CalendarViewModel` uses — `execute`'s existing day-ascending,
+            // owned-before-index sort means the first match here is already the soonest.
+            fetchNextEarnings: {
+                let today = Date()
+                let fromDay = calendar.tradingDay(of: today)
+                let toDay = calendar.tradingDay(of: today.addingTimeInterval(14 * 86_400))
+                let events = try await fetchEarnings.execute(fromDay: fromDay, toDay: toDay)
+                let own = Set(await ownSymbols().map(normalized))
+                return events.first { own.contains(normalized($0.symbol)) }
+            },
+            // A fresh `FileScreenerSnapshotStore` reads the same on-disk snapshot
+            // `makeScreenerViewModel()`'s store instance does — the store is a thin file
+            // reader, not stateful, so a second instance sees the same persisted snapshot.
+            loadScreenerSnapshot: { FileScreenerSnapshotStore().load() },
+            loadAlerts: LoadAlertsUseCase(store: alertStore),
+            calendar: calendar
+        )
+    }
 }
