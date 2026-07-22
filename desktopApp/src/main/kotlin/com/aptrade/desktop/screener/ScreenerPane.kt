@@ -168,7 +168,11 @@ private fun activeMetricColumn(metric: ScreenerMetric): ActiveMetricColumn? = wh
         ActiveMetricColumn(L10n.Key.MetricVsSma200, { it.pctVsSma200 }, ::formatPercent)
 }
 
-private fun presetTitleKey(preset: PresetScreen): L10n.Key = when (preset) {
+/** `internal` (M10.2 Task 4 hoist, Global Constraint 5 — single-source preset display
+ *  titles): `com.aptrade.desktop.home.HomePane`'s "Today" feed row for `HomeFeedItem.
+ *  ScreenerFresh` reuses this SAME mapping to resolve its preset title rather than keeping a
+ *  second copy in sync (the Swift-era divergence this constraint was written to avoid). */
+internal fun presetTitleKey(preset: PresetScreen): L10n.Key = when (preset) {
     PresetScreen.RsiOversold -> L10n.Key.PresetRsiOversold
     PresetScreen.RsiOverbought -> L10n.Key.PresetRsiOverbought
     PresetScreen.MacdBullishCross -> L10n.Key.PresetMacdBullish

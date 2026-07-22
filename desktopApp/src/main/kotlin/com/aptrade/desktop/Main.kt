@@ -31,6 +31,7 @@ import com.aptrade.desktop.calendar.CalendarViewModel
 import com.aptrade.desktop.calendar.sessionLabel
 import com.aptrade.desktop.designkit.APTradeDesktopTheme
 import com.aptrade.desktop.detail.DetailScreen
+import com.aptrade.desktop.home.HomePane
 import com.aptrade.desktop.news.NewsPane
 import com.aptrade.desktop.news.NewsViewModel
 import com.aptrade.desktop.portfolio.PortfolioPane
@@ -509,8 +510,32 @@ private fun AppRoot(
             // associated value changed and the surrounding NavigationStack was never rebuilt.
             when (val destination = sidebarSelection) {
                 is SidebarDestination.Home -> key(destination) {
-                    // Task 4 replaces this with HomePane(); minimal placeholder until then.
-                    Box(Modifier.fillMaxSize())
+                    // Pane-owned scope (M10.2 Task 4) — mirrors ScreenerPane's own
+                    // remember + DisposableEffect(scope.cancel()) idiom, just constructed
+                    // here rather than inside HomePane itself (HomePane stays a plain,
+                    // props-in composable like PortfolioPane/WatchlistPane). LocalAppGraph
+                    // is reachable here the same way ScreenerPane/PlansPane/IncomePane read
+                    // it deep in the tree — AppRoot sits inside Main's
+                    // CompositionLocalProvider(LocalAppGraph provides graph).
+                    val graph = LocalAppGraph.current
+                    val homeScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
+                    val homeViewModel = remember { graph.makeHomeViewModel(homeScope) }
+                    DisposableEffect(Unit) { onDispose { homeScope.cancel() } }
+                    HomePane(
+                        vm = homeViewModel,
+                        portfolioState = portfolioState,
+                        onSetPortfolioSpan = portfolioViewModel::setSpan,
+                        // Task 5 hasn't built AlertsCenterViewModel yet — the Alerts card's
+                        // 2-row preview reads the raw alert list directly via the SAME
+                        // AppGraph.loadAlerts use case Task 5's dialog will also read from.
+                        loadAlerts = graph.loadAlerts::execute,
+                        // Constraint 3: Home-row navigation writes sidebarSelection directly,
+                        // no request/clear dance.
+                        onNavigate = { sidebarSelection = it },
+                        onOpenAlerts = {
+                            // Task 5 wires the real Alerts Center dialog here.
+                        },
+                    )
                 }
                 is SidebarDestination.Markets -> key(destination.section) {
                     when (destination.section) {

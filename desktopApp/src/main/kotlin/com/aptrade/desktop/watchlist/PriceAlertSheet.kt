@@ -307,8 +307,14 @@ private fun kindLabel(kind: AlertKind): String = when (kind) {
  *  see its doc comment — and out of scope for this desktop-only retrofit). Mirrors the exact
  *  shape of `AlertCondition.summary` (`Money.formatted` for the threshold, `abs(magnitude)`
  *  for the percent figure) against the catalog's pre-provisioned
- *  `priceAboveSummaryFormat`/`priceBelowSummaryFormat`/`percentMoveSummaryFormat` Keys. */
-private fun alertSummary(condition: AlertCondition): String = when (condition) {
+ *  `priceAboveSummaryFormat`/`priceBelowSummaryFormat`/`percentMoveSummaryFormat` Keys.
+ *
+ *  `internal` (M10.2 Task 4 hoist): `com.aptrade.desktop.home.HomePane`'s Alerts card reuses
+ *  this SAME condition-summary text for its 2-row armed-alerts preview, rather than a second
+ *  copy of this mapping. Task 5 (Desktop Alerts center) is expected to extract this further
+ *  into a fully shared location once its own dialog/view model exist — this widened
+ *  visibility is the minimal step Task 4 needs today without pre-building Task 5's work. */
+internal fun alertSummary(condition: AlertCondition): String = when (condition) {
     is AlertCondition.PriceAbove -> trf(L10n.Key.PriceAboveSummaryFormat, condition.threshold.formatted)
     is AlertCondition.PriceBelow -> trf(L10n.Key.PriceBelowSummaryFormat, condition.threshold.formatted)
     is AlertCondition.PercentChange -> trf(L10n.Key.PercentMoveSummaryFormat, kotlin.math.abs(condition.magnitude))
