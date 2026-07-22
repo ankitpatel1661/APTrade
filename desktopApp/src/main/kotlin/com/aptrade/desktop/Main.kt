@@ -237,9 +237,20 @@ fun main() = application {
     val addFieldViewModel = remember { SearchViewModel(graph.fetchSearch, appScope) }
 
     var paletteOpen by remember { mutableStateOf(false) }
-    // Navigation state for the Watchlist tab: the open detail symbol (null = list).
+    // Navigation state for the Portfolio Holdings row → full-window detail (UNCHANGED by
+    // M10.2 Task 6 — Watchlist/Screener stop routing through this; see screenerSelectedSymbol
+    // below and WatchlistViewModel.selectedSymbol for their own conditional-split state).
     // Hoisted here so window-level Esc can pop it.
     var openSymbol by remember { mutableStateOf<String?>(null) }
+    // Screener pane's conditional-split selection (M10.2 Task 6) — a sibling of openSymbol,
+    // hoisted here (rather than owned by ScreenerPane-local `remember` state) SPECIFICALLY so
+    // window-level Esc can reach it below, exactly like openSymbol always could. Unlike
+    // Watchlist (whose selection already lives on the Main-hoisted WatchlistViewModel, so no
+    // new var was needed there), ScreenerViewModel is deliberately NOT Main-hoisted — it's
+    // built per-composable inside ScreenerPane so its scan job's cancelScan-on-dispose lifecycle
+    // stays scoped to a Screener visit (constraint: scan lifecycle unaffected by this task) —
+    // so this one extra var carries just the selected symbol, not the whole VM.
+    var screenerSelectedSymbol by remember { mutableStateOf<String?>(null) }
     // The open trade dialog's target (asset + side + live price text), hoisted here like the
     // palette so the dialog overlays the whole window. The dialog owns its own Esc handling —
     // as do the Portfolio pane's own overlays (the reset-confirm dialog and the export chooser)
@@ -366,6 +377,18 @@ fun main() = application {
                     openSymbol = null
                     true
                 }
+                // M10.2 Task 6: Watchlist/Screener no longer route through openSymbol above —
+                // Esc now clears whichever of THEIR OWN conditional-split selections is active.
+                // WatchlistViewModel.state.value is read directly (not collected) here since
+                // this closure isn't a composable — a one-off snapshot read is all Esc needs.
+                event.key == Key.Escape && watchlistViewModel.state.value.selectedSymbol != null -> {
+                    watchlistViewModel.closeDetail()
+                    true
+                }
+                event.key == Key.Escape && screenerSelectedSymbol != null -> {
+                    screenerSelectedSymbol = null
+                    true
+                }
                 else -> false
             }
         },
@@ -402,6 +425,8 @@ fun main() = application {
                     openSymbol = openSymbol,
                     onOpenDetail = { symbol -> openSymbol = symbol },
                     onBack = { openSymbol = null },
+                    screenerSelectedSymbol = screenerSelectedSymbol,
+                    onSetScreenerSelectedSymbol = { symbol -> screenerSelectedSymbol = symbol },
                     tradeTarget = tradeTarget,
                     onOpenTrade = { target -> tradeTarget = target },
                     onCloseTrade = { tradeTarget = null },
@@ -447,6 +472,8 @@ private fun AppRoot(
     openSymbol: String?,
     onOpenDetail: (String) -> Unit,
     onBack: () -> Unit,
+    screenerSelectedSymbol: String?,
+    onSetScreenerSelectedSymbol: (String?) -> Unit,
     tradeTarget: TradeTarget?,
     onOpenTrade: (TradeTarget) -> Unit,
     onCloseTrade: () -> Unit,
@@ -550,62 +577,55 @@ private fun AppRoot(
                 }
                 is SidebarDestination.Markets -> key(destination.section) {
                     when (destination.section) {
+                        // M10.2 Task 6: Watchlist/Screener each own their conditional
+                        // master–detail split now — `openSymbol` no longer routes here (it
+                        // dissolves M9.2's recorded "detail carries across tab switch" minor
+                        // and T3's known-live carry-across: the two panes each read their OWN
+                        // selection, so opening one's detail can never bleed into the other's
+                        // render the way a single shared `openSymbol` used to). Buy/heldPosition
+                        // are threaded in as plain params — the exact two arguments Main used
+                        // to pass straight to the window-level `DetailScreen` for this symbol.
                         MarketsSection.Watchlist ->
-                            if (openSymbol != null) {
-                                DetailScreen(
-                                    symbol = openSymbol,
-                                    // Pass the held position row (or null) from portfolio state — the
-                                    // detail screen's YOUR POSITION card reads it directly; no second store.
-                                    heldPosition = portfolioState.holdings.firstOrNull { it.symbol == openSymbol },
-                                    onBack = onBack,
-                                    onBuy = { asset, priceText ->
-                                        onOpenTrade(TradeTarget(asset, TradeSide.Buy, priceText))
-                                    },
-                                )
-                            } else {
-                                WatchlistPane(
-                                    state = watchState,
-                                    onKindSelect = watchlistViewModel::onKindSelect,
-                                    onSelect = { symbol ->
-                                        watchlistViewModel.onSelect(symbol)
-                                        onOpenDetail(symbol)
-                                    },
-                                    onAdd = watchlistViewModel::onAdd,
-                                    onRemove = watchlistViewModel::onRemove,
-                                    onSetAlert = { symbol ->
-                                        // Watchlist rows only (macOS parity: no detail-screen alert
-                                        // entry) — resolve the row's name/kind into the Asset the
-                                        // sheet's header needs.
-                                        watchState.rows.firstOrNull { it.symbol == symbol }?.let { row ->
-                                            onOpenAlert(Asset(symbol = row.symbol, name = row.name, kind = row.kind))
-                                        }
-                                    },
-                                    suggestQuery = addFieldState.query,
-                                    suggestResults = addFieldState.results,
-                                    onSuggestQueryChange = addFieldViewModel::onQueryChange,
-                                    onSuggestReset = addFieldViewModel::reset,
-                                )
-                            }
+                            WatchlistPane(
+                                state = watchState,
+                                onKindSelect = watchlistViewModel::onKindSelect,
+                                onSelect = watchlistViewModel::onSelect,
+                                onCloseDetail = watchlistViewModel::closeDetail,
+                                onAdd = watchlistViewModel::onAdd,
+                                onRemove = watchlistViewModel::onRemove,
+                                onSetAlert = { symbol ->
+                                    // Watchlist rows only (macOS parity: no detail-screen alert
+                                    // entry) — resolve the row's name/kind into the Asset the
+                                    // sheet's header needs.
+                                    watchState.rows.firstOrNull { it.symbol == symbol }?.let { row ->
+                                        onOpenAlert(Asset(symbol = row.symbol, name = row.name, kind = row.kind))
+                                    }
+                                },
+                                suggestQuery = addFieldState.query,
+                                suggestResults = addFieldState.results,
+                                onSuggestQueryChange = addFieldViewModel::onQueryChange,
+                                onSuggestReset = addFieldViewModel::reset,
+                                heldPosition = portfolioState.holdings.firstOrNull { it.symbol == watchState.selectedSymbol },
+                                onBuy = { asset, priceText ->
+                                    onOpenTrade(TradeTarget(asset, TradeSide.Buy, priceText))
+                                },
+                            )
                         MarketsSection.Screener ->
-                            if (openSymbol != null) {
-                                // Same shared detail navigation Watchlist uses above (reviewer
-                                // fix: an earlier version rendered DetailScreen from pane-local
-                                // state, which meant no `tradeTarget`/`onOpenTrade` was reachable
-                                // and the Buy button never showed here — the Swift reference
-                                // shows it unconditionally for every caller). Routing through
-                                // this shared `openSymbol`/`onOpenDetail` path gives Buy AND
-                                // `heldPosition` parity with Watchlist for free.
-                                DetailScreen(
-                                    symbol = openSymbol,
-                                    heldPosition = portfolioState.holdings.firstOrNull { it.symbol == openSymbol },
-                                    onBack = onBack,
-                                    onBuy = { asset, priceText ->
-                                        onOpenTrade(TradeTarget(asset, TradeSide.Buy, priceText))
-                                    },
-                                )
-                            } else {
-                                ScreenerPane(onOpenDetail = onOpenDetail)
-                            }
+                            ScreenerPane(
+                                selectedSymbol = screenerSelectedSymbol,
+                                onSelectSymbol = { symbol ->
+                                    // Row click: toggle open/closed — the macOS "tap again to
+                                    // close" affordance (mirrors WatchlistViewModel.onSelect).
+                                    onSetScreenerSelectedSymbol(
+                                        if (screenerSelectedSymbol == symbol) null else symbol,
+                                    )
+                                },
+                                onCloseDetail = { onSetScreenerSelectedSymbol(null) },
+                                heldPosition = portfolioState.holdings.firstOrNull { it.symbol == screenerSelectedSymbol },
+                                onBuy = { asset, priceText ->
+                                    onOpenTrade(TradeTarget(asset, TradeSide.Buy, priceText))
+                                },
+                            )
                         MarketsSection.Calendar -> CalendarPane(calendarViewModel)
                         MarketsSection.News -> NewsPane(
                             state = newsState,
@@ -662,13 +682,42 @@ private fun AppRoot(
             }
         }
 
+        // `openSymbol` (M10.2 Task 6): with Watchlist/Screener now owning their OWN
+        // conditional-split selection (WatchlistViewModel.selectedSymbol /
+        // screenerSelectedSymbol above), this window-hoisted flag's only remaining setter
+        // is PortfolioPane's Holdings row click (`onOpenDetail` passed to it below). It's
+        // rendered here — a section-agnostic overlay, like tradeTarget/alertTarget below,
+        // rather than gated inside one `when` branch — so it shows regardless of which
+        // sidebar destination is active. This is a deliberate improvement over the
+        // pre-Task-6 shape: previously `openSymbol` only ever rendered under
+        // `Markets(Watchlist)`/`Markets(Screener)`, so a Portfolio-row open silently did
+        // nothing until the user happened to switch to one of those two sections (the
+        // "general gap for every other onOpenDetail caller" the Alerts-center comment
+        // below already flagged) — moving the render site here fixes that gap for free.
+        if (openSymbol != null) {
+            DetailScreen(
+                symbol = openSymbol,
+                // Pass the held position row (or null) from portfolio state — the
+                // detail screen's YOUR POSITION card reads it directly; no second store.
+                heldPosition = portfolioState.holdings.firstOrNull { it.symbol == openSymbol },
+                onBack = onBack,
+                onBuy = { asset, priceText ->
+                    onOpenTrade(TradeTarget(asset, TradeSide.Buy, priceText))
+                },
+            )
+        }
+
         if (paletteOpen) {
             PaletteOverlay(
                 viewModel = searchViewModel,
                 onAdd = { asset ->
                     watchlistViewModel.onAdd(WatchlistEntry(asset.symbol, asset.name, asset.kind))
-                    watchlistViewModel.onSelect(asset.symbol)
-                    onOpenDetail(asset.symbol)
+                    // Palette-opened detail always targets the Watchlist pane's own
+                    // conditional split (M10.2 Task 6) — same mapping the Alerts center
+                    // uses below. `openDetail` (not `onSelect`) always sets, never
+                    // toggles off, even if this exact symbol is already selected.
+                    sidebarSelection = SidebarDestination.Markets(MarketsSection.Watchlist)
+                    watchlistViewModel.openDetail(asset.symbol)
                 },
                 onClose = onClosePalette,
             )
@@ -755,16 +804,14 @@ private fun AppRoot(
             AlertsCenterDialog(
                 onDismiss = onCloseAlertsCenter,
                 onSelectSymbol = { symbol ->
-                    // `openSymbol` only renders a DetailScreen under
-                    // `SidebarDestination.Markets(MarketsSection.Watchlist)` today (see the
-                    // `when` above) — routing sidebarSelection there explicitly is what makes
-                    // this tap-through's detail screen actually show, rather than opening
-                    // `openSymbol` underneath whatever destination happened to be selected
-                    // (e.g. Portfolio/Plans, where it renders nothing). This closes the
-                    // known palette-no-op gap for THIS path only (the Alerts center); it does
-                    // not fix the general gap for every other `onOpenDetail` caller.
+                    // Tap-through always targets the Watchlist pane's own conditional split
+                    // (M10.2 Task 6 — same mapping the palette uses above): routing
+                    // sidebarSelection there explicitly is what makes this tap-through's
+                    // detail screen actually show, rather than setting a selection underneath
+                    // whatever destination happened to be active. `openDetail` (not
+                    // `onSelect`) always sets, never toggles off.
                     sidebarSelection = SidebarDestination.Markets(MarketsSection.Watchlist)
-                    onOpenDetail(symbol)
+                    watchlistViewModel.openDetail(symbol)
                     onCloseAlertsCenter()
                 },
             )

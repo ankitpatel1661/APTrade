@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,6 +29,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -45,13 +47,17 @@ import androidx.compose.ui.unit.sp
 import com.aptrade.desktop.AppGraph
 import com.aptrade.desktop.LocalAppGraph
 import com.aptrade.desktop.designkit.ChangePill
+import com.aptrade.desktop.designkit.CircularCloseButton
 import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.designkit.InterFamily
 import com.aptrade.desktop.designkit.SuperscriptPrice
 import com.aptrade.desktop.designkit.formatMoney
 import com.aptrade.desktop.designkit.formatPercent
+import com.aptrade.desktop.detail.DetailScreen
 import com.aptrade.desktop.l10n.tr
 import com.aptrade.desktop.l10n.trf
+import com.aptrade.desktop.portfolio.HoldingRowUi
+import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.CustomScreen
 import com.aptrade.shared.domain.PresetScreen
@@ -206,19 +212,17 @@ private object ScreenerColumnWidth {
  * non-suspend snapshot/screen stores mean the view model needs no async `onAppear()` load
  * (its `init` already reads both synchronously).
  *
- * Row-click detail navigation is DELIBERATELY NOT self-contained (reviewer fix, this task):
- * [onOpenDetail] is the SAME hoisted `openSymbol` setter `Main.kt`'s `AppRoot` already
- * threads into the Watchlist tab (`onOpenDetail = { symbol -> openSymbol = symbol }`) — the
- * caller (`AppRoot`) is responsible for rendering `DetailScreen` when `openSymbol` is
- * non-null, exactly mirroring the Watchlist tab's own `if (openSymbol != null) { DetailScreen
- * } else { WatchlistPane }` branch. An earlier version of this pane rendered `DetailScreen`
- * in-place from pane-local state instead; that meant this pane's detail view had no `onBuy`
- * wired (no `tradeTarget`/`onOpenTrade` reachable from inside a self-contained composable),
- * so a user scanning for a candidate and opening it hit a detail screen with no Buy button —
- * a real gap versus the Swift reference, which shows the Buy button unconditionally for
- * every caller. Routing through the shared path fixes that for free (and picks up
- * `heldPosition` too, same as Watchlist) since `AppRoot` already owns `tradeTarget`/
- * `portfolioState`.
+ * Row-click detail navigation (M10.2 Task 6): conditional master–detail, mirroring
+ * `ScreenerView.swift`'s macOS body AS-BUILT. `selectedSymbol`/`onSelectSymbol`/
+ * `onCloseDetail` are Main-hoisted (a sibling of the old window-level `openSymbol`, just
+ * scoped to this one pane) rather than owned by pane-local `remember` state — reachable
+ * from `Main.kt`'s window-level Esc handler the same way `openSymbol` always was, and
+ * consistent with how [WatchlistPane] hoists its own selection onto
+ * `WatchlistViewModel`. `heldPosition`/`onBuy` are threaded in as plain params — the
+ * SAME two arguments `Main.kt` used to pass straight to the window-level `DetailScreen`
+ * for this symbol (this task's Task 7-era Buy-button/heldPosition gap fix from the
+ * pre-Task-6 version of this doc comment, PRESERVED: the embedded `DetailScreen` below
+ * still gets both).
  *
  * Watchlist membership is read/written through the SAME [AppGraph.fetchWatchlist]/
  * [AppGraph.addToWatchlist] use cases the Watchlist tab itself uses, so an add here shows up
@@ -234,7 +238,13 @@ private object ScreenerColumnWidth {
  * right-click convention for this one feature — is the deliberate, documented choice.
  */
 @Composable
-fun ScreenerPane(onOpenDetail: (String) -> Unit) {
+fun ScreenerPane(
+    selectedSymbol: String?,
+    onSelectSymbol: (String) -> Unit,
+    onCloseDetail: () -> Unit,
+    heldPosition: HoldingRowUi?,
+    onBuy: (Asset, String?) -> Unit,
+) {
     val graph: AppGraph = LocalAppGraph.current
     val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
     val viewModel = remember { graph.makeScreenerViewModel(scope) }
@@ -290,31 +300,63 @@ fun ScreenerPane(onOpenDetail: (String) -> Unit) {
             }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(DK.hairline))
-        Box(Modifier.fillMaxSize()) {
-            ScreenerContent(
-                state = state,
-                activeColumn = activeColumn,
-                addedSymbols = addedSymbols,
-                onSort = { column ->
-                    if (state.sortColumn == column) {
-                        viewModel.setSortAscending(!state.sortAscending)
-                    } else {
-                        viewModel.setSortColumn(column)
-                        viewModel.setSortAscending(true)
-                    }
-                },
-                onRowClick = onOpenDetail,
-                onAdd = { row ->
-                    if (row.symbol !in addedSymbols) {
-                        addedSymbols = addedSymbols + row.symbol
-                        scope.launch {
-                            graph.addToWatchlist.execute(
-                                WatchlistEntry(symbol = row.symbol, name = row.name, kind = AssetKind.Stock),
-                            )
+        // Conditional split (M10.1 UAT U3 on Swift, M10.2 Task 6 here): no selection → the
+        // results table takes the full content width; selecting a row opens the 520dp
+        // table + detail split. Wider than Watchlist's ~300dp — the results table keeps
+        // its full, unshrunk column set (symbol/name/price/day%/active metric/add-star),
+        // so this column needs enough room for all of them to stay legible.
+        Row(Modifier.fillMaxSize()) {
+            Box(
+                modifier = (if (selectedSymbol == null) Modifier.weight(1f) else Modifier.width(520.dp))
+                    .fillMaxHeight(),
+            ) {
+                ScreenerContent(
+                    state = state,
+                    activeColumn = activeColumn,
+                    addedSymbols = addedSymbols,
+                    selectedSymbol = selectedSymbol,
+                    onSort = { column ->
+                        if (state.sortColumn == column) {
+                            viewModel.setSortAscending(!state.sortAscending)
+                        } else {
+                            viewModel.setSortColumn(column)
+                            viewModel.setSortAscending(true)
                         }
+                    },
+                    onRowClick = onSelectSymbol,
+                    onAdd = { row ->
+                        if (row.symbol !in addedSymbols) {
+                            addedSymbols = addedSymbols + row.symbol
+                            scope.launch {
+                                graph.addToWatchlist.execute(
+                                    WatchlistEntry(symbol = row.symbol, name = row.name, kind = AssetKind.Stock),
+                                )
+                            }
+                        }
+                    },
+                )
+            }
+            if (selectedSymbol != null) {
+                Box(Modifier.fillMaxHeight().width(1.dp).background(DK.hairline))
+                // `key(symbol)` forces a fresh `DetailScreen` (and its own `DetailViewModel`)
+                // per selection — the same per-selection teardown [WatchlistPane] relies on
+                // (mirrors Swift's `.id(asset.symbol)`).
+                key(selectedSymbol) {
+                    Box(Modifier.weight(1f).fillMaxHeight()) {
+                        DetailScreen(
+                            symbol = selectedSymbol,
+                            onBack = onCloseDetail,
+                            heldPosition = heldPosition,
+                            onBuy = onBuy,
+                            embedded = true,
+                        )
+                        CircularCloseButton(
+                            onClick = onCloseDetail,
+                            modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+                        )
                     }
-                },
-            )
+                }
+            }
         }
     }
 
@@ -654,6 +696,7 @@ private fun ScreenerContent(
     state: ScreenerUiState,
     activeColumn: ActiveMetricColumn?,
     addedSymbols: Set<String>,
+    selectedSymbol: String?,
     onSort: (ScreenerSortColumn) -> Unit,
     onRowClick: (String) -> Unit,
     onAdd: (ScreenerSnapshotRow) -> Unit,
@@ -663,6 +706,7 @@ private fun ScreenerContent(
             state = state,
             activeColumn = activeColumn,
             addedSymbols = addedSymbols,
+            selectedSymbol = selectedSymbol,
             onSort = onSort,
             onRowClick = onRowClick,
             onAdd = onAdd,
@@ -717,6 +761,7 @@ private fun ResultsList(
     state: ScreenerUiState,
     activeColumn: ActiveMetricColumn?,
     addedSymbols: Set<String>,
+    selectedSymbol: String?,
     onSort: (ScreenerSortColumn) -> Unit,
     onRowClick: (String) -> Unit,
     onAdd: (ScreenerSnapshotRow) -> Unit,
@@ -730,6 +775,7 @@ private fun ResultsList(
                     row = row,
                     activeColumn = activeColumn,
                     added = row.symbol in addedSymbols,
+                    selected = row.symbol == selectedSymbol,
                     onClick = { onRowClick(row.symbol) },
                     onAdd = { onAdd(row) },
                 )
@@ -831,15 +877,36 @@ private fun HeaderButton(
     }
 }
 
+/** One results row. `selected` (M10.2 Task 6 — the row currently open in the detail pane)
+ *  draws the same `DK.surfaceHi` fill + 1dp gold(0.35) inset ring idiom as the sidebar's
+ *  selected item and `WatchlistRow`'s selected state, at Swift's 8dp corner radius
+ *  (`ScreenerView.macRow`'s `isSelected` background AS-BUILT — narrower than
+ *  `WatchlistRow`'s 10dp). */
 @Composable
 private fun ResultRow(
     row: ScreenerSnapshotRow,
     activeColumn: ActiveMetricColumn?,
     added: Boolean,
+    selected: Boolean,
     onClick: () -> Unit,
     onAdd: () -> Unit,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 9.dp)) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .then(
+                if (selected) {
+                    Modifier
+                        .background(DK.surfaceHi)
+                        .border(1.dp, DK.gold.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                } else {
+                    Modifier
+                },
+            )
+            .padding(vertical = 9.dp, horizontal = 8.dp),
+    ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier

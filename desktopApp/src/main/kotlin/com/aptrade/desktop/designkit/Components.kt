@@ -207,6 +207,30 @@ fun LiveBadge() {
     }
 }
 
+/** 24dp circle, `DK.surfaceHi` fill, bold ✕ glyph — the app's small circular dismiss
+ *  affordance (`AlertsCenterDialog`'s dialog-close button uses the same anatomy). Used by
+ *  the Watchlist/Screener detail panes' top-corner close control (M10.2 Task 6) — mirrors
+ *  `WatchlistView.swift`/`ScreenerView.swift`'s `closeDetailButton` AS-BUILT. */
+@Composable
+fun CircularCloseButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(24.dp)
+            .clip(CircleShape)
+            .background(DK.surfaceHi)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            "✕",
+            style = TextStyle(
+                fontFamily = InterFamily, fontSize = 11.sp,
+                fontWeight = FontWeight.Bold, color = DK.textSecondary,
+            ),
+        )
+    }
+}
+
 /** "$308⁶³" — symbol and cents at half size, raised to the top. */
 @Composable
 fun SuperscriptPrice(amountText: String, size: TextUnit = 34.sp, color: Color = DK.textPrimary) {

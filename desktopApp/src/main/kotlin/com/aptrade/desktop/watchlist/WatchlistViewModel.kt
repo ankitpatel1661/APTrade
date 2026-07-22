@@ -130,7 +130,28 @@ class WatchlistViewModel(
         publish(loading = _state.value.isLoading)
     }
 
-    fun onSelect(symbol: String) = _state.update { it.copy(selectedSymbol = symbol) }
+    /** Row click (M10.2 Task 6): opens `symbol` in the conditional detail pane, or — if
+     *  it's already the open selection — closes back to the full-width list. Mirrors
+     *  `WatchlistView.toggleSelection`'s macOS "tap again to close" affordance AS-BUILT.
+     *  [selectedSymbol] is the SAME field the row-highlight styling reads
+     *  (`WatchlistPane`'s `isRowSelected`), so a toggle-close here also drops the gold
+     *  ring in one update. */
+    fun onSelect(symbol: String) = _state.update {
+        it.copy(selectedSymbol = if (it.selectedSymbol == symbol) null else symbol)
+    }
+
+    /** Explicit open (M10.2 Task 6) — the palette / Alerts-center tap-through path. Always
+     *  SETS, never toggles off, even re-opening the symbol already showing: unlike
+     *  [onSelect] (a row click the user can see is already selected), these callers have
+     *  no such context and must always land on the detail pane, not close it. This is the
+     *  hoisted-state half of constraint 3's "no request/clear dance" — [WatchlistViewModel]
+     *  is already Main-hoisted (built once in `main()`), so palette/Alerts-center write
+     *  straight into [selectedSymbol] with no separate window-level flag to consume/clear. */
+    fun openDetail(symbol: String) = _state.update { it.copy(selectedSymbol = symbol) }
+
+    /** Explicit close (M10.2 Task 6) — the detail pane's ✕ button. Always clears,
+     *  regardless of which symbol is currently open. */
+    fun closeDetail() = _state.update { it.copy(selectedSymbol = null) }
 
     fun onAdd(entry: WatchlistEntry) {
         scope.launch {

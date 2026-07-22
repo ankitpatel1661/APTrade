@@ -48,6 +48,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aptrade.desktop.designkit.ChangePill
+import com.aptrade.desktop.designkit.CircularCloseButton
 import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.designkit.InterFamily
 import com.aptrade.desktop.designkit.KindToggle
@@ -59,6 +60,8 @@ import com.aptrade.desktop.designkit.SuperscriptPrice
 import com.aptrade.desktop.designkit.ExpandedValueCard
 import com.aptrade.desktop.designkit.chipLabel
 import com.aptrade.desktop.designkit.formatPercent
+import com.aptrade.desktop.detail.DetailScreen
+import com.aptrade.desktop.portfolio.HoldingRowUi
 import com.aptrade.shared.l10n.L10n
 import com.aptrade.desktop.l10n.tr
 import com.aptrade.desktop.l10n.trf
@@ -69,14 +72,92 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.runtime.key
 
-/** Watchlist tab: a full-width single column. A macOS-style header (average day-change
- *  figure + clickable sparkline that toggles an expandable value card, over a PulseBar)
- *  sits above the KindToggle/LiveBadge row, add-field, and list. All state comes from
- *  `WatchlistViewModel`; the search-suggestions VM is passed in so the pane never owns
- *  fetch logic. Row selection (`onSelect`) opens the full-window detail. */
+/** Watchlist tab: conditional master–detail (M10.2 Task 6), mirroring
+ *  `Sources/APTradeApp/WatchlistView.swift`'s macOS body AS-BUILT. No selection →
+ *  [WatchlistListColumn] (the header pulse + KindToggle/LiveBadge + add-field + list,
+ *  unchanged) renders full width, exactly as before this task. Once a row is selected,
+ *  that SAME column narrows to a ~300dp list (hairline right border) beside an embedded
+ *  [DetailScreen] — `key(symbol)` tears down the previous selection's detail VM/chart
+ *  state on every new pick, matching Swift's `.id(asset.symbol)`. Note this narrows the
+ *  WHOLE existing single-column composable (pulse header included) as one unit, rather
+ *  than splitting out a separate always-full-width top bar the way `ScreenerPane` does
+ *  for its scan bar/chips — a deliberate, smaller-diff choice: this column was already
+ *  one grouped composable before this task, and re-splitting its internals wasn't asked
+ *  for here (see the Task 6 report for the full rationale).
+ *
+ *  `onSelect` is [WatchlistViewModel.onSelect] (row click, toggles open/closed);
+ *  `onCloseDetail` is [WatchlistViewModel.closeDetail] (the pane's ✕ button — always
+ *  closes, never toggles). `heldPosition`/`onBuy` are threaded in as plain params
+ *  (constraint: no window state) exactly mirroring what `Main.kt` used to pass straight
+ *  to the window-level `DetailScreen` for this symbol. */
 @Composable
 fun WatchlistPane(
+    state: WatchlistUiState,
+    onKindSelect: (com.aptrade.shared.domain.AssetKind) -> Unit,
+    onSelect: (String) -> Unit,
+    onCloseDetail: () -> Unit,
+    onAdd: (WatchlistEntry) -> Unit,
+    onRemove: (String) -> Unit,
+    onSetAlert: (String) -> Unit,
+    suggestQuery: String,
+    suggestResults: List<Asset>,
+    onSuggestQueryChange: (String) -> Unit,
+    onSuggestReset: () -> Unit,
+    heldPosition: HoldingRowUi?,
+    onBuy: (Asset, String?) -> Unit,
+) {
+    val selected = state.selectedSymbol
+    Row(Modifier.fillMaxSize()) {
+        Box(
+            modifier = (if (selected == null) Modifier.weight(1f) else Modifier.width(300.dp))
+                .fillMaxHeight(),
+        ) {
+            WatchlistListColumn(
+                state = state,
+                onKindSelect = onKindSelect,
+                onSelect = onSelect,
+                onAdd = onAdd,
+                onRemove = onRemove,
+                onSetAlert = onSetAlert,
+                suggestQuery = suggestQuery,
+                suggestResults = suggestResults,
+                onSuggestQueryChange = onSuggestQueryChange,
+                onSuggestReset = onSuggestReset,
+            )
+        }
+        if (selected != null) {
+            Box(Modifier.fillMaxHeight().width(1.dp).background(DK.hairline))
+            key(selected) {
+                Box(Modifier.weight(1f).fillMaxHeight()) {
+                    DetailScreen(
+                        symbol = selected,
+                        onBack = onCloseDetail,
+                        heldPosition = heldPosition,
+                        onBuy = onBuy,
+                        embedded = true,
+                    )
+                    CircularCloseButton(
+                        onClick = onCloseDetail,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** The pane's list side (M10.2 Task 6 extraction — this composable's body is otherwise
+ *  UNCHANGED from the pre-Task-6 `WatchlistPane`): a macOS-style header (average
+ *  day-change figure + clickable sparkline that toggles an expandable value card, over a
+ *  PulseBar) sits above the KindToggle/LiveBadge row, add-field, and list. All state
+ *  comes from `WatchlistViewModel`; the search-suggestions VM is passed in so the pane
+ *  never owns fetch logic. Row selection (`onSelect`) opens the conditional detail pane
+ *  in the caller ([WatchlistPane] above). */
+@Composable
+private fun WatchlistListColumn(
     state: WatchlistUiState,
     onKindSelect: (com.aptrade.shared.domain.AssetKind) -> Unit,
     onSelect: (String) -> Unit,
@@ -346,9 +427,12 @@ private fun SuggestionRow(asset: Asset, onClick: () -> Unit) {
 }
 
 /** A single watchlist row: name over symbol, sparkline, price over change pill.
- *  Hover reveals a ✕ remove button and a `DK.surfaceHi` background. The alert bell (macOS
- *  anatomy: `Sources/APTradeApp/WatchlistView.swift`'s `alertButton`) sits between the
- *  sparkline and the price column, visible on hover OR whenever `alertCount > 0`. */
+ *  Hover reveals a ✕ remove button and a `DK.surfaceHi` background. Selected (M10.2 Task
+ *  6 — the row currently open in the detail pane) additionally draws the 1dp gold(0.35)
+ *  inset ring, the same sidebar/screener-row idiom (`AppShell.SidebarRow`), so a
+ *  selection reads distinctly from a mere hover. The alert bell (macOS anatomy:
+ *  `Sources/APTradeApp/WatchlistView.swift`'s `alertButton`) sits between the sparkline
+ *  and the price column, visible on hover OR whenever `alertCount > 0`. */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun WatchlistRow(
@@ -359,11 +443,7 @@ private fun WatchlistRow(
     onSetAlert: () -> Unit,
 ) {
     var hovered by remember { mutableStateOf(false) }
-    val background = when {
-        selected -> DK.surfaceHi
-        hovered -> DK.surfaceHi
-        else -> Color.Transparent
-    }
+    val background = if (selected || hovered) DK.surfaceHi else Color.Transparent
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -371,6 +451,13 @@ private fun WatchlistRow(
             .onPointerEvent(PointerEventType.Exit) { hovered = false }
             .clip(RoundedCornerShape(10.dp))
             .background(background)
+            .then(
+                if (selected) {
+                    Modifier.border(1.dp, DK.gold.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                } else {
+                    Modifier
+                },
+            )
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
