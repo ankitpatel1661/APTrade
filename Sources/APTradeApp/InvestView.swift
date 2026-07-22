@@ -21,6 +21,10 @@ struct InvestView: View {
 
     var onOpenSearch: (() -> Void)? = nil
     var onOpenAccount: (() -> Void)? = nil
+    /// Cross-tab navigation request (from Home, via `RootView`): when set, jumps straight
+    /// to that section and clears itself. Additive/optional — existing call sites that omit
+    /// it behave exactly as before.
+    var externalSection: Binding<Section?>? = nil
     @State private var section: Section = .plans
     @Namespace private var sectionPill
 
@@ -46,6 +50,11 @@ struct InvestView: View {
         .frame(minWidth: 560, minHeight: 640)
         #endif
         .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
+        .onChange(of: externalSection?.wrappedValue) { _, requested in
+            guard let requested else { return }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { section = requested }
+            externalSection?.wrappedValue = nil
+        }
     }
 
     // MARK: - Section switcher

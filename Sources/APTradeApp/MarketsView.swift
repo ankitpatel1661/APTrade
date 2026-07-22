@@ -23,6 +23,10 @@ struct MarketsView: View {
 
     var onOpenSearch: (() -> Void)? = nil
     var onOpenAccount: (() -> Void)? = nil
+    /// Cross-tab navigation request (from Home, via `RootView`): when set, jumps straight
+    /// to that section and clears itself. Additive/optional — existing call sites that omit
+    /// it behave exactly as before.
+    var externalSection: Binding<Section?>? = nil
     @State private var section: Section = .watchlist
     @Namespace private var sectionPill
 
@@ -42,6 +46,11 @@ struct MarketsView: View {
             }
         }
         .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
+        .onChange(of: externalSection?.wrappedValue) { _, requested in
+            guard let requested else { return }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { section = requested }
+            externalSection?.wrappedValue = nil
+        }
     }
 
     /// Styled as a text field but is really a button — tapping opens the existing

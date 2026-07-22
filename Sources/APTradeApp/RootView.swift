@@ -41,6 +41,11 @@ public struct RootView: View {
     @State private var paletteVM = CompositionRoot.makeCommandPaletteViewModel()
     @State private var paletteAsset: Asset?
 
+    /// Cross-tab navigation requests from Home (Task 5): set + cleared by `MarketsView`/
+    /// `InvestView`'s own `onChange`, via `handleHomeNavigation(_:)` below.
+    @State private var marketsSectionRequest: MarketsView.Section?
+    @State private var investSectionRequest: InvestView.Section?
+
     public var body: some View {
         #if os(iOS)
         iosBody
@@ -52,13 +57,12 @@ public struct RootView: View {
     #if os(iOS)
     private var iosBody: some View {
         TabView(selection: $tab) {
-            // Task 5 builds the real Home dashboard (hero + quick stats + Today feed).
-            // Placeholder keeps the tab wired and navigable in the meantime.
-            Theme.background.ignoresSafeArea()
+            HomeView(onNavigate: { handleHomeNavigation($0) })
                 .tabItem { Label(tr(.homeTab), systemImage: "house.fill") }
                 .tag(Tab.home)
             MarketsView(onOpenSearch: { showPalette = true },
-                        onOpenAccount: { showAccountPanel = true })
+                        onOpenAccount: { showAccountPanel = true },
+                        externalSection: $marketsSectionRequest)
                 .tabItem { Label(tr(.marketsTab), systemImage: "chart.line.uptrend.xyaxis") }
                 .tag(Tab.markets)
             PortfolioView(onOpenSearch: { showPalette = true },
@@ -66,7 +70,8 @@ public struct RootView: View {
                 .tabItem { Label(tr(.portfolio), systemImage: "chart.pie") }
                 .tag(Tab.portfolio)
             InvestView(onOpenSearch: { showPalette = true },
-                       onOpenAccount: { showAccountPanel = true })
+                       onOpenAccount: { showAccountPanel = true },
+                       externalSection: $investSectionRequest)
                 .tabItem { Label(tr(.investTab), systemImage: "basket.fill") }
                 .tag(Tab.invest)
         }
@@ -159,7 +164,7 @@ public struct RootView: View {
                     // placeholder. No polish; macOS UAT happens after Task 6.
                     Group {
                         switch tab {
-                        case .home: EmptyView()
+                        case .home: HomeViewMac(onNavigate: { handleHomeNavigation($0) })
                         case .markets: WatchlistView()
                         case .portfolio: PortfolioView()
                         case .invest: EmptyView()
@@ -291,6 +296,31 @@ public struct RootView: View {
     private func closePalette() {
         showPalette = false
         paletteVM.reset()
+    }
+
+    /// Routes a Home row/card tap onto the right tab + (where applicable) nested section —
+    /// the single place both platforms' Home bodies delegate to, since only `RootView` owns
+    /// `tab` and the per-tab section-request bindings.
+    private func handleHomeNavigation(_ destination: HomeDestination) {
+        switch destination {
+        case .marketsWatchlist:
+            tab = .markets
+            marketsSectionRequest = .watchlist
+        case .marketsScreener:
+            tab = .markets
+            marketsSectionRequest = .screener
+        case .marketsCalendar:
+            tab = .markets
+            marketsSectionRequest = .calendar
+        case .marketsNews:
+            tab = .markets
+            marketsSectionRequest = .news
+        case .investIncome:
+            tab = .invest
+            investSectionRequest = .income
+        case .portfolio:
+            tab = .portfolio
+        }
     }
 
     private var paletteButton: some View {
