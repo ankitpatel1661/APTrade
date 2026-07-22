@@ -48,14 +48,19 @@ import kotlin.test.assertTrue
  * the total to 328. M9.2 Task 5 (the Kotlin port of the M9.1 screener feature's L10n keys)
  * added 37 more: the screener tab/scan-bar keys, 9 presets, 10 metrics, and the builder keys
  * incl. `addToWatchlist` (`screenerRefresh` was skipped — it reuses the existing `Refresh`
- * key, mirroring the Swift source's reuse decision) — bringing the total to 365; the count
- * below tracks the Kotlin-only total going forward, not the Swift source count.
+ * key, mirroring the Swift source's reuse decision) — bringing the total to 365. M10.2 Task 1
+ * (the Kotlin desktop transcription of the Swift M10.1 IA-restructure's L10n keys) added 24
+ * more: Swift T1's 25-key Home/Markets/Invest/Alerts-center block minus `quickNewsFmt` (dead)
+ * and `earningsSessionAfterClose`/`earningsSessionBeforeOpen` (reused the existing
+ * `SessionAfterClose`/`SessionBeforeOpen` family instead of adding a near-duplicate pair),
+ * plus `SidebarSearch`/`SidebarSettings` (Swift M10.1 Task 6) — bringing the total to 389; the
+ * count below tracks the Kotlin-only total going forward, not the Swift source count.
  */
 class L10nCatalogTest {
 
     @Test
-    fun `catalog has exactly 365 keys (205 macOS-transcribed + 12 desktop-only from Tasks 6-7 + 32 Kotlin-side additions + 52 Plans L10n from Task 10 + 1 Next key fix + 26 dividend and income keys from the M8_2 Kotlin L10n port + 37 screener keys from the M9_2 Kotlin L10n port)`() {
-        assertEquals(365, L10n.Key.entries.size)
+    fun `catalog has exactly 389 keys (365 pre-M10_2 + 24 Home_Markets_Invest_Alerts_Sidebar keys from the M10_2 Task 1 Kotlin L10n port)`() {
+        assertEquals(389, L10n.Key.entries.size)
     }
 
     @Test
