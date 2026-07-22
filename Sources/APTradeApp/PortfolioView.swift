@@ -234,19 +234,6 @@ struct PortfolioView: View {
         .frame(width: 28, alignment: .trailing)
     }
 
-    private func metric(label: String, money: Money, colored: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label.uppercased())
-                .font(.system(size: 10, weight: .semibold)).tracking(1.0)
-                .foregroundStyle(Theme.textTertiary)
-            Text(signed(money, showsSign: colored))
-                .font(.system(size: 16, weight: .semibold).monospacedDigit())
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .foregroundStyle(colored ? pnlColor(money) : Theme.textPrimary)
-        }
-    }
-
     // MARK: - Section switcher
 
     private var sectionPicker: some View {
@@ -290,8 +277,101 @@ struct PortfolioView: View {
         }
     }
 
-    @ViewBuilder
+    /// Delegates to `PortfolioSectionContent` (Task 6 hoist) — the SAME section-rendering
+    /// code the macOS sidebar constructs directly from its own view-model instances (see
+    /// `RootView.macBody`), so the iOS pill host and the macOS sidebar never drift apart.
     private var content: some View {
+        PortfolioSectionContent(section: section, viewModel: viewModel, performanceVM: performanceVM, selectedAsset: $selectedAsset)
+    }
+
+    /// Green when the value series ends higher than it began, red when lower — so the chart
+    /// and sparkline are colored by the direction they actually show. Falls back to the
+    /// day's P&L sign when the series is flat or too short to have a direction.
+    private var trendColor: Color {
+        guard let first = pnlValues.first, let last = pnlValues.last, first != last else {
+            return pnlColor(viewModel.valuation.unrealizedPnL)
+        }
+        return last > first ? Theme.up : Theme.down
+    }
+}
+
+// MARK: - Shared value/formatting helpers
+//
+// Free functions (not instance methods), mirroring `HomeView.swift`'s established
+// convention: both `PortfolioView` (its own summary/chart chrome) and
+// `PortfolioSectionContent` below (Task 6's hoisted section renderer, used by both the iOS
+// pill host and the macOS sidebar) call these without needing a shared base type. Each
+// touches `Theme` and/or `tr(_:)`, both `@MainActor`-isolated, so — unlike instance members
+// of a `View`-conforming type, which infer `@MainActor` from the protocol conformance —
+// these free functions need the annotation explicitly.
+
+@MainActor
+private func metric(label: String, money: Money, colored: Bool) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+        Text(label.uppercased())
+            .font(.system(size: 10, weight: .semibold)).tracking(1.0)
+            .foregroundStyle(Theme.textTertiary)
+        Text(signed(money, showsSign: colored))
+            .font(.system(size: 16, weight: .semibold).monospacedDigit())
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .foregroundStyle(colored ? pnlColor(money) : Theme.textPrimary)
+    }
+}
+
+@MainActor
+private func pnlColor(_ money: Money) -> Color {
+    if money.amount > 0 { return Theme.up }
+    if money.amount < 0 { return Theme.down }
+    return Theme.textPrimary
+}
+
+private func signed(_ money: Money, showsSign: Bool) -> String {
+    guard showsSign, money.amount > 0 else { return money.formatted }
+    return "+" + money.formatted
+}
+
+/// `allocationByKind` slices are identified by `AssetKind.rawValue` ("stock"/"etf"/"crypto");
+/// map to `Theme`'s accent colors for the donut/legend.
+@MainActor
+private func kindColor(_ id: String) -> Color {
+    switch id {
+    case AssetKind.stock.rawValue: return Theme.gold
+    case AssetKind.etf.rawValue: return Theme.goldDeep
+    case AssetKind.crypto.rawValue: return Theme.silver
+    default: return Theme.textTertiary
+    }
+}
+
+/// Maps an allocation slice's raw `AssetKind` id to the localized asset-class label rather
+/// than the view model's English-only `AllocationSlice.label`. Falls back to the raw label
+/// for any unrecognized id.
+@MainActor
+private func assetClassLabel(_ slice: AllocationSlice) -> String {
+    switch slice.id {
+    case AssetKind.stock.rawValue: return tr(.stocksLabel)
+    case AssetKind.etf.rawValue: return tr(.etfsLabel)
+    case AssetKind.crypto.rawValue: return tr(.cryptoLabel)
+    default: return slice.label
+    }
+}
+
+// MARK: - Portfolio section content (Task 6 hoist)
+
+/// Renders ONE Portfolio section — Holdings / Allocation / Activity / Performance — from
+/// explicit view-model/binding inputs rather than owning them itself. Hoisted out of
+/// `PortfolioView.content` (M10.1 Task 6) so the macOS sidebar can construct byte-for-byte
+/// identical section content from its OWN `PortfolioViewModel`/`PerformanceViewModel`
+/// instances (the sidebar shell owns its own copies rather than sharing `PortfolioView`'s —
+/// see `RootView.macBody`) without duplicating the holdings-list/allocation/activity
+/// rendering code. `PortfolioView` (iOS pill host) is the only other caller.
+struct PortfolioSectionContent: View {
+    let section: PortfolioView.Section
+    let viewModel: PortfolioViewModel
+    let performanceVM: PerformanceViewModel
+    @Binding var selectedAsset: Asset?
+
+    var body: some View {
         // The Holdings section keeps its own dedicated empty state; Allocation, Activity,
         // and Performance must stay reachable with zero holdings, so only Holdings itself
         // gates on emptiness here.
@@ -435,27 +515,6 @@ struct PortfolioView: View {
         }
     }
 
-    private func kindColor(_ id: String) -> Color {
-        switch id {
-        case AssetKind.stock.rawValue: return Theme.gold
-        case AssetKind.etf.rawValue: return Theme.goldDeep
-        case AssetKind.crypto.rawValue: return Theme.silver
-        default: return Theme.textTertiary
-        }
-    }
-
-    /// `allocationByKind` slices are identified by `AssetKind.rawValue` ("stock"/"etf"/"crypto");
-    /// map to the localized asset-class label rather than the view model's English-only
-    /// `AllocationSlice.label`. Falls back to the raw label for any unrecognized id.
-    private func assetClassLabel(_ slice: AllocationSlice) -> String {
-        switch slice.id {
-        case AssetKind.stock.rawValue: return tr(.stocksLabel)
-        case AssetKind.etf.rawValue: return tr(.etfsLabel)
-        case AssetKind.crypto.rawValue: return tr(.cryptoLabel)
-        default: return slice.label
-        }
-    }
-
     // MARK: - Activity
 
     private var activityView: some View {
@@ -508,27 +567,6 @@ struct PortfolioView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(40)
-    }
-
-    private func pnlColor(_ money: Money) -> Color {
-        if money.amount > 0 { return Theme.up }
-        if money.amount < 0 { return Theme.down }
-        return Theme.textPrimary
-    }
-
-    /// Green when the value series ends higher than it began, red when lower — so the chart
-    /// and sparkline are colored by the direction they actually show. Falls back to the
-    /// day's P&L sign when the series is flat or too short to have a direction.
-    private var trendColor: Color {
-        guard let first = pnlValues.first, let last = pnlValues.last, first != last else {
-            return pnlColor(viewModel.valuation.unrealizedPnL)
-        }
-        return last > first ? Theme.up : Theme.down
-    }
-
-    private func signed(_ money: Money, showsSign: Bool) -> String {
-        guard showsSign, money.amount > 0 else { return money.formatted }
-        return "+" + money.formatted
     }
 }
 

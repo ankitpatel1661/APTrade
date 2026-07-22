@@ -118,6 +118,16 @@ struct MarketsView: View {
 
     @ViewBuilder
     private var content: some View {
+        MarketsView.sectionView(section, onOpenSearch: onOpenSearch, onOpenAccount: onOpenAccount)
+    }
+
+    /// The section → view mapping, hoisted (Task 6) so the macOS sidebar can construct
+    /// IDENTICAL section content to this host's own `content` without duplicating the
+    /// switch — each destination view is self-contained (owns its own view model), so no
+    /// shared state needs to cross the call boundary beyond the two navigation closures.
+    @MainActor
+    @ViewBuilder
+    static func sectionView(_ section: Section, onOpenSearch: (() -> Void)?, onOpenAccount: (() -> Void)?) -> some View {
         switch section {
         case .watchlist:
             WatchlistView(onOpenSearch: onOpenSearch, onOpenAccount: onOpenAccount)

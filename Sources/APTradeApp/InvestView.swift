@@ -100,6 +100,15 @@ struct InvestView: View {
 
     @ViewBuilder
     private var content: some View {
+        InvestView.sectionView(section)
+    }
+
+    /// The section → view mapping, hoisted (Task 6) so the macOS sidebar can construct
+    /// IDENTICAL section content to this host's own `content` without duplicating the
+    /// switch — both sections are self-contained (own their own view models).
+    @MainActor
+    @ViewBuilder
+    static func sectionView(_ section: Section) -> some View {
         switch section {
         case .plans:  PlansSection()
         case .income: IncomeSection()

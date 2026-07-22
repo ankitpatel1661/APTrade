@@ -439,6 +439,10 @@ enum L10n {
         case incomeYtdLabel = "Income YTD"
         case dripCardTitle = "Reinvest dividends (DRIP)"
         case dripCardSubtitle = "Payouts buy fractional shares automatically"
+
+        // MARK: macOS sidebar (M10.1 Task 6)
+        case sidebarSearch = "Search"
+        case sidebarSettings = "Settings"
     }
 
     static let table: [Key: [AppLanguage: String]] = [
@@ -1361,6 +1365,12 @@ enum L10n {
                             .german: "Ausschüttungen kaufen automatisch Bruchteilsanteile",
                             .italian: "I pagamenti acquistano automaticamente quote frazionarie",
                             .spanish: "Los pagos compran automáticamente acciones fraccionarias"],
+
+        // MARK: macOS sidebar (M10.1 Task 6)
+        .sidebarSearch: [.english: "Search", .german: "Suche",
+                         .italian: "Cerca", .spanish: "Buscar"],
+        .sidebarSettings: [.english: "Settings", .german: "Einstellungen",
+                           .italian: "Impostazioni", .spanish: "Ajustes"],
     ]
 }
 

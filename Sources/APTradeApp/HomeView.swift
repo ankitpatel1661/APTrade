@@ -462,9 +462,9 @@ struct HomeView: View {
         return hasEarnings ? String(format: tr(.quickEarningsWeekFmt), "1") : nil
     }
 
-    /// The bell, styled like `RootView`'s `paletteButton`/`accountMenuButton` circular
-    /// "cbtn" idiom (gold ring over `Theme.surface`), with a small badge dot — matching the
-    /// mockup's `.cbtn.badged` — when there's at least one alert.
+    /// The bell, styled like the mockup's circular "cbtn" idiom (gold ring over
+    /// `Theme.surface`), with a small badge dot — matching the mockup's `.cbtn.badged` —
+    /// when there's at least one alert.
     private var bellButton: some View {
         Button { showAlerts = true } label: {
             ZStack(alignment: .topTrailing) {
