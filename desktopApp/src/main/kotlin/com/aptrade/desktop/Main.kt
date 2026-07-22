@@ -251,6 +251,9 @@ fun main() = application {
     // stays scoped to a Screener visit (constraint: scan lifecycle unaffected by this task) —
     // so this one extra var carries just the selected symbol, not the whole VM.
     var screenerSelectedSymbol by remember { mutableStateOf<String?>(null) }
+    // The sidebar's current destination, hoisted here so window-level Esc can gate pane-selection
+    // clearing on the active section (Task 6 review fix).
+    var sidebarSelection by remember { mutableStateOf<SidebarDestination>(SidebarDestination.Home) }
     // The open trade dialog's target (asset + side + live price text), hoisted here like the
     // palette so the dialog overlays the whole window. The dialog owns its own Esc handling —
     // as do the Portfolio pane's own overlays (the reset-confirm dialog and the export chooser)
@@ -377,15 +380,12 @@ fun main() = application {
                     openSymbol = null
                     true
                 }
-                // M10.2 Task 6: Watchlist/Screener no longer route through openSymbol above —
-                // Esc now clears whichever of THEIR OWN conditional-split selections is active.
-                // WatchlistViewModel.state.value is read directly (not collected) here since
-                // this closure isn't a composable — a one-off snapshot read is all Esc needs.
-                event.key == Key.Escape && watchlistViewModel.state.value.selectedSymbol != null -> {
+                // Gate pane-selection Esc to the active destination only (Task 6 review fix).
+                event.key == Key.Escape && sidebarSelection == SidebarDestination.Markets(MarketsSection.Watchlist) && watchlistViewModel.state.value.selectedSymbol != null -> {
                     watchlistViewModel.closeDetail()
                     true
                 }
-                event.key == Key.Escape && screenerSelectedSymbol != null -> {
+                event.key == Key.Escape && sidebarSelection == SidebarDestination.Markets(MarketsSection.Screener) && screenerSelectedSymbol != null -> {
                     screenerSelectedSymbol = null
                     true
                 }
@@ -448,6 +448,8 @@ fun main() = application {
                     onCloseAlertsCenter = { alertsCenterOpen = false },
                     notificationSettings = notificationSettings,
                     onUpdateNotificationSettings = { mutate -> updateNotificationSettings(mutate) },
+                    sidebarSelection = sidebarSelection,
+                    onSidebarSelectionChange = { sidebarSelection = it },
                 )
             }
         }
@@ -495,10 +497,9 @@ private fun AppRoot(
     onCloseAlertsCenter: () -> Unit,
     notificationSettings: com.aptrade.desktop.infra.AppSettings,
     onUpdateNotificationSettings: ((com.aptrade.desktop.infra.AppSettings) -> com.aptrade.desktop.infra.AppSettings) -> Unit,
+    sidebarSelection: SidebarDestination,
+    onSidebarSelectionChange: (SidebarDestination) -> Unit,
 ) {
-    // The sidebar's current destination (M10.2 Task 3) — replaces the old `selectedTab: AppTab`.
-    // Home is the default; Task 4 fills in its content (a placeholder renders until then).
-    var sidebarSelection by remember { mutableStateOf<SidebarDestination>(SidebarDestination.Home) }
     // Composition-scoped coroutine launcher for the export buttons below — `exportSnapshot`/
     // `exportCsv`/`exportJson` became `suspend` in M8.2 Task 11 (dividend-events fetch for
     // `projectedAnnualIncome`), so their click handlers need somewhere to launch into.
@@ -532,7 +533,7 @@ private fun AppRoot(
     Box(Modifier.fillMaxSize()) {
         AppShell(
             selection = sidebarSelection,
-            onSelect = { sidebarSelection = it },
+            onSelect = onSidebarSelectionChange,
             onOpenPalette = onOpenPalette,
             onOpenAccount = onOpenAccount,
             isDarkMode = isDarkMode,
@@ -571,7 +572,7 @@ private fun AppRoot(
                         loadAlerts = graph.loadAlerts::execute,
                         // Constraint 3: Home-row navigation writes sidebarSelection directly,
                         // no request/clear dance.
-                        onNavigate = { sidebarSelection = it },
+                        onNavigate = { onSidebarSelectionChange(it) },
                         onOpenAlerts = onOpenAlertsCenter,
                     )
                 }
@@ -716,7 +717,7 @@ private fun AppRoot(
                     // conditional split (M10.2 Task 6) — same mapping the Alerts center
                     // uses below. `openDetail` (not `onSelect`) always sets, never
                     // toggles off, even if this exact symbol is already selected.
-                    sidebarSelection = SidebarDestination.Markets(MarketsSection.Watchlist)
+                    onSidebarSelectionChange(SidebarDestination.Markets(MarketsSection.Watchlist))
                     watchlistViewModel.openDetail(asset.symbol)
                 },
                 onClose = onClosePalette,
@@ -738,7 +739,7 @@ private fun AppRoot(
                 language = language,
                 onSelectLanguage = onSelectLanguage,
                 onExportPortfolio = {
-                    sidebarSelection = SidebarDestination.Portfolio(PortfolioSection.Holdings)
+                    onSidebarSelectionChange(SidebarDestination.Portfolio(PortfolioSection.Holdings))
                     pendingExport.value = true
                     onCloseAccount()
                 },
@@ -810,7 +811,7 @@ private fun AppRoot(
                     // detail screen actually show, rather than setting a selection underneath
                     // whatever destination happened to be active. `openDetail` (not
                     // `onSelect`) always sets, never toggles off.
-                    sidebarSelection = SidebarDestination.Markets(MarketsSection.Watchlist)
+                    onSidebarSelectionChange(SidebarDestination.Markets(MarketsSection.Watchlist))
                     watchlistViewModel.openDetail(symbol)
                     onCloseAlertsCenter()
                 },
