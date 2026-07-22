@@ -2,7 +2,6 @@ import SwiftUI
 import APTradeDomain
 
 struct WatchlistView: View {
-    var switcher: AnyView? = nil
     var onOpenSearch: (() -> Void)? = nil
     var onOpenAccount: (() -> Void)? = nil
     @State private var viewModel = CompositionRoot.makeWatchlistViewModel()
@@ -172,7 +171,7 @@ struct WatchlistView: View {
     @ViewBuilder
     private var detailPane: some View {
         if let asset = selectedAsset {
-            AssetDetailView(asset: asset)
+            AssetDetailView(asset: asset, embedded: true)
                 .id(asset.symbol)
         } else {
             // No "select a symbol" copy exists in L10n and this task may not add one —

@@ -188,10 +188,10 @@ public struct RootView: View {
             }
             .animation(.spring(response: 0.34, dampingFraction: 0.88), value: showAccountPanel)
         }
-        // 208pt sidebar + a usable content pane needs more width than the old
-        // header-only chrome did — bumped from 560 (Task 6; sidebar makes content
-        // narrower at the same window width).
-        .frame(minWidth: 860, minHeight: 680)
+        // Sidebar 208 + Screener's list column 520 + 1pt hairline + ~390pt legible
+        // detail pane = 1120 floor (bumped from 860; that width left the pane-hosted
+        // detail an unsatisfiable ~131pt at the Screener's list width).
+        .frame(minWidth: 1120, minHeight: 680)
         .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
         .task { await scheduler.run() }
         .confirmationDialog(tr(.exportPortfolioData), isPresented: $showExportDialog,

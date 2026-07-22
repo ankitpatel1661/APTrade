@@ -289,7 +289,7 @@ struct ScreenerView: View {
     @ViewBuilder
     private var detailPane: some View {
         if let asset = selectedAsset {
-            AssetDetailView(asset: asset)
+            AssetDetailView(asset: asset, embedded: true)
                 .id(asset.symbol)
         } else {
             // No fitting "select a symbol" copy exists in L10n — reuses the same neutral,
