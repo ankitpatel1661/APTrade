@@ -263,7 +263,10 @@ private struct HomeHeroPnLChart: View {
                     .frame(height: 60)
             }
         }
-        .task { await viewModel.onAppear() }
+        .task {
+            await viewModel.onAppear()
+            await viewModel.runLiveUpdates()
+        }
     }
 
     /// 1D · 1W · 1M · 1Y · MAX selector — identical to `PortfolioSummaryHeader.spanBar`.
