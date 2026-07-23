@@ -38,9 +38,15 @@ APTrade ships as **four native apps at feature parity** — macOS is the flagshi
 | **Windows** | `:desktopApp` (Compose Desktop) | Compose Multiplatform + shared KMP core | Full parity | [Windows desktop app](#windows-desktop-app) |
 | **Android** | `:androidApp` (Jetpack Compose, API 35) | Jetpack Compose + shared KMP core | Full parity | [Android app](#android-app) |
 
-Every app carries: a **four-destination IA** — **Home** (dashboard: summary cards, top movers, market summary), **Markets** (watchlist, screener, calendar, news as sections), **Portfolio** (holdings, allocation, activity, performance, export), and **Invest** (Plans and Income) — plus a unified **Alerts center** reached from Home, a live watchlist with candlestick/area charts and technical indicators, a paper-trading portfolio with performance/risk analytics and export, Finnhub-backed news, price alerts and scheduled notifications, a holiday-aware calendar with an S&P 500 earnings list, a four-language switcher (English/Deutsch/Italiano/Español), and the gold-on-black accent-themable identity.
+Every app carries: a **four-destination IA** — **Home** (the opening dashboard: a portfolio-value hero with an interactive P&L chart, a Today feed, quick stats, and the alerts entry), **Markets** (watchlist, screener, calendar, news as sections), **Portfolio** (holdings, allocation, activity, performance, export), and **Invest** (Plans and Income) — plus a unified **Alerts center** reached from Home, a live watchlist with candlestick/area charts and technical indicators, a paper-trading portfolio with performance/risk analytics and export, Finnhub-backed news, price alerts and scheduled notifications, a holiday-aware calendar with an S&P 500 earnings list, a four-language switcher (English/Deutsch/Italiano/Español), and the gold-on-black accent-themable identity.
 
 ## Features
+
+### Home dashboard
+- **The opening screen on every platform** — a portfolio-value hero (total value, day-change pill) over the **same interactive P&L chart** Portfolio's Performance section uses: a span bar (`1D · 1W · 1M · 1Y · MAX`), value axes, and a hover/touch crosshair. Tapping the hero jumps straight to Portfolio · Performance.
+- **Today feed** — one card answering "what's happening with my money right now": market open/closed with the next transition time, today's top gainer and biggest faller across your holdings and watchlist, the next earnings report among symbols you own or watch, the next projected dividend, and the screener's match count when today's scan is fresh. Every row taps through to its home surface, and each row degrades independently — a failing source drops its row, never the dashboard.
+- **Quick stats & cards** — Total Return, Cash, and Income YTD at a glance, plus Screener / Alerts / Calendar / News cards with live one-liners.
+- **Live** — one sequential 15-second refresh loop, lifecycle-aware on every platform, with per-source failure isolation baked into the shared `HomeFeedAssembler`.
 
 ### Watchlist & market data
 - **Category toggle** — a segmented `Stocks · ETFs · Crypto` control shows one category at a time, opening on the first populated one. Added symbols land in the right category automatically.
@@ -57,32 +63,33 @@ Every app carries: a **four-destination IA** — **Home** (dashboard: summary ca
 
 ### Paper-trading portfolio
 - **Buy / Sell** simulated orders with average-cost positions, an optional trade-confirmation step, and a Max helper.
-- **Holdings / Allocation / Activity / Performance** — a portfolio sub-switcher:
+- **Holdings / Allocation / Activity / Performance** — the Portfolio destination's four sections (identical order on every platform):
   - **Holdings** — positions sorted by market value, each with unrealized P&L and return %, plus a **top-movers** strip of today's biggest moves.
-  - **Allocation** — a donut by asset class (Stocks / ETFs / Crypto) with holdings value centered, and a per-holding percentage breakdown. On **macOS**, By-Class and By-Holding render as two top-aligned columns below the donut (an M9.1 polish pass, mirroring the Income section's side-by-side layout); **iPhone** keeps the original stacked layout.
+  - **Allocation** — a donut by asset class (Stocks / ETFs / Crypto) with holdings value centered, and a per-holding percentage breakdown. On **macOS** and **Windows**, By-Class and By-Holding render side-by-side below the donut with By-Class in a compact ~30% column (an M10 polish pass); **iPhone** and **Android** keep the stacked phone layout, By-Class first with tightened rows.
   - **Activity** — **realized P&L** (average-cost, computed from the full transaction log so closed positions still count) and the complete transactions ledger.
   - **Performance** — risk & return analytics computed on a trade-aware equity curve (replaying the transaction log, not just today's holdings backward): **Total Return**, **Annualized Return (CAGR)**, **Volatility**, **Max Drawdown**, **Sharpe**, **Beta**, and **Alpha**. A normalized overlay chart compares the portfolio against a selectable benchmark (**SPY · QQQ · VTI**), and a **diversification score** (effective holdings, Herfindahl-based) flags single-name and asset-class concentration.
 - **P&L-over-time chart** — unrealized P&L reconstructed from real historical prices over a selectable timeframe, colored green/red by direction; tap the sparkline to expand it inline with axes and a hover crosshair.
-- **Export** the portfolio as a **PDF**, **Excel (.xlsx)**, or **Word (.docx)** statement — genuine, standards-compliant documents saved anywhere via a native save panel.
+- **Export** the portfolio from a button in the Portfolio header — on macOS/iPhone as a **PDF**, **Excel (.xlsx)**, or **Word (.docx)** statement (genuine, standards-compliant documents saved via a native save panel / file exporter); Windows offers a **CSV / JSON / PDF** chooser and Android a **CSV / JSON** share sheet (per-platform divergences recorded in each app's section below).
 - **Reset** the portfolio back to its starting cash at any time.
 
 ### Alerts & notifications
-- **Price alerts** — _price above_, _price below_, and _percent daily move_ conditions per symbol, delivered as native macOS notifications.
+- **Alerts center** — every alert across every symbol in one list, reached from Home's bell (badged) or its Alerts card: armed vs. already-triggered states rendered distinctly, one-tap remove, and tap-through to the symbol's detail. The Home badge and card count **armed alerts only** — the settled cross-platform semantic.
+- **Price alerts** — _price above_, _price below_, and _percent daily move_ conditions per symbol (set from any watchlist row's bell or asset detail), delivered as native notifications.
 - **Order-fill notifications** on completed buys/sells.
 - **Market open/close** and a **daily digest** of your watchlist's biggest movers, driven by a pure market-hours scheduler.
 
 ### Command palette (⌘K)
-- **Universal ⌘K palette** — press ⌘K (or the header search button) anywhere to fuzzy-search any stock, ETF, or crypto and jump straight to its detail view, plus quick "Go to Watchlist / Portfolio" shortcuts.
+- **Universal ⌘K palette** — press ⌘K (or the sidebar/header search affordance) anywhere to fuzzy-search any stock, ETF, or crypto and jump straight to its detail view. Pure symbol search — destination shortcuts were retired with the M10 IA, since every destination is now one click away in the shell itself.
 - **Keyboard-first** — arrow keys move the selection, Return opens it, Escape dismisses; every result is also clickable. Selecting an asset opens it in an isolated detail sheet without disturbing the tab you're on.
 
 ### News
-- **Market headlines** in the News section of Markets (its own tab on Windows/Android until M10.2/3) — **General**, **Crypto**, and **Merger** categories, backed by Finnhub, each a tap away.
+- **Market headlines** in the News section of Markets on every platform — **General**, **Crypto**, and **Merger** categories, backed by Finnhub, each a tap away.
 - **Per-symbol company news** woven into every asset's detail view, showing the latest headlines for that ticker with the same row and bookmark behavior.
 - **Filter** the feed instantly by headline or source, **bookmark** any article, and flip to a **Saved** view that persists across launches. Tapping a headline opens it in your default browser.
 - **No-key state** — without a Finnhub key the app degrades gracefully to a "connect a news source" prompt; the key lives only in `~/.config/aptrade/config.json`, never in the bundle.
 
 ### Calendar & earnings
-- **Calendar section of Markets** (its own tab on Windows/Android until M10.2/3) — **holiday and half-day banners** for the visible range, driven by a computed, US-DST-aware NYSE `MarketCalendar` (statutory holidays with observed-weekend shifts, plus the day-before-July-4th, day-after-Thanksgiving, and Christmas Eve 1pm-ET half-days) — no hard-coded date table.
+- **Calendar section of Markets** on every platform — **holiday and half-day banners** for the visible range, driven by a computed, US-DST-aware NYSE `MarketCalendar` (statutory holidays with observed-weekend shifts, plus the day-before-July-4th, day-after-Thanksgiving, and Christmas Eve 1pm-ET half-days) — no hard-coded date table.
 - **Earnings list** — upcoming **S&P 500 + your-watchlist** earnings grouped by trading day, each row showing the ticker, company name, reporting **session** (before open / after close), and EPS estimate; symbols you hold are flagged. Backed by a shared `FinnhubEarningsRepository` (`/calendar/earnings`, 6-hour TTL cache) and a `FetchEarningsCalendar` use case (`.execute` / `.nextEarnings` / `.ownedToday`).
 - **Next-earnings stat** on every asset's detail view, plus a settings-gated **earnings-day notification** that rides the same market-hours scheduler as the open/close and daily-digest alerts.
 - **No-key state** — without a Finnhub key the earnings list degrades to an empty state (an `EmptyEarningsRepository` fallback); the holiday/half-day banners still render, since the calendar is computed locally.
@@ -98,9 +105,9 @@ Every app carries: a **four-destination IA** — **Home** (dashboard: summary ca
 ### Dividend & Income Engine
 - **Automatic dividend crediting** — a scheduled engine (riding the same market-activity planner as the other daily checks, plus a launch-time catch-up) detects due ex-dates from a Yahoo-backed dividend-events feed and credits the payout as cash, or reinvests it via **DRIP** at that day's close (falling back to cash if a close price is unavailable). Shares held are reconstructed **strictly before** the ex-date from the same transaction ledger the rest of the app uses, and a (symbol, ex-date day) dedup guard means re-running the same day never double-credits.
 - **First-class ledger entries** — every payout posts as a genuine `.dividend` transaction (DRIP reinvestments post as a normal `.buy` flagged `isDrip`), so the existing activity ledger, realized-P&L, and performance reconstruction see it with no special-casing.
-- **Income section** — a fifth view in the Portfolio sub-switcher: summary cards (received YTD, projected 12-month income, portfolio yield, yield-on-cost), a monthly bar chart of received-vs-projected income, an upcoming-payouts list, a per-holding income/yield-on-cost breakdown, and full payment history — all degrading gracefully per-symbol (never portfolio-wide) if a dividend-events fetch fails.
+- **Income section** — one of the Invest destination's two sections (beside Plans): summary cards (received YTD, projected 12-month income, portfolio yield, yield-on-cost), a monthly bar chart of received-vs-projected income, an upcoming-payouts list, a per-holding income/yield-on-cost breakdown, and full payment history — all degrading gracefully per-symbol (never portfolio-wide) if a dividend-events fetch fails.
 - **Asset detail dividend info** — dividend yield, derived trailing annual rate, and an estimated next ex-date on any dividend-paying holding; hidden entirely for crypto and non-payers.
-- **Reinvest Dividends (DRIP)** toggle in Account Settings, and a **Dividend Payments** toggle in Notifications settings gating the "payment received / reinvested" alert — crediting itself is never gated, since a payout is bookkeeping truth, not an optional notification.
+- **Reinvest Dividends (DRIP)** toggle on a card at the top of the Income view itself (re-homed there from Account Settings in M10 — the switch lives beside its effect, always reachable even on an empty ledger), and a **Dividend Payments** toggle in Notifications settings gating the "payment received / reinvested" alert — crediting itself is never gated, since a payout is bookkeeping truth, not an optional notification.
 - **Export rows** — every portfolio statement (PDF on macOS/iPhone/Windows; Excel and Word on macOS/iPhone) carries **Dividends Received (YTD)** and **Projected Annual Income** alongside the existing summary rows.
 - **Platform status:** shipped on all four platforms — macOS + iPhone (M8.1), Windows desktop (M8.2), and Android (M8.3) — closing Milestone 8.
 
@@ -110,13 +117,13 @@ Every app carries: a **four-destination IA** — **Home** (dashboard: summary ca
 - **9 curated presets** — RSI Oversold / Overbought, MACD Bullish Cross / Bearish Cross, Golden Cross, Death Cross, Bollinger Squeeze, and Near 52-Week High / Low, each evaluated directly off the scan's precomputed technical snapshot (RSI 14, MACD cross flags, Bollinger %B/bandwidth, 52-week range position).
 - **Custom builder** — a sheet AND-combines any number of conditions across 10 metrics (price, day change %, RSI 14, Bollinger %B, Bollinger bandwidth, % to 52-week high/low, relative volume, % vs SMA 50/200) with a live match count as you build; saved custom screens persist alongside the presets and can be edited or deleted.
 - **Sortable results** with an inline **add-to-watchlist** action per row — the Screener writes only to the same shared watchlist store every other tab uses (a symbol added here shows up on Watchlist immediately, and vice versa); it never touches the portfolio, and nothing about it is notification-driven.
-- **Screener in Markets** — reachable from the Markets destination on both iPhone and macOS, with an iPhone-adapted row layout and horizontally-scrolling preset chips (`#if os(iOS)`); macOS keeps the full table columns and a static chip row.
+- **Screener in Markets** — reachable from the Markets destination on all four platforms: iPhone/Android use a phone-adapted row layout with horizontally-scrolling preset chips; macOS and Windows keep the full table columns, a static chip row, and (post-M10) a conditional master-detail split when a result row is selected.
 - **Platform status:** macOS + iPhone (M9.1), Windows desktop (M9.2), and Android (M9.3) — all four platforms complete.
 
 ### Settings & appearance
 - A unified, persisted **settings** layer — every preference (notification toggles, security/privacy, trade confirmation, theme, accent) flows through one store with a forward-compatible decoder.
 - **Selectable accents** — Champagne Gold, Rose Gold, Sapphire, Amethyst, and Platinum re-tint the whole brand ramp **including the logo/wordmark artwork** (gold pixels are remapped onto the chosen accent); **dark / light** mode toggle.
-- **Account drawer** with Profile, Account Settings, Notifications, Appearance, Language, Security & Privacy, Help, and About subpages.
+- **Account drawer** ordered app-settings-first (an M10 honesty pass): Appearance, Language, and Notifications up top, then Profile, Account Settings, Security & Privacy, Help, and About.
 - **In-app language switcher** — **English, Deutsch, Italiano, Español**, chosen from a dedicated Language row in the account drawer. The entire interface re-renders **live, with no restart** (the same Observation-driven mechanism as the theme/accent toggles), and the choice persists across launches. Live market data — news headlines, company and ticker names — and number/currency formatting stay in their source form; only the app's own chrome is translated.
 
 ### Throughout
@@ -244,7 +251,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test \
 
 A full Jetpack Compose app (`androidApp/`) at **feature parity** with macOS/Windows, on the same
 shared Kotlin Multiplatform core, shipping the **new IA restructure** (M10.3): a **four-destination bottom-bar** —
-**Home** (dashboard: summary cards, top movers, market summary), **Markets** (Watchlist · Screener · Calendar · News as sections, with conditional master-detail on Watchlist and Screener for asset detail with charts + indicators + KEY STATS / YOUR POSITION), **Portfolio** (Holdings · Allocation · Activity · Performance with **Export** in the header), and **Invest** (Plans and Income re-homed from Portfolio, with DRIP in Income) — a unified **Alerts center** reached from Home, **price alerts** with system notifications and a market-activity coordinator, full **Settings** pages with a live four-language switcher, light/dark themes, and the accent picker.
+**Home** (the opening dashboard: portfolio-value hero with the interactive P&L chart, Today feed, quick stats and cards), **Markets** (Watchlist · Screener · Calendar · News as section pills, each opening asset detail — charts + indicators + KEY STATS / YOUR POSITION — as a **pushed screen**; phone navigation, no split panes), **Portfolio** (Holdings · Allocation · Activity · Performance with **Export** in the header), and **Invest** (Plans and Income re-homed from Portfolio, with DRIP in Income) — a unified **Alerts center** bottom sheet reached from Home, **price alerts** with system notifications and a market-activity coordinator, full **Settings** pages with a live four-language switcher, light/dark themes, and the accent picker.
 
 Requirements: Android SDK (API 35) with `sdk.dir` in `local.properties`, JDK 17.
 
@@ -306,7 +313,7 @@ precision).
 
 A Compose Desktop app (`desktopApp/`) targets Windows at **full macOS parity**, on the same
 shared Kotlin Multiplatform core as the Android app. It ships the **new IA restructure** (M10.2):
-a **four-destination sidebar** — **Home** (dashboard: summary cards, top movers, market summary),
+a **four-destination sidebar** — **Home** (the opening dashboard: portfolio-value hero with the interactive P&L chart, Today feed, quick stats, and an alerts card),
 **Markets** (Watchlist · Screener · Calendar · News as sections, with conditional master-detail
 on Watchlist and Screener for asset detail with charts + indicators + KEY STATS / YOUR POSITION),
 **Portfolio** (Holdings · Allocation · Activity · Performance with **Export** in the header),
