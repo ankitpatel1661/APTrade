@@ -2,6 +2,7 @@ package com.aptrade.desktop
 
 import androidx.compose.ui.window.TrayState
 import com.aptrade.shared.infrastructure.SP500Names
+import com.aptrade.desktop.alerts.AlertsCenterViewModel
 import com.aptrade.desktop.infra.AppSettings
 import com.aptrade.desktop.infra.FileAlertStore
 import com.aptrade.desktop.infra.FileBookmarkStore
@@ -10,6 +11,7 @@ import com.aptrade.desktop.infra.FileSettingsStore
 import com.aptrade.desktop.infra.FileWatchlistStore
 import com.aptrade.desktop.infra.FinnhubKeyConfig
 import com.aptrade.desktop.infra.TrayNotifier
+import com.aptrade.desktop.home.HomeViewModel
 import com.aptrade.desktop.income.IncomeViewModel
 import com.aptrade.desktop.plans.PieWizardViewModel
 import com.aptrade.desktop.plans.PlansViewModel
@@ -37,6 +39,9 @@ import com.aptrade.shared.application.FetchPortfolioPerformance
 import com.aptrade.shared.application.FetchProfile
 import com.aptrade.shared.application.FetchSearch
 import com.aptrade.shared.application.FetchWatchlist
+import com.aptrade.shared.application.HomeFeedAssembler
+import com.aptrade.shared.application.HomeIncomeSummary
+import com.aptrade.shared.application.HomeUpcomingDividend
 import com.aptrade.shared.application.LoadAlerts
 import com.aptrade.shared.application.LoadBookmarks
 import com.aptrade.shared.application.ContributeToPie
@@ -49,6 +54,7 @@ import com.aptrade.shared.application.NewsRepository
 import com.aptrade.shared.application.PieStore
 import com.aptrade.shared.application.PortfolioStore
 import com.aptrade.shared.application.ProcessDueDividends
+import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.RebalancePie
 import com.aptrade.shared.application.ReconcilePieLedgers
 import com.aptrade.shared.application.RemoveFromWatchlist
@@ -61,8 +67,12 @@ import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.application.SimulateDCA
 import com.aptrade.shared.application.ToggleBookmark
 import com.aptrade.shared.application.WatchlistStore
+import com.aptrade.shared.application.normalized
 import com.aptrade.shared.domain.AssetKind
+import com.aptrade.shared.domain.DividendMath
+import com.aptrade.shared.domain.EarningsEvent
 import com.aptrade.shared.domain.MarketCalendar
+import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.Pie
 import com.aptrade.shared.domain.SP500Symbols
 import com.aptrade.shared.domain.TradeSide
@@ -74,9 +84,12 @@ import com.aptrade.shared.infrastructure.FileScreenerSnapshotStore
 import com.aptrade.shared.infrastructure.FinnhubEarningsRepository
 import com.aptrade.shared.infrastructure.FinnhubNewsRepository
 import com.aptrade.shared.infrastructure.YahooMarketDataRepository
+import com.ionspin.kotlin.bignum.decimal.BigDecimal
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.datetime.LocalDate
 
 /** Composition root. A plain CLASS constructed exactly once in main() — deliberately
  *  NOT an `object` (increment-5 review: don't copy the Android singleton to desktop).
@@ -292,6 +305,20 @@ class AppGraph(
     )
     val marketActivityPlanner = MarketActivityPlanner()
 
+    /** Builds a fresh [AlertsCenterViewModel] bound to [scope] — mirrors
+     *  [makeScreenerViewModel]/[makeHomeViewModel]'s factory shape: no persistent,
+     *  graph-owned VM instance; the dialog (M10.2 Task 5's `AlertsCenterDialog`) owns its
+     *  own scope/instance lifetime, a fresh one each time it's opened. Reuses the SAME
+     *  [loadAlerts]/[removePriceAlert]/[fetchWatchlist] use cases
+     *  `WatchlistViewModel`/`PriceAlertSheet` already read from — one store per concern,
+     *  no second cache. */
+    fun makeAlertsCenterViewModel(scope: CoroutineScope): AlertsCenterViewModel = AlertsCenterViewModel(
+        loadAlerts = { loadAlerts.execute() },
+        removeAlert = { id -> removePriceAlert.execute(id) },
+        loadWatchlist = { fetchWatchlist.execute() },
+        scope = scope,
+    )
+
     // Settings-gated order-fill delivery — mirrors macOS's `NotifyOrderFillUseCase`
     // (Sources/APTradeApplication/SettingsUseCases.swift): read `settings.orderFills`
     // once per call, and only deliver when it's on. Handed to PortfolioViewModel as a
@@ -305,6 +332,64 @@ class AppGraph(
         buildNotifyOrderFill(settingsStore) { side, symbol, quantityText, amountFormatted ->
             trayNotifier.notifyFill(side, symbol, quantityText, amountFormatted)
         }
+
+    /** Builds a fresh [HomeViewModel] bound to [scope] — mirrors macOS's
+     *  `CompositionRoot.makeHomeViewModel()` factory shape (see [makeScreenerViewModel]
+     *  immediately above): there is no persistent, graph-owned VM instance; each caller
+     *  (HomePane, Task 4) owns its own scope/instance lifetime.
+     *
+     *  WIRING (M10.2 Task 2's assembler seams — every source below is an EXISTING graph
+     *  piece, nothing new is constructed for Home alone):
+     *  - `loadPortfolio`/`fetchQuotes` are the SAME [fetchPortfolio]/[fetchMarketQuotes]
+     *    use cases [PortfolioViewModel] reads from — just re-shaped to the `Map<String,
+     *    Quote>` the assembler wants (`fetchMarketQuotes.execute` returns a `List`).
+     *  - `ownSymbols` (movers' dedup set) is the SAME watchlist-∪-portfolio closure
+     *    [fetchEarningsCalendar] already shares with the Calendar tab's owned-row
+     *    indicator (see that val's own KDoc, seam 1 of the T1 review) — Home's movers row
+     *    dedupes against the identical "mine" set the rest of the app already uses,
+     *    rather than a second union computed here.
+     *  - `loadIncomeSummary` wraps [buildHomeIncomeSummary] (top-level function below) —
+     *    see that function's KDoc for the day-type conversion seam (Global Constraint 2 /
+     *    Task 2 seam 2: the epoch-seconds ex-date the desktop income pipeline represents
+     *    dividends with is converted to `LocalDate` exactly once, at this boundary).
+     *  - `fetchNextEarnings` reuses [fetchEarningsCalendar]'s existing owned-first,
+     *    day-ascending sort over the SAME 14-day window [CalendarViewModel] scans,
+     *    filtered down to owned/watched symbols only (Home cares about MINE, not any
+     *    S&P 500 constituent the earnings calendar also carries) and takes the first
+     *    (soonest) match — never re-deriving "next" from scratch.
+     *  - `loadScreenerSnapshot`/`loadAlerts` read the SAME [screenerSnapshotStore]/
+     *    [loadAlerts] the Screener pane and Alerts center already read from — one store
+     *    per concern, no second cache.
+     *  - `calendar` is the SAME [marketCalendar] instance every other read-only VM factory
+     *    here shares, so "today"/"soonest" mean the same trading day everywhere (market
+     *    status, screener freshness, and the earnings window below all agree). */
+    fun makeHomeViewModel(
+        scope: CoroutineScope,
+        nowEpochSeconds: () -> Long = { System.currentTimeMillis() / 1000 },
+    ): HomeViewModel {
+        val fetchNextOwnedEarnings: suspend () -> EarningsEvent? = {
+            val start = marketCalendar.localEpochDay(nowEpochSeconds())
+            val fromDay = marketCalendar.dayString(start)
+            val toDay = marketCalendar.dayString(start + 13)
+            val events = fetchEarningsCalendar.execute(fromDay, toDay)
+            val own = ownSymbols().mapTo(HashSet(), ::normalized)
+            events.firstOrNull { normalized(it.symbol) in own }
+        }
+        val assembler = HomeFeedAssembler(
+            loadPortfolio = { fetchPortfolio.execute() },
+            fetchQuotes = { symbols -> fetchMarketQuotes.execute(symbols).associateBy { it.symbol } },
+            ownSymbols = ownSymbols,
+            loadIncomeSummary = {
+                buildHomeIncomeSummary(fetchPortfolio, repository, marketCalendar, nowEpochSeconds)
+            },
+            fetchNextEarnings = fetchNextOwnedEarnings,
+            loadScreenerSnapshot = { screenerSnapshotStore.load() },
+            loadAlerts = { loadAlerts.execute() },
+            calendar = marketCalendar,
+            nowEpochSeconds = nowEpochSeconds,
+        )
+        return HomeViewModel(assembler = assembler, scope = scope)
+    }
 
     // Only the production Yahoo repository and (when configured) the Finnhub news/earnings
     // repositories own closeable Ktor clients; test doubles passed via the constructor
@@ -334,6 +419,131 @@ internal fun buildNotifyOrderFill(
             deliver(side, symbol, quantityText, amountFormatted)
         }
     }
+
+// How far back to fetch dividend events when projecting the next payout: mirrors
+// PortfolioViewModel's DIVIDEND_EVENTS_LOOKBACK_SECONDS / IncomeViewModel's
+// lookbackStart (both 730 days = two years, covering the trailing-annual window plus
+// enough history for cadence inference on slower-paying assets) — the SAME constant,
+// duplicated per this codebase's own established precedent (see DividendMath.kt's and
+// MarketCalendar.kt's header docs) of each file keeping its own private copy of small
+// domain constants/helpers rather than widening visibility to share one.
+private const val HOME_DIVIDEND_EVENTS_LOOKBACK_SECONDS = 730L * 86_400L
+
+/**
+ * Builds the [HomeIncomeSummary] [HomeFeedAssembler] wants — WRAPS the existing income
+ * pipeline (Global Constraint 2 of the M10.2 plan: `receivedYTD` + first upcoming, never
+ * a second recomputation of dividend math) rather than re-deriving it.
+ *
+ * [IncomeViewModel.receivedYTD]/[IncomeViewModel.buildUpcoming] are private methods on a
+ * `@MutableStateFlow`-shaped, one-instance-per-pane VM, so this seam is built from the
+ * SAME underlying pieces those private methods themselves wrap — [FetchPortfolio] for the
+ * portfolio/transaction source, and [DividendMath.nextProjected] (shared, pure, already
+ * used by IncomeViewModel/PortfolioViewModel/ExportPortfolioUseCase alike) for the
+ * cadence-inference-and-projection math — rather than duplicating IncomeViewModel's
+ * internals or widening that VM's visibility just for this one caller. The received-YTD
+ * sum below (a plain "which Dividend transactions fall in the current UTC calendar year"
+ * filter, not dividend MATH) is the one small piece unavoidably duplicated here; per-symbol
+ * dividend-events isolation (one symbol's fetch failure degrades only that symbol) mirrors
+ * [IncomeViewModel.load]'s own per-symbol catch exactly.
+ *
+ * DAY-TYPE SEAM (M10.2 Task 2, seam 2): the desktop income pipeline represents an upcoming
+ * ex-date as `estimatedExDateEpochSeconds: Long` (see `IncomeViewModel.UpcomingRow`);
+ * [HomeUpcomingDividend.estimatedExDate] wants a `kotlinx.datetime.LocalDate`. That
+ * conversion happens EXACTLY ONCE, here, at this boundary, via [MarketCalendar.tradingDay]
+ * — the SAME market-local (ET) convention every other trading-day computation in this
+ * codebase already uses (the assembler's own market-status/screener-freshness checks,
+ * [CalendarViewModel]'s window) — rather than round-tripping through `java.time.Instant`/
+ * `ZoneId` arithmetic (Global Constraint 1: day-only values stay LocalDate end-to-end).
+ * `tradingDay` already returns a plain `yyyy-MM-dd` string, which parses directly as a
+ * `LocalDate` — the exact same "day string in, LocalDate out" shape the assembler's own
+ * earnings seam uses for [EarningsEvent.day].
+ */
+internal suspend fun buildHomeIncomeSummary(
+    fetchPortfolio: FetchPortfolio,
+    repository: MarketDataRepository,
+    calendar: MarketCalendar,
+    nowEpochSeconds: () -> Long,
+): HomeIncomeSummary {
+    val portfolio = fetchPortfolio.execute()
+    val asOf = nowEpochSeconds()
+
+    // Same filter IncomeViewModel.receivedYTD applies: Dividend-side transaction cash
+    // whose UTC calendar year matches `asOf`'s.
+    val currentYear = utcYear(asOf)
+    var receivedYTD = Money(BigDecimal.ZERO, "USD")
+    for (txn in portfolio.transactions) {
+        if (txn.side != TradeSide.Dividend) continue
+        if (utcYear(txn.epochSeconds) != currentYear) continue
+        receivedYTD += Money(txn.price.amount * txn.quantity, txn.price.currencyCode)
+    }
+
+    // Same per-symbol isolation IncomeViewModel.load() applies: one symbol's
+    // dividend-events fetch failure degrades only that symbol (no projection for it),
+    // never the others — and never the receivedYTD sum above, which needs no network call.
+    val nonCryptoPositions = portfolio.positions.filter { it.asset.kind != AssetKind.Crypto }
+    var nextEpochSeconds: Long? = null
+    var nextSymbol: String? = null
+    var nextAmount: Money? = null
+    for (position in nonCryptoPositions) {
+        val symbol = position.asset.symbol
+        val events = try {
+            repository.dividendEvents(symbol, asOf - HOME_DIVIDEND_EVENTS_LOOKBACK_SECONDS)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: QuoteError) {
+            emptyList()
+        }
+        val projected = DividendMath.nextProjected(events) ?: continue
+        if (projected.exDateEpochSeconds <= asOf) continue
+        if (nextEpochSeconds == null || projected.exDateEpochSeconds < nextEpochSeconds) {
+            nextEpochSeconds = projected.exDateEpochSeconds
+            nextSymbol = symbol
+            nextAmount = Money(projected.amountPerShare.amount * position.quantity, projected.amountPerShare.currencyCode)
+        }
+    }
+
+    val nextDividend = if (nextEpochSeconds != null && nextSymbol != null && nextAmount != null) {
+        HomeUpcomingDividend(
+            symbol = nextSymbol,
+            estimatedAmount = nextAmount,
+            estimatedExDate = LocalDate.parse(calendar.tradingDay(nextEpochSeconds)),
+        )
+    } else {
+        null
+    }
+
+    return HomeIncomeSummary(receivedYTD = receivedYTD, nextDividend = nextDividend)
+}
+
+// --- UTC epoch-day civil-date math (private copy) -------------------------------------
+// DividendMath.kt/MarketCalendar.kt/IncomeViewModel.kt/PieSchedule.kt all implement this
+// exact Hinnant civil-date algorithm, privately, per this codebase's own established
+// precedent (see those files' header docs) of each file keeping its OWN copy rather than
+// widening visibility to share it. Only the minimal piece this file needs (UTC epoch-
+// seconds -> UTC calendar year, for the receivedYTD "same year as asOf" filter above) is
+// reproduced here.
+
+private fun utcYear(epochSeconds: Long): Long {
+    val epochDay = homeFloorDiv(epochSeconds, 86_400L)
+    return homeCivilYearFromDays(epochDay)
+}
+
+private fun homeFloorDiv(x: Long, y: Long): Long {
+    val q = x / y
+    return if ((x xor y) < 0 && q * y != x) q - 1 else q
+}
+
+private fun homeCivilYearFromDays(z0: Long): Long {
+    val z = z0 + 719_468L
+    val era = homeFloorDiv(z, 146_097L)
+    val doe = z - era * 146_097L // [0, 146096]
+    val yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365 // [0, 399]
+    val y = yoe + era * 400
+    val doy = doe - (365 * yoe + yoe / 4 - yoe / 100) // [0, 365]
+    val mp = (5 * doy + 2) / 153 // [0, 11]
+    val m = if (mp < 10) mp + 3 else mp - 9 // [1, 12]
+    return if (m <= 2) y + 1 else y
+}
 
 /** Serializes [persistSettings]'s load-merge-save (6d.2 Task 4 — closes the RMW
  *  lost-update window recorded by 6d.1's final review): the settings blob is re-loaded

@@ -225,6 +225,61 @@ class WatchlistViewModelTest {
         assertEquals("AAPL", vm.state.value.selectedSymbol)
     }
 
+    // M10.2 Task 6: conditional master–detail routes the split through this SAME
+    // selectedSymbol field, so its row-click/close semantics are pinned here rather than
+    // via a Compose UI test (this desktop codebase has no Compose UI test infra — the
+    // "UI composition ships without unit tests" waiver applies to everything downstream
+    // of these VM-level behaviors).
+
+    @Test
+    fun selectingTheAlreadyOpenSymbolAgainClosesTheDetailPane() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00", 1.0) } }
+        val vm = vm(repo, InMemoryStore(), backgroundScope)
+        vm.start(); runCurrent()
+        vm.onSelect("AAPL")
+        assertEquals("AAPL", vm.state.value.selectedSymbol)
+        // Same row, clicked again — the macOS "tap again to close" affordance.
+        vm.onSelect("AAPL")
+        assertNull(vm.state.value.selectedSymbol)
+    }
+
+    @Test
+    fun selectingADifferentSymbolSwitchesTheOpenSelection() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00", 1.0) } }
+        val vm = vm(repo, InMemoryStore(), backgroundScope)
+        vm.start(); runCurrent()
+        vm.onSelect("AAPL")
+        vm.onSelect("SPY")
+        assertEquals("SPY", vm.state.value.selectedSymbol)
+    }
+
+    @Test
+    fun closeDetailAlwaysClearsRegardlessOfWhichSymbolIsOpen() = runTest {
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00", 1.0) } }
+        val vm = vm(repo, InMemoryStore(), backgroundScope)
+        vm.start(); runCurrent()
+        vm.onSelect("AAPL")
+        vm.closeDetail()
+        assertNull(vm.state.value.selectedSymbol)
+    }
+
+    @Test
+    fun openDetailAlwaysSetsAndNeverTogglesEvenWhenAlreadyOpen() = runTest {
+        // The palette / Alerts-center tap-through path (openDetail) must always land on
+        // the detail pane — unlike a row click (onSelect), it has no "this row is
+        // visibly already selected" context to toggle against.
+        val repo = FakeMarketDataRepository()
+        repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00", 1.0) } }
+        val vm = vm(repo, InMemoryStore(), backgroundScope)
+        vm.start(); runCurrent()
+        vm.openDetail("AAPL")
+        vm.openDetail("AAPL")
+        assertEquals("AAPL", vm.state.value.selectedSymbol)
+    }
+
     @Test
     fun averageChangeIsMeanAcrossAllKinds() = runTest {
         val repo = FakeMarketDataRepository()

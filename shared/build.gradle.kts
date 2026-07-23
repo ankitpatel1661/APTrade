@@ -51,6 +51,12 @@ kotlin {
             implementation("io.ktor:ktor-client-content-negotiation:3.0.3")
             implementation("io.ktor:ktor-serialization-kotlinx-json:3.0.3")
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+            // Day-only values (HomeFeed's Earnings/Dividend rows — M10.2 Task 1) are expressed
+            // as kotlinx.datetime.LocalDate end-to-end, never round-tripped through Instant —
+            // see HomeFeed.kt's header doc. Market-hours transition INSTANTS stay on the
+            // existing epochSeconds/MarketCalendar convention (ET is resolved internally
+            // there); only calendar-day values get the LocalDate type.
+            api("org.jetbrains.kotlinx:kotlinx-datetime:0.6.1")
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

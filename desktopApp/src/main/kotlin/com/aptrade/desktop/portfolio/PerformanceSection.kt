@@ -123,9 +123,12 @@ fun PerformanceSection(
     }
 }
 
-/** The TimeframeBar idiom extended to the five portfolio spans (1D · 1W · 1M · 1Y · MAX). */
+/** The TimeframeBar idiom extended to the five portfolio spans (1D · 1W · 1M · 1Y · MAX).
+ *  `internal` (M10.2 Task 4 hoist): `com.aptrade.desktop.home.HomePane`'s hero chart reuses
+ *  this verbatim for its own span selector — the SAME control, not a second copy — rather
+ *  than duplicating the five-span row a second time for the Home dashboard. */
 @Composable
-private fun SpanBar(selection: PortfolioSpan, onSelect: (PortfolioSpan) -> Unit) {
+internal fun SpanBar(selection: PortfolioSpan, onSelect: (PortfolioSpan) -> Unit) {
     Row(Modifier.fillMaxWidth()) {
         for (span in PortfolioSpan.entries) {
             val selected = span == selection
@@ -301,9 +304,11 @@ private fun OverlayChart(
 
 /** The floating pill next to the crosshair — value over date, DK surface with a hairline
  *  border. Horizontally biased to the crosshair position ([fraction] of chart width) and
- *  flipped to the left of the cursor past the midpoint so it never clips the right edge. */
+ *  flipped to the left of the cursor past the midpoint so it never clips the right edge.
+ *  `internal` (M10.2 Task 4 hoist): `com.aptrade.desktop.home.HomePane`'s hero chart reuses
+ *  this verbatim for its own single-series crosshair readout. */
 @Composable
-private fun CrosshairTooltip(
+internal fun CrosshairTooltip(
     valueText: String,
     dateText: String,
     fraction: Float,

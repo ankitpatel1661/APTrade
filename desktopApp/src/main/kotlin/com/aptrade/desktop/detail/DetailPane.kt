@@ -75,18 +75,28 @@ import androidx.compose.runtime.collectAsState
 private val dividendExDateFormatter: DateTimeFormatter =
     DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.US).withZone(ZoneOffset.UTC)
 
-/** Full-window asset detail. A fresh `DetailViewModel` (with its own single-thread
- *  scope) is built per `symbol` so a stale load dies with its symbol. A 48dp back bar
- *  sits above the existing `DetailContent`. `onBuy` (asset + live price text) opens the
- *  paper-trade dialog with Buy preselected (the dialog's toggle covers Sell).
+/** Asset detail. A fresh `DetailViewModel` (with its own single-thread scope) is built per
+ *  `symbol` so a stale load dies with its symbol. `onBuy` (asset + live price text) opens
+ *  the paper-trade dialog with Buy preselected (the dialog's toggle covers Sell).
  *  `heldPosition` is the portfolio row for this symbol (or null) — the YOUR POSITION card
- *  reads it directly; no second portfolio store read path. */
+ *  reads it directly; no second portfolio store read path.
+ *
+ *  `embedded` (M10.2 Task 6, mirrors `AssetDetailView.swift`'s `embedded: Bool`): when
+ *  `true`, this is hosted beside a list column inside a Watchlist/Screener pane's own
+ *  conditional split rather than shown full-window, so the internal "‹ Back" bar is
+ *  skipped (the pane already renders its own ✕ close affordance over the top — see
+ *  `WatchlistPane`/`ScreenerPane`'s `CircularCloseButton`) and a small top inset is added
+ *  instead so that floating ✕ never overlaps the header row's BUY/SELL pill. Kotlin's
+ *  `DetailScreen`, unlike Swift's `AssetDetailView`, has no window-size floor to begin
+ *  with (the desktop window's own `minimumSize` already covers that) — `embedded` only
+ *  ever needs to swap the back-affordance, never a size constraint. */
 @Composable
 fun DetailScreen(
     symbol: String,
     onBack: () -> Unit,
     heldPosition: HoldingRowUi? = null,
     onBuy: ((com.aptrade.shared.domain.Asset, String?) -> Unit)? = null,
+    embedded: Boolean = false,
 ) {
     val graph: AppGraph = LocalAppGraph.current
     val scope = remember(symbol) { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
@@ -109,23 +119,27 @@ fun DetailScreen(
 
     val state by vm.state.collectAsState()
     Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "‹  " + tr(L10n.Key.Back),
-                style = TextStyle(
-                    fontFamily = InterFamily,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = DK.textSecondary,
-                ),
-                modifier = Modifier.clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                ) { onBack() },
-            )
+        if (embedded) {
+            Spacer(Modifier.height(32.dp))
+        } else {
+            Row(
+                Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "‹  " + tr(L10n.Key.Back),
+                    style = TextStyle(
+                        fontFamily = InterFamily,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = DK.textSecondary,
+                    ),
+                    modifier = Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onBack() },
+                )
+            }
         }
         DetailContent(
             state = state,

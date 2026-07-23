@@ -15,14 +15,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +39,8 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -52,43 +53,64 @@ import com.aptrade.desktop.designkit.LiveBadge
 import com.aptrade.desktop.designkit.StatTile
 import com.aptrade.desktop.designkit.SuperscriptPrice
 import com.aptrade.desktop.designkit.formatPercent
-import com.aptrade.desktop.income.IncomePane
-import com.aptrade.desktop.plans.PlansPane
 import com.aptrade.shared.l10n.L10n
 import com.aptrade.desktop.l10n.tr
 import com.aptrade.desktop.l10n.trf
 import com.aptrade.shared.domain.AllocationSlice
 
-/** The five content sections beneath the summary and chart. [Plans] (M7.2 Task 12) renders
- *  [com.aptrade.desktop.plans.PlansPane] and [Income] (M8.2 Task 7) renders
- *  [com.aptrade.desktop.income.IncomePane] instead of a section built inline in this file — the
- *  investment-Pies and dividend-income features each own their own package, mirroring how
- *  Calendar/News own theirs rather than living inside PortfolioPane.kt. */
-private enum class PortfolioSection {
-    Holdings, Allocation, Activity, Plans, Income
+/** The four content sections beneath the summary header (M10.2 Task 3). Hoisted PUBLIC so
+ *  `ui.AppShell`'s sidebar can drive it directly — the sidebar item IS the section picker
+ *  now (no separate pill row under it), mirroring `RootView.SidebarDestination` on macOS.
+ *  [Plans]/[Income] moved OUT of this enum (M10.2 Task 3): Invest is its own top-level
+ *  sidebar group now, not a Portfolio section, so their pane hosting
+ *  ([com.aptrade.desktop.plans.PlansPane] / [com.aptrade.desktop.income.IncomePane]) relocated
+ *  to Main.kt's Invest routing — nothing inside either pane changed.
+ *  [Performance] resolves a pre-IA-restructure divergence from Swift: before this sidebar
+ *  existed, `PerformanceSection` (span bar/benchmark/chart/risk metrics) was called
+ *  unconditionally above the section switcher, because the switcher had no natural slot for
+ *  it. Swift's `PortfolioView.Section.performance` always had one (`PortfolioSectionContent`
+ *  renders `PerformanceSection` only when selected). Now that the sidebar gives every
+ *  destination a real section slot, `Performance` gets its own — matching Swift exactly —
+ *  instead of duplicating chart content under every other section. */
+enum class PortfolioSection {
+    Holdings, Allocation, Activity, Performance
 }
 
 /** [PortfolioSection]'s display label. A plain function (not an enum property) because it
- *  must call [tr], which reads the active language live — see [com.aptrade.desktop.ui.AppTab]'s
- *  `title()` for the same pattern and rationale. */
-private fun PortfolioSection.label(): String = when (this) {
+ *  must call [tr], which reads the active language live — see the former `AppTab.title()`
+ *  (M10.1-era) for the same pattern and rationale. Public alongside the enum so
+ *  `ui.AppShell`'s sidebar rows reuse it verbatim instead of duplicating the mapping. */
+fun PortfolioSection.label(): String = when (this) {
     PortfolioSection.Holdings -> tr(L10n.Key.HoldingsSection)
     PortfolioSection.Allocation -> tr(L10n.Key.AllocationSection)
     PortfolioSection.Activity -> tr(L10n.Key.ActivitySection)
-    PortfolioSection.Plans -> tr(L10n.Key.PlansSection)
-    PortfolioSection.Income -> tr(L10n.Key.IncomeSection)
+    PortfolioSection.Performance -> tr(L10n.Key.PerformanceSection)
 }
 
-/** Portfolio tab: the Compose port of `Sources/APTradeApp/PortfolioView.swift`. A full-width
- *  column — summary header, the [PerformanceSection] chart block (span bar + benchmark picker +
- *  crosshair-scrubbed dual-line overlay + risk metrics), a Holdings / Allocation / Activity
- *  section switcher, and the section content. All state is read from [PortfolioUiState]; trades
- *  are raised through [onTrade],
- *  which the host opens as a [TradeDialog] overlaying the whole window. Row clicks open the
- *  existing full-window detail via [onOpenDetail]. */
+/** Portfolio destination content: the Compose port of `Sources/APTradeApp/PortfolioView.swift`'s
+ *  `PortfolioSummaryHeader` + `PortfolioSectionContent` (M10.2 Task 3 — the section picker moved
+ *  to the sidebar; this pane no longer owns one). A full-width column — the summary header
+ *  (total value/day change/cash/holdings/unrealized/realized/export/reset — preserved above
+ *  section content per the Swift T6/T7 lesson: a destination-driven shell must not lose it) then
+ *  the externally-driven [section]'s content, [PerformanceSection] included (span bar +
+ *  benchmark picker + crosshair-scrubbed dual-line overlay + risk metrics — now section-gated
+ *  rather than always-visible; see the [PortfolioSection] KDoc). All state is read from
+ *  [PortfolioUiState]; trades are raised through [onTrade], which the host opens as a
+ *  [TradeDialog] overlaying the whole window. Row clicks open the existing full-window detail
+ *  via [onOpenDetail].
+ *
+ *  M10.2 Task 7: the header's Export entry point is now a plain in-pane button (the circular
+ *  idiom below) — the account "⋯" panel used to trigger it remotely via a hoisted one-shot
+ *  flag; that cross-pane wiring is gone now that the account panel no longer hosts an Export
+ *  row at all (see `ui.AccountPanel`'s doc comment). */
 @Composable
 fun PortfolioPane(
     state: PortfolioUiState,
+    /** Externally driven (M10.2 Task 3): the sidebar item IS the section picker now, so this
+     *  pane no longer owns `section` as local state. The caller (Main.kt) reads it straight off
+     *  `SidebarDestination.Portfolio.section` and passes it down — no request/clear dance
+     *  (constraint 3). */
+    section: PortfolioSection,
     onSetSpan: (PortfolioSpan) -> Unit,
     onSetBenchmark: (String) -> Unit,
     onOpenDetail: (String) -> Unit,
@@ -97,16 +119,15 @@ fun PortfolioPane(
     onExportCsv: () -> Unit,
     onExportJson: () -> Unit,
     onExportPdf: () -> Unit,
-    /** One-shot trigger raised by the host (⋯ panel's Export row): when it flips true, the
-     *  export chooser auto-opens on this pane. The pane consumes and clears it. */
-    pendingExport: MutableState<Boolean> = remember { mutableStateOf(false) },
 ) {
-    var section by remember { mutableStateOf(PortfolioSection.Holdings) }
     var showResetConfirm by remember { mutableStateOf(false) }
 
-    // The whole pane scrolls as one column: summary → P&L chart → PERFORMANCE → section
-    // switcher → section content. The bounded paper-trading portfolio makes plain Columns
-    // (not nested LazyColumns) the right fit here — everything flows under a single scroll.
+    // The whole pane scrolls as one column: summary header → section content. The bounded
+    // paper-trading portfolio makes a plain Column (not a nested LazyColumn) the right fit —
+    // everything flows under a single scroll. No section switcher here anymore (Task 3): the
+    // sidebar is the only section nav now, mirroring `RootView.macDestinationContent`'s
+    // rationale for not reusing a pill-owning host (it would show a redundant picker under
+    // the sidebar).
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         SummaryHeader(
             state = state,
@@ -114,27 +135,11 @@ fun PortfolioPane(
             onExportCsv = onExportCsv,
             onExportJson = onExportJson,
             onExportPdf = onExportPdf,
-            pendingExport = pendingExport,
-        )
-        // The Performance section is now THE chart block — span bar, benchmark picker, and the
-        // crosshair-scrubbed dual-line overlay live there, directly under the summary header.
-        PerformanceSection(
-            state = state,
-            onSetSpan = onSetSpan,
-            onSetBenchmark = onSetBenchmark,
-            modifier = Modifier.padding(horizontal = 24.dp).padding(top = 4.dp, bottom = 20.dp),
-        )
-        // The switcher is ALWAYS shown (unlike the old holdings-gated version): Plans
-        // especially must stay reachable with zero holdings — a Pie's first contribution is
-        // often how holdings come to exist in the first place. Only the Holdings section
-        // itself keeps its own dedicated empty state below, mirroring PortfolioView.swift's
-        // `if viewModel.holdings.isEmpty && section == .holdings`.
-        SectionSwitcher(
-            selected = section,
-            onSelect = { section = it },
-            modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 8.dp),
         )
         Box(Modifier.fillMaxWidth().height(1.dp).background(DK.hairline))
+        // Holdings keeps its own dedicated empty state; Allocation/Activity/Performance must
+        // stay reachable with zero holdings, mirroring `PortfolioSectionContent`'s gating
+        // (`if viewModel.holdings.isEmpty && section == .holdings`).
         if (state.holdings.isEmpty() && section == PortfolioSection.Holdings) {
             EmptyState()
         } else {
@@ -142,8 +147,12 @@ fun PortfolioPane(
                 PortfolioSection.Holdings -> HoldingsList(state, onOpenDetail, onTrade)
                 PortfolioSection.Allocation -> AllocationView(state)
                 PortfolioSection.Activity -> ActivityView(state)
-                PortfolioSection.Plans -> PlansPane()
-                PortfolioSection.Income -> IncomePane()
+                PortfolioSection.Performance -> PerformanceSection(
+                    state = state,
+                    onSetSpan = onSetSpan,
+                    onSetBenchmark = onSetBenchmark,
+                    modifier = Modifier.padding(horizontal = 24.dp).padding(top = 4.dp, bottom = 20.dp),
+                )
             }
         }
     }
@@ -165,17 +174,8 @@ private fun SummaryHeader(
     onExportCsv: () -> Unit,
     onExportJson: () -> Unit,
     onExportPdf: () -> Unit,
-    pendingExport: MutableState<Boolean>,
 ) {
     var exportOpen by remember { mutableStateOf(false) }
-    // Consume the host's one-shot Export trigger: open the chooser here, then clear the flag
-    // so a later ⋯ → Export re-fires it.
-    LaunchedEffect(pendingExport.value) {
-        if (pendingExport.value) {
-            exportOpen = true
-            pendingExport.value = false
-        }
-    }
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(top = 20.dp, bottom = 18.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -209,7 +209,7 @@ private fun SummaryHeader(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 if (state.holdings.isNotEmpty()) LiveBadge()
                 Box {
-                    TextButton(tr(L10n.Key.ExportEllipsis), DK.textSecondary) { exportOpen = true }
+                    ExportButton(onClick = { exportOpen = true })
                     if (exportOpen) {
                         ExportChooser(
                             onDismiss = { exportOpen = false },
@@ -255,6 +255,29 @@ private fun SignedMoneyPill(text: String, positive: Boolean?) {
             .border(1.dp, color.copy(alpha = 0.24f), RoundedCornerShape(7.dp))
             .padding(horizontal = 8.dp, vertical = 4.dp),
     )
+}
+
+/** Export entry point (M10.2 Task 7, re-homed from the account "⋯" menu) — the same circular
+ *  idiom `ui.AppShell`'s `ThemeToggleButton` and the Swift twin's `PortfolioSummaryHeader
+ *  .exportButton` both use: a 28dp gold-ringed circle over [DK.surface] with a centered glyph.
+ *  `contentDescription` carries [L10n.Key.ExportPortfolioData] so the button reads correctly
+ *  to accessibility tooling even though the visible label is gone (icon-only, matching Swift's
+ *  `.accessibilityLabel(tr(.exportPortfolioData))`). */
+@Composable
+private fun ExportButton(onClick: () -> Unit) {
+    val label = tr(L10n.Key.ExportPortfolioData)
+    Box(
+        modifier = Modifier
+            .size(28.dp)
+            .clip(RoundedCornerShape(50))
+            .background(DK.surface)
+            .border(1.dp, DK.gold.copy(alpha = 0.4f), RoundedCornerShape(50))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() }
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        com.aptrade.desktop.designkit.ExportIcon(tint = DK.gold, modifier = Modifier.size(13.dp))
+    }
 }
 
 /** The unified export menu: a small DK-styled popup panel anchored under the "Export…" button
@@ -327,40 +350,6 @@ private fun TextButton(label: String, color: Color, onClick: () -> Unit) {
         modifier = Modifier
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() },
     )
-}
-
-// MARK: - Section switcher
-
-@Composable
-private fun SectionSwitcher(
-    selected: PortfolioSection,
-    onSelect: (PortfolioSection) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        for (option in PortfolioSection.entries) {
-            val isSelected = option == selected
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(if (isSelected) DK.surfaceHi else Color.Transparent)
-                    .then(
-                        if (isSelected) Modifier.border(1.dp, DK.gold.copy(alpha = 0.40f), RoundedCornerShape(50))
-                        else Modifier,
-                    )
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onSelect(option) }
-                    .padding(horizontal = 14.dp, vertical = 6.dp),
-            ) {
-                Text(
-                    option.label(),
-                    style = TextStyle(
-                        fontFamily = InterFamily, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                        color = if (isSelected) DK.textPrimary else DK.textSecondary,
-                    ),
-                )
-            }
-        }
-    }
 }
 
 // MARK: - Holdings
@@ -449,22 +438,35 @@ private fun AllocationView(state: PortfolioUiState) {
         Spacer(Modifier.height(20.dp))
         AllocationDonutRow(state)
         Spacer(Modifier.height(24.dp))
-        // By-holding and by-class share one row below the donut (mirrors the Income
-        // pane's side-by-side tables), so both groups are visible without scrolling.
+        // By-class and by-holding share one row below the donut (mirrors the Income pane's
+        // side-by-side tables), so both groups are visible without scrolling.
+        //
+        // M10.1 UAT U4 (macOS's twin fix — see PortfolioView.swift's byClassColumn/
+        // allocationView comments): an even 50/50 split left the by-class column (only ever
+        // 2-3 rows: Stocks/ETFs/Crypto) far wider than its content needs. Capping it at
+        // ~260dp (~30% of this shell's 1120dp-minimum content width, the same ratio macOS
+        // derived) while by-holding takes the remaining ~70% via `weight(1f)` approximates
+        // that ratio without hardcoding a literal percentage of a runtime-measured width.
+        // By-class also comes FIRST now (macOS order: `byClassColumn` before
+        // `byHoldingColumn`), not by-holding — this pane had them swapped.
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            Column(Modifier.widthIn(max = 260.dp)) {
+                AllocationGroupHeader(tr(L10n.Key.ByClass))
+                Spacer(Modifier.height(12.dp))
+                for (slice in state.allocationByKind) {
+                    AllocationBar(label = sliceLabel(slice), fraction = slice.fraction, fillColor = kindColor(slice.id))
+                    // Tightened vs. by-holding's 14dp (mirrors macOS's byClassColumn using a
+                    // tighter 10dp row spacing than byHoldingColumn's 14dp) — by-class only
+                    // ever has 2-3 rows, so a smaller gap reads as a compact, purpose-built
+                    // group rather than stretching to match the taller by-holding list.
+                    Spacer(Modifier.height(10.dp))
+                }
+            }
             Column(Modifier.weight(1f)) {
                 AllocationGroupHeader(tr(L10n.Key.ByHolding))
                 Spacer(Modifier.height(12.dp))
                 for (slice in state.allocationByHolding) {
                     AllocationBar(label = slice.label, fraction = slice.fraction, fillColor = null)
-                    Spacer(Modifier.height(14.dp))
-                }
-            }
-            Column(Modifier.weight(1f)) {
-                AllocationGroupHeader(tr(L10n.Key.ByClass))
-                Spacer(Modifier.height(12.dp))
-                for (slice in state.allocationByKind) {
-                    AllocationBar(label = sliceLabel(slice), fraction = slice.fraction, fillColor = kindColor(slice.id))
                     Spacer(Modifier.height(14.dp))
                 }
             }

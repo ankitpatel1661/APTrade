@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.designkit.InterFamily
+import com.aptrade.desktop.designkit.alertSummary
 import com.aptrade.shared.l10n.L10n
 import com.aptrade.desktop.l10n.tr
 import com.aptrade.desktop.l10n.trf
@@ -300,18 +301,6 @@ private fun kindLabel(kind: AlertKind): String = when (kind) {
     AlertKind.Above -> tr(L10n.Key.PriceAboveKind)
     AlertKind.Below -> tr(L10n.Key.PriceBelowKind)
     AlertKind.Percent -> tr(L10n.Key.PercentMoveKind)
-}
-
-/** Localized existing-alert row text, computed HERE rather than via
- *  `AlertCondition.summary` (the `:shared` commonMain getter is deliberately English-only —
- *  see its doc comment — and out of scope for this desktop-only retrofit). Mirrors the exact
- *  shape of `AlertCondition.summary` (`Money.formatted` for the threshold, `abs(magnitude)`
- *  for the percent figure) against the catalog's pre-provisioned
- *  `priceAboveSummaryFormat`/`priceBelowSummaryFormat`/`percentMoveSummaryFormat` Keys. */
-private fun alertSummary(condition: AlertCondition): String = when (condition) {
-    is AlertCondition.PriceAbove -> trf(L10n.Key.PriceAboveSummaryFormat, condition.threshold.formatted)
-    is AlertCondition.PriceBelow -> trf(L10n.Key.PriceBelowSummaryFormat, condition.threshold.formatted)
-    is AlertCondition.PercentChange -> trf(L10n.Key.PercentMoveSummaryFormat, kotlin.math.abs(condition.magnitude))
 }
 
 @Composable
