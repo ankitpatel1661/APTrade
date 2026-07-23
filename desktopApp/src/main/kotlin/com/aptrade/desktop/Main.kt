@@ -251,14 +251,22 @@ fun main() = application {
     // stays scoped to a Screener visit (constraint: scan lifecycle unaffected by this task) —
     // so this one extra var carries just the selected symbol, not the whole VM.
     var screenerSelectedSymbol by remember { mutableStateOf<String?>(null) }
+    // CROSS-PLATFORM DIVERGENCE (M10.2): Desktop pane detail selections (openSymbol, Watchlist's
+    // selectedSymbol, screenerSelectedSymbol) PERSIST across visit-away-and-back — re-visiting
+    // Watchlist after navigating to Markets→Calendar and back re-opens the same detail. Swift's
+    // @State resets on revisit; this Compose pattern deliberately keeps it open. Rationale:
+    // structurally prevents cross-section carry-across (no possibility of opening Watchlist detail
+    // but showing Screener's data) and maintains Esc reachability (clear the detail to reset).
+    // M10.3 Android must consciously reconcile this behavior (push-nav makes it N/A currently);
+    // a Swift macOS backport decision is pending (M10.3 priority TBD).
     // The sidebar's current destination, hoisted here so window-level Esc can gate pane-selection
     // clearing on the active section (Task 6 review fix).
     var sidebarSelection by remember { mutableStateOf<SidebarDestination>(SidebarDestination.Home) }
     // The open trade dialog's target (asset + side + live price text), hoisted here like the
-    // palette so the dialog overlays the whole window. The dialog owns its own Esc handling —
-    // as do the Portfolio pane's own overlays (the reset-confirm dialog and the export chooser)
-    // and the account/settings panel, each consuming Esc on its own onPreviewKeyEvent before the
-    // window chain below sees it.
+    // palette so the dialog overlays the whole window. TUNNELING ORDER: window-level
+    // onPreviewKeyEvent fires BEFORE focused children, so child overlays (TradeDialog,
+    // PriceAlertSheet, AccountPanel) must gate the window Esc chain — see the guard
+    // (tradeTarget == null && alertTarget == null && !accountOpen) on Esc branches below.
     var tradeTarget by remember { mutableStateOf<TradeTarget?>(null) }
     // The right-anchored account/settings panel (⋯ button). Hoisted here so it overlays the
     // whole window like the palette; it self-consumes Esc on its own panel, never the window's.
@@ -370,18 +378,16 @@ fun main() = application {
                     closePalette()
                     true
                 }
-                event.key == Key.Escape && openSymbol != null -> {
-                    // Window-level Esc ownership: preview handling wins over any focused child.
-                    // If a future detail-screen field needs Esc, rework this precedence first.
+                event.key == Key.Escape && openSymbol != null && tradeTarget == null && alertTarget == null && !accountOpen -> {
                     openSymbol = null
                     true
                 }
                 // Gate pane-selection Esc to the active destination only (Task 6 review fix).
-                event.key == Key.Escape && sidebarSelection == SidebarDestination.Markets(MarketsSection.Watchlist) && watchlistViewModel.state.value.selectedSymbol != null -> {
+                event.key == Key.Escape && sidebarSelection == SidebarDestination.Markets(MarketsSection.Watchlist) && watchlistViewModel.state.value.selectedSymbol != null && tradeTarget == null && alertTarget == null && !accountOpen -> {
                     watchlistViewModel.closeDetail()
                     true
                 }
-                event.key == Key.Escape && sidebarSelection == SidebarDestination.Markets(MarketsSection.Screener) && screenerSelectedSymbol != null -> {
+                event.key == Key.Escape && sidebarSelection == SidebarDestination.Markets(MarketsSection.Screener) && screenerSelectedSymbol != null && tradeTarget == null && alertTarget == null && !accountOpen -> {
                     screenerSelectedSymbol = null
                     true
                 }

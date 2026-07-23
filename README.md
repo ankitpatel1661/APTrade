@@ -312,11 +312,10 @@ precision).
 A Compose Desktop app (`desktopApp/`) targets Windows at **full macOS parity**, on the same
 shared Kotlin Multiplatform core as the Android app. It ships the **new IA restructure** (M10.2):
 a **four-destination sidebar** — **Home** (dashboard: summary cards, top movers, market summary),
-**Markets** (watchlist, asset detail with charts + indicators + KEY STATS / YOUR POSITION, plus
-a Screener tab, News tab with per-symbol company news and bookmarks, and Calendar with S&P 500
-earnings), **Portfolio** (holdings, allocation, activity with conditional master-detail, plus
-Plans and Income sections, with **Export** in the header), and **Invest** (Plans and Income re-homed
-from Portfolio) — a Ctrl+K search palette, price alerts and tray notifications, a unified
+**Markets** (Watchlist · Screener · Calendar · News as sections, with conditional master-detail
+on Watchlist and Screener for asset detail with charts + indicators + KEY STATS / YOUR POSITION),
+**Portfolio** (Holdings · Allocation · Activity · Performance with **Export** in the header),
+and **Invest** (Plans and Income re-homed from Portfolio, with DRIP in Income) — a Ctrl+K search palette, price alerts and tray notifications, a unified
 **Alerts center** reached from Home, DRIP dividend reinvestment in Income, and a full account panel
 (light/dark themes, accent picker, four-language switcher, and real settings pages) — recreating
 the macOS app's gold-on-black visual identity. It's developed and run on this Mac as a proxy for

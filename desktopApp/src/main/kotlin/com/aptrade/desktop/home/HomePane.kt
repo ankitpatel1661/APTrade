@@ -110,13 +110,10 @@ import java.time.LocalDate as JavaLocalDate
  * the hero click navigates straight into this exact chart on the Portfolio tab, one consistent
  * color reads as "the same chart, zoomed out" rather than introducing a second, incompatible
  * treatment for identical data.
- *
- * ALERTS PREVIEW: Task 5 (Desktop Alerts center) hasn't shipped its `AlertsCenterViewModel`
- * yet, so this pane loads the raw alert list directly via the [loadAlerts] closure the caller
- * (`Main.kt`) wires from `AppGraph.loadAlerts` — mirroring how Swift's `HomeViewMac` owns a
- * second, dedicated `AlertsCenterViewModel` instance purely for its 2-row preview. `onOpenAlerts`
- * is a plain closure for now (Task 5 wires the real dialog); the armed-count header always
- * comes from [HomeState.alertCount] (Global Constraint 8 — armed/non-triggered only).
+ * This pane loads the alert list via the [loadAlerts] closure, mirroring how Swift's `HomeViewMac`
+ * owns its own `AlertsCenterViewModel` instance for the 2-row preview. The `onOpenAlerts` callback
+ * opens the real Alerts center dialog. The armed-count header always comes from [HomeState.alertCount]
+ * (Global Constraint 8 — armed/non-triggered only).
  *
  * REFRESH CADENCE (Global Constraint 1): ONE sequential `LaunchedEffect` loop —
  * `while (isActive) { vm.refresh(); reload alerts; delay(15_000) }` — refresh always
@@ -378,8 +375,8 @@ private fun signColorFromFormattedText(text: String): Color = when {
 
 /** Armed (non-triggered) alert count in the header (Global Constraint 8) plus a 2-row preview
  *  of the oldest-store-order armed alerts — mirrors `HomeViewMac.alertsCard`/`alertsPreview`
- *  exactly. Clicking the whole card opens the Alerts center ([onOpenAlerts] — Task 5 wires the
- *  real dialog; today it's a no-op the caller supplies). No SF-Symbol-style bell glyph exists
+ *  exactly. Clicking the whole card opens the real Alerts center dialog ([onOpenAlerts]).
+ *  No SF-Symbol-style bell glyph exists
  *  in this desktop design kit (checked: no icon-font/Canvas-glyph precedent for "bell" the way
  *  `MagnifierIcon`/`MoonIcon`/`SunIcon` cover search/appearance) — a small gold dot stands in,
  *  the same "colored dot as status indicator" idiom the Today card's market-status row and the
