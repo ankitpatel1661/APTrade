@@ -59,6 +59,11 @@ fun InvestScreen(
     section: InvestSection,
     onSelectSection: (InvestSection) -> Unit,
     confirmTrades: Boolean,
+    // M10.3 Task 5: threaded through to [IncomeSection]'s DRIP card — see that composable's
+    // own KDoc for why these come from the Activity-scoped SettingsViewModel rather than a
+    // screen-local copy.
+    dripEnabled: Boolean,
+    onDripChanged: (Boolean) -> Unit,
 ) {
     val layoutDirection = LocalLayoutDirection.current
     Column(
@@ -83,7 +88,9 @@ fun InvestScreen(
         ) {
             when (section) {
                 InvestSection.Plans -> item { PlansSection(confirmTrades = confirmTrades) }
-                InvestSection.Income -> item { IncomeSection() }
+                InvestSection.Income -> item {
+                    IncomeSection(dripEnabled = dripEnabled, onDripChanged = onDripChanged)
+                }
             }
         }
     }

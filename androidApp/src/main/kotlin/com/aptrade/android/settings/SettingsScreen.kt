@@ -59,14 +59,19 @@ import com.aptrade.shared.settings.AppSettings
 /** The pages reachable inside the settings destination. Root is the row list; the others
  *  are detail pages with a back affordance — the Android port of desktop AccountPanel.kt's
  *  `AccountPage`. No Export Portfolio Data page: the brief's Android menu set omits it
- *  (desktop's export row triggers a desktop file chooser that has no analog here yet). */
+ *  (desktop's export row triggers a desktop file chooser that has no analog here yet).
+ *
+ *  Declared in the M10.3 Task 5 (settings-honesty pass, desktop M10.2 Task 7's Android twin)
+ *  display order: app-level settings first (Appearance, Language, Notifications), then
+ *  identity/account settings (Profile, Account Settings, Security & Privacy), then Help/About —
+ *  matching desktop `AccountPanel.kt`'s `AccountRow` order exactly. */
 private enum class SettingsPage(val titleKey: L10n.Key) {
     Root(L10n.Key.Account),
-    Profile(L10n.Key.Profile),
-    AccountSettings(L10n.Key.AccountSettings),
-    Notifications(L10n.Key.Notifications),
     Appearance(L10n.Key.Appearance),
     Language(L10n.Key.Language),
+    Notifications(L10n.Key.Notifications),
+    Profile(L10n.Key.Profile),
+    AccountSettings(L10n.Key.AccountSettings),
     Security(L10n.Key.SecurityAndPrivacy),
     Help(L10n.Key.HelpAndSupport),
     About(L10n.Key.AboutAPTrade),
@@ -76,9 +81,10 @@ private enum class SettingsPage(val titleKey: L10n.Key) {
  * The settings destination — NavHost-pushed from the top bar's account action, replacing
  * `SettingsPlaceholder`. The page set and row anatomy mirror desktop `AccountPanel.kt`
  * (which itself ports macOS `RootView.swift`'s account sheet): a root menu of
- * Profile / Account Settings / Notifications / Appearance / Language / Security & Privacy /
- * Help & Support / About APTrade, each opening a sub-page. Every string resolves through
- * [tr] — no hardcoded English — so a language change recomposes the whole screen live.
+ * Appearance / Language / Notifications / Profile / Account Settings / Security & Privacy /
+ * Help & Support / About APTrade (M10.3 Task 5 order — app-level settings first, then
+ * identity/account settings, then Help/About), each opening a sub-page. Every string resolves
+ * through [tr] — no hardcoded English — so a language change recomposes the whole screen live.
  *
  * Own Scaffold-in-route (like SearchScreen/DetailScreen): the top bar shows the current
  * page's title with a back arrow that pops sub-page → root → [onClose]; the system back
@@ -145,16 +151,17 @@ fun SettingsScreen(viewModel: SettingsViewModel, onClose: () -> Unit) {
 
 // MARK: - Root
 
-/** The account row list, in the desktop/macOS order (minus Export Portfolio Data). Labels
- *  resolve via [tr] at render time so they recompose on language change. */
+/** The account row list, in the desktop/macOS order (minus Export Portfolio Data and DRIP —
+ *  see [SettingsPage]'s KDoc for the M10.3 Task 5 reorder). Labels resolve via [tr] at render
+ *  time so they recompose on language change. */
 @Composable
 private fun RootList(onOpen: (SettingsPage) -> Unit) {
     val rows = listOf(
-        SettingsPage.Profile,
-        SettingsPage.AccountSettings,
-        SettingsPage.Notifications,
         SettingsPage.Appearance,
         SettingsPage.Language,
+        SettingsPage.Notifications,
+        SettingsPage.Profile,
+        SettingsPage.AccountSettings,
         SettingsPage.Security,
         SettingsPage.Help,
         SettingsPage.About,
@@ -456,37 +463,32 @@ private fun ProfilePage() {
 /** Account Settings page — five decorative detail rows, including the static
  *  "Enabled — Touch ID" biometric row: macOS/desktop display static text here too, NOT
  *  bound to the Security page's Biometric Login toggle. Starting Balance and Display
- *  Currency values stay literal, same as both references. Below them, the Finnhub
- *  key-entry field — the Android answer to the desktop/macOS "drop a key into config.json"
- *  instructions, since the sandboxed config dir isn't user-reachable here. Saving writes the
- *  same config.json AppGraph's news wiring re-reads, so the key applies the next time the News
- *  tab loads.
+ *  Currency values stay literal, same as both references. Default Tab's value follows the
+ *  M10 IA restructure: the four-tab shell's landing destination is Home now, not the old
+ *  Watchlist tab — a stale carry-over fixed here (M10.3 Task 5, mirroring desktop
+ *  `AccountPanel.kt`'s identical Task 7 fix). Below them, the Finnhub key-entry field — the
+ *  Android answer to the desktop/macOS "drop a key into config.json" instructions, since the
+ *  sandboxed config dir isn't user-reachable here. Saving writes the same config.json
+ *  AppGraph's news wiring re-reads, so the key applies the next time the News tab loads.
  *
- *  DRIP (Task 3) is a functional toggle appended right after the five detail rows (BEFORE
- *  the Finnhub key section below, which has no desktop counterpart) — mirroring desktop
- *  `AccountPanel.kt`'s `AccountSettingsPage` placement exactly: DRIP lives in this
- *  account/trading group rather than Notifications because it changes money behavior (cash
- *  vs. reinvest on dividend receipt), not notification delivery. */
+ *  DRIP no longer lives on this page (M10.3 Task 5, the settings-honesty pass — desktop
+ *  M10.2 Task 7's Android twin): the toggle re-homes to
+ *  [com.aptrade.android.income.IncomeScreen]'s header card — same reasoning as desktop's
+ *  `AccountPanel.kt` doc comment: DRIP changes money behavior (cash vs. reinvest on dividend
+ *  receipt), and Income is where that behavior is felt, not this settings list. This page is
+ *  now purely decorative detail fields again, no bound toggle — [viewModel]'s `settings` flow
+ *  is no longer read here for that reason. */
 @Composable
 private fun AccountSettingsPage(viewModel: SettingsViewModel) {
-    val settings by viewModel.settings.collectAsState()
-
     DetailField(label = tr(L10n.Key.TradingMode), value = tr(L10n.Key.SimulatedPaperTrading))
     Spacer(Modifier.height(14.dp))
     DetailField(label = tr(L10n.Key.StartingBalance), value = "$100,000.00")
     Spacer(Modifier.height(14.dp))
     DetailField(label = tr(L10n.Key.DisplayCurrency), value = "USD ($)")
     Spacer(Modifier.height(14.dp))
-    DetailField(label = tr(L10n.Key.DefaultTab), value = tr(L10n.Key.Watchlist))
+    DetailField(label = tr(L10n.Key.DefaultTab), value = tr(L10n.Key.HomeTab))
     Spacer(Modifier.height(14.dp))
     DetailField(label = tr(L10n.Key.BiometricLogin), value = tr(L10n.Key.EnabledTouchID))
-    Spacer(Modifier.height(14.dp))
-    ToggleRow(
-        title = tr(L10n.Key.SettingsDrip),
-        subtitle = tr(L10n.Key.SettingsDripFooter),
-        checked = settings.dripEnabled,
-        onCheckedChange = { checked -> viewModel.update { it.copy(dripEnabled = checked) } },
-    )
 
     Spacer(Modifier.height(20.dp))
     SectionLabel(tr(L10n.Key.News))

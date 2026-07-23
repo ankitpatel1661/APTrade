@@ -242,6 +242,11 @@ fun AppNavHost(settingsViewModel: SettingsViewModel) {
                         section = investSection,
                         onSelectSection = { investSection = it },
                         confirmTrades = settings.confirmTrades,
+                        // M10.3 Task 5: DRIP re-homes to the Income section's header card,
+                        // bound to the SAME `settingsViewModel` seam Settings itself used —
+                        // see IncomeSection's KDoc.
+                        dripEnabled = settings.dripEnabled,
+                        onDripChanged = { checked -> settingsViewModel.update { it.copy(dripEnabled = checked) } },
                     )
                 }
             }

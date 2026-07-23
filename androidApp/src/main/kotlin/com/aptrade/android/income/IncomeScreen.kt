@@ -3,7 +3,9 @@ package com.aptrade.android.income
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,10 +13,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,11 +26,15 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -80,9 +88,19 @@ private fun monthLabel(key: String): String = try {
  * mirroring [com.aptrade.android.plans.PlansSection] — reused across re-entries into the
  * Income section exactly like `PlansViewModel`, since [IncomeViewModel.load] always reloads
  * fresh from disk/network on every (re-)appearance.
+ *
+ * M10.3 Task 5 (the settings-honesty pass, desktop `IncomePane.kt`'s Task 7 twin): the DRIP
+ * toggle re-homes here from Settings' Account Settings page. [dripEnabled]/[onDripChanged] are
+ * threaded down from [com.aptrade.android.MainActivity]'s single Activity-scoped
+ * `SettingsViewModel` (through [com.aptrade.android.invest.InvestScreen]) — the SAME
+ * load-merge-save seam Settings used, so there is still only ONE persisted `dripEnabled`
+ * field, never a second copy. Per desktop's doc comment, the DRIP card is this screen's own
+ * reachability floor: it must render even before the user has ever received or projected a
+ * dividend (turning DRIP on ahead of a first payout is the common case, not an edge case) — so
+ * it renders ABOVE the loading/empty/ledger split below, not conditioned on it.
  */
 @Composable
-fun IncomeSection() {
+fun IncomeSection(dripEnabled: Boolean, onDripChanged: (Boolean) -> Unit) {
     val portfolio = AppGraph.portfolio
     val viewModel: IncomeViewModel = viewModel {
         IncomeViewModel(
@@ -95,13 +113,50 @@ fun IncomeSection() {
     LaunchedEffect(Unit) { viewModel.load() }
     val state: IncomeState by viewModel.state.collectAsState()
 
-    when {
-        state.isLoading && state.cards == null -> LoadingState()
-        // No dividend has ever been received and none is projected — the whole section would
-        // otherwise render as a wall of zeroed cards and empty lists. Mirrors desktop
-        // IncomePane.kt's identical `isEmptyLedger` guard.
-        state.history.isEmpty() && state.upcoming.isEmpty() -> EmptyIncomeState()
-        else -> IncomeContent(state)
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        DripCard(checked = dripEnabled, onCheckedChange = onDripChanged)
+        when {
+            state.isLoading && state.cards == null -> LoadingState()
+            // No dividend has ever been received and none is projected — the whole section
+            // would otherwise render as a wall of zeroed cards and empty lists. Mirrors
+            // desktop IncomePane.kt's identical `isEmptyLedger` guard.
+            state.history.isEmpty() && state.upcoming.isEmpty() -> EmptyIncomeState()
+            else -> IncomeContent(state)
+        }
+    }
+}
+
+/** Bold title + subtitle + [Switch], bound to the same [com.aptrade.shared.settings.AppSettings
+ *  .dripEnabled] field Settings used to host — mirrors desktop `IncomePane.kt`'s `DripCard`
+ *  (surface fill, 16dp radius, hairline stroke) exactly, including its title/subtitle type
+ *  weights, adapted to this screen's Material3 [Surface] idiom rather than desktop's `DK`
+ *  design tokens. */
+@Composable
+private fun DripCard(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    tr(L10n.Key.DripCardTitle),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    tr(L10n.Key.DripCardSubtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = checked, onCheckedChange = onCheckedChange)
+        }
     }
 }
 
@@ -126,8 +181,12 @@ private fun EmptyIncomeState() {
 
 @Composable
 private fun IncomeContent(state: IncomeState) {
+    // M10.3 Task 5: no longer applies its own page padding — [IncomeSection] wraps the DRIP
+    // card AND this content in one outer `Column` now (so the DRIP card sits flush with the
+    // ledger below it, same 20dp rhythm), mirroring desktop `IncomePane.kt`'s identical Task 7
+    // restructuring.
     Column(
-        Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         state.cards?.let { SummaryCardsGrid(it) }
@@ -188,6 +247,12 @@ private const val MONTH_BAR_MAX_HEIGHT_DP = 120
 @Composable
 private fun MonthlyChart(months: List<MonthBar>) {
     val maxAmount = months.maxOfOrNull { it.amount.amount.doubleValue(false) } ?: 0.0
+    // Which bar's tooltip is showing (M10.3 Task 5 — desktop `IncomePane.kt`'s UAT U6 hover
+    // twin). Desktop sets/clears this on pointer hover; a phone has no hover, so this is a TAP
+    // toggle instead: tapping the active bar again (or tapping a different bar) clears/moves
+    // it, matching [com.aptrade.android.portfolio.PortfolioScreen]'s crosshair-tooltip idiom of
+    // "one thing showing at a time" adapted for touch rather than pointer/drag.
+    var activeMonthId by remember { mutableStateOf<String?>(null) }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -196,11 +261,23 @@ private fun MonthlyChart(months: List<MonthBar>) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             SectionHeader(tr(L10n.Key.IncomeMonthlyTitle))
             Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                // Headroom for a tooltip floating above whichever bar is active, without
+                // clipping against the chart's own bounds — mirrors desktop `IncomePane.kt`'s
+                // `.padding(top = 32.dp)` on this same row.
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 32.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.Bottom,
             ) {
-                for (bar in months) MonthBarColumn(bar, maxAmount)
+                for (bar in months) {
+                    MonthBarColumn(
+                        bar = bar,
+                        maxAmount = maxAmount,
+                        isActive = activeMonthId == bar.id,
+                        onTap = {
+                            activeMonthId = if (activeMonthId == bar.id) null else bar.id
+                        },
+                    )
+                }
             }
             LegendRow()
         }
@@ -208,33 +285,74 @@ private fun MonthlyChart(months: List<MonthBar>) {
 }
 
 @Composable
-private fun MonthBarColumn(bar: MonthBar, maxAmount: Double) {
+private fun MonthBarColumn(bar: MonthBar, maxAmount: Double, isActive: Boolean, onTap: () -> Unit) {
     val value = bar.amount.amount.doubleValue(false)
     val fraction = if (maxAmount > 0.0) (value / maxAmount).toFloat().coerceIn(0f, 1f) else 0f
     val barHeight = (MONTH_BAR_MAX_HEIGHT_DP.dp * fraction).coerceAtLeast(2.dp)
-    Column(
-        modifier = Modifier.width(22.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Box(Modifier.width(22.dp).height(MONTH_BAR_MAX_HEIGHT_DP.dp), contentAlignment = Alignment.BottomCenter) {
-            if (bar.isProjected) {
-                ProjectedBar(Modifier.width(22.dp).height(barHeight))
-            } else {
-                Box(
-                    Modifier
-                        .width(22.dp)
-                        .height(barHeight)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(MaterialTheme.colorScheme.primary),
-                )
+    Box {
+        Column(
+            modifier = Modifier
+                .width(22.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { onTap() },
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Box(Modifier.width(22.dp).height(MONTH_BAR_MAX_HEIGHT_DP.dp), contentAlignment = Alignment.BottomCenter) {
+                if (bar.isProjected) {
+                    ProjectedBar(Modifier.width(22.dp).height(barHeight))
+                } else {
+                    Box(
+                        Modifier
+                            .width(22.dp)
+                            .height(barHeight)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(MaterialTheme.colorScheme.primary),
+                    )
+                }
             }
+            Text(
+                monthLabel(bar.id),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
-        Text(
-            monthLabel(bar.id),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        // Month + exact amount on tap (M10.3 Task 5 — desktop UAT U6's tap twin): no amount is
+        // shown anywhere else on this chart, only relative bar height.
+        if (isActive) {
+            // -30dp matches desktop `IncomePane.kt`'s `.offset(y: -30)` exactly, same headroom
+            // the enclosing Row's `padding(top = 32.dp)` reserves for it.
+            MonthTooltip(bar, modifier = Modifier.align(Alignment.TopCenter).offset(y = (-30).dp))
+        }
+    }
+}
+
+@Composable
+private fun MonthTooltip(bar: MonthBar, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier.wrapContentSize(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                money(bar.amount.amountText),
+                maxLines = 1,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                monthLabel(bar.id),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

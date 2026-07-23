@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -182,7 +183,7 @@ private fun PortfolioContent(
                 CircularProgressIndicator(Modifier.align(Alignment.Center))
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
-                    item { SummaryHeader(state) }
+                    item { SummaryHeader(state, onExportClick = { showExportChooser = true }) }
                     item { HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant) }
 
                     // The switcher is ALWAYS shown — matching desktop PortfolioPane and
@@ -215,16 +216,28 @@ private fun PortfolioContent(
                                 }
                             }
                         }
+                        // M10.3 Task 5 (allocation ~30/70 twin — desktop `PortfolioPane.kt`'s
+                        // `AllocationView` Task 7 fix): By Class now comes FIRST (desktop
+                        // order), not By Holding — this screen had them swapped. Desktop
+                        // expresses the ~30/70 split as a 260dp-capped column beside a
+                        // weight(1f) column in a side-by-side Row; this screen's single-column
+                        // LazyColumn has no row to split width-wise, so the SPIRIT of that fix —
+                        // By Class reading as a compact, purpose-built 2-3-row group rather than
+                        // stretching to match By Holding's rhythm — is applied as tightened row
+                        // spacing instead (see AllocationBar's `compact` param): a smaller label-
+                        // to-percentage gap and a shorter progress-bar-to-next-row gap for the
+                        // 2-3 By Class rows, leaving By Holding's taller list at its original
+                        // spacing.
                         PortfolioSection.Allocation -> {
-                            if (state.allocationByHolding.isNotEmpty()) {
-                                item { AllocationGroupHeader(tr(L10n.Key.ByHolding)) }
-                                items(state.allocationByHolding, key = { "h-${it.id}" }) { slice ->
-                                    AllocationBar(slice)
-                                }
-                            }
                             if (state.allocationByKind.isNotEmpty()) {
                                 item { AllocationGroupHeader(tr(L10n.Key.ByClass)) }
                                 items(state.allocationByKind, key = { "c-${it.id}" }) { slice ->
+                                    AllocationBar(slice, compact = true)
+                                }
+                            }
+                            if (state.allocationByHolding.isNotEmpty()) {
+                                item { AllocationGroupHeader(tr(L10n.Key.ByHolding)) }
+                                items(state.allocationByHolding, key = { "h-${it.id}" }) { slice ->
                                     AllocationBar(slice)
                                 }
                             }
@@ -251,12 +264,13 @@ private fun PortfolioContent(
                     }
 
                     item {
+                        // M10.3 Task 5: Export moved up into the summary header (see
+                        // SummaryHeader's own KDoc) — this footer row is Reset-only now,
+                        // right-aligned rather than split against a now-absent leading button.
                         Row(
                             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.End,
                         ) {
-                            TextButton(onClick = { showExportChooser = true }) { Text("Export…") }
-                            Spacer(Modifier.weight(1f))
                             TextButton(onClick = { showResetConfirm = true }) {
                                 Text("Reset portfolio…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -336,14 +350,30 @@ private fun PortfolioContent(
     }
 }
 
+/** The Holdings/summary header, now carrying the Export entry point (M10.3 Task 5, the
+ *  settings-honesty pass — desktop `PortfolioPane.kt`'s Task 7 twin): Export used to be a
+ *  plain trailing text button in the footer row below every section; it re-homes here, right
+ *  beside the total-value figure, as a 48dp icon button using the EXISTING [showExportChooser]
+ *  → [shareExport] flow this screen already had (only the trigger site moved — the chooser
+ *  dialog and the CSV/JSON [ExportShare] plumbing are untouched). `IconButton`'s default
+ *  minimum touch target is 48dp, matching the desktop twin's circular Export affordance
+ *  without hardcoding a size. `contentDescription` carries [L10n.Key.ExportPortfolioData] so
+ *  the icon-only button still reads correctly to accessibility tooling, mirroring desktop's
+ *  `ExportButton.semantics { contentDescription = label }`. */
 @Composable
-private fun SummaryHeader(state: PortfolioUiState) {
+private fun SummaryHeader(state: PortfolioUiState, onExportClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            state.totalValueText ?: "—",
-            style = MaterialTheme.typography.displaySmall,
-            fontWeight = FontWeight.Bold,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                state.totalValueText ?: "—",
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onExportClick) {
+                Icon(Icons.Filled.Share, contentDescription = tr(L10n.Key.ExportPortfolioData))
+            }
+        }
         state.dayChangeText?.let { text ->
             DayChangePill(text, state.dayChangePositive)
         }
@@ -620,9 +650,14 @@ private fun HoldingRow(
     }
 }
 
+/** [compact] tightens the vertical rhythm for the By Class group (only ever 2-3 rows) —
+ *  the Android answer to desktop's 10dp-vs-14dp row-spacing split between its by-class and
+ *  by-holding columns (see the Allocation `when` branch's KDoc above). */
 @Composable
-private fun AllocationBar(slice: AllocationSlice) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+private fun AllocationBar(slice: AllocationSlice, compact: Boolean = false) {
+    val verticalPadding = if (compact) 4.dp else 8.dp
+    val labelGap = if (compact) 2.dp else 4.dp
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = verticalPadding), verticalArrangement = Arrangement.spacedBy(labelGap)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(slice.localizedLabel(), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             Text(
