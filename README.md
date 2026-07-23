@@ -256,7 +256,7 @@ adb install -r androidApp/build/outputs/apk/debug/androidApp-debug.apk
 ```
 
 A **Portfolio screen** brings paper trading to Android on the same shared portfolio core as
-macOS and the desktop app — reached from the list icon in the quotes top bar. It opens with a
+macOS and the desktop app — its own destination in the bottom bar. It opens with a
 summary header (total value, day-change pill, and cash / holdings / unrealized / realized
 metrics) starting from $100,000, a span-driven **Performance** chart (`1D · 1W · 1M · 1Y ·
 MAX`) with a **SPY/QQQ/VTI** benchmark picker overlaying the portfolio's equity curve against
