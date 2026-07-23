@@ -6,7 +6,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -19,21 +18,27 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.aptrade.android.detail.DetailScreen
+import com.aptrade.android.home.HomeDestination
+import com.aptrade.android.home.HomeScreen
+import com.aptrade.android.home.HomeViewModel
 import com.aptrade.android.invest.InvestScreen
 import com.aptrade.android.invest.InvestSection
 import com.aptrade.android.markets.MarketsScreen
 import com.aptrade.android.markets.MarketsSection
 import com.aptrade.android.portfolio.PortfolioScreen
 import com.aptrade.android.portfolio.PortfolioSection
+import com.aptrade.android.portfolio.PortfolioViewModel
 import com.aptrade.android.search.SearchScreen
 import com.aptrade.android.settings.SettingsScreen
 import com.aptrade.android.settings.SettingsViewModel
 import com.aptrade.android.ui.theme.APTradeTheme
+import com.aptrade.shared.application.FetchDividendEvents
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -126,6 +131,38 @@ fun AppNavHost(settingsViewModel: SettingsViewModel) {
     // snapshots it once when it opens (its own KDoc), so it is fine for THIS to stay live —
     // collected once, here, rather than re-plumbing SettingsViewModel through every screen.
     val settings by settingsViewModel.settings.collectAsState()
+
+    // M10.3 Task 3 (Global Constraint 2 divergence #3): PortfolioViewModel HOISTED here rather
+    // than screen-local to PortfolioScreen (as it was through Task 2) — Home's hero P&L chart
+    // needs to read (and, via its span selector, drive) the EXACT SAME state PortfolioScreen's
+    // own Performance section shows, not a second parallel poll of the same portfolio. Mirrors
+    // how desktop's Main.kt constructs ONE `portfolioViewModel` at AppRoot and hands it to both
+    // HomePane and PortfolioPane (desktopApp/.../Main.kt:116-129, :563-566). See
+    // PortfolioScreen.kt's own KDoc on its now-parameterized `viewModel` for the full trace.
+    val portfolio = AppGraph.portfolio
+    val portfolioViewModel: PortfolioViewModel = viewModel {
+        PortfolioViewModel(
+            fetchPortfolio = portfolio.fetchPortfolio,
+            fetchMarketQuotes = AppGraph.fetchMarketQuotes,
+            buyAsset = portfolio.buyAsset,
+            sellAsset = portfolio.sellAsset,
+            resetPortfolio = portfolio.resetPortfolio,
+            fetchPerformanceReport = portfolio.fetchPerformanceReport,
+            nowEpochSeconds = { System.currentTimeMillis() / 1000 },
+            notifyOrderFill = AppGraph.notifyOrderFill,
+            fetchDividendEvents = FetchDividendEvents(portfolio.repository),
+        )
+    }
+    // Gated to the SHELL's own STARTED lifecycle now, not the Portfolio tab's own visibility as
+    // before Task 3: Home reads this VM on every tab, not only when Portfolio itself is on
+    // screen, so a poll that stopped whenever the user left the Portfolio tab would starve
+    // Home's hero chart of live data on every other tab. Mirrors desktop's portfolioViewModel,
+    // started once for the whole app's lifetime (Main.kt's own `LaunchedEffect(Unit)`).
+    LifecycleStartEffect(portfolioViewModel) {
+        portfolioViewModel.start()
+        onStopOrDispose { portfolioViewModel.stop() }
+    }
+
     NavHost(navController = navController, startDestination = "shell") {
         composable("shell") {
             AppShell(
@@ -135,8 +172,49 @@ fun AppNavHost(settingsViewModel: SettingsViewModel) {
                 onOpenSettings = { navController.navigate("settings") },
             ) { padding ->
                 when (tab) {
-                    ShellTab.Home -> Box(Modifier.fillMaxSize()) {
-                        // Task 3
+                    ShellTab.Home -> {
+                        // DetailScreen.kt:84 precedent: constructed directly at the call site
+                        // via viewModel{}, reading AppGraph pieces straight through — the same
+                        // "screen builds its own VM" shape as the Screener tab.
+                        val homeViewModel: HomeViewModel = viewModel {
+                            HomeViewModel(AppGraph.makeHomeFeedAssembler())
+                        }
+                        HomeScreen(
+                            vm = homeViewModel,
+                            portfolioViewModel = portfolioViewModel,
+                            padding = padding,
+                            onNavigate = { destination ->
+                                when (destination) {
+                                    HomeDestination.PortfolioPerformance -> {
+                                        portfolioSection = PortfolioSection.Performance
+                                        tab = ShellTab.Portfolio
+                                    }
+                                    HomeDestination.MarketsWatchlist -> {
+                                        marketsSection = MarketsSection.Watchlist
+                                        tab = ShellTab.Markets
+                                    }
+                                    HomeDestination.MarketsScreener -> {
+                                        marketsSection = MarketsSection.Screener
+                                        tab = ShellTab.Markets
+                                    }
+                                    HomeDestination.MarketsCalendar -> {
+                                        marketsSection = MarketsSection.Calendar
+                                        tab = ShellTab.Markets
+                                    }
+                                    HomeDestination.MarketsNews -> {
+                                        marketsSection = MarketsSection.News
+                                        tab = ShellTab.Markets
+                                    }
+                                    HomeDestination.InvestIncome -> {
+                                        investSection = InvestSection.Income
+                                        tab = ShellTab.Invest
+                                    }
+                                }
+                            },
+                            // Task 4: the Android Alerts center doesn't exist yet — bell +
+                            // Alerts quick card are inert placeholders until that task lands.
+                            onOpenAlerts = { /* Task 4 */ },
+                        )
                     }
                     ShellTab.Markets -> MarketsScreen(
                         padding = padding,
@@ -146,6 +224,7 @@ fun AppNavHost(settingsViewModel: SettingsViewModel) {
                         onOpenDetail = { symbol -> navController.navigate("detail/$symbol") },
                     )
                     ShellTab.Portfolio -> PortfolioScreen(
+                        viewModel = portfolioViewModel,
                         section = portfolioSection,
                         onSelectSection = { portfolioSection = it },
                         onBack = {},                        // tab root: no back

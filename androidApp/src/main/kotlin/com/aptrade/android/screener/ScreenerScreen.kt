@@ -142,7 +142,12 @@ private fun activeMetricColumn(metric: ScreenerMetric): ActiveMetricColumn? = wh
         ActiveMetricColumn(L10n.Key.MetricVsSma200, { it.pctVsSma200 }, ::formatPercent)
 }
 
-private fun presetTitleKey(preset: PresetScreen): L10n.Key = when (preset) {
+/** Single-source preset-title mapping (M10.3 Task 3, Global Constraint 5): NOT `private` —
+ *  [com.aptrade.android.home.HomeScreen] reuses this ONE definition for both the Today feed's
+ *  `.screenerFresh` row and the Screener quick card's subtitle, rather than keeping a second
+ *  copy in sync (mirrors desktop's own hoist, `com.aptrade.desktop.screener.presetTitleKey`,
+ *  reused verbatim by `HomePane.kt`). */
+internal fun presetTitleKey(preset: PresetScreen): L10n.Key = when (preset) {
     PresetScreen.RsiOversold -> L10n.Key.PresetRsiOversold
     PresetScreen.RsiOverbought -> L10n.Key.PresetRsiOverbought
     PresetScreen.MacdBullishCross -> L10n.Key.PresetMacdBullish

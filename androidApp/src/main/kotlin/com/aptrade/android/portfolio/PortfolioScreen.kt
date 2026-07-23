@@ -52,9 +52,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.LifecycleStartEffect
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.aptrade.android.AppGraph
 import com.aptrade.android.l10n.tr
 import com.aptrade.android.ui.chart.ChartLegend
 import com.aptrade.android.ui.chart.CrosshairTooltip
@@ -65,7 +62,6 @@ import com.aptrade.android.ui.chart.nearestIndex
 import com.aptrade.android.ui.localizedLabel
 import com.aptrade.android.ui.theme.GainGreen
 import com.aptrade.android.ui.theme.LossRed
-import com.aptrade.shared.application.FetchDividendEvents
 import com.aptrade.shared.domain.AllocationSlice
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.TradeSide
@@ -102,37 +98,28 @@ private fun PortfolioSection.label(): String = when (this) {
  *  `AppNavHost`, constraint 3) rather than kept as local `remember` state — so Home's hero-tap
  *  (divergence: hero tap → Portfolio·Performance, Task 3) and any future deep link can jump
  *  straight to a section by writing it directly; no request/clear handoff to get wrong on
- *  first composition (the Swift I-1 lesson). */
+ *  first composition (the Swift I-1 lesson).
+ *
+ *  [viewModel] is likewise HOISTED (M10.3 Task 3, Global Constraint 2 divergence #3) — through
+ *  Task 2 this screen constructed its own `PortfolioViewModel` via `viewModel {}` right here,
+ *  which made it a screen-local instance in the sense that mattered: nothing outside this
+ *  composable could read its state. Home's hero P&L chart needs to read (and, via the span
+ *  selector, drive) the EXACT SAME state this section shows — not a second parallel poll of the
+ *  same portfolio — so construction AND the start()/stop() lifecycle both moved up to
+ *  `AppNavHost`, mirroring how desktop's `Main.kt` builds ONE `portfolioViewModel` at `AppRoot`
+ *  and hands it to both `HomePane` and `PortfolioPane` (`desktopApp/.../Main.kt:116-129`,
+ *  `:563-566`). This screen now only reads [viewModel], never constructs or start()/stop()s it —
+ *  see `AppNavHost`'s own KDoc for why its lifecycle is gated to the shell's STARTED state
+ *  rather than this screen's. */
 @Composable
 fun PortfolioScreen(
+    viewModel: PortfolioViewModel,
     section: PortfolioSection,
     onSelectSection: (PortfolioSection) -> Unit,
     onBack: () -> Unit,
     onOpenDetail: (String) -> Unit,
     confirmTrades: Boolean,
 ) {
-    val portfolio = AppGraph.portfolio
-    val viewModel: PortfolioViewModel = viewModel {
-        PortfolioViewModel(
-            fetchPortfolio = portfolio.fetchPortfolio,
-            fetchMarketQuotes = AppGraph.fetchMarketQuotes,
-            buyAsset = portfolio.buyAsset,
-            sellAsset = portfolio.sellAsset,
-            resetPortfolio = portfolio.resetPortfolio,
-            fetchPerformanceReport = portfolio.fetchPerformanceReport,
-            nowEpochSeconds = { System.currentTimeMillis() / 1000 },
-            notifyOrderFill = AppGraph.notifyOrderFill,
-            fetchDividendEvents = FetchDividendEvents(portfolio.repository),
-        )
-    }
-
-    // Honor the VM's lifecycle contract: start() the load + 15s poll when the screen is at least
-    // STARTED, stop() it on stop/dispose. In-flight trades survive stop() by design (VM KDoc).
-    LifecycleStartEffect(viewModel) {
-        viewModel.start()
-        onStopOrDispose { viewModel.stop() }
-    }
-
     val state by viewModel.state.collectAsState()
     PortfolioContent(
         state = state,
@@ -404,6 +391,32 @@ private fun SummaryMetric(label: String, value: String?, positive: Boolean?, mod
     }
 }
 
+/** The 1D/1W/1M/1Y/MAX span segmented row — hoisted OUT of [PerformanceSection] (M10.3 Task 3,
+ *  Global Constraint 2 divergence #3, mirroring desktop's own `SpanBar` hoist out of
+ *  `PerformanceSection.kt`, reused verbatim by `HomePane.kt`): [com.aptrade.android.home.HomeScreen]'s
+ *  hero reuses this SAME composable for its own span control, rather than a second copy of this
+ *  segmented row. Not `private` for that reason. Selecting a span here mutates the ONE shared
+ *  [PortfolioViewModel]'s state (see that class + [PortfolioScreen]'s own KDoc on the hoisted
+ *  instance), so a span picked from Home is still selected the next time the Portfolio tab's own
+ *  Performance section is opened, and vice versa — a deliberate coupling, not a bug. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun PortfolioSpanSelector(
+    selected: PortfolioSpan,
+    onSelect: (PortfolioSpan) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    SingleChoiceSegmentedButtonRow(modifier.segmentedRowWidth()) {
+        PortfolioSpan.entries.forEachIndexed { index, span ->
+            SegmentedButton(
+                selected = selected == span,
+                onClick = { onSelect(span) },
+                shape = SegmentedButtonDefaults.itemShape(index, PortfolioSpan.entries.size),
+            ) { Text(span.label) }
+        }
+    }
+}
+
 @Composable
 private fun PerformanceSection(
     state: PortfolioUiState,
@@ -419,15 +432,7 @@ private fun PerformanceSection(
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionHeaderInline("PERFORMANCE")
 
-        SingleChoiceSegmentedButtonRow(Modifier.segmentedRowWidth()) {
-            PortfolioSpan.entries.forEachIndexed { index, span ->
-                SegmentedButton(
-                    selected = state.span == span,
-                    onClick = { onSetSpan(span) },
-                    shape = SegmentedButtonDefaults.itemShape(index, PortfolioSpan.entries.size),
-                ) { Text(span.label) }
-            }
-        }
+        PortfolioSpanSelector(selected = state.span, onSelect = onSetSpan)
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             state.benchmarks.forEach { symbol ->
