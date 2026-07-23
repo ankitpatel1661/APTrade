@@ -38,7 +38,7 @@ APTrade ships as **four native apps at feature parity** — macOS is the flagshi
 | **Windows** | `:desktopApp` (Compose Desktop) | Compose Multiplatform + shared KMP core | Full parity | [Windows desktop app](#windows-desktop-app) |
 | **Android** | `:androidApp` (Jetpack Compose, API 35) | Jetpack Compose + shared KMP core | Full parity | [Android app](#android-app) |
 
-Every app carries: a live watchlist, asset detail with candlestick/area charts and technical indicators, a paper-trading portfolio with performance/risk analytics and export, Finnhub-backed news, price alerts and scheduled notifications, a holiday-aware calendar with an S&P 500 earnings list, a four-language switcher (English/Deutsch/Italiano/Español), and the gold-on-black accent-themable identity.
+Every app carries: a **four-destination IA** — **Home** (dashboard: summary cards, top movers, market summary), **Markets** (watchlist, screener, calendar, news as sections), **Portfolio** (holdings, allocation, activity, performance, export), and **Invest** (Plans and Income) — plus a unified **Alerts center** reached from Home, a live watchlist with candlestick/area charts and technical indicators, a paper-trading portfolio with performance/risk analytics and export, Finnhub-backed news, price alerts and scheduled notifications, a holiday-aware calendar with an S&P 500 earnings list, a four-language switcher (English/Deutsch/Italiano/Español), and the gold-on-black accent-themable identity.
 
 ## Features
 
@@ -243,13 +243,8 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test \
 ### Android app
 
 A full Jetpack Compose app (`androidApp/`) at **feature parity** with macOS/Windows, on the same
-shared Kotlin Multiplatform core: a persisted watchlist (live quotes, sparklines,
-swipe-to-remove with Undo, add-from-search), asset detail with line/candlestick charts and the
-full indicator set (SMA/EMA/VWAP/Bollinger overlays + RSI/MACD panes), a paper-trading
-**Portfolio** with performance/risk analytics and export, a **News** tab with categories,
-bookmarks and a Saved view, **price alerts** with system notifications and a market-activity
-coordinator, a holiday-aware **Calendar** with an S&P 500 earnings list, and full **Settings**
-pages with a live four-language switcher, light/dark themes, and the accent picker.
+shared Kotlin Multiplatform core, shipping the **new IA restructure** (M10.3): a **four-destination bottom-bar** —
+**Home** (dashboard: summary cards, top movers, market summary), **Markets** (Watchlist · Screener · Calendar · News as sections, with conditional master-detail on Watchlist and Screener for asset detail with charts + indicators + KEY STATS / YOUR POSITION), **Portfolio** (Holdings · Allocation · Activity · Performance with **Export** in the header), and **Invest** (Plans and Income re-homed from Portfolio, with DRIP in Income) — a unified **Alerts center** reached from Home, **price alerts** with system notifications and a market-activity coordinator, full **Settings** pages with a live four-language switcher, light/dark themes, and the accent picker.
 
 Requirements: Android SDK (API 35) with `sdk.dir` in `local.properties`, JDK 17.
 
@@ -261,7 +256,7 @@ adb install -r androidApp/build/outputs/apk/debug/androidApp-debug.apk
 ```
 
 A **Portfolio screen** brings paper trading to Android on the same shared portfolio core as
-macOS and the desktop app — reached from the list icon in the quotes top bar. It opens with a
+macOS and the desktop app — its own destination in the bottom bar. It opens with a
 summary header (total value, day-change pill, and cash / holdings / unrealized / realized
 metrics) starting from $100,000, a span-driven **Performance** chart (`1D · 1W · 1M · 1Y ·
 MAX`) with a **SPY/QQQ/VTI** benchmark picker overlaying the portfolio's equity curve against
@@ -562,7 +557,6 @@ logo/                       Brand assets
 APTrade Lite is the foundation. Planned toward the full platform:
 
 - Real authentication (Apple Sign In), biometric gating, and cloud sync (Supabase)
-- **IA Restructure — Milestone 10.** macOS + iPhone (M10.1) complete; Windows desktop (M10.2) complete: a four-destination redesign (Home · Markets · Portfolio · Invest) with a **Home dashboard** (summary cards, top movers, market summary), a new **macOS sidebar** with master-detail panes, a unified **Alerts center** reached from Home, and tool re-homing (Screener moves to Markets; Plans/Income move out of Portfolio into the new Invest destination; Export re-homes to the Portfolio header; DRIP re-homes to Income). Android (M10.3) pending — all four platforms will ship the new IA at feature parity.
 - **Windows parity — complete.** The `:desktopApp` Compose app now covers Watchlist +
   detail + palette (6a), a Portfolio tab with detail-screen indicators, performance/risk
   intelligence, and export (6b.1 + 6b.2), a News tab with per-symbol company news and
@@ -572,7 +566,9 @@ APTrade Lite is the foundation. Planned toward the full platform:
   language switcher plus chart/UX polish (6e). Still to come: **none** — macOS parity and
   localization are complete; the `:desktopApp` roadmap that opened at 6a is closed.
 
-Recently shipped: **Dividend & Income Engine — Milestone 8, all four platforms** —
+Recently shipped: **IA Restructure — Milestone 10, all four platforms** — a four-destination redesign (Home · Markets · Portfolio · Invest) shipped in three increments (M10.1 Swift/macOS + iPhone, M10.2 Kotlin shared core + Windows desktop, M10.3 Android). Every platform gets a **Home dashboard** (summary cards, top movers, market summary), a **Markets destination** (Watchlist · Screener · Calendar · News as sections, with conditional master-detail on Watchlist and Screener for asset detail with charts + indicators + KEY STATS / YOUR POSITION), a **Portfolio destination** (Holdings · Allocation · Activity · Performance with Export in the header), and an **Invest destination** (Plans and Income re-homed from Portfolio, with DRIP in Income) — plus a unified **Alerts center** reached from Home. On macOS: a new sidebar with master-detail panes for Markets and Portfolio sections. Recorded platform divergences (Android bottom-bar instead of macOS/desktop top-navigation, Android's stacked layout for Income/Plans tables in place of macOS/desktop's side-by-side layout) are noted in each app's section above. Suites at merge: macOS 585 / shared 612 / desktop 359 / android 282.
+
+Before that: **Dividend & Income Engine — Milestone 8, all four platforms** —
 automatic dividend crediting over the paper-trading portfolio, shipped in three increments
 (M8.1 Swift/macOS + iPhone, M8.2 Kotlin shared core + Windows desktop, M8.3 Android). A
 Yahoo-backed dividend-events feed drives a scheduled `ProcessDueDividends` engine (riding

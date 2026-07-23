@@ -3,11 +3,10 @@ package com.aptrade.android
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AccountBox
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -21,33 +20,40 @@ import com.aptrade.android.l10n.tr
 import com.aptrade.shared.l10n.L10n
 
 /**
- * The four bottom-tab destinations, all backed by real content: [com.aptrade.android.watchlist.WatchlistScreen],
- * [com.aptrade.android.portfolio.PortfolioScreen], [com.aptrade.android.news.NewsScreen], and
- * [com.aptrade.android.calendar.CalendarScreen].
+ * The four bottom-tab destinations (M10.3 IA restructure — regrouped from the five M9.3 tabs):
+ * [com.aptrade.android.home.HomeScreen] (Task 3), [com.aptrade.android.markets.MarketsScreen]
+ * (hosting the former Watchlist/Screener/Calendar/News tabs as an internal pill row, unchanged),
+ * [com.aptrade.android.portfolio.PortfolioScreen] (slimmed — Plans/Income moved out), and
+ * [com.aptrade.android.invest.InvestScreen] (hosting the former Plans/Income Portfolio sections).
  *
  * Icon substitutions (verified against `material-icons-core`'s curated ~50-icon set —
- * the brief's `RemoveRedEye`/`PieChart`/`Article`/`MoreHoriz` are all part of the larger
- * material-icons-extended set, which this project deliberately does not depend on):
- *  - Watchlist: `RemoveRedEye` → [Icons.Filled.Star] (starred/followed symbols).
- *  - Portfolio: `PieChart` → [Icons.Filled.AccountBox] (personal holdings/account).
- *  - News: `Article` → [Icons.Filled.Info] (informational feed).
+ * the brief's `RemoveRedEye`/`PieChart`/`Article`/`MoreHoriz`/`TrendingUp`/`Savings` are all
+ * part of the larger material-icons-extended set, which this project deliberately does not
+ * depend on):
+ *  - Home: [Icons.Filled.Home] is present in core as-is, no substitution needed (filled house).
+ *  - Markets: no single core icon maps to "watchlist + screener + calendar + news" as a group,
+ *    so this reuses the M9.3 Screener rationale one level up → [Icons.AutoMirrored.Filled.List]
+ *    (the tab's shared job across all four of its pills is browsing/narrowing the market
+ *    universe down to a LIST of symbols; the AutoMirrored variant is used over the plain
+ *    (deprecated) `Filled.List`, same as [Icons.AutoMirrored.Filled.ArrowBack] elsewhere in this
+ *    codebase). The Watchlist/Screener/Calendar/News icons this tab used to carry individually
+ *    (`Star`/`List`/`DateRange`/`Info`) are retired from the bottom bar along with their tabs —
+ *    [com.aptrade.android.markets.MarketsScreen]'s pill row is text-only (matching
+ *    [com.aptrade.android.portfolio.PortfolioScreen]'s `SectionSwitcher` idiom), so no clash.
+ *  - Portfolio: `PieChart` → [Icons.Filled.AccountBox] (personal holdings/account) — unchanged
+ *    from M9.3.
+ *  - Invest: `TrendingUp`/`Savings`/`AccountBalance` (all extended-only) → [Icons.Filled.AddCircle]
+ *    (Plans are periodic ADD-contribution schedules — recurring buys/DRIP — so "add" is the
+ *    closest core analog to "grow your position over time"; no clash with Home/Markets/Portfolio).
  *  - Account/settings action: `MoreHoriz` → [Icons.Filled.MoreVert] (same overflow-menu
  *    affordance, vertical instead of horizontal dots — the closest core analog).
  *  - Search action: [Icons.Filled.Search] is present in core as-is, no substitution needed.
- *  - Calendar: [Icons.Filled.DateRange] is present in core as-is (Task 9), no substitution needed.
- *  - Screener (M9.3 Task 3): `FilterList`/`FilterAlt` (the obvious funnel/filter glyph) is
- *    material-icons-extended-only, same as the others above → [Icons.AutoMirrored.Filled.List]
- *    (a screen narrows the full universe down to a filtered LIST of matching symbols — the
- *    tab's own output — the closest core analog to "filter/funnel" available; the
- *    AutoMirrored variant is used over the plain (deprecated) `Filled.List`, same as
- *    [Icons.AutoMirrored.Filled.ArrowBack] elsewhere in this codebase).
  */
 enum class ShellTab(val route: String, val labelKey: L10n.Key) {
-    Watchlist("watchlist", L10n.Key.Watchlist),
+    Home("home", L10n.Key.HomeTab),
+    Markets("markets", L10n.Key.MarketsTab),
     Portfolio("portfolio", L10n.Key.Portfolio),
-    News("news", L10n.Key.News),
-    Calendar("calendar", L10n.Key.CalendarTab),
-    Screener("screener", L10n.Key.ScreenerTab),
+    Invest("invest", L10n.Key.InvestTab),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -86,11 +92,10 @@ fun AppShell(
                         onClick = { onSelectTab(tab) },
                         icon = {
                             val icon = when (tab) {
-                                ShellTab.Watchlist -> Icons.Filled.Star
+                                ShellTab.Home -> Icons.Filled.Home
+                                ShellTab.Markets -> Icons.AutoMirrored.Filled.List
                                 ShellTab.Portfolio -> Icons.Filled.AccountBox
-                                ShellTab.News -> Icons.Filled.Info
-                                ShellTab.Calendar -> Icons.Filled.DateRange
-                                ShellTab.Screener -> Icons.AutoMirrored.Filled.List
+                                ShellTab.Invest -> Icons.Filled.AddCircle
                             }
                             Icon(icon, contentDescription = tr(tab.labelKey))
                         },

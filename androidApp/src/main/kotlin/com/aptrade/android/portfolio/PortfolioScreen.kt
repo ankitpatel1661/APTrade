@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,7 +42,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,12 +53,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.LifecycleStartEffect
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.aptrade.android.AppGraph
-import com.aptrade.android.income.IncomeSection
 import com.aptrade.android.l10n.tr
-import com.aptrade.android.plans.PlansSection
 import com.aptrade.android.ui.chart.ChartLegend
 import com.aptrade.android.ui.chart.CrosshairTooltip
 import com.aptrade.android.ui.chart.DualLineChart
@@ -68,7 +63,6 @@ import com.aptrade.android.ui.chart.nearestIndex
 import com.aptrade.android.ui.localizedLabel
 import com.aptrade.android.ui.theme.GainGreen
 import com.aptrade.android.ui.theme.LossRed
-import com.aptrade.shared.application.FetchDividendEvents
 import com.aptrade.shared.domain.AllocationSlice
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.TradeSide
@@ -79,14 +73,17 @@ import java.util.Locale
 /** The holding row a [TradeSheet] is opened against, plus the side the user tapped. */
 private data class TradeTarget(val row: HoldingRowUi, val side: TradeSide)
 
-/** The six content sections switched below the summary header — desktop parity
- *  ([com.aptrade.desktop.portfolio.PortfolioPane]'s `PortfolioSection`, which added `Plans` the
- *  same way for M7.3, and `Income` for M8.3 Task 2), plus Performance as a switchable tab
- *  (desktop keeps its chart block always visible above the switcher; Android instead folds it
- *  into the switcher itself so only one section — chart or list — is on screen at a time,
- *  matching this screen's existing single-LazyColumn, one-thing-at-a-time layout). Order and
- *  labels match desktop's set exactly (same six L10n keys). */
-private enum class PortfolioSection { Holdings, Allocation, Activity, Plans, Income, Performance }
+/** The four content sections switched below the summary header — desktop parity
+ *  ([com.aptrade.desktop.portfolio.PortfolioPane]'s `PortfolioSection`, slimmed the same way for
+ *  the M10 IA restructure: `Plans`/`Income` moved out to
+ *  [com.aptrade.android.invest.InvestScreen], same order as every other platform), plus
+ *  Performance as a switchable tab (desktop keeps its chart block always visible above the
+ *  switcher; Android instead folds it into the switcher itself so only one section — chart or
+ *  list — is on screen at a time, matching this screen's existing single-LazyColumn,
+ *  one-thing-at-a-time layout). Order and labels match desktop's set exactly (same four L10n
+ *  keys). Not `private`: [com.aptrade.android.MainActivity]'s `AppNavHost` hoists an instance of
+ *  this as tab-level state (see [PortfolioScreen] below). */
+enum class PortfolioSection { Holdings, Allocation, Activity, Performance }
 
 /** [PortfolioSection]'s display label. A plain function (not an enum property) so it calls
  *  [tr] fresh on every read — recomposes correctly when the active language changes, mirroring
@@ -95,38 +92,40 @@ private fun PortfolioSection.label(): String = when (this) {
     PortfolioSection.Holdings -> tr(L10n.Key.HoldingsSection)
     PortfolioSection.Allocation -> tr(L10n.Key.AllocationSection)
     PortfolioSection.Activity -> tr(L10n.Key.ActivitySection)
-    PortfolioSection.Plans -> tr(L10n.Key.PlansSection)
-    PortfolioSection.Income -> tr(L10n.Key.IncomeSection)
     PortfolioSection.Performance -> tr(L10n.Key.PerformanceSection)
 }
 
+/** [section]/[onSelectSection] are HOISTED to the caller ([com.aptrade.android.MainActivity]'s
+ *  `AppNavHost`, constraint 3) rather than kept as local `remember` state — so Home's hero-tap
+ *  (divergence: hero tap → Portfolio·Performance, Task 3) and any future deep link can jump
+ *  straight to a section by writing it directly; no request/clear handoff to get wrong on
+ *  first composition (the Swift I-1 lesson).
+ *
+ *  [viewModel] is likewise HOISTED (M10.3 Task 3, Global Constraint 2 divergence #3) — through
+ *  Task 2 this screen constructed its own `PortfolioViewModel` via `viewModel {}` right here,
+ *  which made it a screen-local instance in the sense that mattered: nothing outside this
+ *  composable could read its state. Home's hero P&L chart needs to read (and, via the span
+ *  selector, drive) the EXACT SAME state this section shows — not a second parallel poll of the
+ *  same portfolio — so construction AND the start()/stop() lifecycle both moved up to
+ *  `AppNavHost`, mirroring how desktop's `Main.kt` builds ONE `portfolioViewModel` at `AppRoot`
+ *  and hands it to both `HomePane` and `PortfolioPane` (`desktopApp/.../Main.kt:116-129`,
+ *  `:563-566`). This screen now only reads [viewModel], never constructs or start()/stop()s it —
+ *  see `AppNavHost`'s own KDoc for why its lifecycle is gated to the shell's STARTED state
+ *  rather than this screen's. */
 @Composable
-fun PortfolioScreen(onBack: () -> Unit, onOpenDetail: (String) -> Unit, confirmTrades: Boolean) {
-    val portfolio = AppGraph.portfolio
-    val viewModel: PortfolioViewModel = viewModel {
-        PortfolioViewModel(
-            fetchPortfolio = portfolio.fetchPortfolio,
-            fetchMarketQuotes = AppGraph.fetchMarketQuotes,
-            buyAsset = portfolio.buyAsset,
-            sellAsset = portfolio.sellAsset,
-            resetPortfolio = portfolio.resetPortfolio,
-            fetchPerformanceReport = portfolio.fetchPerformanceReport,
-            nowEpochSeconds = { System.currentTimeMillis() / 1000 },
-            notifyOrderFill = AppGraph.notifyOrderFill,
-            fetchDividendEvents = FetchDividendEvents(portfolio.repository),
-        )
-    }
-
-    // Honor the VM's lifecycle contract: start() the load + 15s poll when the screen is at least
-    // STARTED, stop() it on stop/dispose. In-flight trades survive stop() by design (VM KDoc).
-    LifecycleStartEffect(viewModel) {
-        viewModel.start()
-        onStopOrDispose { viewModel.stop() }
-    }
-
+fun PortfolioScreen(
+    viewModel: PortfolioViewModel,
+    section: PortfolioSection,
+    onSelectSection: (PortfolioSection) -> Unit,
+    onBack: () -> Unit,
+    onOpenDetail: (String) -> Unit,
+    confirmTrades: Boolean,
+) {
     val state by viewModel.state.collectAsState()
     PortfolioContent(
         state = state,
+        section = section,
+        onSelectSection = onSelectSection,
         onBack = onBack,
         onOpenDetail = onOpenDetail,
         onSetSpan = viewModel::setSpan,
@@ -144,6 +143,8 @@ fun PortfolioScreen(onBack: () -> Unit, onOpenDetail: (String) -> Unit, confirmT
 @Composable
 private fun PortfolioContent(
     state: PortfolioUiState,
+    section: PortfolioSection,
+    onSelectSection: (PortfolioSection) -> Unit,
     onBack: () -> Unit,
     onOpenDetail: (String) -> Unit,
     onSetSpan: (PortfolioSpan) -> Unit,
@@ -159,7 +160,6 @@ private fun PortfolioContent(
     var tradeTarget by remember { mutableStateOf<TradeTarget?>(null) }
     var showResetConfirm by remember { mutableStateOf(false) }
     var showExportChooser by remember { mutableStateOf(false) }
-    var section by rememberSaveable { mutableStateOf(PortfolioSection.Holdings) }
     // Composition-scoped coroutine launcher for the export buttons below — `exportCsv`/
     // `exportJson` became `suspend` (M8.3 final-review fix: `exportSnapshot`'s
     // `projectedAnnualIncome` fetches per-symbol dividend events), so their click handlers
@@ -183,18 +183,18 @@ private fun PortfolioContent(
                 CircularProgressIndicator(Modifier.align(Alignment.Center))
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
-                    item { SummaryHeader(state) }
+                    item { SummaryHeader(state, onExportClick = { showExportChooser = true }) }
                     item { HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant) }
 
                     // The switcher is ALWAYS shown — matching desktop PortfolioPane and
-                    // macOS PortfolioView, both deliberately un-gated in M7 so Plans (and
-                    // now Income) are reachable before the first holding exists. Only the
-                    // Holdings section shows the empty state. (An earlier gate here hid
-                    // every section on a fresh portfolio and wrongly claimed desktop parity.)
+                    // macOS PortfolioView, both deliberately un-gated in M7 so every section is
+                    // reachable before the first holding exists. Only the Holdings section shows
+                    // the empty state. (An earlier gate here hid every section on a fresh
+                    // portfolio and wrongly claimed desktop parity.)
                     item {
                         SectionSwitcher(
                             selected = section,
-                            onSelect = { section = it },
+                            onSelect = onSelectSection,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                         )
                     }
@@ -216,16 +216,28 @@ private fun PortfolioContent(
                                 }
                             }
                         }
+                        // M10.3 Task 5 (allocation ~30/70 twin — desktop `PortfolioPane.kt`'s
+                        // `AllocationView` Task 7 fix): By Class now comes FIRST (desktop
+                        // order), not By Holding — this screen had them swapped. Desktop
+                        // expresses the ~30/70 split as a 260dp-capped column beside a
+                        // weight(1f) column in a side-by-side Row; this screen's single-column
+                        // LazyColumn has no row to split width-wise, so the SPIRIT of that fix —
+                        // By Class reading as a compact, purpose-built 2-3-row group rather than
+                        // stretching to match By Holding's rhythm — is applied as tightened row
+                        // spacing instead (see AllocationBar's `compact` param): a smaller label-
+                        // to-percentage gap and a shorter progress-bar-to-next-row gap for the
+                        // 2-3 By Class rows, leaving By Holding's taller list at its original
+                        // spacing.
                         PortfolioSection.Allocation -> {
-                            if (state.allocationByHolding.isNotEmpty()) {
-                                item { AllocationGroupHeader(tr(L10n.Key.ByHolding)) }
-                                items(state.allocationByHolding, key = { "h-${it.id}" }) { slice ->
-                                    AllocationBar(slice)
-                                }
-                            }
                             if (state.allocationByKind.isNotEmpty()) {
                                 item { AllocationGroupHeader(tr(L10n.Key.ByClass)) }
                                 items(state.allocationByKind, key = { "c-${it.id}" }) { slice ->
+                                    AllocationBar(slice, compact = true)
+                                }
+                            }
+                            if (state.allocationByHolding.isNotEmpty()) {
+                                item { AllocationGroupHeader(tr(L10n.Key.ByHolding)) }
+                                items(state.allocationByHolding, key = { "h-${it.id}" }) { slice ->
                                     AllocationBar(slice)
                                 }
                             }
@@ -240,12 +252,6 @@ private fun PortfolioContent(
                                 }
                             }
                         }
-                        PortfolioSection.Plans -> {
-                            item { PlansSection(confirmTrades = confirmTrades) }
-                        }
-                        PortfolioSection.Income -> {
-                            item { IncomeSection() }
-                        }
                         PortfolioSection.Performance -> {
                             item {
                                 PerformanceSection(
@@ -258,12 +264,13 @@ private fun PortfolioContent(
                     }
 
                     item {
+                        // M10.3 Task 5: Export moved up into the summary header (see
+                        // SummaryHeader's own KDoc) — this footer row is Reset-only now,
+                        // right-aligned rather than split against a now-absent leading button.
                         Row(
                             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.End,
                         ) {
-                            TextButton(onClick = { showExportChooser = true }) { Text("Export…") }
-                            Spacer(Modifier.weight(1f))
                             TextButton(onClick = { showResetConfirm = true }) {
                                 Text("Reset portfolio…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -343,14 +350,30 @@ private fun PortfolioContent(
     }
 }
 
+/** The Holdings/summary header, now carrying the Export entry point (M10.3 Task 5, the
+ *  settings-honesty pass — desktop `PortfolioPane.kt`'s Task 7 twin): Export used to be a
+ *  plain trailing text button in the footer row below every section; it re-homes here, right
+ *  beside the total-value figure, as a 48dp icon button using the EXISTING [showExportChooser]
+ *  → [shareExport] flow this screen already had (only the trigger site moved — the chooser
+ *  dialog and the CSV/JSON [ExportShare] plumbing are untouched). `IconButton`'s default
+ *  minimum touch target is 48dp, matching the desktop twin's circular Export affordance
+ *  without hardcoding a size. `contentDescription` carries [L10n.Key.ExportPortfolioData] so
+ *  the icon-only button still reads correctly to accessibility tooling, mirroring desktop's
+ *  `ExportButton.semantics { contentDescription = label }`. */
 @Composable
-private fun SummaryHeader(state: PortfolioUiState) {
+private fun SummaryHeader(state: PortfolioUiState, onExportClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            state.totalValueText ?: "—",
-            style = MaterialTheme.typography.displaySmall,
-            fontWeight = FontWeight.Bold,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                state.totalValueText ?: "—",
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onExportClick) {
+                Icon(Icons.Filled.Share, contentDescription = tr(L10n.Key.ExportPortfolioData))
+            }
+        }
         state.dayChangeText?.let { text ->
             DayChangePill(text, state.dayChangePositive)
         }
@@ -398,6 +421,32 @@ private fun SummaryMetric(label: String, value: String?, positive: Boolean?, mod
     }
 }
 
+/** The 1D/1W/1M/1Y/MAX span segmented row — hoisted OUT of [PerformanceSection] (M10.3 Task 3,
+ *  Global Constraint 2 divergence #3, mirroring desktop's own `SpanBar` hoist out of
+ *  `PerformanceSection.kt`, reused verbatim by `HomePane.kt`): [com.aptrade.android.home.HomeScreen]'s
+ *  hero reuses this SAME composable for its own span control, rather than a second copy of this
+ *  segmented row. Not `private` for that reason. Selecting a span here mutates the ONE shared
+ *  [PortfolioViewModel]'s state (see that class + [PortfolioScreen]'s own KDoc on the hoisted
+ *  instance), so a span picked from Home is still selected the next time the Portfolio tab's own
+ *  Performance section is opened, and vice versa — a deliberate coupling, not a bug. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun PortfolioSpanSelector(
+    selected: PortfolioSpan,
+    onSelect: (PortfolioSpan) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    SingleChoiceSegmentedButtonRow(modifier.segmentedRowWidth()) {
+        PortfolioSpan.entries.forEachIndexed { index, span ->
+            SegmentedButton(
+                selected = selected == span,
+                onClick = { onSelect(span) },
+                shape = SegmentedButtonDefaults.itemShape(index, PortfolioSpan.entries.size),
+            ) { Text(span.label) }
+        }
+    }
+}
+
 @Composable
 private fun PerformanceSection(
     state: PortfolioUiState,
@@ -413,15 +462,7 @@ private fun PerformanceSection(
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionHeaderInline("PERFORMANCE")
 
-        SingleChoiceSegmentedButtonRow(Modifier.segmentedRowWidth()) {
-            PortfolioSpan.entries.forEachIndexed { index, span ->
-                SegmentedButton(
-                    selected = state.span == span,
-                    onClick = { onSetSpan(span) },
-                    shape = SegmentedButtonDefaults.itemShape(index, PortfolioSpan.entries.size),
-                ) { Text(span.label) }
-            }
-        }
+        PortfolioSpanSelector(selected = state.span, onSelect = onSetSpan)
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             state.benchmarks.forEach { symbol ->
@@ -609,9 +650,14 @@ private fun HoldingRow(
     }
 }
 
+/** [compact] tightens the vertical rhythm for the By Class group (only ever 2-3 rows) —
+ *  the Android answer to desktop's 10dp-vs-14dp row-spacing split between its by-class and
+ *  by-holding columns (see the Allocation `when` branch's KDoc above). */
 @Composable
-private fun AllocationBar(slice: AllocationSlice) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+private fun AllocationBar(slice: AllocationSlice, compact: Boolean = false) {
+    val verticalPadding = if (compact) 4.dp else 8.dp
+    val labelGap = if (compact) 2.dp else 4.dp
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = verticalPadding), verticalArrangement = Arrangement.spacedBy(labelGap)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(slice.localizedLabel(), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             Text(
