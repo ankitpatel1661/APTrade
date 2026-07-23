@@ -34,10 +34,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.aptrade.android.l10n.tr
 import com.aptrade.android.l10n.trf
+import com.aptrade.android.ui.alertSummary
 import com.aptrade.shared.domain.AlertCondition
 import com.aptrade.shared.domain.PriceAlert
 import com.aptrade.shared.l10n.L10n
-import kotlin.math.abs
 
 /** Modal price-alert sheet — the Compose-Android port of desktop's `PriceAlertSheet.kt` /
  *  macOS's `PriceAlertSheet.swift`, using a Material3 [ModalBottomSheet] (mirrors this app's
@@ -174,13 +174,4 @@ private fun ExistingAlertRow(alert: PriceAlert, onDelete: () -> Unit) {
             )
         }
     }
-}
-
-/** Localized existing-alert row text — mirrors desktop `PriceAlertSheet.kt`'s
- *  `alertSummary`, computed here rather than via `AlertCondition.summary` (the shared
- *  commonMain getter is deliberately English-only). */
-private fun alertSummary(condition: AlertCondition): String = when (condition) {
-    is AlertCondition.PriceAbove -> trf(L10n.Key.PriceAboveSummaryFormat, condition.threshold.formatted)
-    is AlertCondition.PriceBelow -> trf(L10n.Key.PriceBelowSummaryFormat, condition.threshold.formatted)
-    is AlertCondition.PercentChange -> trf(L10n.Key.PercentMoveSummaryFormat, abs(condition.magnitude))
 }

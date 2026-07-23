@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -196,9 +197,9 @@ private fun HomeHeader(alertCount: Int, onOpenAlerts: () -> Unit) {
  * [com.aptrade.android.AppShell]'s persistent TopAppBar (the M10.3 Task 3 brief allows either;
  * the TopAppBar is shared by all four tabs, and threading `alertCount` there would mean hoisting
  * [HomeViewModel] itself out of the Home-only branch just to badge an icon only Home currently
- * needs — this keeps the change contained to this screen). Opens the real Alerts center once
- * that screen exists — Android has none yet (that lands in a later task); until then this is an
- * inert placeholder, same as the Alerts quick card below. Mirrors
+ * needs — this keeps the change contained to this screen). Opens the real Alerts center
+ * (M10.3 Task 4's [com.aptrade.android.alerts.AlertsCenterSheet]) via [onClick], same callback
+ * the Alerts quick card below uses. Mirrors
  * [com.aptrade.android.watchlist.WatchlistScreen]'s own private `AlertBell` exactly (same plain
  * "🔔" glyph — no bell glyph ships in `material-icons-core`, see that composable's own KDoc —
  * same [BadgedBox]/[Badge] idiom), just reading Home's armed-only [HomeState.alertCount]
@@ -545,12 +546,17 @@ private fun MarketStatusRow(item: HomeFeedItem.MarketStatus) {
 }
 
 /** A clickable Today row: every `HomeFeedItem` case except `.marketStatus` navigates on tap —
- *  mirrors desktop HomePane's `ClickableFeedRow` (only `.marketStatus` is a plain `Row`). */
+ *  mirrors desktop HomePane's `ClickableFeedRow` (only `.marketStatus` is a plain `Row`).
+ *  [defaultMinSize] floors the tap target at 48dp (M9.3 lesson / M10.3 Global Constraint 6 —
+ *  T3 review rider: the row's own content/padding alone sat around ~36dp) while keeping the
+ *  row's visual padding/density exactly as it was — the row simply centers within the taller
+ *  minimum box rather than growing its padding. */
 @Composable
 private fun ClickableFeedRow(onClick: () -> Unit, content: @Composable RowScope.() -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
+            .defaultMinSize(minHeight = 48.dp)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -625,8 +631,8 @@ private fun QuickCardsGrid(
             HomeQuickCard(
                 title = tr(L10n.Key.AlertsCenterTitle),
                 subtitle = trf(L10n.Key.AlertsActiveFmt, homeState?.alertCount ?: 0),
-                // Task 4: the Android Alerts center doesn't exist yet — inert placeholder,
-                // same as the header bell above.
+                // Opens the real Alerts center (M10.3 Task 4) — same [onOpenAlerts] callback
+                // the header bell above uses.
                 onClick = onOpenAlerts,
                 modifier = Modifier.weight(1f),
             )

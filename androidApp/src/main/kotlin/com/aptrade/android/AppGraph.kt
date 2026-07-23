@@ -1,6 +1,7 @@
 package com.aptrade.android
 
 import android.content.Context
+import com.aptrade.android.alerts.AlertsCenterViewModel
 import com.aptrade.android.alerts.AndroidAlertNotifier
 import com.aptrade.android.alerts.AndroidMarketActivityCoordinator
 import com.aptrade.android.calendar.sessionLabel
@@ -466,6 +467,33 @@ object AppGraph {
     val fetchWatchlist by lazy { FetchWatchlist(watchlistStore, defaultWatchlistEntries) }
     val addToWatchlist by lazy { AddToWatchlist(watchlistStore) }
     val removeFromWatchlist by lazy { RemoveFromWatchlist(watchlistStore) }
+
+    /**
+     * Builds a fresh [com.aptrade.android.alerts.AlertsCenterViewModel] (M10.3 Task 4) — the
+     * Android twin of desktop `AppGraph.makeAlertsCenterViewModel`'s wiring: the SAME
+     * [loadAlerts]/[removePriceAlert]/[fetchWatchlist] use cases every other read path here
+     * already shares ([com.aptrade.android.watchlist.WatchlistViewModel]/`PriceAlertSheet`'s
+     * create/delete, [makeHomeFeedAssembler]'s own `loadAlerts` source), handed to the VM as
+     * plain suspend closures exactly like desktop's factory does.
+     *
+     * No `scope` parameter (unlike desktop's factory): [com.aptrade.android.alerts
+     * .AlertsCenterViewModel] is an androidx `ViewModel` using its own `viewModelScope`, built
+     * directly by its screen's own `viewModel {}` call
+     * ([com.aptrade.android.alerts.AlertsCenterSheet]) — the same "screen builds its own VM
+     * from graph-exposed use cases" shape [makeHomeFeedAssembler]'s own KDoc documents for
+     * [com.aptrade.android.home.HomeViewModel].
+     *
+     * STRICTMODE I/O SEAM (M10.3 Global Constraint 1, binding): `alertStore`/`watchlistStore`
+     * (`FileAlertStore`/`FileWatchlistStore`) already self-wrap `load`/`save` in
+     * `withContext(Dispatchers.IO)` — wrapped again here anyway, defensively, matching
+     * [makeHomeFeedAssembler]'s own `loadAlerts` wrap, so this seam's own I/O contract never
+     * silently depends on an internal detail of a store it doesn't own.
+     */
+    fun makeAlertsCenterViewModel(): AlertsCenterViewModel = AlertsCenterViewModel(
+        loadAlerts = { withContext(Dispatchers.IO) { loadAlerts.execute() } },
+        removeAlert = { id -> withContext(Dispatchers.IO) { removePriceAlert.execute(id) } },
+        loadWatchlist = { withContext(Dispatchers.IO) { fetchWatchlist.execute() } },
+    )
 }
 
 /**

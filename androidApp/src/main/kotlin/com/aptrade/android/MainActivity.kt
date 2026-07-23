@@ -23,6 +23,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.aptrade.android.alerts.AlertsCenterSheet
 import com.aptrade.android.detail.DetailScreen
 import com.aptrade.android.home.HomeDestination
 import com.aptrade.android.home.HomeScreen
@@ -127,6 +128,13 @@ fun AppNavHost(settingsViewModel: SettingsViewModel) {
     var marketsSection by rememberSaveable { mutableStateOf(MarketsSection.Watchlist) }
     var portfolioSection by rememberSaveable { mutableStateOf(PortfolioSection.Holdings) }
     var investSection by rememberSaveable { mutableStateOf(InvestSection.Plans) }
+    // M10.3 Task 4: the Alerts center's open/closed flag, hoisted here (not `rememberSaveable`
+    // — a `ModalBottomSheet` isn't meaningful to restore mid-animation across process death,
+    // same rationale [MarketsSection]/[PortfolioSection]'s sibling dialogs don't persist
+    // either). Reached from Home's bell + Alerts quick card ([HomeScreen]'s `onOpenAlerts`);
+    // rendered below, outside the `when (tab)` branch, since Material3's [ModalBottomSheet]
+    // draws its own overlay regardless of which tab composed it.
+    var alertsCenterOpen by remember { mutableStateOf(false) }
     // The live confirmTrades flag (spec A4 — TradeSheet's confirm-layer gate). TradeSheet
     // snapshots it once when it opens (its own KDoc), so it is fine for THIS to stay live —
     // collected once, here, rather than re-plumbing SettingsViewModel through every screen.
@@ -211,9 +219,7 @@ fun AppNavHost(settingsViewModel: SettingsViewModel) {
                                     }
                                 }
                             },
-                            // Task 4: the Android Alerts center doesn't exist yet — bell +
-                            // Alerts quick card are inert placeholders until that task lands.
-                            onOpenAlerts = { /* Task 4 */ },
+                            onOpenAlerts = { alertsCenterOpen = true },
                         )
                     }
                     ShellTab.Markets -> MarketsScreen(
@@ -256,5 +262,21 @@ fun AppNavHost(settingsViewModel: SettingsViewModel) {
                 onClose = { navController.popBackStack() },
             )
         }
+    }
+
+    // M10.3 Task 4: rendered outside the NavHost/`when (tab)` switch — a ModalBottomSheet is
+    // its own overlay, not a NavHost destination, so it can be conditionally included here
+    // regardless of which tab is currently showing. `onOpenDetail` both pushes the detail
+    // route AND dismisses this sheet (mirrors desktop `AlertsCenterDialog`'s `onSelectSymbol`
+    // contract — see that composable's own KDoc): a detail push while the sheet stays open
+    // would otherwise stack the two together outside desktop's dialog idiom.
+    if (alertsCenterOpen) {
+        AlertsCenterSheet(
+            onDismiss = { alertsCenterOpen = false },
+            onOpenDetail = { symbol ->
+                alertsCenterOpen = false
+                navController.navigate("detail/$symbol")
+            },
+        )
     }
 }
