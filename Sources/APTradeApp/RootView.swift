@@ -59,6 +59,7 @@ public struct RootView: View {
     /// dance needed since the sidebar owns section selection directly).
     @State private var marketsSectionRequest: MarketsView.Section?
     @State private var investSectionRequest: InvestView.Section?
+    @State private var portfolioSectionRequest: PortfolioView.Section?
 
     #if os(macOS)
     /// The sidebar's current destination (Task 6). Persists per launch only, like `tab`.
@@ -94,7 +95,8 @@ public struct RootView: View {
                 .tag(Tab.markets)
             PortfolioView(onOpenSearch: { showPalette = true },
                           onOpenAccount: { showAccountPanel = true },
-                          onExport: { showExportDialog = true })
+                          onExport: { showExportDialog = true },
+                          externalSection: $portfolioSectionRequest)
                 .tabItem { Label(tr(.portfolio), systemImage: "chart.pie") }
                 .tag(Tab.portfolio)
             InvestView(onOpenSearch: { showPalette = true },
@@ -542,7 +544,13 @@ public struct RootView: View {
         case .marketsCalendar:  sidebarSelection = .markets(.calendar)
         case .marketsNews:      sidebarSelection = .markets(.news)
         case .investIncome:     sidebarSelection = .invest(.income)
-        case .portfolio:        sidebarSelection = .portfolio(.holdings)
+        // Hero click -> Portfolio Performance (not Holdings) since the Home hero chart IS
+        // the Portfolio tab's Performance section, just fed by the same state — clicking it
+        // lands on the exact same chart, in context. Settled cross-platform behavior; see
+        // desktop `HomePane.kt`'s `HeroSection` (Constraint 4) and shared `HomeFeed.kt` — this
+        // was a Swift/Kotlin divergence (Swift used to land on Holdings) that this backport
+        // resolves.
+        case .portfolio:        sidebarSelection = .portfolio(.performance)
         }
         #else
         switch destination {
@@ -561,8 +569,11 @@ public struct RootView: View {
         case .investIncome:
             tab = .invest
             investSectionRequest = .income
+        // Hero click -> Portfolio Performance (not Holdings) — same cross-platform rationale
+        // as the macOS branch above (now resolved to match Kotlin's settled behavior).
         case .portfolio:
             tab = .portfolio
+            portfolioSectionRequest = .performance
         }
         #endif
     }

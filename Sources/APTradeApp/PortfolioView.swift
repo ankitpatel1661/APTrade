@@ -24,6 +24,10 @@ struct PortfolioView: View {
     /// this is just the closure that triggers them, threaded the same way as
     /// `onOpenSearch`/`onOpenAccount`.
     var onExport: (() -> Void)? = nil
+    /// Cross-tab navigation request (from Home, via `RootView`): when set, jumps straight
+    /// to that section and clears itself. Additive/optional — existing call sites that omit
+    /// it behave exactly as before. Mirrors `MarketsView.externalSection`/`InvestView`.
+    var externalSection: Binding<Section?>? = nil
     @State private var viewModel = CompositionRoot.makePortfolioViewModel()
     @State private var performanceVM = CompositionRoot.makePerformanceViewModel()
     @State private var selectedAsset: Asset?
@@ -63,6 +67,15 @@ struct PortfolioView: View {
         #endif
         .preferredColorScheme(ThemeManager.shared.isDark ? .dark : .light)
         .onAppear { viewModel.reload() }
+        // `initial: true`: TabView builds tabs lazily, so a section request set in the same
+        // transaction as the tab switch is already the baseline by the time onChange installs —
+        // without firing on first mount, that request lands on the default section and is
+        // never cleared, wedging same-section requests for the rest of the session.
+        .onChange(of: externalSection?.wrappedValue, initial: true) { _, requested in
+            guard let requested else { return }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { section = requested }
+            externalSection?.wrappedValue = nil
+        }
     }
 
     // MARK: - Section switcher

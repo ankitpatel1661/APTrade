@@ -290,6 +290,12 @@ final class HomeViewModel {
     // MARK: - Alerts (sync — same store `WatchlistViewModel` loads from)
 
     private func refreshAlerts() {
-        alertCount = loadAlerts().count
+        // Counts only non-triggered ("armed") alerts — the settled cross-platform decision
+        // (Global Constraint 8) for what the Home alerts entry counts. This is DELIBERATELY
+        // NOT "all alerts": the previously shipped count here counted every alert regardless
+        // of trigger state, a mismatch with shared `HomeFeed.refreshAlertCount` (Kotlin),
+        // which this backport corrects. Mirrors shared/src/commonMain/kotlin/com/aptrade/
+        // shared/application/HomeFeed.kt.
+        alertCount = loadAlerts().filter { !$0.isTriggered }.count
     }
 }

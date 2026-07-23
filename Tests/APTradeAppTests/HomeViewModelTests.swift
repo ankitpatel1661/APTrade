@@ -313,17 +313,20 @@ final class HomeViewModelTests: XCTestCase {
 
     // MARK: - Alerts
 
+    // DELIBERATE assertion change (parity backport): alertCount is now armed-only (matches
+    // shared Kotlin `HomeFeed.refreshAlertCount` / `alertCount_countsOnlyArmedAlerts`), not a
+    // count of all alerts — mirror the injected armed+triggered mix and assert armed-only.
     func test_alertCount_fromStore() async {
         let store = VMFakeAlertStore()
         store.alerts = [
             PriceAlert(symbol: "AAPL", condition: .priceAbove(usd("200"))),
-            PriceAlert(symbol: "MSFT", condition: .priceBelow(usd("100")))
+            PriceAlert(symbol: "MSFT", condition: .priceBelow(usd("100")), isTriggered: true)
         ]
         let vm = makeVM(alertStore: store)
 
         await vm.refresh()
 
-        XCTAssertEqual(vm.alertCount, 2)
+        XCTAssertEqual(vm.alertCount, 1) // only the armed one counts
     }
 
     // MARK: - Spark values: trailing ≤30 points
