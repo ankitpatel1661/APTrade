@@ -29,6 +29,10 @@ import com.aptrade.shared.application.FetchPortfolioPerformance
 import com.aptrade.shared.application.FetchProfile
 import com.aptrade.shared.application.FetchSearch
 import com.aptrade.shared.application.FetchWatchlist
+import com.aptrade.shared.application.HomeFeedAssembler
+import com.aptrade.shared.application.HomeIncomeSummary
+import com.aptrade.shared.application.HomeUpcomingDividend
+import com.aptrade.shared.application.IncomeSummaryMath
 import com.aptrade.shared.application.LoadAlerts
 import com.aptrade.shared.application.LoadBookmarks
 import com.aptrade.shared.application.LoadPies
@@ -49,7 +53,9 @@ import com.aptrade.shared.application.ScreenerScanEngine
 import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.application.SimulateDCA
 import com.aptrade.shared.application.ToggleBookmark
+import com.aptrade.shared.application.normalized
 import com.aptrade.shared.domain.AssetKind
+import com.aptrade.shared.domain.EarningsEvent
 import com.aptrade.shared.domain.MarketCalendar
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.domain.WatchlistEntry
@@ -68,7 +74,10 @@ import com.aptrade.shared.infrastructure.FinnhubNewsRepository
 import com.aptrade.shared.infrastructure.YahooMarketDataRepository
 import com.aptrade.shared.l10n.L10n
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withContext
+import kotlinx.datetime.LocalDate
 import java.io.File
 import java.nio.file.Path
 
@@ -270,6 +279,79 @@ object AppGraph {
     val screenStore: FileScreenStore by lazy { FileScreenStore(configDir().resolve("screens.json")) }
 
     /**
+     * Builds a fresh [HomeFeedAssembler] for the Home dashboard (M10.3 Task 1) — the Android
+     * twin of desktop `AppGraph.makeHomeViewModel`'s wiring (see that factory's own KDoc for
+     * the full source-by-source rationale, carried over verbatim below): every source is an
+     * EXISTING graph piece, nothing new is constructed for Home alone.
+     *
+     * Returns the ASSEMBLER, not a constructed [HomeViewModel] — mirroring the Screener
+     * precedent immediately above ([screenerScanEngine]/[screenerSnapshotStore]/[screenStore]
+     * exposed as plain vals/factories, `ScreenerViewModel` itself constructed by the screen's
+     * own `viewModel { }` call, `DetailScreen.kt:84`): [HomeViewModel] is an androidx
+     * `ViewModel` constructed directly by ITS screen (Task 3's `HomeScreen`), not by a
+     * graph-owned VM factory — desktop's `AppGraph` returns the VM because desktop VMs take a
+     * constructor-injected `CoroutineScope`; Android VMs use their own `viewModelScope`
+     * instead (see [com.aptrade.android.plans.PlansViewModel]'s KDoc), so there is no `scope`
+     * for a graph factory to thread through here.
+     *
+     * WIRING (mirrors desktop's makeHomeViewModel exactly):
+     *  - `loadPortfolio`/`fetchQuotes` are the SAME [PortfolioGraph.fetchPortfolio]/
+     *    [fetchMarketQuotes] use cases every other read-only VM reads from.
+     *  - `ownSymbols` is the SAME watchlist-∪-portfolio closure [fetchEarningsCalendar]
+     *    already shares (see that val's own KDoc) — Home's movers row dedupes against the
+     *    identical "mine" set the rest of the app already uses.
+     *  - `loadIncomeSummary` wraps [buildHomeIncomeSummary] (below), which itself delegates
+     *    to [IncomeSummaryMath] (`:shared`, M10.3 Task 1's hoist) — never a second
+     *    recomputation of dividend math.
+     *  - `fetchNextEarnings` reuses [fetchEarningsCalendar]'s existing owned-first,
+     *    day-ascending sort over the SAME 14-day window, filtered to owned/watched symbols.
+     *  - `loadScreenerSnapshot`/`loadAlerts` read the SAME [screenerSnapshotStore]/
+     *    [loadAlerts] the Screener screen and Alerts center already read from.
+     *  - `calendar` is the SAME [marketCalendar] instance every other read-only VM factory
+     *    here shares, so "today"/"soonest" mean the same trading day everywhere.
+     *
+     * STRICTMODE I/O SEAM (M10.3 Global Constraint 1, binding): every source below that
+     * touches a file-backed store is wrapped in `withContext(Dispatchers.IO)` AT THIS SEAM —
+     * the assembler itself is platform-agnostic Kotlin with no dispatcher opinion, and
+     * Android (unlike desktop, whose Main dispatcher has no StrictMode-equivalent
+     * enforcement) must never let disk I/O run on the Main thread this is invoked from
+     * (`viewModelScope`, i.e. `Dispatchers.Main.immediate`). [PortfolioGraph.fetchPortfolio]/
+     * [loadAlerts] already hop to `Dispatchers.IO` internally (their stores,
+     * `FilePortfolioStore`/`FileAlertStore`, wrap `load`/`save` themselves) — wrapped again
+     * here anyway, defensively, so this seam's own StrictMode contract never silently depends
+     * on an internal implementation detail of a store it doesn't own. [FileScreenerSnapshotStore]
+     * is the one store that does NOT self-wrap (it implements the non-suspend, synchronous
+     * `ScreenerSnapshotStore` port — see that class's own KDoc for why) — for THAT one, the
+     * `withContext` wrap below is the ONLY thing standing between a screener-freshness check
+     * and a StrictMode disk-read-on-main violation.
+     */
+    fun makeHomeFeedAssembler(
+        nowEpochSeconds: () -> Long = { System.currentTimeMillis() / 1000 },
+    ): HomeFeedAssembler {
+        val fetchNextOwnedEarnings: suspend () -> EarningsEvent? = {
+            val start = marketCalendar.localEpochDay(nowEpochSeconds())
+            val fromDay = marketCalendar.dayString(start)
+            val toDay = marketCalendar.dayString(start + 13)
+            val events = fetchEarningsCalendar.execute(fromDay, toDay)
+            val own = ownSymbols().mapTo(HashSet(), ::normalized)
+            events.firstOrNull { normalized(it.symbol) in own }
+        }
+        return HomeFeedAssembler(
+            loadPortfolio = { withContext(Dispatchers.IO) { portfolio.fetchPortfolio.execute() } },
+            fetchQuotes = { symbols -> fetchMarketQuotes.execute(symbols).associateBy { it.symbol } },
+            ownSymbols = ownSymbols,
+            loadIncomeSummary = {
+                buildHomeIncomeSummary(portfolio.fetchPortfolio, portfolio.repository, marketCalendar, nowEpochSeconds)
+            },
+            fetchNextEarnings = fetchNextOwnedEarnings,
+            loadScreenerSnapshot = { withContext(Dispatchers.IO) { screenerSnapshotStore.load() } },
+            loadAlerts = { withContext(Dispatchers.IO) { loadAlerts.execute() } },
+            calendar = marketCalendar,
+            nowEpochSeconds = nowEpochSeconds,
+        )
+    }
+
+    /**
      * Builds the market-activity coordinator (open/close + digest + earnings-day
      * notifications, Task 8) — a direct port of desktop's wiring in
      * `desktopApp/src/main/kotlin/com/aptrade/desktop/Main.kt` (search
@@ -405,6 +487,61 @@ internal fun buildNotifyOrderFill(
             deliver(side, symbol, quantityText, amountFormatted)
         }
     }
+
+// How far back to fetch dividend events when projecting the next payout: mirrors
+// PortfolioViewModel's DIVIDEND_EVENTS_LOOKBACK_SECONDS / IncomeViewModel's lookbackStart
+// (both 730 days = two years) — the SAME constant desktop AppGraph.kt's
+// HOME_DIVIDEND_EVENTS_LOOKBACK_SECONDS uses, duplicated per this codebase's own established
+// precedent of each file keeping its own private copy of small domain constants.
+private const val HOME_DIVIDEND_EVENTS_LOOKBACK_SECONDS = 730L * 86_400L
+
+/**
+ * Builds the [HomeIncomeSummary] [HomeFeedAssembler] wants — Android twin of desktop
+ * `AppGraph.buildHomeIncomeSummary`, transcribed near-verbatim (both now delegate to the SAME
+ * [IncomeSummaryMath] hoisted functions, M10.3 Task 1, so there is nothing left to diverge on
+ * between the two platforms' wiring here).
+ *
+ * DAY-TYPE SEAM (mirrors desktop's own doc on this exact function): [IncomeSummaryMath
+ * .nextUpcomingDividend]'s result stays on the epoch-seconds ex-date convention deliberately;
+ * [HomeUpcomingDividend.estimatedExDate] wants a `kotlinx.datetime.LocalDate`. That conversion
+ * happens EXACTLY ONCE, here, at this boundary, via [MarketCalendar.tradingDay] — the SAME
+ * market-local (ET) convention every other trading-day computation in this codebase already
+ * uses — rather than round-tripping through `java.time`/`ZoneId` arithmetic.
+ *
+ * STRICTMODE I/O SEAM (M10.3 Global Constraint 1): [fetchPortfolio]'s underlying
+ * [PortfolioStore] (`FilePortfolioStore`) already self-wraps `load()` in
+ * `withContext(Dispatchers.IO)` — wrapped again here anyway, defensively, matching
+ * [makeHomeFeedAssembler]'s own `loadPortfolio` wrap, so this function's own I/O contract
+ * never silently depends on an internal detail of a store it doesn't own.
+ */
+internal suspend fun buildHomeIncomeSummary(
+    fetchPortfolio: FetchPortfolio,
+    repository: MarketDataRepository,
+    calendar: MarketCalendar,
+    nowEpochSeconds: () -> Long,
+): HomeIncomeSummary {
+    val portfolioSnapshot = withContext(Dispatchers.IO) { fetchPortfolio.execute() }
+    val asOf = nowEpochSeconds()
+
+    val receivedYTD = IncomeSummaryMath.receivedYTD(portfolioSnapshot.transactions, asOf)
+
+    val nextProjection = IncomeSummaryMath.nextUpcomingDividend(
+        positions = portfolioSnapshot.positions,
+        dividendEventsFetcher = { symbol, sinceEpochSeconds -> repository.dividendEvents(symbol, sinceEpochSeconds) },
+        asOfEpochSeconds = asOf,
+        lookbackSeconds = HOME_DIVIDEND_EVENTS_LOOKBACK_SECONDS,
+    )
+
+    val nextDividend = nextProjection?.let {
+        HomeUpcomingDividend(
+            symbol = it.symbol,
+            estimatedAmount = it.estimatedAmount,
+            estimatedExDate = LocalDate.parse(calendar.tradingDay(it.exDateEpochSeconds)),
+        )
+    }
+
+    return HomeIncomeSummary(receivedYTD = receivedYTD, nextDividend = nextDividend)
+}
 
 /** The portfolio slice of the composition root: everything that depends on the
  *  [PortfolioStore]. Groups the trade + read + performance use cases sharing one store, plus

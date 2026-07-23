@@ -42,6 +42,7 @@ import com.aptrade.shared.application.FetchWatchlist
 import com.aptrade.shared.application.HomeFeedAssembler
 import com.aptrade.shared.application.HomeIncomeSummary
 import com.aptrade.shared.application.HomeUpcomingDividend
+import com.aptrade.shared.application.IncomeSummaryMath
 import com.aptrade.shared.application.LoadAlerts
 import com.aptrade.shared.application.LoadBookmarks
 import com.aptrade.shared.application.ContributeToPie
@@ -54,7 +55,6 @@ import com.aptrade.shared.application.NewsRepository
 import com.aptrade.shared.application.PieStore
 import com.aptrade.shared.application.PortfolioStore
 import com.aptrade.shared.application.ProcessDueDividends
-import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.RebalancePie
 import com.aptrade.shared.application.ReconcilePieLedgers
 import com.aptrade.shared.application.RemoveFromWatchlist
@@ -69,10 +69,8 @@ import com.aptrade.shared.application.ToggleBookmark
 import com.aptrade.shared.application.WatchlistStore
 import com.aptrade.shared.application.normalized
 import com.aptrade.shared.domain.AssetKind
-import com.aptrade.shared.domain.DividendMath
 import com.aptrade.shared.domain.EarningsEvent
 import com.aptrade.shared.domain.MarketCalendar
-import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.Pie
 import com.aptrade.shared.domain.SP500Symbols
 import com.aptrade.shared.domain.TradeSide
@@ -84,8 +82,6 @@ import com.aptrade.shared.infrastructure.FileScreenerSnapshotStore
 import com.aptrade.shared.infrastructure.FinnhubEarningsRepository
 import com.aptrade.shared.infrastructure.FinnhubNewsRepository
 import com.aptrade.shared.infrastructure.YahooMarketDataRepository
-import com.ionspin.kotlin.bignum.decimal.BigDecimal
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -434,29 +430,30 @@ private const val HOME_DIVIDEND_EVENTS_LOOKBACK_SECONDS = 730L * 86_400L
  * pipeline (Global Constraint 2 of the M10.2 plan: `receivedYTD` + first upcoming, never
  * a second recomputation of dividend math) rather than re-deriving it.
  *
- * [IncomeViewModel.receivedYTD]/[IncomeViewModel.buildUpcoming] are private methods on a
- * `@MutableStateFlow`-shaped, one-instance-per-pane VM, so this seam is built from the
- * SAME underlying pieces those private methods themselves wrap — [FetchPortfolio] for the
- * portfolio/transaction source, and [DividendMath.nextProjected] (shared, pure, already
- * used by IncomeViewModel/PortfolioViewModel/ExportPortfolioUseCase alike) for the
- * cadence-inference-and-projection math — rather than duplicating IncomeViewModel's
- * internals or widening that VM's visibility just for this one caller. The received-YTD
- * sum below (a plain "which Dividend transactions fall in the current UTC calendar year"
- * filter, not dividend MATH) is the one small piece unavoidably duplicated here; per-symbol
- * dividend-events isolation (one symbol's fetch failure degrades only that symbol) mirrors
- * [IncomeViewModel.load]'s own per-symbol catch exactly.
+ * HOISTED (M10.3 Task 1): this function's body used to duplicate `IncomeViewModel`'s private
+ * `receivedYTD`/`buildUpcoming` math directly (a private per-file Hinnant civil-date copy
+ * plus a hand-rolled per-symbol projection loop) — two reviews (M10.2 final review, M10.3
+ * plan) traced that as "provably equivalent today but unguarded": three copies (this
+ * function, desktop `IncomeViewModel`, Android `IncomeViewModel`) that could silently drift.
+ * Both pieces now delegate to [IncomeSummaryMath] (`:shared`, commonMain) — the ONE
+ * implementation Android's Home wiring (Task 1) also calls — so this function is now pure
+ * plumbing: load the portfolio, call the two shared functions, and do the one remaining
+ * platform-specific step (the day-type conversion below). Behavior is UNCHANGED — see
+ * [IncomeSummaryMath]'s own KDoc for the hoisted semantics.
  *
- * DAY-TYPE SEAM (M10.2 Task 2, seam 2): the desktop income pipeline represents an upcoming
- * ex-date as `estimatedExDateEpochSeconds: Long` (see `IncomeViewModel.UpcomingRow`);
- * [HomeUpcomingDividend.estimatedExDate] wants a `kotlinx.datetime.LocalDate`. That
- * conversion happens EXACTLY ONCE, here, at this boundary, via [MarketCalendar.tradingDay]
- * — the SAME market-local (ET) convention every other trading-day computation in this
- * codebase already uses (the assembler's own market-status/screener-freshness checks,
- * [CalendarViewModel]'s window) — rather than round-tripping through `java.time.Instant`/
- * `ZoneId` arithmetic (Global Constraint 1: day-only values stay LocalDate end-to-end).
- * `tradingDay` already returns a plain `yyyy-MM-dd` string, which parses directly as a
- * `LocalDate` — the exact same "day string in, LocalDate out" shape the assembler's own
- * earnings seam uses for [EarningsEvent.day].
+ * DAY-TYPE SEAM (M10.2 Task 2, seam 2 — unaffected by the hoist): the desktop income
+ * pipeline represents an upcoming ex-date as `estimatedExDateEpochSeconds: Long` (see
+ * `IncomeViewModel.UpcomingRow`, and [IncomeSummaryMath.nextUpcomingDividend]'s
+ * [com.aptrade.shared.application.NextDividendProjection] result, which stays on that SAME
+ * epoch-seconds convention deliberately); [HomeUpcomingDividend.estimatedExDate] wants a
+ * `kotlinx.datetime.LocalDate`. That conversion happens EXACTLY ONCE, here, at this
+ * boundary, via [MarketCalendar.tradingDay] — the SAME market-local (ET) convention every
+ * other trading-day computation in this codebase already uses (the assembler's own
+ * market-status/screener-freshness checks, [CalendarViewModel]'s window) — rather than
+ * round-tripping through `java.time.Instant`/`ZoneId` arithmetic (Global Constraint 1:
+ * day-only values stay LocalDate end-to-end). `tradingDay` already returns a plain
+ * `yyyy-MM-dd` string, which parses directly as a `LocalDate` — the exact same "day string
+ * in, LocalDate out" shape the assembler's own earnings seam uses for [EarningsEvent.day].
  */
 internal suspend fun buildHomeIncomeSummary(
     fetchPortfolio: FetchPortfolio,
@@ -467,82 +464,24 @@ internal suspend fun buildHomeIncomeSummary(
     val portfolio = fetchPortfolio.execute()
     val asOf = nowEpochSeconds()
 
-    // Same filter IncomeViewModel.receivedYTD applies: Dividend-side transaction cash
-    // whose UTC calendar year matches `asOf`'s.
-    val currentYear = utcYear(asOf)
-    var receivedYTD = Money(BigDecimal.ZERO, "USD")
-    for (txn in portfolio.transactions) {
-        if (txn.side != TradeSide.Dividend) continue
-        if (utcYear(txn.epochSeconds) != currentYear) continue
-        receivedYTD += Money(txn.price.amount * txn.quantity, txn.price.currencyCode)
-    }
+    val receivedYTD = IncomeSummaryMath.receivedYTD(portfolio.transactions, asOf)
 
-    // Same per-symbol isolation IncomeViewModel.load() applies: one symbol's
-    // dividend-events fetch failure degrades only that symbol (no projection for it),
-    // never the others — and never the receivedYTD sum above, which needs no network call.
-    val nonCryptoPositions = portfolio.positions.filter { it.asset.kind != AssetKind.Crypto }
-    var nextEpochSeconds: Long? = null
-    var nextSymbol: String? = null
-    var nextAmount: Money? = null
-    for (position in nonCryptoPositions) {
-        val symbol = position.asset.symbol
-        val events = try {
-            repository.dividendEvents(symbol, asOf - HOME_DIVIDEND_EVENTS_LOOKBACK_SECONDS)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: QuoteError) {
-            emptyList()
-        }
-        val projected = DividendMath.nextProjected(events) ?: continue
-        if (projected.exDateEpochSeconds <= asOf) continue
-        if (nextEpochSeconds == null || projected.exDateEpochSeconds < nextEpochSeconds) {
-            nextEpochSeconds = projected.exDateEpochSeconds
-            nextSymbol = symbol
-            nextAmount = Money(projected.amountPerShare.amount * position.quantity, projected.amountPerShare.currencyCode)
-        }
-    }
+    val nextProjection = IncomeSummaryMath.nextUpcomingDividend(
+        positions = portfolio.positions,
+        dividendEventsFetcher = { symbol, sinceEpochSeconds -> repository.dividendEvents(symbol, sinceEpochSeconds) },
+        asOfEpochSeconds = asOf,
+        lookbackSeconds = HOME_DIVIDEND_EVENTS_LOOKBACK_SECONDS,
+    )
 
-    val nextDividend = if (nextEpochSeconds != null && nextSymbol != null && nextAmount != null) {
+    val nextDividend = nextProjection?.let {
         HomeUpcomingDividend(
-            symbol = nextSymbol,
-            estimatedAmount = nextAmount,
-            estimatedExDate = LocalDate.parse(calendar.tradingDay(nextEpochSeconds)),
+            symbol = it.symbol,
+            estimatedAmount = it.estimatedAmount,
+            estimatedExDate = LocalDate.parse(calendar.tradingDay(it.exDateEpochSeconds)),
         )
-    } else {
-        null
     }
 
     return HomeIncomeSummary(receivedYTD = receivedYTD, nextDividend = nextDividend)
-}
-
-// --- UTC epoch-day civil-date math (private copy) -------------------------------------
-// DividendMath.kt/MarketCalendar.kt/IncomeViewModel.kt/PieSchedule.kt all implement this
-// exact Hinnant civil-date algorithm, privately, per this codebase's own established
-// precedent (see those files' header docs) of each file keeping its OWN copy rather than
-// widening visibility to share it. Only the minimal piece this file needs (UTC epoch-
-// seconds -> UTC calendar year, for the receivedYTD "same year as asOf" filter above) is
-// reproduced here.
-
-private fun utcYear(epochSeconds: Long): Long {
-    val epochDay = homeFloorDiv(epochSeconds, 86_400L)
-    return homeCivilYearFromDays(epochDay)
-}
-
-private fun homeFloorDiv(x: Long, y: Long): Long {
-    val q = x / y
-    return if ((x xor y) < 0 && q * y != x) q - 1 else q
-}
-
-private fun homeCivilYearFromDays(z0: Long): Long {
-    val z = z0 + 719_468L
-    val era = homeFloorDiv(z, 146_097L)
-    val doe = z - era * 146_097L // [0, 146096]
-    val yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365 // [0, 399]
-    val y = yoe + era * 400
-    val doy = doe - (365 * yoe + yoe / 4 - yoe / 100) // [0, 365]
-    val mp = (5 * doy + 2) / 153 // [0, 11]
-    val m = if (mp < 10) mp + 3 else mp - 9 // [1, 12]
-    return if (m <= 2) y + 1 else y
 }
 
 /** Serializes [persistSettings]'s load-merge-save (6d.2 Task 4 — closes the RMW
