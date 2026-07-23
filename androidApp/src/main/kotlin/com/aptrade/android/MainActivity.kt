@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -22,16 +23,17 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.aptrade.android.calendar.CalendarScreen
 import com.aptrade.android.detail.DetailScreen
-import com.aptrade.android.news.NewsScreen
+import com.aptrade.android.invest.InvestScreen
+import com.aptrade.android.invest.InvestSection
+import com.aptrade.android.markets.MarketsScreen
+import com.aptrade.android.markets.MarketsSection
 import com.aptrade.android.portfolio.PortfolioScreen
-import com.aptrade.android.screener.ScreenerScreen
+import com.aptrade.android.portfolio.PortfolioSection
 import com.aptrade.android.search.SearchScreen
 import com.aptrade.android.settings.SettingsScreen
 import com.aptrade.android.settings.SettingsViewModel
 import com.aptrade.android.ui.theme.APTradeTheme
-import com.aptrade.android.watchlist.WatchlistScreen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -91,13 +93,35 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/** Tab roots (Watchlist/Portfolio/News) live under the "shell" destination and are
+/** Tab roots (Home/Markets/Portfolio/Invest) live under the "shell" destination and are
  *  switched by [ShellTab] state, not by NavHost — the bottom bar never rebuilds the back
- *  stack. Search/detail/settings push a NavHost destination on top of the shell. */
+ *  stack. Search/detail/settings push a NavHost destination on top of the shell.
+ *
+ *  **Back-stack divergence (M10.3 IA restructure, constraint 2 divergence #4):** unlike
+ *  desktop's conditional master–detail (a wide sidebar window keeps the list and a detail pane
+ *  open side by side, so a selection can persist across a tab revisit), a phone is push-nav
+ *  only — `detail/{symbol}` is a NavHost destination pushed on top of "shell", and popping it
+ *  always lands back on the list with no selection remembered. This is the deliberate phone
+ *  answer to desktop's persistence divergence: master–detail is N/A here (constraint 4), so
+ *  there is nothing to persist — every detail visit starts fresh from whichever list row (or
+ *  Home feed row, or deep link) was tapped.
+ *
+ *  **Section state hoisting (constraint 3):** [marketsSection]/[investSection]/
+ *  [portfolioSection] are hoisted HERE, one level above [MarketsScreen]/[InvestScreen]/
+ *  [PortfolioScreen] themselves, rather than each screen owning its own `remember` state. Home
+ *  (Task 3) and any future deep link write these directly — no request/clear handoff to
+ *  consume-and-clear on a later frame, which is exactly the bug class the Swift I-1 lesson
+ *  warns about (a request set in the same transaction as a tab switch can miss the window
+ *  where an `onChange`-style consumer starts listening, wedging same-section requests for the
+ *  rest of the session). Writing hoisted state directly has no such window: `tab = ShellTab.X;
+ *  xSection = Y` takes effect on the very next composition, first paint included. */
 @Composable
 fun AppNavHost(settingsViewModel: SettingsViewModel) {
     val navController = rememberNavController()
-    var tab by rememberSaveable { mutableStateOf(ShellTab.Watchlist) }
+    var tab by rememberSaveable { mutableStateOf(ShellTab.Home) }
+    var marketsSection by rememberSaveable { mutableStateOf(MarketsSection.Watchlist) }
+    var portfolioSection by rememberSaveable { mutableStateOf(PortfolioSection.Holdings) }
+    var investSection by rememberSaveable { mutableStateOf(InvestSection.Plans) }
     // The live confirmTrades flag (spec A4 — TradeSheet's confirm-layer gate). TradeSheet
     // snapshots it once when it opens (its own KDoc), so it is fine for THIS to stay live —
     // collected once, here, rather than re-plumbing SettingsViewModel through every screen.
@@ -111,21 +135,28 @@ fun AppNavHost(settingsViewModel: SettingsViewModel) {
                 onOpenSettings = { navController.navigate("settings") },
             ) { padding ->
                 when (tab) {
-                    ShellTab.Watchlist -> WatchlistScreen(
+                    ShellTab.Home -> Box(Modifier.fillMaxSize()) {
+                        // Task 3
+                    }
+                    ShellTab.Markets -> MarketsScreen(
                         padding = padding,
+                        section = marketsSection,
+                        onSelectSection = { marketsSection = it },
                         onOpenSearch = { navController.navigate("search") },
                         onOpenDetail = { symbol -> navController.navigate("detail/$symbol") },
                     )
                     ShellTab.Portfolio -> PortfolioScreen(
+                        section = portfolioSection,
+                        onSelectSection = { portfolioSection = it },
                         onBack = {},                        // tab root: no back
                         onOpenDetail = { symbol -> navController.navigate("detail/$symbol") },
                         confirmTrades = settings.confirmTrades,
                     )
-                    ShellTab.News -> NewsScreen(padding = padding)
-                    ShellTab.Calendar -> CalendarScreen(padding = padding)
-                    ShellTab.Screener -> ScreenerScreen(
+                    ShellTab.Invest -> InvestScreen(
                         padding = padding,
-                        onOpenDetail = { symbol -> navController.navigate("detail/$symbol") },
+                        section = investSection,
+                        onSelectSection = { investSection = it },
+                        confirmTrades = settings.confirmTrades,
                     )
                 }
             }

@@ -41,7 +41,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,9 +55,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aptrade.android.AppGraph
-import com.aptrade.android.income.IncomeSection
 import com.aptrade.android.l10n.tr
-import com.aptrade.android.plans.PlansSection
 import com.aptrade.android.ui.chart.ChartLegend
 import com.aptrade.android.ui.chart.CrosshairTooltip
 import com.aptrade.android.ui.chart.DualLineChart
@@ -79,14 +76,17 @@ import java.util.Locale
 /** The holding row a [TradeSheet] is opened against, plus the side the user tapped. */
 private data class TradeTarget(val row: HoldingRowUi, val side: TradeSide)
 
-/** The six content sections switched below the summary header — desktop parity
- *  ([com.aptrade.desktop.portfolio.PortfolioPane]'s `PortfolioSection`, which added `Plans` the
- *  same way for M7.3, and `Income` for M8.3 Task 2), plus Performance as a switchable tab
- *  (desktop keeps its chart block always visible above the switcher; Android instead folds it
- *  into the switcher itself so only one section — chart or list — is on screen at a time,
- *  matching this screen's existing single-LazyColumn, one-thing-at-a-time layout). Order and
- *  labels match desktop's set exactly (same six L10n keys). */
-private enum class PortfolioSection { Holdings, Allocation, Activity, Plans, Income, Performance }
+/** The four content sections switched below the summary header — desktop parity
+ *  ([com.aptrade.desktop.portfolio.PortfolioPane]'s `PortfolioSection`, slimmed the same way for
+ *  the M10 IA restructure: `Plans`/`Income` moved out to
+ *  [com.aptrade.android.invest.InvestScreen], same order as every other platform), plus
+ *  Performance as a switchable tab (desktop keeps its chart block always visible above the
+ *  switcher; Android instead folds it into the switcher itself so only one section — chart or
+ *  list — is on screen at a time, matching this screen's existing single-LazyColumn,
+ *  one-thing-at-a-time layout). Order and labels match desktop's set exactly (same four L10n
+ *  keys). Not `private`: [com.aptrade.android.MainActivity]'s `AppNavHost` hoists an instance of
+ *  this as tab-level state (see [PortfolioScreen] below). */
+enum class PortfolioSection { Holdings, Allocation, Activity, Performance }
 
 /** [PortfolioSection]'s display label. A plain function (not an enum property) so it calls
  *  [tr] fresh on every read — recomposes correctly when the active language changes, mirroring
@@ -95,13 +95,22 @@ private fun PortfolioSection.label(): String = when (this) {
     PortfolioSection.Holdings -> tr(L10n.Key.HoldingsSection)
     PortfolioSection.Allocation -> tr(L10n.Key.AllocationSection)
     PortfolioSection.Activity -> tr(L10n.Key.ActivitySection)
-    PortfolioSection.Plans -> tr(L10n.Key.PlansSection)
-    PortfolioSection.Income -> tr(L10n.Key.IncomeSection)
     PortfolioSection.Performance -> tr(L10n.Key.PerformanceSection)
 }
 
+/** [section]/[onSelectSection] are HOISTED to the caller ([com.aptrade.android.MainActivity]'s
+ *  `AppNavHost`, constraint 3) rather than kept as local `remember` state — so Home's hero-tap
+ *  (divergence: hero tap → Portfolio·Performance, Task 3) and any future deep link can jump
+ *  straight to a section by writing it directly; no request/clear handoff to get wrong on
+ *  first composition (the Swift I-1 lesson). */
 @Composable
-fun PortfolioScreen(onBack: () -> Unit, onOpenDetail: (String) -> Unit, confirmTrades: Boolean) {
+fun PortfolioScreen(
+    section: PortfolioSection,
+    onSelectSection: (PortfolioSection) -> Unit,
+    onBack: () -> Unit,
+    onOpenDetail: (String) -> Unit,
+    confirmTrades: Boolean,
+) {
     val portfolio = AppGraph.portfolio
     val viewModel: PortfolioViewModel = viewModel {
         PortfolioViewModel(
@@ -127,6 +136,8 @@ fun PortfolioScreen(onBack: () -> Unit, onOpenDetail: (String) -> Unit, confirmT
     val state by viewModel.state.collectAsState()
     PortfolioContent(
         state = state,
+        section = section,
+        onSelectSection = onSelectSection,
         onBack = onBack,
         onOpenDetail = onOpenDetail,
         onSetSpan = viewModel::setSpan,
@@ -144,6 +155,8 @@ fun PortfolioScreen(onBack: () -> Unit, onOpenDetail: (String) -> Unit, confirmT
 @Composable
 private fun PortfolioContent(
     state: PortfolioUiState,
+    section: PortfolioSection,
+    onSelectSection: (PortfolioSection) -> Unit,
     onBack: () -> Unit,
     onOpenDetail: (String) -> Unit,
     onSetSpan: (PortfolioSpan) -> Unit,
@@ -159,7 +172,6 @@ private fun PortfolioContent(
     var tradeTarget by remember { mutableStateOf<TradeTarget?>(null) }
     var showResetConfirm by remember { mutableStateOf(false) }
     var showExportChooser by remember { mutableStateOf(false) }
-    var section by rememberSaveable { mutableStateOf(PortfolioSection.Holdings) }
     // Composition-scoped coroutine launcher for the export buttons below — `exportCsv`/
     // `exportJson` became `suspend` (M8.3 final-review fix: `exportSnapshot`'s
     // `projectedAnnualIncome` fetches per-symbol dividend events), so their click handlers
@@ -187,14 +199,14 @@ private fun PortfolioContent(
                     item { HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant) }
 
                     // The switcher is ALWAYS shown — matching desktop PortfolioPane and
-                    // macOS PortfolioView, both deliberately un-gated in M7 so Plans (and
-                    // now Income) are reachable before the first holding exists. Only the
-                    // Holdings section shows the empty state. (An earlier gate here hid
-                    // every section on a fresh portfolio and wrongly claimed desktop parity.)
+                    // macOS PortfolioView, both deliberately un-gated in M7 so every section is
+                    // reachable before the first holding exists. Only the Holdings section shows
+                    // the empty state. (An earlier gate here hid every section on a fresh
+                    // portfolio and wrongly claimed desktop parity.)
                     item {
                         SectionSwitcher(
                             selected = section,
-                            onSelect = { section = it },
+                            onSelect = onSelectSection,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                         )
                     }
@@ -239,12 +251,6 @@ private fun PortfolioContent(
                                     HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                                 }
                             }
-                        }
-                        PortfolioSection.Plans -> {
-                            item { PlansSection(confirmTrades = confirmTrades) }
-                        }
-                        PortfolioSection.Income -> {
-                            item { IncomeSection() }
                         }
                         PortfolioSection.Performance -> {
                             item {
