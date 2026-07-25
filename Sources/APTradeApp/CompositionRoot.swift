@@ -43,6 +43,7 @@ enum CompositionRoot {
         })
     }()
     static let portfolioHistoryStore: PortfolioHistoryStore = UserDefaultsPortfolioHistoryStore()
+    static let goalStore: GoalStore = UserDefaultsGoalStore()
     static let alertStore: AlertStore = UserDefaultsAlertStore()
     /// One macOS-notification deliverer, shared behind both notifier ports.
     private static let notificationDeliverer = UserNotificationAlertNotifier()
@@ -133,7 +134,7 @@ enum CompositionRoot {
         return PortfolioViewModel(
             fetchPortfolio: FetchPortfolioUseCase(store: portfolioStore),
             fetchQuotes: FetchQuotesUseCase(repository: repo),
-            resetPortfolio: ResetPortfolioUseCase(store: portfolioStore, serializer: tradeSerializer),
+            resetPortfolio: ResetPortfolioUseCase(store: portfolioStore, serializer: tradeSerializer, goalStore: goalStore),
             recordSnapshot: RecordPortfolioSnapshotUseCase(store: portfolioHistoryStore),
             fetchHistory: FetchPortfolioHistoryUseCase(store: portfolioHistoryStore),
             clearHistory: ClearPortfolioHistoryUseCase(store: portfolioHistoryStore),

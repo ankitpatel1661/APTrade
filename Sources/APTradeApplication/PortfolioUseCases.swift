@@ -53,9 +53,15 @@ public struct SellAssetUseCase: Sendable {
 public struct ResetPortfolioUseCase: Sendable {
     private let store: PortfolioStore
     private let serializer: TradeSerializer
-    public init(store: PortfolioStore, serializer: TradeSerializer) {
+    private let goalStore: GoalStore?
+
+    /// `goalStore` defaults to `nil` so existing construction sites keep compiling; when
+    /// provided, a reset also clears goals, since a fresh practice run shouldn't inherit
+    /// targets set against the old balance.
+    public init(store: PortfolioStore, serializer: TradeSerializer, goalStore: GoalStore? = nil) {
         self.store = store
         self.serializer = serializer
+        self.goalStore = goalStore
     }
     /// Serialized like `BuyAssetUseCase` — a reset overwriting the portfolio while a
     /// buy/sell/pie mutation is mid-flight would otherwise silently discard it (or vice
@@ -64,6 +70,7 @@ public struct ResetPortfolioUseCase: Sendable {
         await serializer.run {
             let fresh = Portfolio.starting(cash: startingCash)
             self.store.save(fresh)
+            self.goalStore?.save([])
             return fresh
         }
     }

@@ -44,6 +44,13 @@ public protocol PortfolioStore: Sendable {
     func save(_ portfolio: Portfolio)
 }
 
+/// Persists the user's portfolio goals. At most one goal per `GoalKind` is stored;
+/// enforcing that is the use case's job, not the adapter's.
+public protocol GoalStore: Sendable {
+    func load() -> [PortfolioGoal]
+    func save(_ goals: [PortfolioGoal])
+}
+
 /// Persists a rolling history of portfolio value snapshots, used to chart total value
 /// over time. Snapshots are recorded locally as they're observed — there is no
 /// historical backfill from price data.
