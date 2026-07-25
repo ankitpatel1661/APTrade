@@ -152,7 +152,14 @@ final class IncomeViewModel: ObservableObject {
     /// quote — it must not become the behavior for every symbol via an omitted argument).
     private var lastPricesBySymbol: [String: Money] = [:]
 
-    func load() async {
+    /// - Parameter includeForecastAndCalendar: When `false`, skips the 365-day dividend-
+    ///   calendar projection and the multi-year DRIP forecast (and the goal projection
+    ///   riding on it) — `buildCalendar` walks every position's projected schedule a full
+    ///   year out, and `rebuildForecast` runs a 10-year-default per-holding DRIP loop.
+    ///   Both are unused by consumers that only read `cards`/`upcoming` (Home's dashboard
+    ///   summary, which must stay under a tight latency budget) and are needless work
+    ///   there. Defaults to `true` so the real Income screen is unaffected.
+    func load(includeForecastAndCalendar: Bool = true) async {
         isLoading = true
         defer { isLoading = false }
 
@@ -200,6 +207,8 @@ final class IncomeViewModel: ObservableObject {
         lastPositions = portfolio.positions
         lastEventsBySymbol = eventsBySymbol
         lastPricesBySymbol = quotes.mapValues(\.price)
+
+        guard includeForecastAndCalendar else { return }
         calendarMonths = Self.buildCalendar(positions: portfolio.positions,
                                             eventsBySymbol: eventsBySymbol,
                                             now: asOf)
@@ -209,13 +218,22 @@ final class IncomeViewModel: ObservableObject {
 
     // MARK: - Forecast & income goal
 
+    /// Call after the persisted DRIP setting changes (`isDripEnabled` reads it live, but
+    /// nothing observes it) so `forecast` and the income-goal projection — both DRIP-
+    /// sensitive — recompute immediately rather than staying stale until the user happens
+    /// to tap a horizon pill. `IncomeSection` wires this to `.onChange` on the DRIP toggle
+    /// binding.
+    func dripDidChange() {
+        rebuildForecast()
+    }
+
     private func rebuildForecast() {
         forecast = DividendMath.incomeForecast(positions: lastPositions,
+                                               pricesBySymbol: lastPricesBySymbol,
                                                eventsBySymbol: lastEventsBySymbol,
                                                years: horizon.rawValue,
                                                dripEnabled: isDripEnabled(),
-                                               asOf: now(),
-                                               pricesBySymbol: lastPricesBySymbol)
+                                               asOf: now())
         refreshGoalProjection()
     }
 
@@ -227,11 +245,11 @@ final class IncomeViewModel: ObservableObject {
         // unreachable goal (`.notOnTrack`) is never mistaken for one reached beyond the
         // horizon (`.beyondHorizon`) due to a truncated forecast.
         let full = DividendMath.incomeForecast(positions: lastPositions,
+                                               pricesBySymbol: lastPricesBySymbol,
                                                eventsBySymbol: lastEventsBySymbol,
                                                years: Int(GoalMath.horizonYears),
                                                dripEnabled: isDripEnabled(),
-                                               asOf: now(),
-                                               pricesBySymbol: lastPricesBySymbol)
+                                               asOf: now())
         // Trailing-twelve-month rate, no growth — the SAME measure as `forecast`'s
         // `yearOffset == 1` entry (both are `DividendMath.projectedAnnualIncome`'s sum of
         // `trailingAnnualPerShare` × shares), so the goal's progress % and ETA agree with
@@ -289,8 +307,11 @@ final class IncomeViewModel: ObservableObject {
         return order.map { key in
             let rows = grouped[key] ?? []
             let total = rows.reduce(Decimal(0)) { $0 + $1.estimatedAmount.amount }
+            // `order` only ever gains a key alongside its first row, so `rows` is never
+            // actually empty here — but the project bans force/index unwraps, so fall
+            // back to `now` (never reachable in practice) rather than `rows[0]`.
             return CalendarMonth(id: key,
-                                 title: titleFormatter.string(from: rows[0].exDate),
+                                 title: titleFormatter.string(from: rows.first?.exDate ?? now),
                                  rows: rows,
                                  total: Money(amount: total))
         }

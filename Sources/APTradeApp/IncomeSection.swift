@@ -44,6 +44,11 @@ struct IncomeSection: View {
     var body: some View {
         content
             .task { await viewModel.load() }
+            // `isDripEnabled()` reads the persisted setting live, but nothing else
+            // observes it — without this, flipping the toggle leaves the forecast (and
+            // the income-goal projection riding on it) stale until the user happens to
+            // tap a horizon pill (M11.1 whole-branch review finding 2).
+            .onChange(of: dripEnabled.wrappedValue) { _, _ in viewModel.dripDidChange() }
     }
 
     /// The DRIP header card (M10.1 Task 8) and the income-goal card (M11.1 Task 12) are

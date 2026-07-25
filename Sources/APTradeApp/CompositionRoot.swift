@@ -402,7 +402,10 @@ enum CompositionRoot {
                     fetchPortfolio: FetchPortfolioUseCase(store: store),
                     fetchQuotes: FetchQuotesUseCase(repository: repo),
                     dividendEventsRepository: dividendEventsRepo)
-                await incomeVM.load()
+                // Home only reads `cards.receivedYTD` and `upcoming.first` below — skip the
+                // 365-day calendar projection and multi-year DRIP forecast, both wasted work
+                // against this screen's <50ms budget (M11.1 whole-branch review finding 8).
+                await incomeVM.load(includeForecastAndCalendar: false)
                 let receivedYTD = await incomeVM.cards?.receivedYTD ?? Money(amount: 0)
                 let nextDividend = await incomeVM.upcoming.first
                 return HomeIncomeSummary(receivedYTD: receivedYTD, nextDividend: nextDividend)

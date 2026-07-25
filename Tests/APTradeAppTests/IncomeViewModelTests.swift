@@ -458,4 +458,46 @@ final class IncomeViewModelTests: XCTestCase {
         let fallbackYear30 = costBasisFallback.last?.income.amount ?? 0
         XCTAssertLessThan(realPriceYear30, fallbackYear30)
     }
+
+    // MARK: - (m) whole-branch review fix 2: DRIP toggle rebuilds the forecast
+
+    /// Before the fix, `rebuildForecast()` was only reachable from `load()` and
+    /// `horizon`'s `didSet` — flipping the persisted DRIP setting (which `isDripEnabled`
+    /// reads live) left `forecast` stuck at its pre-toggle values until the user happened
+    /// to tap a horizon pill. `dripDidChange()` is the seam `IncomeSection` wires to
+    /// `.onChange` on the DRIP binding; this test calls it directly (no SwiftUI needed) to
+    /// verify it actually rebuilds — this method did not exist at all before the fix, so
+    /// this test could not even compile against the pre-fix `IncomeViewModel`.
+    @MainActor
+    func test_dripDidChange_rebuildsForecast_afterLiveToggle() async throws {
+        final class DripFlag: @unchecked Sendable { var enabled = false }
+        let flag = DripFlag()
+
+        var portfolio = Portfolio.starting(cash: usd("10000"))
+        portfolio = try portfolio.buying(Asset(symbol: "AAA", name: "AAA Corp", kind: .stock),
+                                         quantity: qty("100"), at: usd("50"), on: utc(2020, 1, 5))
+        let events = quarterlyHistory("AAA", "0.50")
+        let quote = Quote(symbol: "AAA", price: usd("100"), previousClose: usd("99"))
+        let store = MemoryPortfolioStore(portfolio)
+        let market = FakeMarketDataRepository()
+        market.quotes = ["AAA": quote]
+        let eventsRepo = FakeDividendEventsRepository()
+        eventsRepo.eventsBySymbol = ["AAA": events]
+
+        let vm = IncomeViewModel(
+            fetchPortfolio: FetchPortfolioUseCase(store: store),
+            fetchQuotes: FetchQuotesUseCase(repository: market),
+            dividendEventsRepository: eventsRepo,
+            isDripEnabled: { flag.enabled },
+            now: { self.fixedNow })
+        await vm.load()
+        let beforeToggle = vm.forecast.last?.income.amount ?? 0
+
+        flag.enabled = true
+        vm.dripDidChange()
+        let afterToggle = vm.forecast.last?.income.amount ?? 0
+
+        XCTAssertGreaterThan(afterToggle, beforeToggle,
+                             "enabling DRIP and calling dripDidChange() must reinvest into the forecast, not leave it at the pre-toggle cash figure")
+    }
 }
