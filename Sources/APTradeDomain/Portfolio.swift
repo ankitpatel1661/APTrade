@@ -24,16 +24,31 @@ public struct Portfolio: Equatable, Codable, Sendable {
     public let cash: Money
     public let positions: [Position]
     public let transactions: [Transaction]
+    /// The cash the portfolio opened with. Recorded so performance baselines and the
+    /// reset flow never assume a fixed amount. Defaults to the opening cash.
+    public let startingCash: Money
 
-    public init(cash: Money, positions: [Position] = [], transactions: [Transaction] = []) {
+    public init(cash: Money, positions: [Position] = [], transactions: [Transaction] = [],
+                startingCash: Money? = nil) {
         self.cash = cash
         self.positions = positions
         self.transactions = transactions
+        self.startingCash = startingCash ?? cash
     }
 
-    /// The starting paper portfolio: $100,000 cash, no holdings.
+    /// Lenient decode: payloads written before `startingCash` existed fall back to the
+    /// recorded cash, so upgrading never invalidates a saved portfolio.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        cash = try c.decode(Money.self, forKey: .cash)
+        positions = try c.decodeIfPresent([Position].self, forKey: .positions) ?? []
+        transactions = try c.decodeIfPresent([Transaction].self, forKey: .transactions) ?? []
+        startingCash = try c.decodeIfPresent(Money.self, forKey: .startingCash) ?? cash
+    }
+
+    /// The starting paper portfolio: the chosen cash amount, no holdings.
     public static func starting(cash: Money = Money(amount: 100_000)) -> Portfolio {
-        Portfolio(cash: cash)
+        Portfolio(cash: cash, startingCash: cash)
     }
 
     public func position(for symbol: String) -> Position? {
@@ -71,7 +86,8 @@ public struct Portfolio: Equatable, Codable, Sendable {
         return Portfolio(
             cash: Money(amount: cash.amount - cost, currencyCode: cash.currencyCode),
             positions: updated,
-            transactions: transactions + [txn]
+            transactions: transactions + [txn],
+            startingCash: startingCash
         )
     }
 
@@ -88,7 +104,8 @@ public struct Portfolio: Equatable, Codable, Sendable {
         return Portfolio(
             cash: Money(amount: cash.amount + credit, currencyCode: cash.currencyCode),
             positions: positions,
-            transactions: transactions + [txn]
+            transactions: transactions + [txn],
+            startingCash: startingCash
         )
     }
 
@@ -123,7 +140,8 @@ public struct Portfolio: Equatable, Codable, Sendable {
         return Portfolio(
             cash: Money(amount: cash.amount + proceeds, currencyCode: cash.currencyCode),
             positions: updated,
-            transactions: transactions + [txn]
+            transactions: transactions + [txn],
+            startingCash: startingCash
         )
     }
 
