@@ -76,7 +76,7 @@ New pure domain types (Swift + Kotlin twins, identical semantics):
 ### Calendar
 
 - A new **Upcoming** surface inside Portfolio · Income: dividend events for current holdings, grouped by month, list-first (the premium/quiet idiom — no dense month grid). Each row: symbol, event kind (ex-dividend / payment), date, estimated amount for the user's share count (shares × per-share dividend; DRIP-projected share counts are NOT used here — calendar shows what today's holdings earn).
-- Data: the per-holding upcoming-dividend data the Income engine already derives (the "next dividend" pipeline from M8, generalized from "next one event" to "known future events"). Where Yahoo only exposes the next declared event per symbol, the calendar shows that — **no synthetic future events are fabricated for the calendar** (the forecast, below, is where projection belongs). The M8 stale-date bug class (fixed twice) makes freshness handling an explicit test target here.
+- Data: **projected events, clearly labeled "est."** (user decision 2026-07-25, revising the earlier "real fetched events only" rule after implementation research showed Yahoo exposes *historical* ex-dividend events only — zero future declared dates exist in the free data; even M8's "next dividend" row is already a cadence projection). The calendar generalizes that same M8 projection — last real event + inferred cadence + last amount — to cover roughly the next 12 months per holding, every row marked estimated. The M8 stale-date bug class (fixed twice) makes freshness handling an explicit test target here.
 - macOS may add a compact month strip above the list where width allows; phone is list-only.
 - Empty state (no dividend payers held): one quiet line, no dead surface.
 
@@ -87,9 +87,9 @@ New pure domain types (Swift + Kotlin twins, identical semantics):
   1. Base = current annual dividend rate × shares (existing DividendMath trailing figure).
   2. Growth = per-symbol dividend CAGR computed from the historical dividend series already fetched via the Yahoo events pipeline (`YahooDividendMapper`): use up to 5 years of history; require ≥ 2 years and ≥ 2 payments to compute growth, else growth = 0 for that symbol (flat projection, honest fallback).
   3. Clamp per-symbol growth to **−20%…+25%/yr** so one weird series can't produce absurd curves.
-  4. If the holding's DRIP is on, compound: each projected year's dividends buy shares at a price that grows at the same clamped rate as the dividend (simple, stated assumption), increasing the next year's share count. DRIP off = cash accumulation, flat share count.
+  4. If DRIP is on (it is a single **global** setting — `AppSettings.dripEnabled` — not per-holding), compound: each projected year's dividends buy shares at a price that grows at the same clamped rate as the dividend (simple, stated assumption), increasing the next year's share count. DRIP off = cash accumulation, flat share count.
 - Chart: existing chart components/tokens (area style like Performance). A caption states the assumptions in one line: "Assumes historical dividend growth continues; DRIP compounding where enabled."
-- Domain: extend `DividendMath` (Swift, then Kotlin twin) with `dividendGrowthRate(history:) -> clamped rate` and `incomeForecast(holdings:, years:, dripFlags:) -> [YearlyIncome]` — pure functions, no I/O, exhaustively unit-tested including the M8 trap classes (fractional DRIP rounding, share-count integrity).
+- Domain: extend `DividendMath` (Swift, then Kotlin twin) with `dividendGrowthRate(history:) -> clamped rate` and `incomeForecast(positions:, eventsBySymbol:, years:, dripEnabled:, asOf:) -> [YearlyIncome]` — pure functions, no I/O, exhaustively unit-tested including the M8 trap classes (fractional DRIP rounding, share-count integrity).
 
 ### Explicitly parked
 
@@ -105,7 +105,9 @@ No new data sources or paid services; no multi-currency (USD stays); no per-Pie 
 
 ### L10n
 
-All new strings localized EN + DE from the start (M8's German-corrections wave must not repeat — translations reviewed as part of the increment, not patched after).
+All new strings localized in **all four shipped languages — EN, DE, IT, ES** (the `L10n.table` catalog requires every key to supply all four; a completeness test enforces it). Translations are reviewed as part of the increment, not patched after — M8's German-corrections wave must not repeat.
+
+Note: the reset-confirmation string currently hardcodes the amount ("Reset portfolio to $100,000 cash…") in all four languages — F1 makes that text dynamic.
 
 ### Testing
 
@@ -115,8 +117,8 @@ House pattern, strictly ordered: domain math first (GoalMath, DividendMath forec
 
 1. Reset sheet offers amount entry with validation; remembered across resets; no stray 100k literals (grep-verified).
 2. Value goal and income goal can each be set, edited, removed; cards render progress + honest projections; goals cleared by portfolio reset.
-3. Income shows the upcoming-dividends list (real fetched events only) and the forecast chart with 5/10/20/30 horizons, DRIP-aware, assumption caption present.
-4. All strings EN + DE; all existing tests green; new domain suites green on both toolchains.
+3. Income shows the upcoming-dividends list (projected events, every row labeled "est.") and the forecast chart with 5/10/20/30 horizons, DRIP-aware, assumption caption present.
+4. All strings present in EN + DE + IT + ES (L10n completeness test green); all existing tests green; new domain suites green on both toolchains.
 
 ## M12 pointer (not this spec)
 
