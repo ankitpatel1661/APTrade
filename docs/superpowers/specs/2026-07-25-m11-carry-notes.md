@@ -172,6 +172,26 @@ Carried from M11.1's ledger so they are not lost when its scratch workspace is d
 
 ---
 
+## 4a. Two M11.2 decisions the user made at kickoff (2026-07-25)
+
+Both were left deliberately open by §2.1 and §1.2. Both create **recorded, intentional twin divergences** — comment-document them in the Kotlin source the way M10.2 documented its four, and treat each as a Swift backport candidate rather than an accident.
+
+### 4a.1 `startingCash` is ported **and given a real consumer**
+
+Do not port it as dead state, and do not drop it. Kotlin ports the field **and** adds a **"Since inception" return** to the Performance metrics: total return measured from the portfolio's actual starting balance rather than from the equity curve's first point.
+
+This is the right home for it now that the starting balance is user-chosen — a $10k practice run and a $1M one should not both report return against whatever the curve happened to open at. **Swift currently has the field with no reader; this is a backport candidate once Kotlin proves the metric.**
+
+### 4a.2 The history floor measures **account age**, not price-history span
+
+Swift's as-built measures the span of the 1-year price window, which is ~365 days for anyone holding a seasoned symbol — so the floor is nearly inert there (see §1.2). Kotlin measures **from the first transaction date** instead, which is what the 30→180 raise was actually intended to protect.
+
+Consequence to accept deliberately: a genuinely new account gets the insufficient-history state regardless of how seasoned its holdings are — which is the honest reading, since the projection extrapolates *the account's* growth rate. A user who transfers in a long-held position still waits until the account itself has 180 days of history.
+
+**This is a real behavioural divergence from Swift, not a transcription slip.** Comment it at the constant, pin it with a Kotlin test that a seasoned-holdings/new-account portfolio returns insufficient-history, and record it as a Swift backport candidate.
+
+---
+
 ## 5. Process notes for M11.2
 
 - **Budget a top-tier whole-branch review at close.** Per-task reviews are structurally blind to *seam* defects — every one of §2.2, §2.3, §2.4 and §3.4 lived between two tasks and no single task's review could have seen them. The whole-branch review found all four.
