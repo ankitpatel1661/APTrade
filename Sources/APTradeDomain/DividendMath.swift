@@ -176,7 +176,9 @@ public enum DividendMath {
         return min(max(asDecimal, minDividendGrowth), maxDividendGrowth)
     }
 
-    /// One projected year of dividend income. `yearOffset` 1 is the next twelve months.
+    /// One projected year of dividend income. `yearOffset` 1 is the trailing twelve-month
+    /// rate carried forward without growth (a deliberately conservative first year);
+    /// growth compounds starting at `yearOffset` 2.
     public struct ForecastYear: Equatable, Sendable {
         public let yearOffset: Int
         public let income: Money
@@ -188,14 +190,19 @@ public enum DividendMath {
 
     /// Projects annual dividend income forward, per holding, summed.
     ///
-    /// Each symbol grows at its clamped historical dividend growth rate. With DRIP on,
-    /// each year's dividends buy more shares at a price assumed to grow at that same
-    /// rate — a stated simplification, surfaced to the user as a caption.
+    /// Year 1 (`yearOffset` 1) holds each symbol at its current trailing twelve-month
+    /// per-share rate — no growth is applied yet, a deliberately conservative choice.
+    /// From year 2 onward each symbol grows at its clamped historical dividend growth
+    /// rate. With DRIP on, each year's dividends buy more shares at that symbol's quoted
+    /// price (`pricesBySymbol`), falling back to `averageCost` when no quote is
+    /// available, with the assumed price itself growing at the same rate — a stated
+    /// simplification, surfaced to the user as a caption.
     public static func incomeForecast(positions: [Position],
                                       eventsBySymbol: [String: [DividendEvent]],
                                       years: Int,
                                       dripEnabled: Bool,
-                                      asOf: Date) -> [ForecastYear] {
+                                      asOf: Date,
+                                      pricesBySymbol: [String: Money] = [:]) -> [ForecastYear] {
         guard years > 0 else { return [] }
 
         struct Projection {
@@ -210,9 +217,10 @@ public enum DividendMath {
             let events = eventsBySymbol[position.asset.symbol] ?? []
             let perShare = trailingAnnualPerShare(events: events, asOf: asOf).amount
             guard perShare > 0, position.quantity.amount > 0 else { continue }
+            let price = pricesBySymbol[position.asset.symbol]?.amount ?? position.averageCost.amount
             projections.append(Projection(shares: position.quantity.amount,
                                           perShare: perShare,
-                                          price: position.averageCost.amount,
+                                          price: price,
                                           growth: dividendGrowthRate(events: events, asOf: asOf)))
         }
 

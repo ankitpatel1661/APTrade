@@ -100,20 +100,46 @@ final class DividendMathForecastTests: XCTestCase {
                                perYear: Decimal(string: "0.10")!)
         let out = DividendMath.incomeForecast(positions: [position("AAA", shares: "100", price: "50")],
                                               eventsBySymbol: ["AAA": events],
-                                              years: 2, dripEnabled: false, asOf: date(2025, 1, 1))
+                                              years: 3, dripEnabled: false, asOf: date(2025, 1, 1))
+        // Compounding, not a linear increase: each year must be the previous year times
+        // the SAME growth factor — a linear (additive) model would fail this, since it
+        // would not multiply by a constant ratio each period.
+        //
+        // (Note: a literal cross-multiplied ratio check — out[2]*out[0] == out[1]*out[1] —
+        // was tried and rejected: squaring these already ~20-significant-digit compounded
+        // values overflows Decimal's 38-significant-digit budget and rounds the two
+        // products differently in their last digit, producing a false failure unrelated
+        // to compounding correctness. Recomputing one multiplication at a time, as the
+        // implementation itself does, avoids that overflow.)
+        let growth = DividendMath.dividendGrowthRate(events: events, asOf: date(2025, 1, 1))
+        XCTAssertEqual(out[1].income.amount, out[0].income.amount * (1 + growth),
+                       "year 2 must be year 1 times the constant growth factor")
+        XCTAssertEqual(out[2].income.amount, out[1].income.amount * (1 + growth),
+                       "year 3 must be year 2 times the SAME constant growth factor")
         XCTAssertGreaterThan(out[1].income.amount, out[0].income.amount)
+        XCTAssertGreaterThan(out[2].income.amount, out[1].income.amount)
     }
 
     func test_forecast_dripProducesMoreIncomeThanCash() {
         let events = quarterly(symbol: "AAA", startYear: 2021, years: 4,
                                startAmount: Decimal(string: "0.25")!, perYear: 0)
         let positions = [position("AAA", shares: "100", price: "50")]
+        // Quoted price ($100) deliberately differs from the $50 cost basis, so this
+        // pins DRIP reinvestment to the quoted price rather than yield-on-cost.
+        let prices = ["AAA": usd("100")]
         let cash = DividendMath.incomeForecast(positions: positions, eventsBySymbol: ["AAA": events],
-                                               years: 5, dripEnabled: false, asOf: date(2025, 1, 1))
+                                               years: 5, dripEnabled: false, asOf: date(2025, 1, 1),
+                                               pricesBySymbol: prices)
         let drip = DividendMath.incomeForecast(positions: positions, eventsBySymbol: ["AAA": events],
-                                               years: 5, dripEnabled: true, asOf: date(2025, 1, 1))
+                                               years: 5, dripEnabled: true, asOf: date(2025, 1, 1),
+                                               pricesBySymbol: prices)
+        XCTAssertEqual(cash.map(\.income), [usd("100"), usd("100"), usd("100"), usd("100"), usd("100")])
+        // 100sh @ $1.00/yr = $100 income; reinvested at $100/sh buys 1 share/yr, compounding:
+        // 100 -> 101 -> 102.01 -> 103.0301 -> 104.060401
+        XCTAssertEqual(drip.map(\.income),
+                       [usd("100"), usd("101"), usd("102.01"), usd("103.0301"), usd("104.060401")],
+                       "reinvestment must use the quoted $100 price, not the $50 cost basis")
         XCTAssertEqual(drip[0].income, cash[0].income, "year 1 is identical — reinvestment only helps later")
-        XCTAssertGreaterThan(drip[4].income.amount, cash[4].income.amount)
     }
 
     func test_forecast_nonPayerContributesNothing() {
