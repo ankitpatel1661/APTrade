@@ -78,6 +78,18 @@ public enum DividendMath {
         }
     }
 
+    /// Calendar interval for a cadence bucket (monthly 30d, quarterly 91d,
+    /// semiAnnual 182d, annual 365d). Shared by `nextProjected` and `projectedSchedule`
+    /// so the step sizes are defined in exactly one place.
+    private static func cadenceInterval(_ cadence: DividendCadence) -> TimeInterval {
+        switch cadence {
+        case .monthly: return 30 * secondsPerDay
+        case .quarterly: return 91 * secondsPerDay
+        case .semiAnnual: return 182 * secondsPerDay
+        case .annual: return 365 * secondsPerDay
+        }
+    }
+
     /// Last exDate + cadence interval (monthly 30d, quarterly 91d, semiAnnual 182d,
     /// annual 365d), amount = last event's amount. nil when cadence is nil.
     public static func nextProjected(events: [DividendEvent]) -> DividendEvent? {
@@ -86,17 +98,9 @@ public enum DividendMath {
             return nil
         }
 
-        let intervalDays: Double
-        switch cadence {
-        case .monthly: intervalDays = 30
-        case .quarterly: intervalDays = 91
-        case .semiAnnual: intervalDays = 182
-        case .annual: intervalDays = 365
-        }
-
         return DividendEvent(
             symbol: last.symbol,
-            exDate: last.exDate.addingTimeInterval(intervalDays * secondsPerDay),
+            exDate: last.exDate.addingTimeInterval(cadenceInterval(cadence)),
             amountPerShare: last.amountPerShare
         )
     }
@@ -241,5 +245,51 @@ public enum DividendMath {
             out.append(ForecastYear(yearOffset: offset, income: Money(amount: total)))
         }
         return out
+    }
+
+    /// One projected dividend payment for a held symbol. Estimated, never declared —
+    /// the source data contains historical ex-dates only.
+    public struct ScheduledDividend: Equatable, Sendable {
+        public let symbol: String
+        public let exDate: Date
+        public let perShare: Money
+        public let estimatedAmount: Money
+        public init(symbol: String, exDate: Date, perShare: Money, estimatedAmount: Money) {
+            self.symbol = symbol
+            self.exDate = exDate
+            self.perShare = perShare
+            self.estimatedAmount = estimatedAmount
+        }
+    }
+
+    /// Rolls each holding's inferred payment cadence forward from its last real event,
+    /// emitting estimated payments in `(asOf, through]`, ascending by date.
+    public static func projectedSchedule(positions: [Position],
+                                         eventsBySymbol: [String: [DividendEvent]],
+                                         through: Date,
+                                         asOf: Date) -> [ScheduledDividend] {
+        var out: [ScheduledDividend] = []
+        for position in positions {
+            let shares = position.quantity.amount
+            guard shares > 0 else { continue }
+            let events = eventsBySymbol[position.asset.symbol] ?? []
+            guard let seed = nextProjected(events: events),
+                  let cadence = inferredCadence(events: events) else { continue }
+
+            let step = cadenceInterval(cadence)
+            var next = seed.exDate
+            // Roll a stale projection forward until it is genuinely in the future.
+            while next <= asOf { next = next.addingTimeInterval(step) }
+
+            while next <= through {
+                out.append(ScheduledDividend(
+                    symbol: position.asset.symbol,
+                    exDate: next,
+                    perShare: seed.amountPerShare,
+                    estimatedAmount: Money(amount: shares * seed.amountPerShare.amount)))
+                next = next.addingTimeInterval(step)
+            }
+        }
+        return out.sorted { $0.exDate < $1.exDate }
     }
 }
