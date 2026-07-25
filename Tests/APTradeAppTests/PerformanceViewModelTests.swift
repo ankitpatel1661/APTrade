@@ -22,6 +22,19 @@ private final class RisingRepo: MarketDataRepository, @unchecked Sendable {
     }
 }
 
+/// Every `history(for:timeframe:)` call throws — reproduces the offline/rate-limited/
+/// shared-core-error path `ComputePerformanceMetricsUseCase` swallows via `try?`
+/// (`PerformanceUseCases.swift:61`), which yields an empty equity curve even though the
+/// portfolio holds positions. Distinct from the all-cash empty-curve route.
+private final class FailingHistoryRepo: MarketDataRepository, @unchecked Sendable {
+    func quote(for symbol: String) async throws -> Quote {
+        Quote(symbol: symbol, price: Money(amount: 110), previousClose: Money(amount: 100))
+    }
+    func history(for symbol: String, timeframe: Timeframe) async throws -> [PricePoint] {
+        throw AppError.network
+    }
+}
+
 private final class InMemoryGoalStore: GoalStore, @unchecked Sendable {
     private var goals: [PortfolioGoal]
     init(_ goals: [PortfolioGoal] = []) { self.goals = goals }
@@ -145,5 +158,60 @@ final class PerformanceViewModelTests: XCTestCase {
         XCTAssertEqual(vm.state, .empty)
         XCTAssertEqual(vm.currentValue, Money(amount: 300_000))
         XCTAssertEqual(vm.valueGoalProjection, .insufficientHistory)
+    }
+
+    // MARK: - Whole-branch review fix 1: never fabricate $0 when positions exist but
+    // history fetch fails.
+
+    /// A portfolio holding positions whose priced-history fetch fails entirely (offline,
+    /// rate-limited, shared-core-error) makes `ComputePerformanceMetricsUseCase` return
+    /// `.empty` via the SAME code path as an all-cash portfolio, even though real value is
+    /// held. Before the fix, `currentValue`'s `else` branch checked
+    /// `portfolio.positions.isEmpty` and fell through to a hardcoded `Money(amount: 0)`
+    /// for this (common, not exotic) case — a $500,000 value goal would then render as
+    /// "$0 / $500,000 · 0%". The floor must be cash plus every position's own cost basis.
+    @MainActor
+    func test_load_positionsExist_historyFetchFails_currentValueIsCashPlusCostBasis_notZero() async {
+        let aapl = Asset(symbol: "AAPL", name: "Apple", kind: .stock)
+        let portfolio = try! Portfolio.starting(cash: Money(amount: 20_000))
+            .buying(aapl, quantity: Quantity(Decimal(10)), at: Money(amount: 150),
+                    on: Date(timeIntervalSince1970: 0))
+        let store = MemoryStore(portfolio)
+        let vm = PerformanceViewModel(
+            compute: ComputePerformanceMetricsUseCase(repository: FailingHistoryRepo(), store: store),
+            fetchPortfolio: FetchPortfolioUseCase(store: store))
+        await vm.load()
+        XCTAssertEqual(vm.state, .empty, "history-fetch failure must still surface as an empty report")
+        // Buying 10 shares at $150 moves $1,500 of the original $20,000 cash into the
+        // position at the SAME price (cash drops to $18,500), so cash + cost basis
+        // reproduces the original $20,000 total exactly — never a hardcoded $0.
+        XCTAssertEqual(vm.currentValue, Money(amount: 20_000))
+        XCTAssertNotEqual(vm.currentValue, Money(amount: 0))
+    }
+
+    // MARK: - Whole-branch review fix 3: onAppear re-reads the goal even when not `.idle`.
+
+    /// `ResetPortfolioUseCase` clears goals as a side effect of resetting the portfolio,
+    /// and the macOS portfolio destination reloads only `PortfolioViewModel` — never this
+    /// view model — on a reset. Before the fix, `onAppear()` gated ALL of its work
+    /// (including the goal read) on `state == .idle`, so returning to an already-loaded
+    /// Performance screen after a reset kept showing a goal that no longer existed.
+    @MainActor
+    func test_onAppear_reReadsGoal_evenWhenNotIdle_afterExternalReset() async {
+        let goalStore = InMemoryGoalStore([PortfolioGoal(kind: .value, target: Money(amount: 250_000),
+                                                         createdAt: Date(timeIntervalSince1970: 1))])
+        let vm = makeSUT(goalStore: goalStore)
+        await vm.onAppear()
+        XCTAssertNotEqual(vm.state, .idle)
+        XCTAssertEqual(vm.valueGoal?.target, Money(amount: 250_000))
+
+        // Simulate `ResetPortfolioUseCase` clearing goals out from under the view model —
+        // nothing routes through `setValueGoal`/`removeValueGoal` here, mirroring a reset
+        // that happened via a completely different view model.
+        goalStore.save([])
+
+        await vm.onAppear()
+        XCTAssertNil(vm.valueGoal, "a goal cleared by an external reset must not linger after re-appearing")
+        XCTAssertNil(vm.valueGoalProjection)
     }
 }

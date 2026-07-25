@@ -42,11 +42,13 @@ final class PerformanceViewModel {
     }
 
     /// Inert default for `fetchPortfolio` — same rationale as `NoOpGoalStore`: existing
-    /// construction sites that predate the all-cash fix keep compiling, reading back a
-    /// fresh `.starting()` portfolio until a real `PortfolioStore` is supplied (always the
-    /// case in production via `CompositionRoot`).
+    /// construction sites that predate the all-cash fix keep compiling, reading back an
+    /// empty (never a fabricated $100,000) portfolio until a real `PortfolioStore` is
+    /// supplied (always the case in production via `CompositionRoot`). Every other inert
+    /// default in this file (`NoOpGoalStore.load() -> []`) reads back nothing; this one
+    /// must match rather than materialize a specific dollar figure nobody configured.
     private struct NoOpPortfolioStore: PortfolioStore {
-        func load() -> Portfolio { .starting() }
+        func load() -> Portfolio { .starting(cash: Money(amount: 0)) }
         func save(_ portfolio: Portfolio) {}
     }
 
@@ -64,8 +66,17 @@ final class PerformanceViewModel {
         self.now = now
     }
 
-    /// Loads once on first appearance; no-op if already loaded/loading.
+    /// Loads the expensive report once on first appearance (no-op if already
+    /// loaded/loading), but ALWAYS re-reads the goal — cheap (a single store read) and
+    /// necessary regardless of the `.idle` gate: `ResetPortfolioUseCase` clears goals as a
+    /// side effect of resetting the portfolio, and the macOS portfolio destination reloads
+    /// only `PortfolioViewModel`, never this view model. Without this, returning to
+    /// Performance after a reset would keep showing a goal (with a progress % and ETA)
+    /// that no longer exists — `IncomeSection` doesn't have this bug because it reloads
+    /// via `.task` on every appearance.
     func onAppear() async {
+        valueGoal = loadGoals().first { $0.kind == .value }
+        refreshValueProjection()
         if case .idle = state { await load() }
     }
 
@@ -81,21 +92,26 @@ final class PerformanceViewModel {
         // `PerformanceReport` has no dedicated "current value" field — the equity curve's
         // last point *is* the current total account value (cash + holdings), so read it
         // from there rather than adding a second data path. `ComputePerformanceMetricsUseCase`
-        // returns an empty report (and hence an empty curve) in two distinct situations:
+        // returns an empty report (and hence an empty curve) in (at least) two distinct
+        // situations:
         //   1. Genuinely all-cash (`portfolio.positions.isEmpty`) — durable, not transient.
-        //      Here "current value" is simply the cash balance, read through
-        //      `FetchPortfolioUseCase` (never a raw store) so a value-goal card is usable
-        //      from day one, before the first trade.
-        //   2. Positions exist but their priced history is too thin (`equity.count <= 1`)
-        //      — transient (the first day or two of a new position). Fixing that would mean
-        //      changing `ComputePerformanceMetricsUseCase`'s behavior for every consumer, so
-        //      it's out of scope here: `currentValue` keeps its old zero fallback in that case.
+        //   2. Positions exist but their priced history fetch failed or came back too thin
+        //      (`ComputePerformanceMetricsUseCase` swallows every history failure via
+        //      `try?`) — offline, rate-limited, or shared-core-error sessions all land
+        //      here, and this is common, not exotic.
+        // Neither case may ever fabricate a dollar figure nobody's portfolio actually
+        // holds: the floor is cash plus every position's OWN cost basis (which collapses
+        // to just `cash` when there are no positions, preserving the all-cash reading
+        // exactly) — never a hardcoded zero that would understate a real value-goal
+        // card's progress.
         equityCurve = report.equityCurve
         if let last = report.equityCurve.last {
             currentValue = last.value
         } else {
             let portfolio = fetchPortfolio()
-            currentValue = portfolio.positions.isEmpty ? portfolio.cash : Money(amount: 0)
+            currentValue = portfolio.positions.reduce(portfolio.cash) {
+                $0 + $1.marketValue(at: $1.averageCost)
+            }
         }
         valueGoal = loadGoals().first { $0.kind == .value }
         refreshValueProjection()
