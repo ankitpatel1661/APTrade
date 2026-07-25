@@ -175,4 +175,63 @@ public enum DividendMath {
         let asDecimal = Decimal(rate)
         return min(max(asDecimal, minDividendGrowth), maxDividendGrowth)
     }
+
+    /// One projected year of dividend income. `yearOffset` 1 is the next twelve months.
+    public struct ForecastYear: Equatable, Sendable {
+        public let yearOffset: Int
+        public let income: Money
+        public init(yearOffset: Int, income: Money) {
+            self.yearOffset = yearOffset
+            self.income = income
+        }
+    }
+
+    /// Projects annual dividend income forward, per holding, summed.
+    ///
+    /// Each symbol grows at its clamped historical dividend growth rate. With DRIP on,
+    /// each year's dividends buy more shares at a price assumed to grow at that same
+    /// rate — a stated simplification, surfaced to the user as a caption.
+    public static func incomeForecast(positions: [Position],
+                                      eventsBySymbol: [String: [DividendEvent]],
+                                      years: Int,
+                                      dripEnabled: Bool,
+                                      asOf: Date) -> [ForecastYear] {
+        guard years > 0 else { return [] }
+
+        struct Projection {
+            var shares: Decimal
+            var perShare: Decimal
+            var price: Decimal
+            let growth: Decimal
+        }
+
+        var projections: [Projection] = []
+        for position in positions {
+            let events = eventsBySymbol[position.asset.symbol] ?? []
+            let perShare = trailingAnnualPerShare(events: events, asOf: asOf).amount
+            guard perShare > 0, position.quantity.amount > 0 else { continue }
+            projections.append(Projection(shares: position.quantity.amount,
+                                          perShare: perShare,
+                                          price: position.averageCost.amount,
+                                          growth: dividendGrowthRate(events: events, asOf: asOf)))
+        }
+
+        var out: [ForecastYear] = []
+        for offset in 1...years {
+            var total: Decimal = 0
+            for index in projections.indices {
+                if offset > 1 {
+                    projections[index].perShare *= (1 + projections[index].growth)
+                    projections[index].price *= (1 + projections[index].growth)
+                }
+                let income = projections[index].shares * projections[index].perShare
+                total += income
+                if dripEnabled, projections[index].price > 0 {
+                    projections[index].shares += income / projections[index].price
+                }
+            }
+            out.append(ForecastYear(yearOffset: offset, income: Money(amount: total)))
+        }
+        return out
+    }
 }
