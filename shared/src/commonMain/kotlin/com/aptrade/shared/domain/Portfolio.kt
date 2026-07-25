@@ -24,8 +24,31 @@ data class Portfolio(
     val cash: Money,
     val positions: List<Position> = emptyList(),
     val transactions: List<Transaction> = emptyList(),
+    /** The cash this portfolio OPENED with — fixed at reset time, never moved by a trade.
+     *
+     *  RECORDED DIVERGENCE FROM SWIFT (M11.2 kickoff decision 4a.1, carry-notes §2.1): the Swift
+     *  twin carries this field with NO reader — total return there derives from the equity
+     *  curve's own first point, and the reset flow reads `AppSettings.defaultStartingCash`.
+     *  Kotlin ports it AND gives it a real consumer: `PerformanceMetrics.sinceInceptionReturn`
+     *  (see `FetchPerformanceReport`), which measures return against the balance the user
+     *  actually chose rather than against whatever value the priced curve happened to open at.
+     *  A $10k practice run and a $1M one must not both report return against the same baseline.
+     *  This is a Swift BACKPORT CANDIDATE once the metric proves out here.
+     *
+     *  Defaults to [cash] so every existing three-argument construction site keeps its meaning:
+     *  a portfolio built with no explicit opening balance opened at its current cash. */
+    val startingCash: Money = cash,
 ) {
     fun positionFor(symbol: String): Position? = positions.firstOrNull { it.asset.symbol == symbol }
+
+    /** Epoch-seconds of the EARLIEST transaction — the account's inception instant — or `null`
+     *  when nothing has ever traded.
+     *
+     *  ONE named derivation, deliberately: `FetchPortfolioPerformance`'s `sinceInception` trim
+     *  (M11.2 Task 7) and `GoalMath`'s account-age history floor (Task 6) both need exactly this
+     *  signal, and the M11 carry-notes require they cannot drift apart. Every consumer calls
+     *  here; nobody re-derives `transactions.minOfOrNull { it.epochSeconds }` locally. */
+    fun inceptionEpochSeconds(): Long? = transactions.minOfOrNull { it.epochSeconds }
 
     fun buying(
         asset: Asset,
@@ -56,6 +79,7 @@ data class Portfolio(
             cash = Money(cash.amount - cost, cash.currencyCode),
             positions = updated,
             transactions = transactions + txn,
+            startingCash = startingCash,
         )
     }
 
@@ -80,6 +104,7 @@ data class Portfolio(
             cash = Money(cash.amount + credit, cash.currencyCode),
             positions = positions,
             transactions = transactions + txn,
+            startingCash = startingCash,
         )
     }
 
@@ -115,6 +140,7 @@ data class Portfolio(
             cash = Money(cash.amount + proceeds, cash.currencyCode),
             positions = updated,
             transactions = transactions + txn,
+            startingCash = startingCash,
         )
     }
 
@@ -146,7 +172,14 @@ data class Portfolio(
     }
 
     companion object {
-        /** The starting paper portfolio: $100,000 cash, no holdings. */
-        fun starting(): Portfolio = Portfolio(Money.usd("100000"))
+        /** The ONE hardcoded opening balance in the shared core (carry-notes §2.7 permits exactly
+         *  two literals: this one, and `AppSettings.defaultStartingCash`'s default). Named rather
+         *  than inlined so a repo grep for a stray balance finds every real call site instead of
+         *  a scatter of bare `100000`s. */
+        val DEFAULT_STARTING_CASH: Money = Money.usd("100000")
+
+        /** A fresh paper portfolio opened at [cash], with [startingCash] recorded to match. */
+        fun starting(cash: Money = DEFAULT_STARTING_CASH): Portfolio =
+            Portfolio(cash = cash, startingCash = cash)
     }
 }

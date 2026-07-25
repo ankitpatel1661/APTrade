@@ -151,4 +151,26 @@ class FilePortfolioStoreTest {
         assertEquals("p1", loaded?.transactions?.get(1)?.pieId)
         assertNull(loaded?.transactions?.get(0)?.pieId)   // untagged fixture transaction stays untagged
     }
+
+    // M11.2 Task 1: startingCash round-trips through save/load, and a pre-M11.2 payload
+    // (no "startingCash" key at all) decodes with startingCash falling back to cash.
+    @Test
+    fun startingCashRoundTrips() = runTest {
+        val file = createTempDirectory("aptrade-test").resolve("portfolio.json")
+        val store = FilePortfolioStore(file)
+        store.save(Portfolio.starting(Money.usd("25000")))
+        assertEquals(Money.usd("25000"), store.load()?.startingCash)
+    }
+
+    @Test
+    fun aPreM11PayloadWithNoStartingCashKeyDecodesStartingCashAsCash() = runTest {
+        val file = createTempDirectory("aptrade-test").resolve("portfolio.json")
+        // Byte-shape of a payload written before `startingCash` existed: no such key at all.
+        file.writeText(
+            """{"cash":{"amount":"12345","currency":"USD"},"positions":[],"transactions":[]}""",
+        )
+        val loaded = FilePortfolioStore(file).load()
+        assertEquals(Money.usd("12345"), loaded?.cash)
+        assertEquals(Money.usd("12345"), loaded?.startingCash)
+    }
 }
