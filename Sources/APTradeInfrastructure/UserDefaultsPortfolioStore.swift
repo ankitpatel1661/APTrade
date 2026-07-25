@@ -9,7 +9,7 @@ public final class UserDefaultsPortfolioStore: PortfolioStore, @unchecked Sendab
 
     public init(defaults: UserDefaults = .standard,
                 key: String = "portfolio",
-                seedCash: @escaping @Sendable () -> Money = { Money(amount: 100_000) }) {
+                seedCash: @escaping @Sendable () -> Money = { AppSettings.default.defaultStartingCash }) {
         self.defaults = defaults
         self.key = key
         self.seedCash = seedCash
