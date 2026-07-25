@@ -15,7 +15,7 @@ An ultra-premium **native investing platform across four OSes** — a SwiftUI fl
 ![Swift](https://img.shields.io/badge/Swift-6.0-D4A94E?logo=swift)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Multiplatform-D4A94E?logo=kotlin)
 ![Architecture](https://img.shields.io/badge/architecture-Clean-D4A94E)
-![Tests](https://img.shields.io/badge/macOS%20tests-585%20passing-46C98A)
+![Tests](https://img.shields.io/badge/macOS%20tests-677%20passing-46C98A)
 
 </div>
 
@@ -70,7 +70,13 @@ Every app carries: a **four-destination IA** — **Home** (the opening dashboard
   - **Performance** — risk & return analytics computed on a trade-aware equity curve (replaying the transaction log, not just today's holdings backward): **Total Return**, **Annualized Return (CAGR)**, **Volatility**, **Max Drawdown**, **Sharpe**, **Beta**, and **Alpha**. A normalized overlay chart compares the portfolio against a selectable benchmark (**SPY · QQQ · VTI**), and a **diversification score** (effective holdings, Herfindahl-based) flags single-name and asset-class concentration.
 - **P&L-over-time chart** — unrealized P&L reconstructed from real historical prices over a selectable timeframe, colored green/red by direction; tap the sparkline to expand it inline with axes and a hover crosshair.
 - **Export** the portfolio from a button in the Portfolio header — on macOS/iPhone as a **PDF**, **Excel (.xlsx)**, or **Word (.docx)** statement (genuine, standards-compliant documents saved via a native save panel / file exporter); Windows offers a **CSV / JSON / PDF** chooser and Android a **CSV / JSON** share sheet (per-platform divergences recorded in each app's section below).
-- **Reset** the portfolio back to its starting cash at any time.
+- **Reset** the portfolio to a chosen starting balance at any time — a validated sheet (**$1,000–$10,000,000**) remembers your last-used amount as the default for next time. *(Swift wave — macOS + iPhone; Windows/Android land in M11.2.)*
+
+### Goals
+- **Set a value goal** on Portfolio · Performance — a target total portfolio value tracked against your current holdings, shown as a progress bar, a percent-to-goal readout, and a projected completion date extrapolated from recent growth.
+- **Set an income goal** on Invest · Income — a target annual dividend income tracked against your projected income (the 12-month projection, or the multi-year forecast where it's the better estimate), with the same progress/percentage/projection treatment.
+- Goals persist locally and **clear automatically on portfolio reset**, so a fresh start never carries a stale target.
+- *(Swift wave — macOS + iPhone; Windows/Android land in M11.2.)*
 
 ### Alerts & notifications
 - **Alerts center** — every alert across every symbol in one list, reached from Home's bell (badged) or its Alerts card: armed vs. already-triggered states rendered distinctly, one-tap remove, and tap-through to the symbol's detail. The Home badge and card count **armed alerts only** — the settled cross-platform semantic.
@@ -110,6 +116,9 @@ Every app carries: a **four-destination IA** — **Home** (the opening dashboard
 - **Reinvest Dividends (DRIP)** toggle on a card at the top of the Income view itself (re-homed there from Account Settings in M10 — the switch lives beside its effect, always reachable even on an empty ledger), and a **Dividend Payments** toggle in Notifications settings gating the "payment received / reinvested" alert — crediting itself is never gated, since a payout is bookkeeping truth, not an optional notification.
 - **Export rows** — every portfolio statement (PDF on macOS/iPhone/Windows; Excel and Word on macOS/iPhone) carries **Dividends Received (YTD)** and **Projected Annual Income** alongside the existing summary rows.
 - **Platform status:** shipped on all four platforms — macOS + iPhone (M8.1), Windows desktop (M8.2), and Android (M8.3) — closing Milestone 8.
+- **Upcoming Dividends calendar** — a 12-month projected payout schedule on Invest · Income, every row explicitly labeled **"est."** so a projection is never mistaken for a confirmed payment.
+- **Multi-year income forecast** — a 5 / 10 / 20 / 30-year projection chart with a horizon picker, modeling dividend growth and, when DRIP is enabled, reinvestment compounding; the income goal card projects off this same forecast.
+- **Platform status (calendar & forecast):** Swift wave only — macOS + iPhone (M11.1); Windows/Android forecast parity is scoped for M11.2.
 
 ### Technical Screener
 - **On-demand S&P 500 scan** — a scan bar runs `ScreenerScanEngine` over the bundled S&P 500 universe on request (there is no scheduled or background scan): symbols are grouped into throttled batches of 4 concurrent fetches, a rate-limited batch sleeps and retries once in full before any symbol in it is marked failed, and progress reports incrementally (`done / total`) as each batch completes — one bad symbol never stops or corrupts the rest of the scan.
@@ -200,7 +209,7 @@ The app ships as a bare SwiftPM executable. Launching the built binary directly 
 DEVELOPER_DIR=/Applications/Xcode.app swift test
 ```
 
-> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **585 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction, the all-priced gate + benchmark head-trim), the market calendar and earnings calendar, use cases, the market-activity planner (incl. earnings-check and Pie-contribution-check scheduling), alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the Finnhub earnings mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, the view models, the IA restructure (Home dashboard, four-destination sidebar with Markets/Portfolio/Invest, macOS sidebar + master-detail, Alerts center), Investment Plans (`PieMath` distribution/drift, `PieSchedule` cadence math, `PieBacktest` DCA-vs-lump-sum, contribution/rebalance use cases and catch-up, the `UserDefaultsPieStore`, and the coordinator's contribution notifications), the dividend & income engine (`DividendMath` shares-held/trailing-rate/cadence math, `ProcessDueDividends` backfill/dedup/DRIP-with-cash-fallback, the Income view model, and the export renderer's two new income rows), and the technical screener (`ScreenerMath`'s per-symbol snapshot and cross-flag math, the 9 preset screens and custom AND-evaluation, `ScreenerScanEngine`'s throttled batching/backoff/failure-isolation, the file-backed snapshot and screen stores, and the screener view model).
+> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **677 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction, the all-priced gate + benchmark head-trim), the market calendar and earnings calendar, use cases, the market-activity planner (incl. earnings-check and Pie-contribution-check scheduling), alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the Finnhub earnings mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, the view models, the IA restructure (Home dashboard, four-destination sidebar with Markets/Portfolio/Invest, macOS sidebar + master-detail, Alerts center), Investment Plans (`PieMath` distribution/drift, `PieSchedule` cadence math, `PieBacktest` DCA-vs-lump-sum, contribution/rebalance use cases and catch-up, the `UserDefaultsPieStore`, and the coordinator's contribution notifications), the dividend & income engine (`DividendMath` shares-held/trailing-rate/cadence math, `ProcessDueDividends` backfill/dedup/DRIP-with-cash-fallback, the Income view model, and the export renderer's two new income rows), the technical screener (`ScreenerMath`'s per-symbol snapshot and cross-flag math, the 9 preset screens and custom AND-evaluation, `ScreenerScanEngine`'s throttled batching/backoff/failure-isolation, the file-backed snapshot and screen stores, and the screener view model), and Goals & Income Depth (M11.1: the configurable-starting-balance reset flow, `PortfolioGoal`/`GoalMath` progress and projection math, the `UserDefaultsGoalStore`, and `DividendMath.incomeForecast`'s multi-year DRIP-compounding projection).
 
 ### Building the shared Kotlin core
 
