@@ -1,3 +1,5 @@
+import Foundation
+
 /// User-adjustable application preferences. Pure value type — persisted by an
 /// infrastructure adapter behind the `SettingsStore` port. Defaults match the app's
 /// out-of-the-box behavior so a fresh install needs no seeding.
@@ -14,6 +16,8 @@ public struct AppSettings: Equatable, Codable, Sendable {
 
     // Dividends
     public var dripEnabled: Bool
+    /// The cash a freshly reset portfolio opens with. Remembered between resets.
+    public var defaultStartingCash: Money
 
     // Security & privacy
     public var biometricLogin: Bool
@@ -38,6 +42,7 @@ public struct AppSettings: Equatable, Codable, Sendable {
         pieContributions: Bool = true,
         dividendNotifications: Bool = true,
         dripEnabled: Bool = false,
+        defaultStartingCash: Money = Money(amount: 100_000),
         biometricLogin: Bool = true,
         requireAuthOnLaunch: Bool = true,
         confirmTrades: Bool = true,
@@ -55,6 +60,7 @@ public struct AppSettings: Equatable, Codable, Sendable {
         self.pieContributions = pieContributions
         self.dividendNotifications = dividendNotifications
         self.dripEnabled = dripEnabled
+        self.defaultStartingCash = defaultStartingCash
         self.biometricLogin = biometricLogin
         self.requireAuthOnLaunch = requireAuthOnLaunch
         self.confirmTrades = confirmTrades
@@ -78,6 +84,7 @@ public struct AppSettings: Equatable, Codable, Sendable {
         pieContributions = try c.decodeIfPresent(Bool.self, forKey: .pieContributions) ?? d.pieContributions
         dividendNotifications = try c.decodeIfPresent(Bool.self, forKey: .dividendNotifications) ?? d.dividendNotifications
         dripEnabled = try c.decodeIfPresent(Bool.self, forKey: .dripEnabled) ?? d.dripEnabled
+        defaultStartingCash = try c.decodeIfPresent(Money.self, forKey: .defaultStartingCash) ?? d.defaultStartingCash
         biometricLogin = try c.decodeIfPresent(Bool.self, forKey: .biometricLogin) ?? d.biometricLogin
         requireAuthOnLaunch = try c.decodeIfPresent(Bool.self, forKey: .requireAuthOnLaunch) ?? d.requireAuthOnLaunch
         confirmTrades = try c.decodeIfPresent(Bool.self, forKey: .confirmTrades) ?? d.confirmTrades
