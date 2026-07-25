@@ -112,4 +112,80 @@ final class GoalMathTests: XCTestCase {
     func test_progress_negativeCurrentClampsToZero() {
         XCTAssertEqual(GoalMath.progress(current: usd("-500"), target: usd("100000")), 0)
     }
+
+    private func forecast(_ amounts: [String]) -> [DividendMath.ForecastYear] {
+        amounts.enumerated().map { .init(yearOffset: $0.offset + 1, income: usd($0.element)) }
+    }
+
+    func test_incomeProjection_reachedWhenCurrentMeetsTarget() {
+        XCTAssertEqual(GoalMath.incomeProjection(current: usd("5000"), target: usd("5000"),
+                                                 forecast: forecast(["5200", "5400"])),
+                       .reached)
+    }
+
+    func test_incomeProjection_returnsCrossingYear() {
+        let projection = GoalMath.incomeProjection(current: usd("1000"), target: usd("3000"),
+                                                   forecast: forecast(["1500", "2200", "3100", "4000"]))
+        XCTAssertEqual(projection, .years(3))
+    }
+
+    func test_incomeProjection_neverCrossesWithinForecast_isBeyondHorizon() {
+        let projection = GoalMath.incomeProjection(current: usd("1000"), target: usd("99999"),
+                                                   forecast: forecast(["1500", "2200", "3100"]))
+        XCTAssertEqual(projection, .beyondHorizon)
+    }
+
+    func test_incomeProjection_flatForecastBelowTarget_isNotOnTrack() {
+        let projection = GoalMath.incomeProjection(current: usd("1000"), target: usd("5000"),
+                                                   forecast: forecast(["1000", "1000", "1000"]))
+        XCTAssertEqual(projection, .notOnTrack)
+    }
+
+    func test_incomeProjection_emptyForecast_isInsufficientHistory() {
+        XCTAssertEqual(GoalMath.incomeProjection(current: usd("100"), target: usd("5000"), forecast: []),
+                       .insufficientHistory)
+    }
+
+    // MARK: - Gaps not covered by the brief's test block
+
+    func test_incomeProjection_targetMetInFirstForecastYear() {
+        let projection = GoalMath.incomeProjection(current: usd("1000"), target: usd("1500"),
+                                                   forecast: forecast(["1500", "1800"]))
+        XCTAssertEqual(projection, .years(1))
+    }
+
+    func test_incomeProjection_decliningForecastBelowTarget_isNotOnTrack() {
+        let projection = GoalMath.incomeProjection(current: usd("1000"), target: usd("5000"),
+                                                   forecast: forecast(["900", "800", "700"]))
+        XCTAssertEqual(projection, .notOnTrack)
+    }
+
+    func test_incomeProjection_nonPositiveTargetAgreesWithZeroProgress() {
+        // Mirrors `valueProjection`'s degenerate-target handling: `progress()` reads a
+        // non-positive target as 0%, so incomeProjection must not contradict that with `.reached`.
+        XCTAssertEqual(GoalMath.incomeProjection(current: usd("5000"), target: Money(amount: 0),
+                                                 forecast: forecast(["100"])),
+                       .notOnTrack)
+        XCTAssertEqual(GoalMath.incomeProjection(current: usd("5000"), target: usd("-100"),
+                                                 forecast: forecast(["100"])),
+                       .notOnTrack)
+    }
+
+    func test_incomeProjection_reachesExactlyAtHorizonBoundary() {
+        // Uses GoalMath.horizonYears rather than hardcoding 30, per the milestone constraint.
+        let years = Int(GoalMath.horizonYears)
+        var amounts = Array(repeating: "1000", count: years - 1)
+        amounts.append("5000")
+        let projection = GoalMath.incomeProjection(current: usd("1000"), target: usd("5000"),
+                                                   forecast: forecast(amounts))
+        XCTAssertEqual(projection, .years(Double(years)))
+    }
+
+    func test_incomeProjection_neverReachesWithinHorizonLengthForecast_isBeyondHorizon() {
+        let years = Int(GoalMath.horizonYears)
+        let amounts = Array(repeating: "1000", count: years)
+        let projection = GoalMath.incomeProjection(current: usd("500"), target: usd("99999"),
+                                                   forecast: forecast(amounts))
+        XCTAssertEqual(projection, .beyondHorizon)
+    }
 }

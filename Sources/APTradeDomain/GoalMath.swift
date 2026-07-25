@@ -57,6 +57,21 @@ public enum GoalMath {
         return yearsToTarget(current: current.amount, target: target.amount, annualRate: rate)
     }
 
+    /// When projected annual income reaches `target`, read off the forecast curve.
+    /// A forecast that never grows reports `.notOnTrack` rather than a fake ETA.
+    /// A non-positive target mirrors `valueProjection`'s handling (and `progress`'s 0%
+    /// reading of it): `.notOnTrack`, never a misleading `.reached`.
+    public static func incomeProjection(current: Money, target: Money,
+                                        forecast: [DividendMath.ForecastYear]) -> GoalProjection {
+        guard target.amount > 0 else { return .notOnTrack }
+        guard current.amount < target.amount else { return .reached }
+        guard let last = forecast.last else { return .insufficientHistory }
+        if let crossing = forecast.first(where: { $0.income.amount >= target.amount }) {
+            return .years(Double(crossing.yearOffset))
+        }
+        return last.income.amount > current.amount ? .beyondHorizon : .notOnTrack
+    }
+
     /// Solves `current * (1 + rate)^t >= target`, honestly.
     static func yearsToTarget(current: Decimal, target: Decimal, annualRate: Decimal) -> GoalProjection {
         guard current > 0 else { return .notOnTrack }
