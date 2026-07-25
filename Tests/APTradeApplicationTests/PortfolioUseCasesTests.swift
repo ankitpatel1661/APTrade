@@ -51,9 +51,19 @@ final class PortfolioUseCasesTests: XCTestCase {
 
     func test_reset_restoresStartingCash() async {
         let store = MemoryStore(.starting(cash: usd("5")))
-        let result = await ResetPortfolioUseCase(store: store, serializer: TradeSerializer())()
+        let result = await ResetPortfolioUseCase(store: store, serializer: TradeSerializer())(startingCash: usd("100000"))
         XCTAssertEqual(result.cash, usd("100000"))
         XCTAssertEqual(store.portfolio.cash, usd("100000"))
+    }
+
+    func test_reset_opensPortfolioAtRequestedStartingCash() async {
+        let store = MemoryStore(.starting())
+        let sut = ResetPortfolioUseCase(store: store, serializer: TradeSerializer())
+        let fresh = await sut(startingCash: Money(amount: 25_000))
+        XCTAssertEqual(fresh.cash, Money(amount: 25_000))
+        XCTAssertEqual(fresh.startingCash, Money(amount: 25_000))
+        XCTAssertTrue(fresh.positions.isEmpty)
+        XCTAssertEqual(store.load().cash, Money(amount: 25_000))
     }
 
     // MARK: (fast-follow regression) A manual buy racing a serialized pie contribution

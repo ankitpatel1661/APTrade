@@ -33,7 +33,15 @@ enum CompositionRoot {
 
     /// A single shared portfolio store so the Portfolio view and trade sheets read and
     /// write the same persisted state.
-    static let portfolioStore: PortfolioStore = UserDefaultsPortfolioStore()
+    static let portfolioStore: PortfolioStore = {
+        // Captured into a local so the `@Sendable` (non-async) `seedCash` closure below
+        // doesn't reference the MainActor-isolated `settingsStore` static property
+        // directly (mirrors `settingsStoreForDrip` below).
+        let settingsStoreForSeed = settingsStore
+        return UserDefaultsPortfolioStore(seedCash: {
+            LoadSettingsUseCase(store: settingsStoreForSeed)().defaultStartingCash
+        })
+    }()
     static let portfolioHistoryStore: PortfolioHistoryStore = UserDefaultsPortfolioHistoryStore()
     static let alertStore: AlertStore = UserDefaultsAlertStore()
     /// One macOS-notification deliverer, shared behind both notifier ports.

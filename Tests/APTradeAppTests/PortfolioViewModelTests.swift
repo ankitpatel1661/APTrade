@@ -61,7 +61,7 @@ final class PortfolioViewModelTests: XCTestCase {
             fetchPerformance: FetchPortfolioPerformanceUseCase(repository: FixedRepo(), store: store)
         )
         await vm.onAppear()
-        await vm.reset()
+        await vm.reset(startingCash: Money(amount: 100_000))
         XCTAssertTrue(vm.holdings.isEmpty)
         XCTAssertEqual(vm.portfolio.cash, Money(amount: 100_000))
     }

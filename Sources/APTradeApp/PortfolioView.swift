@@ -254,7 +254,9 @@ struct PortfolioSummaryHeader: View {
         }
         .confirmationDialog(tr(.resetPortfolioConfirm),
                             isPresented: $showResetConfirm, titleVisibility: .visible) {
-            Button(tr(.reset), role: .destructive) { Task { await viewModel.reset() } }
+            Button(tr(.reset), role: .destructive) {
+                Task { await viewModel.reset(startingCash: CompositionRoot.loadSettings().defaultStartingCash) }
+            }
             Button(tr(.cancel), role: .cancel) {}
         }
     }

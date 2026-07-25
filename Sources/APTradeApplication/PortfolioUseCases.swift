@@ -60,9 +60,9 @@ public struct ResetPortfolioUseCase: Sendable {
     /// Serialized like `BuyAssetUseCase` — a reset overwriting the portfolio while a
     /// buy/sell/pie mutation is mid-flight would otherwise silently discard it (or vice
     /// versa).
-    public func callAsFunction() async -> Portfolio {
+    public func callAsFunction(startingCash: Money) async -> Portfolio {
         await serializer.run {
-            let fresh = Portfolio.starting()
+            let fresh = Portfolio.starting(cash: startingCash)
             self.store.save(fresh)
             return fresh
         }
