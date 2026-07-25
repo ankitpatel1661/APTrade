@@ -130,7 +130,6 @@ enum L10n {
         case simulatedPaperTradingFooter = "Simulated · paper trading"
         case resetPortfolio = "Reset portfolio"
         case reset = "Reset"
-        case resetPortfolioConfirm = "Reset portfolio to $100,000 cash and clear all holdings?"
         case startingBalanceRange = "Between $1,000 and $10,000,000"
         case resetPortfolioTitle = "Reset Portfolio"
         case resetPortfolioBody = "This clears all holdings and history, then opens a fresh portfolio with the cash below."
@@ -357,6 +356,24 @@ enum L10n {
         case incomeReinvestedBadge = "Reinvested"
         case incomeNoDividends = "No dividend income yet. Dividends from your holdings will appear here automatically."
         case incomeLastPayment = "Last Payment"
+
+        // MARK: Income calendar, forecast, and goal (M11.1 Task 12)
+        case upcomingDividends = "Upcoming Dividends Calendar"
+        case estimatedShort = "est."
+        case incomeForecast = "Income Forecast"
+        case forecastCaption = "Assumes historical dividend growth continues; DRIP compounding where enabled."
+        case incomeGoal = "Income Goal"
+        case valueGoal = "Value Goal"
+        case setGoal = "Set a goal"
+        case editGoal = "Edit goal"
+        case removeGoal = "Remove goal"
+        case goalTarget = "Goal Target"
+        case goalReached = "Goal reached"
+        case goalNotOnTrack = "Not on track at current rate"
+        case goalNeedsHistory = "Tracking — needs more history"
+        case goalBeyondHorizon = "More than 30 yrs at this rate"
+        case goalYearsFormat = "About %@ yrs at this rate"
+        case noUpcomingDividends = "No dividend payers held yet."
         // MARK: Asset detail (dividends)
         case assetDividendSection = "Dividends"
         case assetDividendYield = "Dividend Yield"
@@ -697,10 +714,6 @@ enum L10n {
                           .italian: "Reimposta portafoglio", .spanish: "Restablecer cartera"],
         .reset: [.english: "Reset", .german: "Zurücksetzen",
                  .italian: "Reimposta", .spanish: "Restablecer"],
-        .resetPortfolioConfirm: [.english: "Reset portfolio and clear all holdings?",
-                                 .german: "Portfolio zurücksetzen und alle Bestände löschen?",
-                                 .italian: "Reimpostare il portafoglio e cancellare tutte le posizioni?",
-                                 .spanish: "¿Restablecer la cartera y borrar todas las posiciones?"],
         .startingBalanceRange: [.english: "Between $1,000 and $10,000,000",
                                 .german: "Zwischen 1.000 $ und 10.000.000 $",
                                 .italian: "Tra 1.000 $ e 10.000.000 $",
@@ -1187,6 +1200,50 @@ enum L10n {
                              .spanish: "Aún no hay ingresos por dividendos. Los dividendos de tus posiciones aparecerán aquí automáticamente."],
         .incomeLastPayment: [.english: "Last Payment", .german: "Letzte Zahlung",
                              .italian: "Ultimo pagamento", .spanish: "Último pago"],
+
+        // MARK: Income calendar, forecast, and goal (M11.1 Task 12)
+        .upcomingDividends: [.english: "Upcoming Dividends", .german: "Kommende Dividenden",
+                             .italian: "Prossimi dividendi", .spanish: "Próximos dividendos"],
+        .estimatedShort: [.english: "est.", .german: "ca.", .italian: "stim.", .spanish: "est."],
+        .incomeForecast: [.english: "Income Forecast", .german: "Einkommensprognose",
+                          .italian: "Previsione di reddito", .spanish: "Previsión de ingresos"],
+        .forecastCaption: [.english: "Assumes historical dividend growth continues; DRIP compounding where enabled.",
+                           .german: "Annahme: historisches Dividendenwachstum setzt sich fort; DRIP-Verzinsung wo aktiviert.",
+                           .italian: "Presuppone che la crescita storica dei dividendi continui; capitalizzazione DRIP dove attiva.",
+                           .spanish: "Supone que continúa el crecimiento histórico de dividendos; capitalización DRIP donde esté activada."],
+        .incomeGoal: [.english: "Income Goal", .german: "Einkommensziel",
+                      .italian: "Obiettivo di reddito", .spanish: "Objetivo de ingresos"],
+        .valueGoal: [.english: "Value Goal", .german: "Wertziel",
+                     .italian: "Obiettivo di valore", .spanish: "Objetivo de valor"],
+        .setGoal: [.english: "Set a goal", .german: "Ziel festlegen",
+                   .italian: "Imposta un obiettivo", .spanish: "Fijar un objetivo"],
+        .editGoal: [.english: "Edit goal", .german: "Ziel bearbeiten",
+                    .italian: "Modifica obiettivo", .spanish: "Editar objetivo"],
+        .removeGoal: [.english: "Remove goal", .german: "Ziel entfernen",
+                      .italian: "Rimuovi obiettivo", .spanish: "Eliminar objetivo"],
+        .goalTarget: [.english: "Target", .german: "Ziel", .italian: "Obiettivo", .spanish: "Objetivo"],
+        .goalReached: [.english: "Goal reached", .german: "Ziel erreicht",
+                       .italian: "Obiettivo raggiunto", .spanish: "Objetivo alcanzado"],
+        .goalNotOnTrack: [.english: "Not on track at current rate",
+                          .german: "Beim aktuellen Tempo nicht erreichbar",
+                          .italian: "Non in linea al ritmo attuale",
+                          .spanish: "No va por buen camino al ritmo actual"],
+        .goalNeedsHistory: [.english: "Tracking — needs more history",
+                            .german: "Wird verfolgt – benötigt mehr Verlauf",
+                            .italian: "In monitoraggio — serve più storico",
+                            .spanish: "En seguimiento: falta historial"],
+        .goalBeyondHorizon: [.english: "More than 30 yrs at this rate",
+                             .german: "Mehr als 30 Jahre bei diesem Tempo",
+                             .italian: "Più di 30 anni a questo ritmo",
+                             .spanish: "Más de 30 años a este ritmo"],
+        .goalYearsFormat: [.english: "About %@ yrs at this rate",
+                           .german: "Etwa %@ Jahre bei diesem Tempo",
+                           .italian: "Circa %@ anni a questo ritmo",
+                           .spanish: "Unos %@ años a este ritmo"],
+        .noUpcomingDividends: [.english: "No dividend payers held yet.",
+                               .german: "Noch keine Dividendenzahler im Bestand.",
+                               .italian: "Nessun titolo con dividendi in portafoglio.",
+                               .spanish: "Aún no tienes valores con dividendos."],
 
         // MARK: Asset detail (dividends)
         .assetDividendSection: [.english: "Dividends", .german: "Dividenden",

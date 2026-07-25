@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 import APTradeApplication
 import APTradeDomain
 
@@ -79,14 +80,30 @@ struct IncomeSection: View {
         viewModel.history.isEmpty && viewModel.upcoming.isEmpty
     }
 
+    /// `viewModel.forecast` always holds `horizon.rawValue` entries, even for an empty
+    /// portfolio — `DividendMath.incomeForecast` fills every year with a zero `Money`
+    /// rather than returning `[]`, so `!forecast.isEmpty` can never distinguish "no
+    /// income to project" from real data (M11.1 Task 11 review finding). `cards
+    /// .projectedAnnual` is the same trailing-twelve-month sum as `forecast[0].income`
+    /// (both are `DividendMath.projectedAnnualIncome` over the same positions), and every
+    /// later forecast year is either that value grown or still zero — so a zero year 1
+    /// guarantees a zero curve throughout. Comparing it directly avoids re-deriving that
+    /// logic in the view.
+    private var hasForecastData: Bool {
+        (viewModel.cards?.projectedAnnual.amount ?? 0) > 0
+    }
+
     @ViewBuilder
     private var ledger: some View {
         if let cards = viewModel.cards {
             summaryGrid(cards)
         }
+        incomeGoalCard
         if !viewModel.months.isEmpty {
             monthlyChart
         }
+        upcomingCalendarCard
+        forecastCard
 #if os(iOS)
         if !viewModel.upcoming.isEmpty {
             upcomingCard
@@ -287,6 +304,153 @@ struct IncomeSection: View {
     private func monthLabel(_ key: String) -> String {
         guard let date = incomeMonthKeyParser.date(from: key) else { return key }
         return incomeMonthLabelFormatter.string(from: date)
+    }
+
+    // MARK: - Income goal (M11.1 Task 12)
+
+    private var incomeGoalCard: some View {
+        GoalCard(title: tr(.incomeGoal),
+                 current: viewModel.cards?.projectedAnnual ?? Money(amount: 0),
+                 goal: viewModel.incomeGoal,
+                 projection: viewModel.incomeGoalProjection,
+                 onSet: { viewModel.setIncomeGoal($0) },
+                 onRemove: { viewModel.removeIncomeGoal() })
+    }
+
+    // MARK: - Dividend calendar (M11.1 Task 12)
+
+    /// `viewModel.calendarMonths` can hold up to 13 entries: the underlying window is a
+    /// fixed 365 days, so with "now" mid-month the first and last buckets are both
+    /// partial months — and when that span crosses a year boundary, those two partial
+    /// buckets share the same month *name* with different years (e.g. "July 2026" and
+    /// "July 2027"). `month.title` always carries the year, so rendering it in full
+    /// (rather than assuming a 12-item grid or trimming to a bare month name) disambiguates
+    /// them automatically; this `ForEach` makes no assumption about the count.
+    private var upcomingCalendarCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                sectionHeader(tr(.upcomingDividends))
+                Spacer()
+                // Every row below is a projection — Yahoo exposes no declared future
+                // ex-dates — so the card carries the disclaimer both here and per row.
+                Text(tr(.estimatedShort))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            if viewModel.calendarMonths.isEmpty {
+                Text(tr(.noUpcomingDividends))
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 24)
+            } else {
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(viewModel.calendarMonths) { month in
+                        calendarMonthGroup(month)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
+    }
+
+    private func calendarMonthGroup(_ month: IncomeViewModel.CalendarMonth) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(month.title)
+                    .font(.system(size: 11, weight: .bold)).tracking(0.4)
+                    .foregroundStyle(Theme.textTertiary)
+                Spacer()
+                Text(month.total.formatted)
+                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            // `ScheduledDividend` isn't `Identifiable`/`Hashable`, and two holdings can
+            // legitimately project to the exact same ex-date within a month, so index the
+            // row by its position rather than `\.exDate` (which could collide).
+            ForEach(Array(month.rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 8) {
+                    Text(row.symbol)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
+                    Spacer(minLength: 8)
+                    Text(row.estimatedAmount.formatted)
+                        .font(.system(size: 13, weight: .medium).monospacedDigit())
+                        .foregroundStyle(Theme.textSecondary)
+                    Text(tr(.estimatedShort))
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Theme.textTertiary)
+                }
+            }
+        }
+    }
+
+    // MARK: - Income forecast (M11.1 Task 12)
+
+    private var forecastCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                sectionHeader(tr(.incomeForecast))
+                Spacer()
+                Picker("", selection: $viewModel.horizon) {
+                    ForEach(IncomeViewModel.ForecastHorizon.allCases) { horizon in
+                        Text(horizon.label).tag(horizon)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            }
+            if hasForecastData {
+                forecastChart
+                Text(tr(.forecastCaption))
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.textTertiary)
+            } else {
+                Text(tr(.incomeNoDividends))
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 40)
+            }
+        }
+        .padding(16)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
+    }
+
+    /// Area + line, gold-on-brand — matches `AssetDetailView`'s price-chart treatment
+    /// (gradient fill fading to transparent, a solid line on top) rather than Swift
+    /// Charts' default blue, which would clash with the app's gold identity.
+    private var forecastChart: some View {
+        Chart(viewModel.forecast, id: \.yearOffset) { year in
+            AreaMark(x: .value("Year", year.yearOffset),
+                     y: .value("Income", (year.income.amount as NSDecimalNumber).doubleValue))
+                .interpolationMethod(.catmullRom)
+                .foregroundStyle(.linearGradient(
+                    colors: [Theme.gold.opacity(ThemeManager.shared.isDark ? 0.26 : 0.12),
+                             Theme.gold.opacity(0)],
+                    startPoint: .top, endPoint: .bottom))
+            LineMark(x: .value("Year", year.yearOffset),
+                     y: .value("Income", (year.income.amount as NSDecimalNumber).doubleValue))
+                .interpolationMethod(.catmullRom)
+                .foregroundStyle(Theme.gold)
+                .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+        }
+        .frame(height: 180)
+        .chartYAxis {
+            AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { _ in
+                AxisGridLine().foregroundStyle(Theme.hairline)
+                AxisValueLabel().foregroundStyle(Theme.textTertiary)
+            }
+        }
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 5)) { _ in
+                AxisValueLabel().foregroundStyle(Theme.textTertiary)
+            }
+        }
     }
 
     // MARK: - Upcoming
