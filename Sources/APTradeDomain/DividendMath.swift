@@ -138,4 +138,41 @@ public enum DividendMath {
         formatter.dateFormat = "yyyy-MM"
         return formatter.string(from: date)
     }
+
+    /// Lower bound on per-symbol annual dividend growth used by forecasts.
+    public static let minDividendGrowth = Decimal(string: "-0.20")!
+    /// Upper bound on per-symbol annual dividend growth used by forecasts.
+    public static let maxDividendGrowth = Decimal(string: "0.25")!
+
+    /// Annualized growth of a symbol's dividend, measured over at most the last five
+    /// years of history and clamped to `minDividendGrowth ... maxDividendGrowth`.
+    /// Returns `0` when there is too little history to measure honestly
+    /// (fewer than two years spanned, or fewer than two payments).
+    public static func dividendGrowthRate(events: [DividendEvent], asOf: Date) -> Decimal {
+        let window = events
+            .filter { $0.exDate <= asOf && $0.exDate >= asOf.addingTimeInterval(-5 * 365.25 * 86_400) }
+            .sorted { $0.exDate < $1.exDate }
+        guard window.count >= 2 else { return 0 }
+
+        let years = window[window.count - 1].exDate.timeIntervalSince(window[0].exDate) / (365.25 * 86_400)
+        guard years >= 2 else { return 0 }
+
+        // Compare the trailing-year rate at each end of the window so cadence changes
+        // (e.g. quarterly -> monthly) don't read as growth.
+        let early = trailingAnnualPerShare(events: window,
+                                           asOf: window[0].exDate.addingTimeInterval(365.25 * 86_400))
+        let late = trailingAnnualPerShare(events: window, asOf: asOf)
+        guard early.amount > 0, late.amount > 0 else { return 0 }
+
+        let spanYears = years - 1
+        guard spanYears >= 1 else { return 0 }
+
+        let ratio = NSDecimalNumber(decimal: late.amount / early.amount).doubleValue
+        guard ratio > 0 else { return 0 }
+        let rate = pow(ratio, 1.0 / spanYears) - 1.0
+        guard rate.isFinite else { return 0 }
+
+        let asDecimal = Decimal(rate)
+        return min(max(asDecimal, minDividendGrowth), maxDividendGrowth)
+    }
 }
