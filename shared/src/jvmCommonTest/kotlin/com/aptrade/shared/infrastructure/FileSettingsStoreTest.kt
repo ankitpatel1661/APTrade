@@ -1,9 +1,12 @@
 package com.aptrade.shared.infrastructure
 
+import com.aptrade.shared.domain.Money
 import com.aptrade.shared.settings.AccentTheme
 import com.aptrade.shared.settings.AppSettings
 import com.aptrade.shared.l10n.AppLanguage
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import java.nio.file.Files
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.exists
 import kotlin.io.path.readText
@@ -399,5 +402,39 @@ class FileSettingsStoreTest {
         assertEquals(false, loaded.pieContributions)
         assertEquals(false, loaded.dripEnabled)
         assertEquals(true, loaded.dividendNotifications)
+    }
+
+    // --- Default starting cash (M11.2 Task 2) ---
+
+    @Test
+    fun defaultStartingCashDefaultsToOneHundredThousand() {
+        assertEquals(Money.usd("100000"), AppSettings().defaultStartingCash)
+    }
+
+    @Test
+    fun defaultStartingCashRoundTrips() = runBlocking {
+        val file = Files.createTempDirectory("aptrade-settings").resolve("settings.json")
+        val store = FileSettingsStore(file)
+        store.save(AppSettings(defaultStartingCash = Money.usd("250000")))
+        assertEquals(Money.usd("250000"), store.load().defaultStartingCash)
+    }
+
+    @Test
+    fun aPreM11SettingsFileWithNoStartingCashKeyLoadsTheDefault() = runBlocking {
+        val file = Files.createTempDirectory("aptrade-settings").resolve("settings.json")
+        file.writeText("""{"accent":"ChampagneGold","dripEnabled":true}""")
+        val loaded = FileSettingsStore(file).load()
+        assertEquals(Money.usd("100000"), loaded.defaultStartingCash)
+        assertEquals(true, loaded.dripEnabled)
+    }
+
+    @Test
+    fun anUnparseableStartingCashDegradesToTheDefaultWithoutFailingTheWholeBlob() = runBlocking {
+        val file = Files.createTempDirectory("aptrade-settings").resolve("settings.json")
+        file.writeText("""{"accent":"ChampagneGold","defaultStartingCash":"not-a-number","dripEnabled":true}""")
+        val loaded = FileSettingsStore(file).load()
+        assertEquals(Money.usd("100000"), loaded.defaultStartingCash)
+        // Field-level, NOT whole-blob: the neighbouring preference survives.
+        assertEquals(true, loaded.dripEnabled)
     }
 }

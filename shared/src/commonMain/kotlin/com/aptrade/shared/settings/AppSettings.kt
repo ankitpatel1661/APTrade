@@ -1,5 +1,7 @@
 package com.aptrade.shared.settings
 
+import com.aptrade.shared.domain.Money
+import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.l10n.AppLanguage
 
 /** The app's persisted preferences, framework-free. The DTO carries defaults so future
@@ -42,7 +44,12 @@ import com.aptrade.shared.l10n.AppLanguage
  *  Neither gates the planner's `DividendCheckDue` event itself — that block is UNGATED (see
  *  `MarketActivityPlanner`); these flags are read downstream by the dividend-processing engine
  *  ([dripEnabled], to choose cash vs. reinvest) and the notifier ([dividendNotifications], to
- *  decide whether to surface the credit). */
+ *  decide whether to surface the credit).
+ *
+ *  defaultStartingCash (M11.2 Task 2) mirrors macOS `AppSettings.defaultStartingCash`: the
+ *  opening balance the reset flow pre-fills and, when the user does not override it, resets to.
+ *  Defaults to [Portfolio.DEFAULT_STARTING_CASH] — one of exactly two permitted hardcoded
+ *  balances in this codebase (the other is `Portfolio.starting`'s own parameter default). */
 data class AppSettings(
     val accent: AccentTheme = AccentTheme.ChampagneGold,
     val priceAlerts: Boolean = true,
@@ -60,4 +67,5 @@ data class AppSettings(
     val language: AppLanguage = AppLanguage.English,
     val dripEnabled: Boolean = false,
     val dividendNotifications: Boolean = true,
+    val defaultStartingCash: Money = Portfolio.DEFAULT_STARTING_CASH,
 )
