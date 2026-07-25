@@ -24,9 +24,25 @@ final class GoalMathTests: XCTestCase {
         XCTAssertEqual(GoalMath.progress(current: usd("500"), target: Money(amount: 0)), 0)
     }
 
-    func test_annualGrowthRate_needsThirtyDaysOfHistory() {
-        XCTAssertNil(GoalMath.annualGrowthRate(curve: curve(start: 100_000, days: 20, dailyRate: 0.0005)))
-        XCTAssertNotNil(GoalMath.annualGrowthRate(curve: curve(start: 100_000, days: 90, dailyRate: 0.0005)))
+    func test_annualGrowthRate_needsSufficientHistory() {
+        // days: 100 -> span 99 (well below the 180-day floor); days: 250 -> span 249 (well above).
+        XCTAssertNil(GoalMath.annualGrowthRate(curve: curve(start: 100_000, days: 100, dailyRate: 0.0005)))
+        XCTAssertNotNil(GoalMath.annualGrowthRate(curve: curve(start: 100_000, days: 250, dailyRate: 0.0005)))
+    }
+
+    func test_annualGrowthRate_pinsHistoryFloorBoundary() {
+        // curve(days:) spans (days - 1) days. days: 180 -> span 179 (just under the floor);
+        // days: 181 -> span 180 (exactly at the floor).
+        XCTAssertNil(GoalMath.annualGrowthRate(curve: curve(start: 100_000, days: 180, dailyRate: 0.0005)))
+        XCTAssertNotNil(GoalMath.annualGrowthRate(curve: curve(start: 100_000, days: 181, dailyRate: 0.0005)))
+    }
+
+    func test_annualGrowthRate_emptyCurveIsNil() {
+        XCTAssertNil(GoalMath.annualGrowthRate(curve: []))
+    }
+
+    func test_annualGrowthRate_singlePointCurveIsNil() {
+        XCTAssertNil(GoalMath.annualGrowthRate(curve: [EquityPoint(date: day(0), value: usd("50000"))]))
     }
 
     func test_annualGrowthRate_clampsExtremeGrowth() {
@@ -52,26 +68,48 @@ final class GoalMathTests: XCTestCase {
     }
 
     func test_valueProjection_flatOrShrinkingIsNotOnTrack() {
+        // days: 181 -> span 180, clears the new history floor.
         XCTAssertEqual(GoalMath.valueProjection(current: usd("50000"), target: usd("100000"),
-                                                curve: curve(start: 50_000, days: 90, dailyRate: 0)),
+                                                curve: curve(start: 50_000, days: 181, dailyRate: 0)),
                        .notOnTrack)
         XCTAssertEqual(GoalMath.valueProjection(current: usd("50000"), target: usd("100000"),
-                                                curve: curve(start: 60_000, days: 90, dailyRate: -0.001)),
+                                                curve: curve(start: 60_000, days: 181, dailyRate: -0.001)),
                        .notOnTrack)
     }
 
     func test_valueProjection_returnsYearsForAchievableTarget() {
         // ~0.05%/day compounds to roughly +20%/yr; doubling then takes ~3.8 years.
+        // For a constant-daily-rate curve the annualized rate is span-independent
+        // (ratio^(365.25/span) collapses to (1+dailyRate)^365.25 regardless of span),
+        // so days: 181 (span 180, clearing the new history floor) reproduces the same
+        // ~20%/yr rate and ~3.8-year projection as a shorter window would have.
         let projection = GoalMath.valueProjection(current: usd("50000"), target: usd("100000"),
-                                                  curve: curve(start: 50_000, days: 120, dailyRate: 0.0005))
+                                                  curve: curve(start: 50_000, days: 181, dailyRate: 0.0005))
         guard case let .years(y) = projection else { return XCTFail("expected .years, got \(projection)") }
         XCTAssertGreaterThan(y, 3.0)
         XCTAssertLessThan(y, 5.0)
     }
 
     func test_valueProjection_beyondThirtyYearsIsBeyondHorizon() {
+        // days: 181 -> span 180, clearing the new history floor (see rationale above:
+        // the annualized rate for a constant daily rate is span-independent).
         let projection = GoalMath.valueProjection(current: usd("1000"), target: usd("10000000"),
-                                                  curve: curve(start: 1_000, days: 90, dailyRate: 0.00005))
+                                                  curve: curve(start: 1_000, days: 181, dailyRate: 0.00005))
         XCTAssertEqual(projection, .beyondHorizon)
+    }
+
+    func test_valueProjection_nonPositiveTargetAgreesWithZeroProgress() {
+        // `progress` reads a non-positive target as 0% (never started); `valueProjection`
+        // must not contradict that by claiming `.reached`.
+        XCTAssertEqual(GoalMath.valueProjection(current: usd("5000"), target: Money(amount: 0),
+                                                curve: []),
+                       .notOnTrack)
+        XCTAssertEqual(GoalMath.valueProjection(current: usd("5000"), target: usd("-100"),
+                                                curve: []),
+                       .notOnTrack)
+    }
+
+    func test_progress_negativeCurrentClampsToZero() {
+        XCTAssertEqual(GoalMath.progress(current: usd("-500"), target: usd("100000")), 0)
     }
 }

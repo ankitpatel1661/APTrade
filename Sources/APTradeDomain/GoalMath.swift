@@ -11,17 +11,23 @@ public enum GoalProjection: Equatable, Sendable {
 
 /// Progress and honest time-to-target math for portfolio goals. Pure.
 public enum GoalMath {
-    /// Minimum equity-curve points before a growth rate is trustworthy.
-    public static let minimumHistoryDays = 30
+    /// Minimum days of equity-curve history (by date span between the first and last
+    /// point, not point count) before a growth rate is trustworthy. A short span
+    /// annualizes via a large exponent, so this floor keeps the extrapolation modest
+    /// enough that the clamp remains a meaningful sanity bound rather than a rubber stamp.
+    public static let minimumHistoryDays = 180
     /// Projections longer than this report `.beyondHorizon`.
     public static let horizonYears = 30.0
-    public static let minAnnualGrowth = Decimal(-0.5)
-    public static let maxAnnualGrowth = Decimal(1.0)
+    public static let minAnnualGrowth = Decimal(string: "-0.5")!
+    public static let maxAnnualGrowth = Decimal(string: "1.0")!
 
-    /// Fraction of the target achieved. May exceed 1. Zero target yields 0.
+    /// Fraction of the target achieved. May exceed 1. Zero or negative target yields 0.
+    /// Result is always finite and non-negative.
     public static func progress(current: Money, target: Money) -> Double {
         guard target.amount > 0 else { return 0 }
-        return NSDecimalNumber(decimal: current.amount / target.amount).doubleValue
+        let value = NSDecimalNumber(decimal: current.amount / target.amount).doubleValue
+        guard value.isFinite else { return 0 }
+        return max(value, 0)
     }
 
     /// Annualized growth of the equity curve, clamped to
@@ -41,8 +47,11 @@ public enum GoalMath {
     }
 
     /// When the portfolio's value reaches `target` at its historical growth rate.
+    /// A non-positive target is degenerate (mirrors `progress`, which reads it as 0%)
+    /// and reports `.notOnTrack` rather than a misleading `.reached`.
     public static func valueProjection(current: Money, target: Money,
                                        curve: [EquityPoint]) -> GoalProjection {
+        guard target.amount > 0 else { return .notOnTrack }
         guard current.amount < target.amount else { return .reached }
         guard let rate = annualGrowthRate(curve: curve) else { return .insufficientHistory }
         return yearsToTarget(current: current.amount, target: target.amount, annualRate: rate)
