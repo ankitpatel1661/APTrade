@@ -24,8 +24,10 @@ public struct Portfolio: Equatable, Codable, Sendable {
     public let cash: Money
     public let positions: [Position]
     public let transactions: [Transaction]
-    /// The cash the portfolio opened with. Recorded so performance baselines and the
-    /// reset flow never assume a fixed amount. Defaults to the opening cash.
+    /// The cash the portfolio opened with. Persisted for future use; currently has no
+    /// reader — the reset flow reads `AppSettings.defaultStartingCash` instead, and
+    /// `totalReturn` derives from the equity curve's own first point. Defaults to the
+    /// opening cash.
     public let startingCash: Money
 
     public init(cash: Money, positions: [Position] = [], transactions: [Transaction] = [],

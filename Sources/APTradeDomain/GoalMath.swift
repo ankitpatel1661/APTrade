@@ -15,6 +15,12 @@ public enum GoalMath {
     /// point, not point count) before a growth rate is trustworthy. A short span
     /// annualizes via a large exponent, so this floor keeps the extrapolation modest
     /// enough that the clamp remains a meaningful sanity bound rather than a rubber stamp.
+    ///
+    /// This guards short PRICE history, not short ACCOUNT history: the curve passed to
+    /// `annualGrowthRate` is the 1-year price window (with a flat pre-inception cash
+    /// point), so its span is ~365 days for any portfolio holding any seasoned symbol —
+    /// this floor only actually fires for an all-cash portfolio or a symbol whose own
+    /// price history is under 180 days.
     public static let minimumHistoryDays = 180
     /// Projections longer than this report `.beyondHorizon`.
     public static let horizonYears = 30.0
@@ -46,29 +52,44 @@ public enum GoalMath {
         return min(max(Decimal(rate), minAnnualGrowth), maxAnnualGrowth)
     }
 
-    /// When the portfolio's value reaches `target` at its historical growth rate.
-    /// A non-positive target is degenerate (mirrors `progress`, which reads it as 0%)
-    /// and reports `.notOnTrack` rather than a misleading `.reached`.
-    public static func valueProjection(current: Money, target: Money,
-                                       curve: [EquityPoint]) -> GoalProjection {
+    /// Degenerate-input guard shared by `valueProjection`/`incomeProjection`: a
+    /// non-positive target reads as 0% progress (mirrors `progress`) and is reported as
+    /// `.notOnTrack` rather than a misleading `.reached`; a `current` already at or past
+    /// `target` reports `.reached`. Returns `nil` when neither shortcut applies, meaning
+    /// the caller must consult its own projection data. Touches only `current`/`target`
+    /// (both `Money`), so it applies identically to the value and income paths.
+    private static func degenerateOrReachedProjection(current: Money, target: Money) -> GoalProjection? {
         guard target.amount > 0 else { return .notOnTrack }
         guard current.amount < target.amount else { return .reached }
+        return nil
+    }
+
+    /// When the portfolio's value reaches `target` at its historical growth rate.
+    public static func valueProjection(current: Money, target: Money,
+                                       curve: [EquityPoint]) -> GoalProjection {
+        if let shortCircuit = degenerateOrReachedProjection(current: current, target: target) {
+            return shortCircuit
+        }
         guard let rate = annualGrowthRate(curve: curve) else { return .insufficientHistory }
         return yearsToTarget(current: current.amount, target: target.amount, annualRate: rate)
     }
 
     /// When projected annual income reaches `target`, read off the forecast curve.
-    /// A forecast that never grows reports `.notOnTrack` rather than a fake ETA.
-    /// A non-positive target mirrors `valueProjection`'s handling (and `progress`'s 0%
-    /// reading of it): `.notOnTrack`, never a misleading `.reached`.
+    /// A forecast that never grows reports `.notOnTrack` rather than a fake ETA. A
+    /// forecast that carries no positive income at all (e.g. a brand-new portfolio with
+    /// no holdings, whose forecast is all-zero years) reports `.insufficientHistory` —
+    /// there is no data to be "off track" against, so `.notOnTrack` would misstate the
+    /// situation as a failing rate rather than an absence of one.
     public static func incomeProjection(current: Money, target: Money,
                                         forecast: [DividendMath.ForecastYear]) -> GoalProjection {
-        guard target.amount > 0 else { return .notOnTrack }
-        guard current.amount < target.amount else { return .reached }
+        if let shortCircuit = degenerateOrReachedProjection(current: current, target: target) {
+            return shortCircuit
+        }
         guard let last = forecast.last else { return .insufficientHistory }
         if let crossing = forecast.first(where: { $0.income.amount >= target.amount }) {
             return .years(Double(crossing.yearOffset))
         }
+        guard forecast.contains(where: { $0.income.amount > 0 }) else { return .insufficientHistory }
         return last.income.amount > current.amount ? .beyondHorizon : .notOnTrack
     }
 

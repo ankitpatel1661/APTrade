@@ -202,11 +202,11 @@ public enum DividendMath {
     /// available, with the assumed price itself growing at the same rate — a stated
     /// simplification, surfaced to the user as a caption.
     public static func incomeForecast(positions: [Position],
+                                      pricesBySymbol: [String: Money],
                                       eventsBySymbol: [String: [DividendEvent]],
                                       years: Int,
                                       dripEnabled: Bool,
-                                      asOf: Date,
-                                      pricesBySymbol: [String: Money] = [:]) -> [ForecastYear] {
+                                      asOf: Date) -> [ForecastYear] {
         guard years > 0 else { return [] }
 
         struct Projection {

@@ -445,7 +445,12 @@ final class IncomeViewModelTests: XCTestCase {
         await vm.load()
         vm.horizon = .thirty
 
+        // `pricesBySymbol: [:]` explicitly (rather than omitted) builds the cost-basis
+        // reference forecast on purpose — `incomeForecast` falls back to `averageCost`
+        // for any symbol missing a quote, so an empty price map reproduces exactly what
+        // this test needs to compare against.
         let costBasisFallback = DividendMath.incomeForecast(positions: portfolio.positions,
+                                                            pricesBySymbol: [:],
                                                             eventsBySymbol: ["AAA": events],
                                                             years: 30, dripEnabled: true, asOf: fixedNow)
 

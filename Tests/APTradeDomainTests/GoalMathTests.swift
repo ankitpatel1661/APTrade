@@ -188,4 +188,28 @@ final class GoalMathTests: XCTestCase {
                                                    forecast: forecast(amounts))
         XCTAssertEqual(projection, .beyondHorizon)
     }
+
+    /// Whole-branch review fix 6: a brand-new user with an income goal but no holdings
+    /// gets a forecast of 30 all-zero years (`DividendMath.incomeForecast` always returns
+    /// one entry per requested year, even for a portfolio with no dividend payers). Before
+    /// the fix, this fell through `last.income > current` (`0 > 0`, false) to `.notOnTrack`
+    /// — "Not on track at current rate" — even though nothing is actually off track; there
+    /// is simply no data. The symmetric value-goal card reads this identical situation as
+    /// `.insufficientHistory` ("needs more history"); the income path must agree.
+    func test_incomeProjection_allZeroForecast_isInsufficientHistory_notNotOnTrack() {
+        let allZero = Array(repeating: "0", count: 30)
+        let projection = GoalMath.incomeProjection(current: usd("0"), target: usd("5000"),
+                                                   forecast: forecast(allZero))
+        XCTAssertEqual(projection, .insufficientHistory)
+    }
+
+    /// A forecast with even one positive year must NOT be treated as "no data" — the
+    /// `.notOnTrack` reading is still correct once real (if flat/insufficient) income
+    /// exists. Guards against an overly broad fix that swallows the legitimate
+    /// `.notOnTrack` case tested above (`test_incomeProjection_flatForecastBelowTarget_isNotOnTrack`).
+    func test_incomeProjection_someZeroYearsButSomePositive_stillNotOnTrack() {
+        let projection = GoalMath.incomeProjection(current: usd("1000"), target: usd("5000"),
+                                                   forecast: forecast(["0", "1000", "0"]))
+        XCTAssertEqual(projection, .notOnTrack)
+    }
 }

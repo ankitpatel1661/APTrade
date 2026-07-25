@@ -84,7 +84,7 @@ final class DividendMathForecastTests: XCTestCase {
         let events = quarterly(symbol: "AAA", startYear: 2021, years: 4,
                                startAmount: Decimal(string: "0.25")!, perYear: 0)
         let out = DividendMath.incomeForecast(positions: [position("AAA", shares: "100", price: "50")],
-                                              eventsBySymbol: ["AAA": events],
+                                              pricesBySymbol: [:], eventsBySymbol: ["AAA": events],
                                               years: 3, dripEnabled: false, asOf: date(2025, 1, 1))
         XCTAssertEqual(out.count, 3)
         XCTAssertEqual(out.map(\.yearOffset), [1, 2, 3])
@@ -99,7 +99,7 @@ final class DividendMathForecastTests: XCTestCase {
                                startAmount: Decimal(string: "0.25")!,
                                perYear: Decimal(string: "0.10")!)
         let out = DividendMath.incomeForecast(positions: [position("AAA", shares: "100", price: "50")],
-                                              eventsBySymbol: ["AAA": events],
+                                              pricesBySymbol: [:], eventsBySymbol: ["AAA": events],
                                               years: 3, dripEnabled: false, asOf: date(2025, 1, 1))
         // Compounding, not a linear increase: each year must be the previous year times
         // the SAME growth factor — a linear (additive) model would fail this, since it
@@ -127,12 +127,12 @@ final class DividendMathForecastTests: XCTestCase {
         // Quoted price ($100) deliberately differs from the $50 cost basis, so this
         // pins DRIP reinvestment to the quoted price rather than yield-on-cost.
         let prices = ["AAA": usd("100")]
-        let cash = DividendMath.incomeForecast(positions: positions, eventsBySymbol: ["AAA": events],
-                                               years: 5, dripEnabled: false, asOf: date(2025, 1, 1),
-                                               pricesBySymbol: prices)
-        let drip = DividendMath.incomeForecast(positions: positions, eventsBySymbol: ["AAA": events],
-                                               years: 5, dripEnabled: true, asOf: date(2025, 1, 1),
-                                               pricesBySymbol: prices)
+        let cash = DividendMath.incomeForecast(positions: positions, pricesBySymbol: prices,
+                                               eventsBySymbol: ["AAA": events],
+                                               years: 5, dripEnabled: false, asOf: date(2025, 1, 1))
+        let drip = DividendMath.incomeForecast(positions: positions, pricesBySymbol: prices,
+                                               eventsBySymbol: ["AAA": events],
+                                               years: 5, dripEnabled: true, asOf: date(2025, 1, 1))
         XCTAssertEqual(cash.map(\.income), [usd("100"), usd("100"), usd("100"), usd("100"), usd("100")])
         // 100sh @ $1.00/yr = $100 income; reinvested at $100/sh buys 1 share/yr, compounding:
         // 100 -> 101 -> 102.01 -> 103.0301 -> 104.060401
@@ -144,7 +144,7 @@ final class DividendMathForecastTests: XCTestCase {
 
     func test_forecast_nonPayerContributesNothing() {
         let out = DividendMath.incomeForecast(positions: [position("NOPAY", shares: "10", price: "20")],
-                                              eventsBySymbol: [:],
+                                              pricesBySymbol: [:], eventsBySymbol: [:],
                                               years: 2, dripEnabled: true, asOf: date(2025, 1, 1))
         XCTAssertEqual(out.map(\.income), [Money(amount: 0), Money(amount: 0)])
     }
@@ -157,15 +157,16 @@ final class DividendMathForecastTests: XCTestCase {
         let out = DividendMath.incomeForecast(
             positions: [position("AAA", shares: "100", price: "50"),
                         position("BBB", shares: "10", price: "80")],
+            pricesBySymbol: [:],
             eventsBySymbol: ["AAA": a, "BBB": b],
             years: 1, dripEnabled: false, asOf: date(2025, 1, 1))
         XCTAssertEqual(out[0].income, usd("120")) // 100 + 20
     }
 
     func test_forecast_zeroOrNegativeYears_isEmpty() {
-        XCTAssertTrue(DividendMath.incomeForecast(positions: [], eventsBySymbol: [:], years: 0,
+        XCTAssertTrue(DividendMath.incomeForecast(positions: [], pricesBySymbol: [:], eventsBySymbol: [:], years: 0,
                                                   dripEnabled: false, asOf: date(2025, 1, 1)).isEmpty)
-        XCTAssertTrue(DividendMath.incomeForecast(positions: [], eventsBySymbol: [:], years: -3,
+        XCTAssertTrue(DividendMath.incomeForecast(positions: [], pricesBySymbol: [:], eventsBySymbol: [:], years: -3,
                                                   dripEnabled: false, asOf: date(2025, 1, 1)).isEmpty)
     }
 }
