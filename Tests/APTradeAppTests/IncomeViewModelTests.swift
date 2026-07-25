@@ -365,6 +365,19 @@ final class IncomeViewModelTests: XCTestCase {
         await vm.load()
         XCTAssertTrue(vm.calendarMonths.isEmpty)
         XCTAssertTrue(vm.forecast.allSatisfy { $0.income.amount == 0 })
+        // `forecast` is never `[]` here (one zero-`Money` entry per requested year), so
+        // the section view can't gate its chart on `!forecast.isEmpty` — this is the flag
+        // it must read instead (M11.1 Task 12 review finding).
+        XCTAssertFalse(vm.hasForecastIncome)
+    }
+
+    /// The positive counterpart to the empty-ledger case above: a real dividend payer
+    /// must flip `hasForecastIncome` to `true`.
+    @MainActor
+    func test_hasForecastIncome_trueWhenForecastHasIncome() async {
+        let vm = makeSUT(holdings: [("AAA", "100")], events: ["AAA": quarterlyHistory("AAA", "0.50")])
+        await vm.load()
+        XCTAssertTrue(vm.hasForecastIncome)
     }
 
     // MARK: - (j) gap coverage: goal persistence survives a fresh VM (SaveGoalUseCase wiring)

@@ -26,8 +26,13 @@ final class GoalCardTests: XCTestCase {
         XCTAssertEqual(GoalCard.projectionText(nil), tr(.goalNeedsHistory))
     }
 
-    func test_beyondHorizon_rendersBeyondHorizonCopy() {
-        XCTAssertEqual(GoalCard.projectionText(.beyondHorizon), tr(.goalBeyondHorizon))
+    /// The copy is an interpolated format (`"More than %@ yrs..."`), not a hardcoded
+    /// "30" — it must read `GoalMath.horizonYears` so it can't go stale if that constant
+    /// ever moves (M11.1 Task 12 review finding).
+    func test_beyondHorizon_interpolatesGoalMathHorizonYears() {
+        let expected = String(format: tr(.goalBeyondHorizon), String(Int(GoalMath.horizonYears)))
+        XCTAssertEqual(GoalCard.projectionText(.beyondHorizon), expected)
+        XCTAssertTrue(expected.contains(String(Int(GoalMath.horizonYears))))
     }
 
     func test_years_belowTen_roundsToOneDecimal() {

@@ -85,6 +85,16 @@ final class IncomeViewModel: ObservableObject {
     /// `forecast[0]` (`yearOffset` 1) is the trailing-twelve-month rate with no growth
     /// applied — this is also what `incomeGoalProjection`'s `current` is measured against.
     @Published private(set) var forecast: [DividendMath.ForecastYear] = []
+    /// Whether `forecast` holds any actual projected income. `incomeForecast` always
+    /// returns one entry per requested year — even for a portfolio with no dividend
+    /// payers, every entry is just a zero `Money` — so `!forecast.isEmpty` can never
+    /// tell a real curve apart from an all-zero one (M11.1 Task 11 review finding).
+    /// Exposed here (rather than re-derived in the view) so the Presentation layer never
+    /// has to reason about `DividendMath`'s growth/DRIP internals to answer "is there
+    /// data to chart?".
+    var hasForecastIncome: Bool {
+        forecast.contains { $0.income.amount > 0 }
+    }
     @Published private(set) var incomeGoal: PortfolioGoal?
     @Published private(set) var incomeGoalProjection: GoalProjection?
     @Published var horizon: ForecastHorizon = .ten {

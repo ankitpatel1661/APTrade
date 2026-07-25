@@ -46,13 +46,14 @@ struct IncomeSection: View {
             .task { await viewModel.load() }
     }
 
-    /// The DRIP header card (M10.1 Task 8) is now the section's own reachability floor:
-    /// unlike the summary grid/chart/history, it must render even before the user has ever
-    /// received or projected a dividend — someone turning DRIP on ahead of their first
-    /// payout is the common case, not an edge case. So `content` always wraps `dripCard`
-    /// in the same ScrollView, switching only the content BELOW it between the empty state
-    /// and the full ledger — rather than the old all-or-nothing `emptyState`/`list` split,
-    /// which would have hidden the toggle entirely for a brand-new portfolio.
+    /// The DRIP header card (M10.1 Task 8) and the income-goal card (M11.1 Task 12) are
+    /// the section's own reachability floor: unlike the summary grid/chart/history, they
+    /// must render even before the user has ever received or projected a dividend —
+    /// someone turning DRIP on, or setting an income goal, ahead of their first payout is
+    /// the common case, not an edge case. So `content` always wraps both in the same
+    /// ScrollView, switching only the content BELOW them between the empty state and the
+    /// full ledger — rather than the old all-or-nothing `emptyState`/`list` split, which
+    /// would have hidden both entirely for a brand-new portfolio.
     @ViewBuilder
     private var content: some View {
         if viewModel.isLoading && viewModel.cards == nil {
@@ -62,6 +63,7 @@ struct IncomeSection: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     dripCard
+                    incomeGoalCard
                     if isEmptyLedger {
                         emptyState
                     } else {
@@ -80,25 +82,11 @@ struct IncomeSection: View {
         viewModel.history.isEmpty && viewModel.upcoming.isEmpty
     }
 
-    /// `viewModel.forecast` always holds `horizon.rawValue` entries, even for an empty
-    /// portfolio — `DividendMath.incomeForecast` fills every year with a zero `Money`
-    /// rather than returning `[]`, so `!forecast.isEmpty` can never distinguish "no
-    /// income to project" from real data (M11.1 Task 11 review finding). `cards
-    /// .projectedAnnual` is the same trailing-twelve-month sum as `forecast[0].income`
-    /// (both are `DividendMath.projectedAnnualIncome` over the same positions), and every
-    /// later forecast year is either that value grown or still zero — so a zero year 1
-    /// guarantees a zero curve throughout. Comparing it directly avoids re-deriving that
-    /// logic in the view.
-    private var hasForecastData: Bool {
-        (viewModel.cards?.projectedAnnual.amount ?? 0) > 0
-    }
-
     @ViewBuilder
     private var ledger: some View {
         if let cards = viewModel.cards {
             summaryGrid(cards)
         }
-        incomeGoalCard
         if !viewModel.months.isEmpty {
             monthlyChart
         }
@@ -391,19 +379,8 @@ struct IncomeSection: View {
 
     private var forecastCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline) {
-                sectionHeader(tr(.incomeForecast))
-                Spacer()
-                Picker("", selection: $viewModel.horizon) {
-                    ForEach(IncomeViewModel.ForecastHorizon.allCases) { horizon in
-                        Text(horizon.label).tag(horizon)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-            }
-            if hasForecastData {
+            forecastHeader
+            if viewModel.hasForecastIncome {
                 forecastChart
                 Text(tr(.forecastCaption))
                     .font(.system(size: 10))
@@ -419,6 +396,36 @@ struct IncomeSection: View {
         .padding(16)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
+    }
+
+    /// `ViewThatFits` tries the side-by-side layout first (identical appearance to before
+    /// at normal macOS/iPad widths) and only falls back to stacking the picker below the
+    /// title if the row doesn't fit — a low-risk guard against the segmented horizon
+    /// picker clipping at the narrowest iPhone widths, without changing how this looks
+    /// anywhere it already fit.
+    private var forecastHeader: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline) {
+                sectionHeader(tr(.incomeForecast))
+                Spacer()
+                horizonPicker
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                sectionHeader(tr(.incomeForecast))
+                horizonPicker
+            }
+        }
+    }
+
+    private var horizonPicker: some View {
+        Picker("", selection: $viewModel.horizon) {
+            ForEach(IncomeViewModel.ForecastHorizon.allCases) { horizon in
+                Text(horizon.label).tag(horizon)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
     }
 
     /// Area + line, gold-on-brand — matches `AssetDetailView`'s price-chart treatment

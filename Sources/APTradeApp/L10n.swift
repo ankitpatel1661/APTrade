@@ -358,7 +358,7 @@ enum L10n {
         case incomeLastPayment = "Last Payment"
 
         // MARK: Income calendar, forecast, and goal (M11.1 Task 12)
-        case upcomingDividends = "Upcoming Dividends Calendar"
+        case upcomingDividends = "Dividend Calendar"
         case estimatedShort = "est."
         case incomeForecast = "Income Forecast"
         case forecastCaption = "Assumes historical dividend growth continues; DRIP compounding where enabled."
@@ -371,7 +371,7 @@ enum L10n {
         case goalReached = "Goal reached"
         case goalNotOnTrack = "Not on track at current rate"
         case goalNeedsHistory = "Tracking — needs more history"
-        case goalBeyondHorizon = "More than 30 yrs at this rate"
+        case goalBeyondHorizon = "More than %@ yrs at this rate"
         case goalYearsFormat = "About %@ yrs at this rate"
         case noUpcomingDividends = "No dividend payers held yet."
         // MARK: Asset detail (dividends)
@@ -1202,8 +1202,8 @@ enum L10n {
                              .italian: "Ultimo pagamento", .spanish: "Último pago"],
 
         // MARK: Income calendar, forecast, and goal (M11.1 Task 12)
-        .upcomingDividends: [.english: "Upcoming Dividends", .german: "Kommende Dividenden",
-                             .italian: "Prossimi dividendi", .spanish: "Próximos dividendos"],
+        .upcomingDividends: [.english: "Dividend Calendar", .german: "Dividendenkalender",
+                             .italian: "Calendario dei dividendi", .spanish: "Calendario de dividendos"],
         .estimatedShort: [.english: "est.", .german: "ca.", .italian: "stim.", .spanish: "est."],
         .incomeForecast: [.english: "Income Forecast", .german: "Einkommensprognose",
                           .italian: "Previsione di reddito", .spanish: "Previsión de ingresos"],
@@ -1226,16 +1226,16 @@ enum L10n {
                        .italian: "Obiettivo raggiunto", .spanish: "Objetivo alcanzado"],
         .goalNotOnTrack: [.english: "Not on track at current rate",
                           .german: "Beim aktuellen Tempo nicht erreichbar",
-                          .italian: "Non in linea al ritmo attuale",
+                          .italian: "Non in linea con il ritmo attuale",
                           .spanish: "No va por buen camino al ritmo actual"],
         .goalNeedsHistory: [.english: "Tracking — needs more history",
                             .german: "Wird verfolgt – benötigt mehr Verlauf",
                             .italian: "In monitoraggio — serve più storico",
                             .spanish: "En seguimiento: falta historial"],
-        .goalBeyondHorizon: [.english: "More than 30 yrs at this rate",
-                             .german: "Mehr als 30 Jahre bei diesem Tempo",
-                             .italian: "Più di 30 anni a questo ritmo",
-                             .spanish: "Más de 30 años a este ritmo"],
+        .goalBeyondHorizon: [.english: "More than %@ yrs at this rate",
+                             .german: "Mehr als %@ Jahre bei diesem Tempo",
+                             .italian: "Più di %@ anni a questo ritmo",
+                             .spanish: "Más de %@ años a este ritmo"],
         .goalYearsFormat: [.english: "About %@ yrs at this rate",
                            .german: "Etwa %@ Jahre bei diesem Tempo",
                            .italian: "Circa %@ anni a questo ritmo",

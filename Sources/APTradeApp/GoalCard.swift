@@ -103,7 +103,10 @@ struct GoalCard: View {
         case .reached: return tr(.goalReached)
         case .notOnTrack: return tr(.goalNotOnTrack)
         case .insufficientHistory, .none: return tr(.goalNeedsHistory)
-        case .beyondHorizon: return tr(.goalBeyondHorizon)
+        case .beyondHorizon:
+            // Reads `GoalMath.horizonYears` rather than baking "30" into the copy, so the
+            // string can't silently go stale if the constant ever moves.
+            return String(format: tr(.goalBeyondHorizon), String(Int(GoalMath.horizonYears)))
         case let .years(y):
             let rounded = y < 10 ? String(format: "%.1f", y) : String(Int(y.rounded()))
             return String(format: tr(.goalYearsFormat), rounded)
