@@ -265,10 +265,18 @@ enum CompositionRoot {
     /// repository's dividend-events facet for projections.
     static func makeIncomeViewModel() -> IncomeViewModel {
         let repo = makeRepository()
+        // Captured into a local so the `@Sendable` (non-MainActor) `isDripEnabled` closure
+        // below doesn't reference the MainActor-isolated `settingsStore` static property
+        // directly (mirrors `settingsStoreForDrip` in `makeMarketActivityCoordinator`).
+        let settingsStoreForDrip = settingsStore
         return IncomeViewModel(
             fetchPortfolio: FetchPortfolioUseCase(store: portfolioStore),
             fetchQuotes: FetchQuotesUseCase(repository: repo),
-            dividendEventsRepository: sharedDividendEventsRepository
+            dividendEventsRepository: sharedDividendEventsRepository,
+            loadGoals: LoadGoalsUseCase(store: goalStore),
+            saveGoal: SaveGoalUseCase(store: goalStore),
+            removeGoal: RemoveGoalUseCase(store: goalStore),
+            isDripEnabled: { LoadSettingsUseCase(store: settingsStoreForDrip)().dripEnabled }
         )
     }
 

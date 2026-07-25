@@ -54,6 +54,23 @@ final class IncomeViewModel: ObservableObject {
         let wasReinvested: Bool
     }
 
+    /// Forecast chart horizon. Presented as pills (5/10/20/30) — no free slider.
+    enum ForecastHorizon: Int, CaseIterable, Identifiable {
+        case five = 5, ten = 10, twenty = 20, thirty = 30
+        var id: Int { rawValue }
+        var label: String { "\(rawValue)y" }
+    }
+
+    /// One month's worth of upcoming dividend payments. `rows` are `ScheduledDividend`s —
+    /// projections rolled forward from inferred cadence, never announced ex-dates. Task 12
+    /// must render/label these as estimates ("est."), not confirmed payments.
+    struct CalendarMonth: Identifiable, Equatable {
+        let id: String                  // "yyyy-MM"
+        let title: String                // e.g. "August 2026"
+        let rows: [DividendMath.ScheduledDividend]
+        let total: Money
+    }
+
     @Published private(set) var cards: SummaryCards?
     @Published private(set) var months: [MonthBar] = []          // last 12 received + up to 3 projected
     @Published private(set) var upcoming: [UpcomingRow] = []     // sorted by estimatedExDate
@@ -61,23 +78,69 @@ final class IncomeViewModel: ObservableObject {
     @Published private(set) var history: [HistoryEntry] = []     // newest first
     @Published private(set) var isLoading = false
 
+    /// Estimated upcoming payouts grouped by calendar month — see `CalendarMonth`'s doc
+    /// comment: these are projections, never announced dates.
+    @Published private(set) var calendarMonths: [CalendarMonth] = []
+    /// Per-holding-summed annual income, projected `horizon.rawValue` years forward.
+    /// `forecast[0]` (`yearOffset` 1) is the trailing-twelve-month rate with no growth
+    /// applied — this is also what `incomeGoalProjection`'s `current` is measured against.
+    @Published private(set) var forecast: [DividendMath.ForecastYear] = []
+    @Published private(set) var incomeGoal: PortfolioGoal?
+    @Published private(set) var incomeGoalProjection: GoalProjection?
+    @Published var horizon: ForecastHorizon = .ten {
+        didSet { rebuildForecast() }
+    }
+
     private let fetchPortfolio: FetchPortfolioUseCase
     private let fetchQuotes: FetchQuotesUseCase
     private let dividendEventsRepository: DividendEventsRepository
     private let calendar: MarketCalendar
+    private let loadGoals: LoadGoalsUseCase
+    private let saveGoal: SaveGoalUseCase
+    private let removeGoal: RemoveGoalUseCase
+    private let isDripEnabled: @Sendable () -> Bool
     private let now: () -> Date
+
+    /// Inert default for `loadGoals`/`saveGoal`/`removeGoal` so existing construction
+    /// sites (tests predating goals) keep compiling without wiring a real `GoalStore`.
+    /// Mirrors `ResetPortfolioUseCase`'s `goalStore: GoalStore? = nil` rationale — goals
+    /// simply read back empty and writes are discarded until a real store is supplied
+    /// (always the case in production via `CompositionRoot`).
+    private struct NoOpGoalStore: GoalStore {
+        func load() -> [PortfolioGoal] { [] }
+        func save(_ goals: [PortfolioGoal]) {}
+    }
 
     init(fetchPortfolio: FetchPortfolioUseCase,
          fetchQuotes: FetchQuotesUseCase,
          dividendEventsRepository: DividendEventsRepository,
          calendar: MarketCalendar = MarketCalendar(),
+         loadGoals: LoadGoalsUseCase = LoadGoalsUseCase(store: NoOpGoalStore()),
+         saveGoal: SaveGoalUseCase = SaveGoalUseCase(store: NoOpGoalStore()),
+         removeGoal: RemoveGoalUseCase = RemoveGoalUseCase(store: NoOpGoalStore()),
+         isDripEnabled: @escaping @Sendable () -> Bool = { false },
          now: @escaping () -> Date = Date.init) {
         self.fetchPortfolio = fetchPortfolio
         self.fetchQuotes = fetchQuotes
         self.dividendEventsRepository = dividendEventsRepository
         self.calendar = calendar
+        self.loadGoals = loadGoals
+        self.saveGoal = saveGoal
+        self.removeGoal = removeGoal
+        self.isDripEnabled = isDripEnabled
         self.now = now
     }
+
+    /// Cached inputs the forecast rebuild needs (populated during `load()`), so changing
+    /// `horizon` can recompute the forecast without a full reload.
+    private var lastPositions: [Position] = []
+    private var lastEventsBySymbol: [String: [DividendEvent]] = [:]
+    /// Quotes fetched during the last `load()`, mapped to `[symbol: price]`. Passed to
+    /// `DividendMath.incomeForecast` so DRIP reinvestment compounds at the real quoted
+    /// price rather than silently falling back to cost basis for every symbol (that
+    /// fallback is `incomeForecast`'s own internal behavior for a symbol truly missing a
+    /// quote — it must not become the behavior for every symbol via an omitted argument).
+    private var lastPricesBySymbol: [String: Money] = [:]
 
     func load() async {
         isLoading = true
@@ -123,6 +186,104 @@ final class IncomeViewModel: ObservableObject {
         holdings = Self.buildHoldings(positions: nonCryptoPositions, eventsBySymbol: eventsBySymbol,
                                       transactions: transactions, asOf: asOf)
             .sorted { $0.annualIncome.amount > $1.annualIncome.amount }
+
+        lastPositions = portfolio.positions
+        lastEventsBySymbol = eventsBySymbol
+        lastPricesBySymbol = quotes.mapValues(\.price)
+        calendarMonths = Self.buildCalendar(positions: portfolio.positions,
+                                            eventsBySymbol: eventsBySymbol,
+                                            now: asOf)
+        incomeGoal = loadGoals().first { $0.kind == .income }
+        rebuildForecast()
+    }
+
+    // MARK: - Forecast & income goal
+
+    private func rebuildForecast() {
+        forecast = DividendMath.incomeForecast(positions: lastPositions,
+                                               eventsBySymbol: lastEventsBySymbol,
+                                               years: horizon.rawValue,
+                                               dripEnabled: isDripEnabled(),
+                                               asOf: now(),
+                                               pricesBySymbol: lastPricesBySymbol)
+        refreshGoalProjection()
+    }
+
+    private func refreshGoalProjection() {
+        guard let goal = incomeGoal else { incomeGoalProjection = nil; return }
+        // Always project against a full-horizon curve — independent of the chart's
+        // `horizon` pill selection — so the goal's ETA doesn't change when the user
+        // flips between 5y/10y/20y/30y views. Exactly `GoalMath.horizonYears` long, so an
+        // unreachable goal (`.notOnTrack`) is never mistaken for one reached beyond the
+        // horizon (`.beyondHorizon`) due to a truncated forecast.
+        let full = DividendMath.incomeForecast(positions: lastPositions,
+                                               eventsBySymbol: lastEventsBySymbol,
+                                               years: Int(GoalMath.horizonYears),
+                                               dripEnabled: isDripEnabled(),
+                                               asOf: now(),
+                                               pricesBySymbol: lastPricesBySymbol)
+        // Trailing-twelve-month rate, no growth — the SAME measure as `forecast`'s
+        // `yearOffset == 1` entry (both are `DividendMath.projectedAnnualIncome`'s sum of
+        // `trailingAnnualPerShare` × shares), so the goal's progress % and ETA agree with
+        // what the forecast chart shows for year 1.
+        let current = DividendMath.projectedAnnualIncome(positions: lastPositions,
+                                                         eventsBySymbol: lastEventsBySymbol,
+                                                         asOf: now())
+        incomeGoalProjection = GoalMath.incomeProjection(current: current,
+                                                         target: goal.target,
+                                                         forecast: full)
+    }
+
+    func setIncomeGoal(_ target: Money) {
+        let goal = PortfolioGoal(kind: .income, target: target, createdAt: now())
+        saveGoal(goal)
+        incomeGoal = goal
+        refreshGoalProjection()
+    }
+
+    func removeIncomeGoal() {
+        removeGoal(kind: .income)
+        incomeGoal = nil
+        incomeGoalProjection = nil
+    }
+
+    // MARK: - Calendar
+
+    /// Groups estimated payouts (`DividendMath.projectedSchedule`) over the next twelve
+    /// months into `CalendarMonth`s, ascending by month.
+    private static func buildCalendar(positions: [Position],
+                                      eventsBySymbol: [String: [DividendEvent]],
+                                      now: Date) -> [CalendarMonth] {
+        let horizon = now.addingTimeInterval(365 * 86_400)
+        let scheduled = DividendMath.projectedSchedule(positions: positions,
+                                                       eventsBySymbol: eventsBySymbol,
+                                                       through: horizon, asOf: now)
+        guard !scheduled.isEmpty else { return [] }
+
+        let keyFormatter = DateFormatter()
+        keyFormatter.calendar = Calendar(identifier: .gregorian)
+        keyFormatter.timeZone = TimeZone.gmt
+        keyFormatter.dateFormat = "yyyy-MM"
+        let titleFormatter = DateFormatter()
+        titleFormatter.calendar = Calendar(identifier: .gregorian)
+        titleFormatter.timeZone = TimeZone.gmt
+        titleFormatter.setLocalizedDateFormatFromTemplate("MMMM yyyy")
+
+        var order: [String] = []
+        var grouped: [String: [DividendMath.ScheduledDividend]] = [:]
+        for row in scheduled {
+            let key = keyFormatter.string(from: row.exDate)
+            if grouped[key] == nil { order.append(key) }
+            grouped[key, default: []].append(row)
+        }
+        return order.map { key in
+            let rows = grouped[key] ?? []
+            let total = rows.reduce(Decimal(0)) { $0 + $1.estimatedAmount.amount }
+            return CalendarMonth(id: key,
+                                 title: titleFormatter.string(from: rows[0].exDate),
+                                 rows: rows,
+                                 total: Money(amount: total))
+        }
     }
 
     // MARK: - History

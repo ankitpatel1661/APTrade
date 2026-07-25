@@ -19,6 +19,13 @@ private final class FakeMarketDataRepository: MarketDataRepository, @unchecked S
     func history(for symbol: String, timeframe: Timeframe) async throws -> [PricePoint] { [] }
 }
 
+private final class InMemoryGoalStore: GoalStore, @unchecked Sendable {
+    private var goals: [PortfolioGoal]
+    init(_ goals: [PortfolioGoal] = []) { self.goals = goals }
+    func load() -> [PortfolioGoal] { goals }
+    func save(_ goals: [PortfolioGoal]) { self.goals = goals }
+}
+
 /// Returns fixed events per symbol; a symbol mapped to `nil` throws (simulates a
 /// per-symbol event-fetch failure without blocking other symbols).
 private final class FakeDividendEventsRepository: DividendEventsRepository, @unchecked Sendable {
@@ -54,6 +61,8 @@ final class IncomeViewModelTests: XCTestCase {
 
     private func makeVM(portfolio: Portfolio, quotes: [String: Quote] = [:],
                        events: [String: [DividendEvent]?] = [:],
+                       goalStore: GoalStore = InMemoryGoalStore(),
+                       dripEnabled: Bool = false,
                        now: Date? = nil) -> (IncomeViewModel, FakeDividendEventsRepository) {
         let store = MemoryPortfolioStore(portfolio)
         let market = FakeMarketDataRepository()
@@ -65,9 +74,41 @@ final class IncomeViewModelTests: XCTestCase {
             fetchPortfolio: FetchPortfolioUseCase(store: store),
             fetchQuotes: FetchQuotesUseCase(repository: market),
             dividendEventsRepository: eventsRepo,
+            loadGoals: LoadGoalsUseCase(store: goalStore),
+            saveGoal: SaveGoalUseCase(store: goalStore),
+            removeGoal: RemoveGoalUseCase(store: goalStore),
+            isDripEnabled: { dripEnabled },
             now: { fixed }
         )
         return (vm, eventsRepo)
+    }
+
+    /// Builds a VM over a portfolio holding `holdings` (symbol, share-quantity pairs, each
+    /// bought at a $50 cost basis on 2020-01-05) with the given dividend-event fixtures.
+    /// Adapts the plan's `makeSUT(holdings:events:)` shape onto this file's existing
+    /// `makeVM` construction helper.
+    private func makeSUT(holdings: [(String, String)], events: [String: [DividendEvent]],
+                        quotes: [String: Quote] = [:], dripEnabled: Bool = false,
+                        goalStore: GoalStore = InMemoryGoalStore(),
+                        now: Date? = nil) -> IncomeViewModel {
+        var portfolio = Portfolio.starting(cash: usd("1000000"))
+        for (symbol, shares) in holdings {
+            portfolio = try! portfolio.buying(Asset(symbol: symbol, name: symbol, kind: .stock),
+                                              quantity: qty(shares), at: usd("50"), on: utc(2020, 1, 5))
+        }
+        let (vm, _) = makeVM(portfolio: portfolio, quotes: quotes,
+                            events: events.mapValues { $0 as [DividendEvent]? },
+                            goalStore: goalStore, dripEnabled: dripEnabled, now: now)
+        return vm
+    }
+
+    private func quarterlyHistory(_ symbol: String, _ amount: String) -> [DividendEvent] {
+        // Recent enough to fall inside `trailingAnnualPerShare`'s 365-day window relative
+        // to `fixedNow` (2026-07-20) — a forecast/goal test needs a nonzero year-1 rate,
+        // unlike a cadence-only test which would tolerate any historical dates.
+        [utc(2025, 8, 14), utc(2025, 11, 14), utc(2026, 2, 14), utc(2026, 5, 14)].map {
+            DividendEvent(symbol: symbol, exDate: $0, amountPerShare: Money(amount: Decimal(string: amount) ?? 0))
+        }
     }
 
     // MARK: - (a) cards computed from ledger + events fixture (exact Money math)
@@ -263,5 +304,140 @@ final class IncomeViewModelTests: XCTestCase {
         // projectedAnnual degrades to zero for the failed symbol — never blocks the rest.
         XCTAssertEqual(vm.cards?.projectedAnnual, usd("0"))
         XCTAssertEqual(eventsRepo.requestedSymbols, ["KO"])
+    }
+
+    // MARK: - (f) calendar built from projected schedule
+
+    @MainActor
+    func test_load_buildsCalendarMonthsFromProjectedSchedule() async {
+        let vm = makeSUT(holdings: [("AAA", "100")], events: ["AAA": quarterlyHistory("AAA", "0.50")])
+        await vm.load()
+        XCTAssertFalse(vm.calendarMonths.isEmpty)
+        XCTAssertTrue(vm.calendarMonths.allSatisfy { !$0.rows.isEmpty })
+        let totals = vm.calendarMonths.map(\.total.amount)
+        XCTAssertTrue(totals.allSatisfy { $0 > 0 })
+    }
+
+    // MARK: - (g) forecast horizon
+
+    @MainActor
+    func test_load_defaultHorizonIsTenYears() async {
+        let vm = makeSUT(holdings: [("AAA", "100")], events: ["AAA": quarterlyHistory("AAA", "0.50")])
+        await vm.load()
+        XCTAssertEqual(vm.horizon, .ten)
+        XCTAssertEqual(vm.forecast.count, 10)
+    }
+
+    @MainActor
+    func test_changingHorizon_rebuildsForecastLength() async {
+        let vm = makeSUT(holdings: [("AAA", "100")], events: ["AAA": quarterlyHistory("AAA", "0.50")])
+        await vm.load()
+        vm.horizon = .thirty
+        XCTAssertEqual(vm.forecast.count, 30)
+    }
+
+    // MARK: - (h) income goal set/remove
+
+    @MainActor
+    func test_setIncomeGoal_persistsAndProjects() async {
+        let vm = makeSUT(holdings: [("AAA", "100")], events: ["AAA": quarterlyHistory("AAA", "0.50")])
+        await vm.load()
+        vm.setIncomeGoal(Money(amount: 5_000))
+        XCTAssertEqual(vm.incomeGoal?.target, Money(amount: 5_000))
+        XCTAssertNotNil(vm.incomeGoalProjection)
+    }
+
+    @MainActor
+    func test_removeIncomeGoal_clearsGoalAndProjection() async {
+        let vm = makeSUT(holdings: [("AAA", "100")], events: ["AAA": quarterlyHistory("AAA", "0.50")])
+        await vm.load()
+        vm.setIncomeGoal(Money(amount: 5_000))
+        vm.removeIncomeGoal()
+        XCTAssertNil(vm.incomeGoal)
+        XCTAssertNil(vm.incomeGoalProjection)
+    }
+
+    // MARK: - (i) degenerate: empty ledger
+
+    @MainActor
+    func test_load_emptyLedger_hasNoCalendarOrForecast() async {
+        let vm = makeSUT(holdings: [], events: [:])
+        await vm.load()
+        XCTAssertTrue(vm.calendarMonths.isEmpty)
+        XCTAssertTrue(vm.forecast.allSatisfy { $0.income.amount == 0 })
+    }
+
+    // MARK: - (j) gap coverage: goal persistence survives a fresh VM (SaveGoalUseCase wiring)
+
+    /// The brief's own goal tests only check state on the SAME `vm` instance, which would
+    /// still pass even if `setIncomeGoal` forgot to call `saveGoal` at all (the in-memory
+    /// `@Published` write alone would satisfy them). Reload through a second VM sharing the
+    /// same `GoalStore` to prove the goal was actually persisted, not just held in memory.
+    @MainActor
+    func test_setIncomeGoal_persistsToStore_survivesFreshViewModel() async {
+        let goalStore = InMemoryGoalStore()
+        let vm1 = makeSUT(holdings: [("AAA", "100")], events: ["AAA": quarterlyHistory("AAA", "0.50")],
+                          goalStore: goalStore)
+        await vm1.load()
+        vm1.setIncomeGoal(Money(amount: 5_000))
+
+        let vm2 = makeSUT(holdings: [("AAA", "100")], events: ["AAA": quarterlyHistory("AAA", "0.50")],
+                          goalStore: goalStore)
+        await vm2.load()
+        XCTAssertEqual(vm2.incomeGoal?.target, Money(amount: 5_000))
+    }
+
+    // MARK: - (k) gap coverage: current for the income goal matches forecast's yearOffset == 1
+
+    /// Carried constraint 2: the income goal's `current` must be measured the same way as
+    /// `forecast`'s `yearOffset == 1` entry, or the progress bar and the forecast chart
+    /// beside it would disagree. Verified by using a target exactly equal to what year 1's
+    /// income should be — this must read as `.reached`, not `.notOnTrack`/`.years`, which
+    /// would only happen if `current` came from a differently defined measure (e.g. a
+    /// growth-adjusted or yield-based figure instead of the flat trailing-12mo rate).
+    @MainActor
+    func test_incomeGoalProjection_currentMatchesForecastYearOneIncome() async {
+        let events = quarterlyHistory("AAA", "0.50")   // trailing 365d: 4 × 0.50 = 2.00/share
+        let vm = makeSUT(holdings: [("AAA", "100")], events: ["AAA": events])
+        await vm.load()
+
+        // year 1 income = 100 shares × 2.00/share = 200, exactly.
+        XCTAssertEqual(vm.forecast.first { $0.yearOffset == 1 }?.income, Money(amount: 200))
+
+        vm.setIncomeGoal(Money(amount: 200))
+        XCTAssertEqual(vm.incomeGoalProjection, .reached,
+                       "current must equal the trailing-12mo rate (year 1), matching the forecast chart")
+    }
+
+    // MARK: - (l) gap coverage: carried constraint 1 — pricesBySymbol must reach incomeForecast
+
+    /// Carried constraint 1: dropping `pricesBySymbol` silently reverts DRIP reinvestment
+    /// to the cost-basis fallback, overstating a long-horizon forecast for any holding that
+    /// has appreciated. This holding was bought at $50 and now quotes at $100 — reinvesting
+    /// at the real (higher) price buys fewer shares each year than reinvesting at the
+    /// (lower) cost basis, so a correct year-30 forecast must be STRICTLY LOWER than the
+    /// cost-basis-fallback figure `DividendMath.incomeForecast` produces when
+    /// `pricesBySymbol` is omitted entirely. If the view model forgot to pass
+    /// `pricesBySymbol`, the two values below would be equal, and this assertion would fail.
+    @MainActor
+    func test_forecast_dripReinvestsAtQuotedPrice_notCostBasis() async throws {
+        var portfolio = Portfolio.starting(cash: usd("10000"))
+        portfolio = try portfolio.buying(Asset(symbol: "AAA", name: "AAA Corp", kind: .stock),
+                                         quantity: qty("100"), at: usd("50"), on: utc(2020, 1, 5))
+        let events = quarterlyHistory("AAA", "0.50")
+        let quote = Quote(symbol: "AAA", price: usd("100"), previousClose: usd("99"))
+
+        let (vm, _) = makeVM(portfolio: portfolio, quotes: ["AAA": quote],
+                            events: ["AAA": events], dripEnabled: true)
+        await vm.load()
+        vm.horizon = .thirty
+
+        let costBasisFallback = DividendMath.incomeForecast(positions: portfolio.positions,
+                                                            eventsBySymbol: ["AAA": events],
+                                                            years: 30, dripEnabled: true, asOf: fixedNow)
+
+        let realPriceYear30 = vm.forecast.last?.income.amount ?? 0
+        let fallbackYear30 = costBasisFallback.last?.income.amount ?? 0
+        XCTAssertLessThan(realPriceYear30, fallbackYear30)
     }
 }
