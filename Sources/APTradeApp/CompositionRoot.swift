@@ -210,7 +210,8 @@ enum CompositionRoot {
                                                       store: portfolioStore),
             loadGoals: LoadGoalsUseCase(store: goalStore),
             saveGoal: SaveGoalUseCase(store: goalStore),
-            removeGoal: RemoveGoalUseCase(store: goalStore))
+            removeGoal: RemoveGoalUseCase(store: goalStore),
+            fetchPortfolio: FetchPortfolioUseCase(store: portfolioStore))
     }
 
     static func makeCommandPaletteViewModel() -> CommandPaletteViewModel {

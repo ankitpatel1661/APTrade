@@ -27,6 +27,7 @@ final class PerformanceViewModel {
     private let loadGoals: LoadGoalsUseCase
     private let saveGoal: SaveGoalUseCase
     private let removeGoal: RemoveGoalUseCase
+    private let fetchPortfolio: FetchPortfolioUseCase
     private let now: () -> Date
     private var loadTask: Task<Void, Never>?
 
@@ -40,15 +41,26 @@ final class PerformanceViewModel {
         func save(_ goals: [PortfolioGoal]) {}
     }
 
+    /// Inert default for `fetchPortfolio` — same rationale as `NoOpGoalStore`: existing
+    /// construction sites that predate the all-cash fix keep compiling, reading back a
+    /// fresh `.starting()` portfolio until a real `PortfolioStore` is supplied (always the
+    /// case in production via `CompositionRoot`).
+    private struct NoOpPortfolioStore: PortfolioStore {
+        func load() -> Portfolio { .starting() }
+        func save(_ portfolio: Portfolio) {}
+    }
+
     init(compute: ComputePerformanceMetricsUseCase,
          loadGoals: LoadGoalsUseCase = LoadGoalsUseCase(store: NoOpGoalStore()),
          saveGoal: SaveGoalUseCase = SaveGoalUseCase(store: NoOpGoalStore()),
          removeGoal: RemoveGoalUseCase = RemoveGoalUseCase(store: NoOpGoalStore()),
+         fetchPortfolio: FetchPortfolioUseCase = FetchPortfolioUseCase(store: NoOpPortfolioStore()),
          now: @escaping () -> Date = Date.init) {
         self.compute = compute
         self.loadGoals = loadGoals
         self.saveGoal = saveGoal
         self.removeGoal = removeGoal
+        self.fetchPortfolio = fetchPortfolio
         self.now = now
     }
 
@@ -68,11 +80,23 @@ final class PerformanceViewModel {
         state = report.isEmpty ? .empty : .loaded(report)
         // `PerformanceReport` has no dedicated "current value" field — the equity curve's
         // last point *is* the current total account value (cash + holdings), so read it
-        // from there rather than adding a second data path. An all-cash/thin-history
-        // portfolio (report.isEmpty, or too few priced days) leaves the curve empty and
-        // `currentValue` at its zero default.
+        // from there rather than adding a second data path. `ComputePerformanceMetricsUseCase`
+        // returns an empty report (and hence an empty curve) in two distinct situations:
+        //   1. Genuinely all-cash (`portfolio.positions.isEmpty`) — durable, not transient.
+        //      Here "current value" is simply the cash balance, read through
+        //      `FetchPortfolioUseCase` (never a raw store) so a value-goal card is usable
+        //      from day one, before the first trade.
+        //   2. Positions exist but their priced history is too thin (`equity.count <= 1`)
+        //      — transient (the first day or two of a new position). Fixing that would mean
+        //      changing `ComputePerformanceMetricsUseCase`'s behavior for every consumer, so
+        //      it's out of scope here: `currentValue` keeps its old zero fallback in that case.
         equityCurve = report.equityCurve
-        currentValue = report.equityCurve.last?.value ?? Money(amount: 0)
+        if let last = report.equityCurve.last {
+            currentValue = last.value
+        } else {
+            let portfolio = fetchPortfolio()
+            currentValue = portfolio.positions.isEmpty ? portfolio.cash : Money(amount: 0)
+        }
         valueGoal = loadGoals().first { $0.kind == .value }
         refreshValueProjection()
     }

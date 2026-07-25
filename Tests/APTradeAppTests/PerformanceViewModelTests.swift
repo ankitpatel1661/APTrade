@@ -36,19 +36,29 @@ final class PerformanceViewModelTests: XCTestCase {
             repository: RisingRepo(), store: MemoryStore(portfolio)))
     }
 
-    /// A holding portfolio (so `load()` reaches `.loaded`, populating the equity curve the
-    /// value-goal projection reads) wired to a caller-supplied `GoalStore`.
-    private func makeSUT(goalStore: GoalStore = InMemoryGoalStore(),
+    /// Wires a `PerformanceViewModel` over `portfolio` (defaulting to a holding portfolio,
+    /// so `load()` reaches `.loaded` and populates the equity curve the value-goal
+    /// projection reads) and a caller-supplied `GoalStore`. `compute` and `fetchPortfolio`
+    /// share the same underlying `MemoryStore` instance so both read the same portfolio.
+    private func makeSUT(portfolio: Portfolio? = nil,
+                         goalStore: GoalStore = InMemoryGoalStore(),
                          now: Date = Date(timeIntervalSince1970: 1_000_000)) -> PerformanceViewModel {
-        let aapl = Asset(symbol: "AAPL", name: "Apple", kind: .stock)
-        let portfolio = try! Portfolio.starting()
-            .buying(aapl, quantity: Quantity(Decimal(10)), at: Money(amount: 100),
-                    on: Date(timeIntervalSince1970: 0))
+        let resolvedPortfolio: Portfolio
+        if let portfolio {
+            resolvedPortfolio = portfolio
+        } else {
+            let aapl = Asset(symbol: "AAPL", name: "Apple", kind: .stock)
+            resolvedPortfolio = try! Portfolio.starting()
+                .buying(aapl, quantity: Quantity(Decimal(10)), at: Money(amount: 100),
+                        on: Date(timeIntervalSince1970: 0))
+        }
+        let store = MemoryStore(resolvedPortfolio)
         return PerformanceViewModel(
-            compute: ComputePerformanceMetricsUseCase(repository: RisingRepo(), store: MemoryStore(portfolio)),
+            compute: ComputePerformanceMetricsUseCase(repository: RisingRepo(), store: store),
             loadGoals: LoadGoalsUseCase(store: goalStore),
             saveGoal: SaveGoalUseCase(store: goalStore),
             removeGoal: RemoveGoalUseCase(store: goalStore),
+            fetchPortfolio: FetchPortfolioUseCase(store: store),
             now: { now })
     }
 
@@ -116,5 +126,24 @@ final class PerformanceViewModelTests: XCTestCase {
         await vm.load()
         vm.setValueGoal(Money(amount: 500_000))
         XCTAssertEqual(Set(goalStore.load().map(\.kind)), [.value, .income])
+    }
+
+    /// Fix-round: an all-cash portfolio (no positions at all) makes
+    /// `ComputePerformanceMetricsUseCase` return `.empty` before any equity curve is ever
+    /// built — `report.equityCurve` is `[]`. Without reading the portfolio's cash balance
+    /// as a fallback, `currentValue` would stay stuck at its zero default and the card would
+    /// be unreachable (or always read "$0") for a brand-new user who deposited but never
+    /// traded. Asserts a *specific* `GoalProjection` case (`.insufficientHistory` — a
+    /// non-positive-target-free, current-below-target goal against an empty curve) rather
+    /// than merely non-nil, since the empty curve makes that the only reachable case here.
+    @MainActor
+    func test_load_allCashPortfolio_exposesCashAsCurrentValueWithProjection() async {
+        let goalStore = InMemoryGoalStore([PortfolioGoal(kind: .value, target: Money(amount: 500_000),
+                                                         createdAt: Date(timeIntervalSince1970: 1))])
+        let vm = makeSUT(portfolio: .starting(cash: Money(amount: 300_000)), goalStore: goalStore)
+        await vm.load()
+        XCTAssertEqual(vm.state, .empty)
+        XCTAssertEqual(vm.currentValue, Money(amount: 300_000))
+        XCTAssertEqual(vm.valueGoalProjection, .insufficientHistory)
     }
 }

@@ -9,17 +9,59 @@ struct PerformanceSection: View {
     @Bindable var viewModel: PerformanceViewModel
 
     var body: some View {
-        Group {
-            switch viewModel.state {
-            case .idle, .loading:
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-            case .empty:
-                emptyState
-            case .loaded(let report):
-                loaded(report)
+        content
+            .task { await viewModel.onAppear() }
+    }
+
+    /// The value-goal card (M11.1 Task 13) is the section's own reachability floor: unlike
+    /// the metric grid/chart/diversification, it must render even before the user holds a
+    /// single position — someone who has only deposited cash setting a value goal ahead of
+    /// their first trade is the common case, not an edge case. Mirrors `IncomeSection`'s
+    /// `content` (`IncomeSection.swift:57-77`): the goal card sits in the same ScrollView
+    /// always, switching only the report portion BELOW it between the loading/empty/loaded
+    /// states — rather than the old all-or-nothing `emptyState`/`loaded` split, which hid
+    /// the card entirely for an all-cash portfolio.
+    @ViewBuilder
+    private var content: some View {
+        switch viewModel.state {
+        case .idle, .loading:
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .empty, .loaded:
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    goalCard
+                    reportBody
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 16)
             }
         }
-        .task { await viewModel.onAppear() }
+    }
+
+    private var goalCard: some View {
+        GoalCard(title: tr(.valueGoal),
+                 current: viewModel.currentValue,
+                 goal: viewModel.valueGoal,
+                 projection: viewModel.valueGoalProjection,
+                 onSet: { viewModel.setValueGoal($0) },
+                 onRemove: { viewModel.removeValueGoal() })
+    }
+
+    @ViewBuilder
+    private var reportBody: some View {
+        if case .loaded(let report) = viewModel.state {
+            metricGrid(report.metrics)
+            benchmarkPicker
+            if !report.benchmarkCurve.isEmpty {
+                overlayChart(report)
+            } else {
+                Text(tr(.benchmarkUnavailable))
+                    .font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
+            }
+            diversification(report)
+        } else {
+            emptyState
+        }
     }
 
     private var emptyState: some View {
@@ -31,31 +73,8 @@ struct PerformanceSection: View {
             Text(tr(.addHoldingsForAnalytics))
                 .font(.system(size: 13)).foregroundStyle(Theme.textSecondary)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func loaded(_ report: PerformanceReport) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                metricGrid(report.metrics)
-                GoalCard(title: tr(.valueGoal),
-                         current: viewModel.currentValue,
-                         goal: viewModel.valueGoal,
-                         projection: viewModel.valueGoalProjection,
-                         onSet: { viewModel.setValueGoal($0) },
-                         onRemove: { viewModel.removeValueGoal() })
-                benchmarkPicker
-                if !report.benchmarkCurve.isEmpty {
-                    overlayChart(report)
-                } else {
-                    Text(tr(.benchmarkUnavailable))
-                        .font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
-                }
-                diversification(report)
-            }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 16)
-        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 60)
     }
 
     // MARK: Metric cards
