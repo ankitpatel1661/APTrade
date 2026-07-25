@@ -22,11 +22,34 @@ private final class RisingRepo: MarketDataRepository, @unchecked Sendable {
     }
 }
 
+private final class InMemoryGoalStore: GoalStore, @unchecked Sendable {
+    private var goals: [PortfolioGoal]
+    init(_ goals: [PortfolioGoal] = []) { self.goals = goals }
+    func load() -> [PortfolioGoal] { goals }
+    func save(_ goals: [PortfolioGoal]) { self.goals = goals }
+}
+
 @MainActor
 final class PerformanceViewModelTests: XCTestCase {
     private func vm(_ portfolio: Portfolio) -> PerformanceViewModel {
         PerformanceViewModel(compute: ComputePerformanceMetricsUseCase(
             repository: RisingRepo(), store: MemoryStore(portfolio)))
+    }
+
+    /// A holding portfolio (so `load()` reaches `.loaded`, populating the equity curve the
+    /// value-goal projection reads) wired to a caller-supplied `GoalStore`.
+    private func makeSUT(goalStore: GoalStore = InMemoryGoalStore(),
+                         now: Date = Date(timeIntervalSince1970: 1_000_000)) -> PerformanceViewModel {
+        let aapl = Asset(symbol: "AAPL", name: "Apple", kind: .stock)
+        let portfolio = try! Portfolio.starting()
+            .buying(aapl, quantity: Quantity(Decimal(10)), at: Money(amount: 100),
+                    on: Date(timeIntervalSince1970: 0))
+        return PerformanceViewModel(
+            compute: ComputePerformanceMetricsUseCase(repository: RisingRepo(), store: MemoryStore(portfolio)),
+            loadGoals: LoadGoalsUseCase(store: goalStore),
+            saveGoal: SaveGoalUseCase(store: goalStore),
+            removeGoal: RemoveGoalUseCase(store: goalStore),
+            now: { now })
     }
 
     func test_load_withHoldings_entersLoaded() async {
@@ -48,5 +71,50 @@ final class PerformanceViewModelTests: XCTestCase {
 
     func test_defaultBenchmarkIsSPY() {
         XCTAssertEqual(vm(.starting()).benchmark, "SPY")
+    }
+
+    // MARK: - Value goal (Task 13)
+
+    @MainActor
+    func test_load_readsPersistedValueGoal() async {
+        let goalStore = InMemoryGoalStore([PortfolioGoal(kind: .value, target: Money(amount: 250_000),
+                                                         createdAt: Date(timeIntervalSince1970: 1))])
+        let vm = makeSUT(goalStore: goalStore)
+        await vm.load()
+        XCTAssertEqual(vm.valueGoal?.target, Money(amount: 250_000))
+        XCTAssertNotNil(vm.valueGoalProjection)
+    }
+
+    @MainActor
+    func test_setValueGoal_persistsAndProjects() async {
+        let goalStore = InMemoryGoalStore()
+        let vm = makeSUT(goalStore: goalStore)
+        await vm.load()
+        vm.setValueGoal(Money(amount: 500_000))
+        XCTAssertEqual(vm.valueGoal?.target, Money(amount: 500_000))
+        XCTAssertEqual(goalStore.load().count, 1)
+        XCTAssertNotNil(vm.valueGoalProjection)
+    }
+
+    @MainActor
+    func test_removeValueGoal_clearsStateAndStore() async {
+        let goalStore = InMemoryGoalStore([PortfolioGoal(kind: .value, target: Money(amount: 250_000),
+                                                         createdAt: Date(timeIntervalSince1970: 1))])
+        let vm = makeSUT(goalStore: goalStore)
+        await vm.load()
+        vm.removeValueGoal()
+        XCTAssertNil(vm.valueGoal)
+        XCTAssertNil(vm.valueGoalProjection)
+        XCTAssertTrue(goalStore.load().isEmpty)
+    }
+
+    @MainActor
+    func test_setValueGoal_doesNotDisturbIncomeGoal() async {
+        let goalStore = InMemoryGoalStore([PortfolioGoal(kind: .income, target: Money(amount: 5_000),
+                                                         createdAt: Date(timeIntervalSince1970: 1))])
+        let vm = makeSUT(goalStore: goalStore)
+        await vm.load()
+        vm.setValueGoal(Money(amount: 500_000))
+        XCTAssertEqual(Set(goalStore.load().map(\.kind)), [.value, .income])
     }
 }

@@ -207,7 +207,10 @@ enum CompositionRoot {
     static func makePerformanceViewModel() -> PerformanceViewModel {
         PerformanceViewModel(
             compute: ComputePerformanceMetricsUseCase(repository: makeRepository(),
-                                                      store: portfolioStore))
+                                                      store: portfolioStore),
+            loadGoals: LoadGoalsUseCase(store: goalStore),
+            saveGoal: SaveGoalUseCase(store: goalStore),
+            removeGoal: RemoveGoalUseCase(store: goalStore))
     }
 
     static func makeCommandPaletteViewModel() -> CommandPaletteViewModel {

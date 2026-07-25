@@ -38,6 +38,12 @@ struct PerformanceSection: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 metricGrid(report.metrics)
+                GoalCard(title: tr(.valueGoal),
+                         current: viewModel.currentValue,
+                         goal: viewModel.valueGoal,
+                         projection: viewModel.valueGoalProjection,
+                         onSet: { viewModel.setValueGoal($0) },
+                         onRemove: { viewModel.removeValueGoal() })
                 benchmarkPicker
                 if !report.benchmarkCurve.isEmpty {
                     overlayChart(report)
