@@ -10,6 +10,9 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-25-goals-income-depth-design.md` (approved 2026-07-25).
 
+> ⚠️ **This plan shipped. The as-built on `main` at `6faac85` supersedes this document where they differ.** During execution, five points below were escalated to the user, who ruled against the plan text as written; the final whole-branch review then caught a further set of defects the per-task reviews couldn't see because they lived *between* tasks. The shipped code follows the user's rulings and the review, not the plan. Corrected points are marked **[SUPERSEDED — …]**, **[CORRECTED — …]**, or **[ADDED — …]** inline, below.
+> **Before writing or executing M11.2 (the Kotlin port), read `docs/superpowers/specs/2026-07-25-m11-carry-notes.md` first.** It is the authoritative record of every correction, with reasoning and as-built values. Where it and this plan disagree, the carry-notes win. See also "Post-execution: what this plan got wrong" at the end of this document.
+
 ## Global Constraints
 
 - **No paid APIs or new dependencies.** Only data already fetched (Yahoo quotes/history/dividend events via the shared core) may be used.
@@ -125,6 +128,14 @@ In `Sources/APTradeDomain/Portfolio.swift`, replace the property block, initiali
     public let transactions: [Transaction]
     /// The cash the portfolio opened with. Recorded so performance baselines and the
     /// reset flow never assume a fixed amount. Defaults to the opening cash.
+    /// **[SUPERSEDED — see carry-notes §2.1.]** This rationale is false. Neither consumer
+    /// exists: the reset flow reads `AppSettings.defaultStartingCash` (Task 2), and
+    /// total-return derives from the equity curve's own first point. A repo grep at
+    /// ship found only this field's own initializer and decoder — `startingCash` has
+    /// no reader anywhere in the app. M11.2 must decide before porting: either give it
+    /// a real consumer (a "since inception" return on the Performance grid is the
+    /// obvious one) or drop it from the Kotlin plan entirely rather than porting dead
+    /// persisted state with this comment's rationale attached.
     public let startingCash: Money
 
     public init(cash: Money, positions: [Position] = [], transactions: [Transaction] = [],
@@ -270,6 +281,9 @@ Append to `Tests/APTradeApplicationTests/PortfolioUseCasesTests.swift` (inside t
 
 ```swift
     func test_reset_opensPortfolioAtRequestedStartingCash() async {
+        // **[CORRECTED — see carry-notes §2.6.]** `InMemoryPortfolioStore` does not exist;
+        // the real application-layer test double is `MemoryStore`. Verify the actual
+        // name in the test target before transcribing to Kotlin.
         let store = InMemoryPortfolioStore(seed: Portfolio.starting())
         let sut = ResetPortfolioUseCase(store: store, serializer: TradeSerializer())
         let fresh = await sut(startingCash: Money(amount: 25_000))
@@ -329,6 +343,8 @@ In `Sources/APTradeInfrastructure/UserDefaultsPortfolioStore.swift`, the two `Po
     }
 ```
 
+**[ADDED — see carry-notes §2.7.]** This default closure plants a **third** `100_000` literal that Task 14's acceptance grep (which only excludes `AppSettings.swift` and `Portfolio.swift:35`) does not cover. Verification found this one and a fourth (a no-op test double returning a fabricated $100,000) and removed both. A defaulted parameter is exactly where a hardcoded balance hides — consider requiring `seedCash` with no default, or make Task 14's grep account for it explicitly.
+
 Then replace both `Portfolio.starting()` calls in that file with `Portfolio.starting(cash: seedCash())`.
 
 In `Sources/APTradeApp/CompositionRoot.swift`, where `portfolioStore` is constructed, pass the settings-backed closure (mirroring how `isDripEnabled` is wired for the activity coordinator):
@@ -361,6 +377,7 @@ git commit -m "feat: reset portfolio at a caller-supplied starting balance"
 **Interfaces:**
 - Consumes: `PortfolioViewModel.reset(startingCash:)` (Task 3), `AppSettings.defaultStartingCash` (Task 2).
 - Produces: `enum StartingBalanceInput { static func parse(_ text: String, locale: Locale) -> Money? }` — used only here; validation range $1,000…$10,000,000 inclusive.
+  **[SUPERSEDED — see carry-notes §1.5.]** This is not used only here: Task 12's goal-target sheet reuses this exact parser with this exact range, which made an income goal under $1,000/yr unsettable and a value goal over $10M unsettable. As-built: the parser takes a **range parameter defaulting to this starting-balance range** (so this task's call sites are untouched), and each goal kind (Task 12) supplies its own range — income 100…1,000,000/yr, value 1,000…100,000,000 — plus its own hint copy. Parameterize the range here so Task 12 can share the parser honestly instead of borrowing bounds that describe a different quantity.
 
 - [ ] **Step 1: Write the failing parser tests**
 
@@ -428,6 +445,11 @@ enum StartingBalanceInput {
     static let minimum = Decimal(1_000)
     static let maximum = Decimal(10_000_000)
 
+    // **[SUPERSEDED — see carry-notes §1.5.]** Hardcoded `minimum`/`maximum` here is what
+    // let Task 12 borrow this exact range for goal targets. As-built takes a `range:
+    // ClosedRange<Decimal>` parameter defaulting to `minimum...maximum` (this task's call
+    // sites need no change), letting Task 12 pass income's 100...1,000,000 or value's
+    // 1,000...100,000,000 explicitly instead of inheriting the wrong bounds.
     static func parse(_ text: String, locale: Locale = .current) -> Money? {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return nil }
@@ -613,6 +635,7 @@ git commit -m "feat(app): choose the starting balance when resetting the portfol
 
 **Interfaces:**
 - Consumes: existing `DividendMath.DividendEvent` (`symbol`, `exDate`, `amountPerShare`) and `DividendMath.trailingAnnualPerShare(events:asOf:)`.
+  **[CORRECTED — see carry-notes §2.6.]** `DividendEvent` is a **top-level** type, not nested inside `DividendMath` — `DividendMath.DividendEvent` does not compile. Every occurrence of `DividendMath.DividendEvent` below in this plan (Tasks 5–7, 11 test doubles) has the same error; read it as plain `DividendEvent` throughout. Verify the real declaration in `Sources/APTradeDomain/DividendMath.swift` before transcribing this plan into Kotlin.
 - Produces: `DividendMath.dividendGrowthRate(events: [DividendEvent], asOf: Date) -> Decimal` — annual growth as a fraction (`0.06` = +6%/yr), clamped to `-0.20 ... 0.25`, returning `0` when history is insufficient. Task 6 and Task 9 both call it.
 
 - [ ] **Step 1: Write the failing tests**
@@ -770,6 +793,9 @@ git commit -m "feat(domain): per-symbol dividend growth rate with clamps"
 - Produces:
   - `public struct ForecastYear: Equatable, Sendable { public let yearOffset: Int; public let income: Money }` (`yearOffset` 1 = next year).
   - `DividendMath.incomeForecast(positions:eventsBySymbol:years:dripEnabled:asOf:) -> [ForecastYear]`.
+  **[SUPERSEDED — see carry-notes §1.1.]** This signature is wrong: it reinvests DRIP purchases at `position.averageCost` (cost basis), which is yield-on-cost — a holding bought at $50 now trading at $150 buys 3× too many shares per year, overstating year-30 income by ~66%. The as-built signature is
+  `DividendMath.incomeForecast(positions:pricesBySymbol:eventsBySymbol:years:dripEnabled:asOf:) -> [ForecastYear]`
+  with `pricesBySymbol: [String: Money]` **required — no default —** positioned second, beside `positions`. Price resolution is `pricesBySymbol[symbol] ?? position.averageCost`: quoted market price when available, cost basis only as an explicit fallback. The view model already has a quote fetch to build this dict from (Task 11); omitting the parameter (or defaulting it) silently re-arms the bug with a compiler that will never complain.
   Task 9 (`GoalMath` income projection) and Task 11 (`IncomeViewModel`) both consume this.
 
 - [ ] **Step 1: Write the failing tests**
@@ -873,6 +899,17 @@ Append inside `public enum DividendMath`:
     /// Each symbol grows at its clamped historical dividend growth rate. With DRIP on,
     /// each year's dividends buy more shares at a price assumed to grow at that same
     /// rate — a stated simplification, surfaced to the user as a caption.
+    /// **[ADDED — see carry-notes §3.2.]** `yearOffset == 1` is the trailing twelve
+    /// months with **no growth applied** — deliberate; growth compounds starting at
+    /// year 2. The Swift wave shipped a comment here claiming the opposite and it had
+    /// to be corrected during review. State the invariant explicitly wherever a reader
+    /// will meet this function, and pin it with an exact-equality test (year 1 identical
+    /// with DRIP on vs off).
+    /// **[SUPERSEDED — see carry-notes §1.1.]** Signature below is missing the required
+    /// `pricesBySymbol` parameter (second position, no default) — see the Interfaces
+    /// annotation above. The `price` field this function tracks per position must seed
+    /// from `pricesBySymbol[symbol] ?? position.averageCost`, not `position.averageCost`
+    /// unconditionally as the code below does.
     public static func incomeForecast(positions: [Position],
                                       eventsBySymbol: [String: [DividendEvent]],
                                       years: Int,
@@ -892,6 +929,10 @@ Append inside `public enum DividendMath`:
             let events = eventsBySymbol[position.asset.symbol] ?? []
             let perShare = trailingAnnualPerShare(events: events, asOf: asOf).amount
             guard perShare > 0, position.quantity.amount > 0 else { continue }
+            // **[SUPERSEDED — see carry-notes §1.1.]** `position.averageCost.amount` here is
+            // the cost-basis bug: DRIP reinvests at yield-on-cost, overstating year-30 income
+            // by ~66% for any holding that has appreciated. As-built:
+            // `pricesBySymbol[position.asset.symbol]?.amount ?? position.averageCost.amount`.
             projections.append(Projection(shares: position.quantity.amount,
                                           perShare: perShare,
                                           price: position.averageCost.amount,
@@ -1159,6 +1200,10 @@ final class GoalMathTests: XCTestCase {
     }
 
     func test_annualGrowthRate_needsThirtyDaysOfHistory() {
+        // **[SUPERSEDED — see carry-notes §1.2.]** This test (and its name) encode the
+        // wrong floor. As-built `minimumHistoryDays = 180`, so this test's 90-day curve
+        // must become `.insufficientHistory`-equivalent (nil) too, and a genuine
+        // positive case needs 180+ days. Rename accordingly in the Kotlin transcription.
         XCTAssertNil(GoalMath.annualGrowthRate(curve: curve(start: 100_000, days: 20, dailyRate: 0.0005)))
         XCTAssertNotNil(GoalMath.annualGrowthRate(curve: curve(start: 100_000, days: 90, dailyRate: 0.0005)))
     }
@@ -1265,6 +1310,18 @@ public enum GoalProjection: Equatable, Sendable {
 /// Progress and honest time-to-target math for portfolio goals. Pure.
 public enum GoalMath {
     /// Minimum equity-curve points before a growth rate is trustworthy.
+    /// **[SUPERSEDED — see carry-notes §1.2.]** 30 is wrong and the doc comment above is
+    /// wrong about what the guard measures. A 30-day window annualized by `365.25/days`
+    /// is a 12.175× extrapolation — a portfolio up 5% in its first month reads as
+    /// +80%/yr, sails under the +100% clamp, and renders a confident multi-year ETA,
+    /// contradicting this type's own promise never to fabricate an ETA it can't support.
+    /// As-built: `minimumHistoryDays = 180`. Also, this guards **price-history span**,
+    /// not account age: the curve fed in is the 1-year price window with a flat
+    /// pre-inception cash point, so its span is ~365 days for any portfolio holding any
+    /// seasoned symbol — the floor only actually fires for an all-cash portfolio or a
+    /// symbol whose own price history is under 180 days. Say that plainly, or, if
+    /// M11.2 wants true account-age semantics, measure from the first transaction date
+    /// instead — decide deliberately rather than inheriting the mismatch.
     public static let minimumHistoryDays = 30
     /// Projections longer than this report `.beyondHorizon`.
     public static let horizonYears = 30.0
@@ -1390,6 +1447,19 @@ Append inside `public enum GoalMath` in `Sources/APTradeDomain/GoalMath.swift`:
 ```swift
     /// When projected annual income reaches `target`, read off the forecast curve.
     /// A forecast that never grows reports `.notOnTrack` rather than a fake ETA.
+    /// **[CORRECTED — see carry-notes §2.4.]** This implementation is missing the
+    /// "no income at all" branch. A brand-new user setting an income goal holds
+    /// nothing: the forecast is `years` zero-income years, `last.income > current` is
+    /// `0 > 0` = false, and this reads **"Not on track at current rate"** — while the
+    /// symmetric value goal (Task 8) correctly reads "needs more history" for the
+    /// identical all-cash situation. Add a guard that returns `.insufficientHistory`
+    /// when the forecast carries no positive income, checked **before** the
+    /// not-on-track fallthrough on the last line.
+    /// **[CORRECTED — see carry-notes §2.6 task list.]** Also, `guard current.amount <
+    /// target.amount else { return .reached }` returns `.reached` for a non-positive
+    /// target (e.g. `target == 0`, `current == 0`), which is not a meaningful "reached"
+    /// state — the implementer caught this during execution and added an explicit
+    /// guard. Do not transcribe this line as-is; guard target positivity first.
     public static func incomeProjection(current: Money, target: Money,
                                         forecast: [DividendMath.ForecastYear]) -> GoalProjection {
         guard current.amount < target.amount else { return .reached }
@@ -1521,6 +1591,8 @@ final class GoalUseCasesTests: XCTestCase {
     }
 
     func test_reset_clearsGoals() async {
+        // **[CORRECTED — see carry-notes §2.6.]** Same naming issue as Task 3: the real
+        // type is `MemoryStore`, not `InMemoryPortfolioStore`.
         let goalStore = InMemoryGoalStore([PortfolioGoal(kind: .value, target: Money(amount: 100), createdAt: epoch)])
         let portfolioStore = InMemoryPortfolioStore(seed: Portfolio.starting())
         let sut = ResetPortfolioUseCase(store: portfolioStore, serializer: TradeSerializer(), goalStore: goalStore)
@@ -1591,6 +1663,13 @@ import APTradeApplication
 import APTradeDomain
 
 /// `UserDefaults`-backed goal persistence: one JSON array under a single key.
+/// **[ADDED — see carry-notes §2.5.]** This task already specifies the correct
+/// as-built shape: a dedicated store under its own key (`"portfolioGoals"`), not goals
+/// embedded in the portfolio payload — the design spec said the latter, but this plan
+/// task diverges from the spec correctly. Because `PortfolioGoal` is never nested
+/// inside another `Codable` payload, a pre-goals payload simply has no key and
+/// degrades to an empty list, so the lenient-decoding problem never arises. Port this
+/// shape as-is in M11.2; do not "fix" it back toward the spec's sentence.
 public final class UserDefaultsGoalStore: GoalStore, @unchecked Sendable {
     private let defaults: UserDefaults
     private let key: String
@@ -1838,6 +1917,17 @@ Add the builders and goal mutators:
                                                asOf: now())
         refreshGoalProjection()
     }
+    // **[ADDED — see carry-notes §2.2.]** No step in this task (or Task 12, where the
+    // DRIP toggle and this forecast chart land on the same screen) calls
+    // `rebuildForecast()` when the DRIP setting itself changes — only `horizon`'s
+    // `didSet` triggers it. The Swift wave shipped a toggle that wrote through to
+    // settings immediately while the chart directly beneath it kept the old assumption
+    // until the user happened to tap a horizon pill, with a caption actively promising
+    // DRIP compounding the whole time. M11.2 needs an **explicit step**: toggling DRIP
+    // must call `rebuildForecast()` (which already also calls `refreshGoalProjection()`
+    // above — good, keep that coupling, since the income goal reads the same curve). A
+    // fix that rebuilds only the chart leaves the ETA stale against a curve that just
+    // changed.
 
     private func refreshGoalProjection() {
         guard let goal = incomeGoal else { incomeGoalProjection = nil; return }
@@ -1942,6 +2032,10 @@ git commit -m "feat(app): income view model gains calendar, forecast, and income
 
 In `Sources/APTradeApp/L10n.swift`, add to `Key`:
 
+**[SUPERSEDED — see carry-notes §1.4.]** `upcomingDividends = "Upcoming Dividends"` below collides with a pre-existing card of that exact literal title already on this same scroll view (the M8 next-payout list) — two identically-titled cards shipped briefly before this was caught. As-built: rename this key so the new month-grouped calendar card reads **"Dividend Calendar"** in all four languages; leave the pre-existing next-payout list's title alone.
+
+**[SUPERSEDED — see carry-notes §3.5 / §3.3.]** `goalBeyondHorizon = "More than 30 yrs at this rate"` below hardcodes "30" as a literal string. As-built: interpolate `GoalMath.horizonYears` (or its Kotlin twin) into the copy rather than hardcoding the number, and the completeness/rendering test should derive its expected string from that same constant — not a duplicated literal "30".
+
 ```swift
         case upcomingDividends = "Upcoming Dividends"
         case estimatedShort = "est."
@@ -1964,6 +2058,8 @@ In `Sources/APTradeApp/L10n.swift`, add to `Key`:
 And the matching `table` rows (every key needs all four languages):
 
 ```swift
+        // **[SUPERSEDED — see carry-notes §1.4 and the annotation above.]** As-built title
+        // is "Dividend Calendar" in all four languages, to avoid the collision.
         .upcomingDividends: [.english: "Upcoming Dividends", .german: "Kommende Dividenden",
                              .italian: "Prossimi dividendi", .spanish: "Próximos dividendos"],
         .estimatedShort: [.english: "est.", .german: "geschätzt", .italian: "stim.", .spanish: "est."],
@@ -1994,6 +2090,8 @@ And the matching `table` rows (every key needs all four languages):
                             .german: "Wird erfasst – benötigt mehr Verlauf",
                             .italian: "In monitoraggio — serve più storico",
                             .spanish: "En seguimiento: falta historial"],
+        // **[SUPERSEDED — see carry-notes §3.5/§3.3 and the annotation above.]** Interpolate
+        // the horizon constant instead of hardcoding "30" in every language string.
         .goalBeyondHorizon: [.english: "More than 30 yrs at this rate",
                              .german: "Mehr als 30 Jahre bei diesem Tempo",
                              .italian: "Più di 30 anni a questo ritmo",
@@ -2098,6 +2196,15 @@ struct GoalCard: View {
 }
 
 /// Amount entry for a goal target. Reuses the starting-balance range and parser.
+/// **[SUPERSEDED — see carry-notes §1.5.]** "Reuses the starting-balance range" is the
+/// defect: borrowing $1,000–$10,000,000 made an income goal under $1,000/yr unsettable
+/// (a "$50/month in dividends" target is $600/yr — an ordinary first goal) and a value
+/// goal over $10M unsettable, and the range hint shown described a different quantity
+/// than the field. As-built: share the *parser* (per the `StartingBalanceInput`
+/// annotation in Task 4), parameterize the *range* per goal kind — income
+/// 100…1,000,000/yr, value 1,000…100,000,000 — each with its own hint copy in all four
+/// languages. `GoalEditSheet` needs a `range: ClosedRange<Decimal>` (or per-kind hint
+/// key) parameter threaded from the caller (Task 12/13), not this hardcoded reuse.
 struct GoalEditSheet: View {
     let title: String
     @Binding var targetText: String
@@ -2142,8 +2249,16 @@ If `Money` has no `formatted()` helper, use whatever formatting helper `IncomeSe
 
 In `Sources/APTradeApp/IncomeSection.swift`, add these private computed properties and insert them into `ledger` in this order: existing summary grid → `incomeGoalCard` → existing monthly chart → `upcomingCalendarCard` → `forecastCard` → existing upcoming/holdings/history cards.
 
+**[SUPERSEDED — see carry-notes §1.3.]** Putting `incomeGoalCard` inside the `ledger` branch is the defect: it made the card unreachable for a user holding no dividend payer, since `ledger` only renders once there is dividend history to show. A goal is a *plan* — it is most useful *before* you hold anything. As-built: hoist `incomeGoalCard` **above** the state switch (following the DRIP-card precedent already in this file) so only the metrics/chart region toggles between empty and loaded; the card itself always renders.
+
 ```swift
     private var incomeGoalCard: some View {
+        // **[CORRECTED — see carry-notes §2.6 / §3.1.]** `viewModel.cards?.projectedAnnual`
+        // is not the real symbol. Use `DividendMath.projectedAnnualIncome(positions:
+        // eventsBySymbol:asOf:)` — the same sum `incomeForecast` produces for
+        // `yearOffset == 1`. This equivalence must hold exactly (pin it with a test): if
+        // `current` and forecast year 1 diverge, the progress percentage and the ETA on
+        // this card disagree with the forecast chart rendered directly beside it.
         GoalCard(title: tr(.incomeGoal),
                  current: viewModel.cards?.projectedAnnual ?? Money(amount: 0),
                  goal: viewModel.incomeGoal,
@@ -2153,6 +2268,11 @@ In `Sources/APTradeApp/IncomeSection.swift`, add these private computed properti
     }
 
     private var upcomingCalendarCard: some View {
+        // **[SUPERSEDED — see carry-notes §1.4.]** `tr(.upcomingDividends)` renders the
+        // literal "Upcoming Dividends" here, colliding with the pre-existing next-payout
+        // card of that exact title elsewhere on this screen. As-built: this card's
+        // header reads "Dividend Calendar" (rename the key per the Task 12 L10n
+        // annotation above); the pre-existing card keeps "Upcoming Dividends".
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text(tr(.upcomingDividends)).font(.headline)
@@ -2228,6 +2348,7 @@ In `Sources/APTradeApp/IncomeSection.swift`, add these private computed properti
 Add `import Charts` at the top of `IncomeSection.swift` (it currently hand-rolls its bar chart and does not import it). Because `IncomeViewModel` is an `ObservableObject` held via `@StateObject`, `$viewModel.horizon` binds directly — no extra plumbing.
 
 If `viewModel.cards?.projectedAnnual` is not the exact property name on the existing `SummaryCards` struct, use whichever field holds projected annual income — check the struct before writing the line.
+**[CORRECTED — see carry-notes §2.6.]** It is not the field: use `DividendMath.projectedAnnualIncome(positions:eventsBySymbol:asOf:)` directly as the income-goal card's `current`, per the annotation above.
 
 - [ ] **Step 4: Build and run the app tests**
 
@@ -2341,6 +2462,15 @@ In `load()`, after the report is computed and assigned, capture what the project
 
 If `PerformanceReport` exposes those under different names, use the real ones; if it carries no equity series at all, pass the series `PerformanceSection`'s overlay chart already renders into the view model rather than recomputing it.
 
+**[CORRECTED — see carry-notes §2.6.]** `PerformanceReport.currentValue` **does not exist** — this is not a hedge-and-move-on naming risk, it is a wrong line. Use `equityCurve.last?.value`, which is `cashAt + holdings` — the true total account value — instead of `report.currentValue`.
+
+**[CORRECTED — see carry-notes §2.3.]** This snippet has no fallback for an empty curve at all, and that silence is exactly what produced the bug: the plan (in effect) fell through to `positions.isEmpty ? cash : 0`, which fabricates a **`$0`** whenever the equity curve is empty for any reason *other* than an empty portfolio — and the common reason isn't exotic: the performance use case swallows every history-fetch failure, so any offline session, rate limit, or upstream error yields an empty curve. A user holding positions with a $500,000 goal would then see `$0 / $500,000 · 0%` — a specific, wrong dollar figure for their own portfolio. As-built: whenever the curve is empty, `currentValue = cash + cost basis of all positions` (`positions.reduce(cash) { $0 + marketValue(at: averageCost) }`) — never fabricated, and it collapses to exactly `cash` for the all-cash case. Concretely:
+```swift
+        equityCurve = report.equityCurve
+        currentValue = equityCurve.last?.value
+            ?? positions.reduce(portfolio.cash) { $0 + $1.marketValue(at: $1.averageCost) }
+```
+
 Add the mutators:
 
 ```swift
@@ -2379,6 +2509,8 @@ In `makePerformanceViewModel()`, pass:
 
 In `Sources/APTradeApp/PerformanceSection.swift`, inside `loaded(_:)`, insert the card directly below `metricGrid` and above `benchmarkPicker`:
 
+**[SUPERSEDED — see carry-notes §1.3.]** Inside `loaded(_:)` is the defect: it collapses the whole value-goal card for an all-cash portfolio (money deposited, nothing bought yet), since `loaded` requires positions/history to render. As-built: hoist the `GoalCard` **above** the state switch, same fix as the income-goal card in Task 12 — only the metrics/chart region should toggle between empty and loaded states; the goal card renders unconditionally either way.
+
 ```swift
                 GoalCard(title: tr(.valueGoal),
                          current: viewModel.currentValue,
@@ -2414,6 +2546,17 @@ git commit -m "feat(app): value goal card on Portfolio Performance"
 
 - [ ] **Step 1: Prove no hardcoded starting balance survives**
 
+**[SUPERSEDED — see carry-notes §2.7.]** The grep below pins an exclusion to a **line
+number** (`Portfolio.swift:35`) that moves the moment Task 1 edits that file — by the
+time this step runs, the property block Task 1 touched is no longer at line 35, so
+this exclusion silently stops matching and the whole grep starts failing (or worse,
+passing for the wrong reason). Write the exclusion against **content** — e.g. the
+`startingCash` declaration line itself, or the enclosing function name — not a line
+number. Verification also found a **third and fourth** literal this exclusion list
+doesn't cover: a defaulted `seedCash` closure (Task 3, `UserDefaultsPortfolioStore`, see
+its annotation) and a no-op test double returning a fabricated $100,000 — both removed.
+Expect the same two hiding places in Kotlin: defaulted parameters and no-op doubles.
+
 Run:
 
 ```bash
@@ -2434,7 +2577,7 @@ Launch the macOS app and confirm, in order:
 1. Portfolio → "⋯" → Reset opens the sheet; typing `abc` disables Reset; typing `500` disables it; `25000` enables it. Confirm reset → cash reads $25,000.
 2. Reopen the reset sheet → it pre-fills `25000` (the remembered default).
 3. Portfolio · Performance → "Set a goal" → enter `50000` → card shows a progress bar, a percentage, and a projection line (not a blank or a crash).
-4. Invest · Income → income-goal card, an "Upcoming Dividends" list whose header shows the "est." label, and a forecast chart whose 5/10/20/30 pills change the curve.
+4. Invest · Income → income-goal card, a **"Dividend Calendar"** list whose header shows the "est." label (**[SUPERSEDED — see carry-notes §1.4]**: as planned this read "Upcoming Dividends", which collides with the pre-existing next-payout card of that exact title), and a forecast chart whose 5/10/20/30 pills change the curve.
 5. Reset the portfolio again → both goal cards return to their "Set a goal" empty state.
 
 - [ ] **Step 4: Manual smoke checklist (iPhone simulator)**
@@ -2459,3 +2602,29 @@ git commit -m "docs: README — M11.1 goals and income depth (Swift wave)"
 - **Spec coverage:** F1 → Tasks 1–4; F2 → Tasks 8, 9, 10, 11, 12, 13; F3 → Tasks 5, 6, 7, 11, 12. Cross-cutting L10n → Tasks 4, 12 (plus the enforcement test run in every task's suite step). Acceptance criteria 1–4 → Task 14 steps 1–4.
 - **Ordering constraint honored:** `DividendMath.incomeForecast` (Task 6) precedes `GoalMath.incomeProjection` (Task 9), which precedes the view model that calls both (Task 11).
 - **Known naming risks flagged inline** (each has an explicit "check the real signature" instruction rather than a guess): `Asset` initializer (Task 6), `EquityPoint` initializer (Task 8), `SummaryCards.projectedAnnual` (Task 12), `PerformanceReport.equityCurve` / `.currentValue` (Task 13), `Money.formatted()` (Task 12), the existing cadence-interval helper (Task 7), and `InMemoryPortfolioStore` (Tasks 3, 10).
+
+---
+
+## Post-execution: what this plan got wrong
+
+**This milestone shipped** — 23 commits, merged and pushed, `main` at `6faac85`. This plan was executed, but not as written: five points were escalated to the user during execution and ruled against the plan text, and a final whole-branch review caught a further set of defects the per-task reviews structurally could not see. Full reasoning and as-built values live in `docs/superpowers/specs/2026-07-25-m11-carry-notes.md` — **read that document before writing or executing the M11.2 plan.** This section is a compact index into the inline `[SUPERSEDED / CORRECTED / ADDED]` annotations above, for anyone who only reads the end of this file.
+
+**User rulings (escalated during execution, plan text overridden):**
+1. Task 6 — DRIP reinvests at quoted market price, not `position.averageCost` (carry-notes §1.1).
+2. Task 8 — `minimumHistoryDays` is 180, not 30, and it guards price-history span, not account age (§1.2).
+3. Tasks 12 & 13 — both goal cards render unconditionally; neither may live inside a `ledger`/`loaded` state branch (§1.3).
+4. Task 12 — the calendar card is titled "Dividend Calendar", not "Upcoming Dividends" (collides with a pre-existing card) (§1.4).
+5. Tasks 4 & 12 — goal targets validate against per-kind ranges (income 100…1,000,000; value 1,000…100,000,000), not the starting-balance range (§1.5).
+
+**Further defects found by the final whole-branch review (plan-level, not implementation-level):**
+- Task 1 — `Portfolio.startingCash`'s stated rationale is false; the field has no reader (§2.1).
+- Task 11 — no step wires the DRIP toggle to a forecast rebuild; it shipped inert (§2.2).
+- Task 13 — the `currentValue` empty-curve fallback fabricates `$0`; as-built falls back to cash + cost basis (§2.3).
+- Task 9 — `incomeProjection` needs a no-positive-income branch returning insufficient-history before the not-on-track fallthrough, and a guard against `.reached` on a non-positive target (§2.4).
+- Task 10 — goal persistence: the plan's separate-store shape is actually *better* than the spec's and should be kept as-built, not reverted toward the spec (§2.5).
+- Four wrong symbol names throughout: `PerformanceReport.currentValue`, `DividendMath.DividendEvent` (top-level, not nested), `InMemoryPortfolioStore` (really `MemoryStore`), `SummaryCards.projectedAnnual` as the income-goal `current` (use `DividendMath.projectedAnnualIncome`) (§2.6).
+- Task 14 — the acceptance grep pins an exclusion to a line number that moves, and undercounts permitted literals by two (a defaulted `seedCash` closure, a no-op store) (§2.7).
+
+**The error rate is the lesson, not just the errors.** Eight symbol/behaviour corrections in one plan — four wrong symbol names plus four behavioural defects — is a high rate for a single implementation plan, and each one burned an implementer's turn mid-task. Two structural causes stand out:
+- **Symbol names were guessed, not verified**, ahead of the code that would define them. **M11.2's plan must have every symbol name it names verified against the shared Kotlin core before dispatch**, not discovered as a compile error during execution.
+- **Seam defects — bugs living between two tasks rather than inside one — are invisible to per-task review by construction.** §2.2, §2.3, §2.4, and the goal-card gating in §1.3 all lived at the boundary between tasks and no single task's review could have caught them. Budget a top-tier whole-branch review at M11.2's close, the same way this milestone's was caught here.
