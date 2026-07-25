@@ -13,6 +13,11 @@ import APTradeDomain
 /// reading is never collapsed into silence or a fabricated ETA.
 struct GoalCard: View {
     let title: String
+    /// Which quantity this card measures — selects the target-entry range/hint (Task 5
+    /// fix-round: an income goal and a value goal are wildly different magnitudes, so
+    /// validating both against the starting-balance range made small income targets and
+    /// large value targets alike unsettable).
+    let kind: GoalKind
     let current: Money
     let goal: PortfolioGoal?
     let projection: GoalProjection?
@@ -39,7 +44,7 @@ struct GoalCard: View {
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
             .stroke(Theme.hairline, lineWidth: 1))
         .sheet(isPresented: $isEditing) {
-            GoalEditSheet(title: title, targetText: $targetText, onSave: onSet)
+            GoalEditSheet(title: title, kind: kind, targetText: $targetText, onSave: onSet)
         }
     }
 
@@ -114,18 +119,21 @@ struct GoalCard: View {
     }
 }
 
-/// Goal-target amount entry. Reuses `StartingBalanceInput`'s range and locale-aware
-/// parser (Task 4) rather than inventing a second validator — the `$1,000–$10,000,000`
-/// range reads sensibly for a goal target too, and the copy itself never says "starting
-/// balance". Mirrors `ResetPortfolioSheet`'s plain (non-`Theme`-styled) modal chrome —
-/// sheets in this app use system styling; `Theme` is for the persistent card surfaces.
+/// Goal-target amount entry. Reuses `StartingBalanceInput`'s locale-aware parser (Task 4)
+/// rather than inventing a second validator, but validates against `kind.targetRange`
+/// (Task 5 fix-round) rather than the starting-balance range — an income-goal target and
+/// a value-goal target are different quantities at different scales, so the field's hint
+/// must describe the range it's actually enforcing. Mirrors `ResetPortfolioSheet`'s plain
+/// (non-`Theme`-styled) modal chrome — sheets in this app use system styling; `Theme` is
+/// for the persistent card surfaces.
 struct GoalEditSheet: View {
     let title: String
+    let kind: GoalKind
     @Binding var targetText: String
     let onSave: (Money) -> Void
     @Environment(\.dismiss) private var dismiss
 
-    private var parsed: Money? { StartingBalanceInput.parse(targetText) }
+    private var parsed: Money? { StartingBalanceInput.parse(targetText, range: kind.targetRange) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -136,7 +144,7 @@ struct GoalEditSheet: View {
                     .foregroundStyle(.secondary)
                 TextField("", text: $targetText)
                     .textFieldStyle(.roundedBorder)
-                Text(tr(.startingBalanceRange))
+                Text(tr(kind.rangeHintKey))
                     .font(.caption2)
                     .foregroundStyle(parsed == nil && !targetText.isEmpty ? Color.red : .secondary)
             }
@@ -153,5 +161,28 @@ struct GoalEditSheet: View {
         }
         .padding(20)
         .frame(minWidth: 320)
+    }
+}
+
+/// Per-kind goal-target validation range (Task 5 fix-round). `StartingBalanceInput`'s
+/// `$1,000–$10,000,000` range describes a portfolio's OPENING CASH — reusing it for both
+/// goal kinds made an ordinary income goal like "$50/month in dividends" ($600/yr, well
+/// under $1,000) unsettable, and capped a value goal at $10M even though a value goal is
+/// meant to run far past a starting balance. Each kind gets a range sized to what it
+/// actually measures, plus its own hint copy so the field never describes the wrong
+/// quantity.
+extension GoalKind {
+    var targetRange: ClosedRange<Decimal> {
+        switch self {
+        case .income: return Decimal(100)...Decimal(1_000_000)
+        case .value: return Decimal(1_000)...Decimal(100_000_000)
+        }
+    }
+
+    var rangeHintKey: L10n.Key {
+        switch self {
+        case .income: return .incomeGoalRange
+        case .value: return .valueGoalRange
+        }
     }
 }

@@ -40,6 +40,7 @@ struct PerformanceSection: View {
 
     private var goalCard: some View {
         GoalCard(title: tr(.valueGoal),
+                 kind: .value,
                  current: viewModel.currentValue,
                  goal: viewModel.valueGoal,
                  projection: viewModel.valueGoalProjection,

@@ -368,6 +368,8 @@ enum L10n {
         case editGoal = "Edit goal"
         case removeGoal = "Remove goal"
         case goalTarget = "Goal Target"
+        case incomeGoalRange = "Between $100 and $1,000,000 per year"
+        case valueGoalRange = "Between $1,000 and $100,000,000"
         case goalReached = "Goal reached"
         case goalNotOnTrack = "Not on track at current rate"
         case goalNeedsHistory = "Tracking — needs more history"
@@ -1222,6 +1224,14 @@ enum L10n {
         .removeGoal: [.english: "Remove goal", .german: "Ziel entfernen",
                       .italian: "Rimuovi obiettivo", .spanish: "Eliminar objetivo"],
         .goalTarget: [.english: "Target", .german: "Ziel", .italian: "Obiettivo", .spanish: "Objetivo"],
+        .incomeGoalRange: [.english: "Between $100 and $1,000,000 per year",
+                           .german: "Zwischen 100 $ und 1.000.000 $ pro Jahr",
+                           .italian: "Tra 100 $ e 1.000.000 $ all'anno",
+                           .spanish: "Entre 100 $ y 1.000.000 $ al año"],
+        .valueGoalRange: [.english: "Between $1,000 and $100,000,000",
+                          .german: "Zwischen 1.000 $ und 100.000.000 $",
+                          .italian: "Tra 1.000 $ e 100.000.000 $",
+                          .spanish: "Entre 1.000 $ y 100.000.000 $"],
         .goalReached: [.english: "Goal reached", .german: "Ziel erreicht",
                        .italian: "Obiettivo raggiunto", .spanish: "Objetivo alcanzado"],
         .goalNotOnTrack: [.english: "Not on track at current rate",

@@ -303,6 +303,7 @@ struct IncomeSection: View {
 
     private var incomeGoalCard: some View {
         GoalCard(title: tr(.incomeGoal),
+                 kind: .income,
                  current: viewModel.cards?.projectedAnnual ?? Money(amount: 0),
                  goal: viewModel.incomeGoal,
                  projection: viewModel.incomeGoalProjection,
