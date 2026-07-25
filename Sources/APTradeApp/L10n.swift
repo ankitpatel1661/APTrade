@@ -131,6 +131,9 @@ enum L10n {
         case resetPortfolio = "Reset portfolio"
         case reset = "Reset"
         case resetPortfolioConfirm = "Reset portfolio to $100,000 cash and clear all holdings?"
+        case startingBalanceRange = "Between $1,000 and $10,000,000"
+        case resetPortfolioTitle = "Reset Portfolio"
+        case resetPortfolioBody = "This clears all holdings and history, then opens a fresh portfolio with the cash below."
         case portfolioUnrealizedPnLChartTitle = "Portfolio · Unrealized P&L"
         case byHolding = "BY HOLDING"
         case byClass = "BY CLASS"
@@ -694,10 +697,20 @@ enum L10n {
                           .italian: "Reimposta portafoglio", .spanish: "Restablecer cartera"],
         .reset: [.english: "Reset", .german: "Zurücksetzen",
                  .italian: "Reimposta", .spanish: "Restablecer"],
-        .resetPortfolioConfirm: [.english: "Reset portfolio to $100,000 cash and clear all holdings?",
-                                 .german: "Portfolio auf 100.000 $ Bargeld zurücksetzen und alle Bestände löschen?",
-                                 .italian: "Reimpostare il portafoglio a $100.000 in liquidità e azzerare tutte le posizioni?",
-                                 .spanish: "¿Restablecer la cartera a $100,000 en efectivo y eliminar todas las posiciones?"],
+        .resetPortfolioConfirm: [.english: "Reset portfolio and clear all holdings?",
+                                 .german: "Portfolio zurücksetzen und alle Bestände löschen?",
+                                 .italian: "Reimpostare il portafoglio e cancellare tutte le posizioni?",
+                                 .spanish: "¿Restablecer la cartera y borrar todas las posiciones?"],
+        .startingBalanceRange: [.english: "Between $1,000 and $10,000,000",
+                                .german: "Zwischen 1.000 $ und 10.000.000 $",
+                                .italian: "Tra 1.000 $ e 10.000.000 $",
+                                .spanish: "Entre 1.000 $ y 10.000.000 $"],
+        .resetPortfolioTitle: [.english: "Reset Portfolio", .german: "Portfolio zurücksetzen",
+                               .italian: "Reimposta portafoglio", .spanish: "Restablecer cartera"],
+        .resetPortfolioBody: [.english: "This clears all holdings and history, then opens a fresh portfolio with the cash below.",
+                              .german: "Dadurch werden alle Bestände und der Verlauf gelöscht und ein neues Portfolio mit dem unten angegebenen Bargeld eröffnet.",
+                              .italian: "Questa operazione cancella tutte le posizioni e lo storico, quindi apre un nuovo portafoglio con la liquidità indicata di seguito.",
+                              .spanish: "Esto borra todas las posiciones y el historial, y abre una cartera nueva con el efectivo indicado abajo."],
         .portfolioUnrealizedPnLChartTitle: [.english: "Portfolio · Unrealized P&L",
                                             .german: "Portfolio · Unrealisierter G/V",
                                             .italian: "Portafoglio · P&L non realizzato",

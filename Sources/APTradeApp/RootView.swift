@@ -96,7 +96,8 @@ public struct RootView: View {
             PortfolioView(onOpenSearch: { showPalette = true },
                           onOpenAccount: { showAccountPanel = true },
                           onExport: { showExportDialog = true },
-                          externalSection: $portfolioSectionRequest)
+                          externalSection: $portfolioSectionRequest,
+                          settingsVM: settingsVM)
                 .tabItem { Label(tr(.portfolio), systemImage: "chart.pie") }
                 .tag(Tab.portfolio)
             InvestView(onOpenSearch: { showPalette = true },
@@ -431,6 +432,7 @@ public struct RootView: View {
                     // here using the SAME hoisted header (`PortfolioSummaryHeader`, Task 7) —
                     // no section picker beside it, since the sidebar itself is that picker.
                     PortfolioSummaryHeader(viewModel: portfolioViewModel,
+                                           settingsVM: settingsVM,
                                            onExport: { showExportDialog = true })
                     Divider().overlay(Theme.hairline)
                     PortfolioSectionContent(section: section, viewModel: portfolioViewModel,

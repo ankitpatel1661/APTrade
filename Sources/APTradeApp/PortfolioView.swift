@@ -28,6 +28,10 @@ struct PortfolioView: View {
     /// to that section and clears itself. Additive/optional — existing call sites that omit
     /// it behave exactly as before. Mirrors `MarketsView.externalSection`/`InvestView`.
     var externalSection: Binding<Section?>? = nil
+    /// M11.1 Task 4: owns `defaultStartingCash`, threaded down to `PortfolioSummaryHeader`'s
+    /// reset sheet — the same `settingsVM` instance `RootView` owns, passed the same way
+    /// `InvestView` receives `dripEnabled` from it.
+    let settingsVM: SettingsViewModel
     @State private var viewModel = CompositionRoot.makePortfolioViewModel()
     @State private var performanceVM = CompositionRoot.makePerformanceViewModel()
     @State private var selectedAsset: Asset?
@@ -39,7 +43,7 @@ struct PortfolioView: View {
             ZStack {
                 Theme.background.ignoresSafeArea()
                 VStack(spacing: 0) {
-                    PortfolioSummaryHeader(viewModel: viewModel, onExport: onExport)
+                    PortfolioSummaryHeader(viewModel: viewModel, settingsVM: settingsVM, onExport: onExport)
                     // Always visible, not gated on holdings — Activity and Performance are
                     // useful reads even with zero holdings, so the picker doesn't wait on them.
                     sectionPicker
@@ -202,10 +206,15 @@ private func assetClassLabel(_ slice: AllocationSlice) -> String {
 /// byte-for-byte the same header above `PortfolioSectionContent` that `PortfolioView`
 /// renders above its own section picker (Task 6 hoisted the section content but dropped
 /// this header from the macOS destination entirely — a carried T6-review acceptance item
-/// this restores). Owns `showChart`/`showResetConfirm` itself: both are pure view-layer
+/// this restores). Owns `showChart`/`showResetSheet` itself: both are pure view-layer
 /// toggle state, private to this one header, never shared with a caller.
 struct PortfolioSummaryHeader: View {
     let viewModel: PortfolioViewModel
+    /// M11.1 Task 4: owns the persisted default starting cash the reset sheet pre-fills and
+    /// writes back to on confirm — threaded down the same way `dripEnabled` reaches
+    /// `IncomeSection`, except the whole view model is needed here (not just one bound field)
+    /// because confirm both reads `defaultStartingCash` to seed the field and writes it back.
+    let settingsVM: SettingsViewModel
     /// M10.1 Task 8: the export entry point (re-homed from the account "⋯" menu), rendered
     /// as a circular button — matches `HomeView`'s `bellButton`/`RootView`'s
     /// `themeToggleButton` idiom — beside `resetMenu`. Optional and hidden when nil so
@@ -213,7 +222,8 @@ struct PortfolioSummaryHeader: View {
     /// showing a dead button.
     var onExport: (() -> Void)? = nil
     @State private var showChart = false
-    @State private var showResetConfirm = false
+    @State private var showResetSheet = false
+    @State private var resetAmountText = ""
 
     private var chartSpring: Animation { .spring(response: 0.34, dampingFraction: 0.84) }
 
@@ -252,12 +262,11 @@ struct PortfolioSummaryHeader: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .confirmationDialog(tr(.resetPortfolioConfirm),
-                            isPresented: $showResetConfirm, titleVisibility: .visible) {
-            Button(tr(.reset), role: .destructive) {
-                Task { await viewModel.reset(startingCash: CompositionRoot.loadSettings().defaultStartingCash) }
+        .sheet(isPresented: $showResetSheet) {
+            ResetPortfolioSheet(amountText: $resetAmountText) { amount in
+                settingsVM.settings.defaultStartingCash = amount
+                Task { await viewModel.reset(startingCash: amount) }
             }
-            Button(tr(.cancel), role: .cancel) {}
         }
     }
 
@@ -412,7 +421,8 @@ struct PortfolioSummaryHeader: View {
     private var resetMenu: some View {
         Menu {
             Button(tr(.resetPortfolio), systemImage: "arrow.counterclockwise", role: .destructive) {
-                showResetConfirm = true
+                resetAmountText = Self.plainAmountText(settingsVM.settings.defaultStartingCash)
+                showResetSheet = true
             }
         } label: {
             Image(systemName: "ellipsis.circle")
@@ -423,6 +433,11 @@ struct PortfolioSummaryHeader: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .frame(width: 28, alignment: .trailing)
+    }
+
+    /// Formats without grouping so the field round-trips through `StartingBalanceInput.parse`.
+    private static func plainAmountText(_ money: Money) -> String {
+        NSDecimalNumber(decimal: money.amount).stringValue
     }
 }
 
