@@ -1,6 +1,7 @@
 package com.aptrade.desktop.portfolio
 
 import com.aptrade.desktop.FakeMarketDataRepository
+import com.aptrade.desktop.designkit.formatMoney
 import com.aptrade.shared.application.BuyAsset
 import com.aptrade.shared.application.FetchDividendEvents
 import com.aptrade.shared.application.FetchMarketQuotes
@@ -8,9 +9,12 @@ import com.aptrade.shared.application.FetchPerformanceReport
 import com.aptrade.shared.application.FetchPortfolio
 import com.aptrade.shared.application.FetchPortfolioPerformance
 import com.aptrade.shared.application.GoalStore
+import com.aptrade.shared.application.LoadGoals
 import com.aptrade.shared.application.PortfolioStore
 import com.aptrade.shared.application.QuoteError
+import com.aptrade.shared.application.RemoveGoal
 import com.aptrade.shared.application.ResetPortfolio
+import com.aptrade.shared.application.SaveGoal
 import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.AssetKind
@@ -24,6 +28,7 @@ import com.aptrade.shared.domain.Quote
 import com.aptrade.shared.domain.Timeframe
 import com.aptrade.shared.domain.Transaction
 import com.aptrade.shared.domain.TradeSide
+import com.aptrade.shared.domain.goalCurrentValueFloor
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.test.advanceTimeBy
@@ -45,10 +50,11 @@ internal class InMemoryPortfolioStore(initial: Portfolio? = null) : PortfolioSto
     override suspend fun save(portfolio: Portfolio) { stored = portfolio }
 }
 
-/** Trivial in-memory [GoalStore] fake — this VM test suite doesn't assert on goal-clearing
- *  behavior (that's covered by ResetPortfolioTest in :shared), just needs to satisfy the
- *  now-required ResetPortfolio constructor parameter. */
-private class InMemoryGoalStore : GoalStore {
+/** Trivial in-memory [GoalStore] fake, shared by every test in this file/package that needs to
+ *  construct a [PortfolioViewModel] or [ResetPortfolio] without a real file store. `internal`
+ *  (not file-private, M11.2 Task 13) so `ValueGoalTest.kt` — a different file in this same
+ *  package — can inspect what a VM persisted via `PortfolioViewModelFixture.goalStore`. */
+internal class InMemoryGoalStore : GoalStore {
     var goals: List<PortfolioGoal> = emptyList()
     override suspend fun load(): List<PortfolioGoal> = goals
     override suspend fun save(goals: List<PortfolioGoal>) { this.goals = goals }
@@ -68,28 +74,49 @@ private fun vm(
     zoneId: java.time.ZoneId = java.time.ZoneId.systemDefault(),
     notifyOrderFill: suspend (TradeSide, String, String, String) -> Unit = { _, _, _, _ -> },
     fetchDividendEvents: FetchDividendEvents? = null,
+    goalStore: GoalStore = InMemoryGoalStore(),
 ) = PortfolioViewModel(
     fetchPortfolio = FetchPortfolio(store),
     fetchMarketQuotes = FetchMarketQuotes(repo),
     buyAsset = BuyAsset(repo, store, Mutex()),
     sellAsset = SellAsset(repo, store, Mutex()),
-    resetPortfolio = ResetPortfolio(store, Mutex(), InMemoryGoalStore()),
+    resetPortfolio = ResetPortfolio(store, Mutex(), goalStore),
     fetchPerformanceReport = FetchPerformanceReport(repo, FetchPortfolioPerformance(repo, store)),
     scope = scope,
     nowEpochSeconds = nowEpochSeconds,
     zoneId = zoneId,
     notifyOrderFill = notifyOrderFill,
     fetchDividendEvents = fetchDividendEvents,
+    loadGoals = LoadGoals(goalStore),
+    saveGoal = SaveGoal(goalStore),
+    removeGoal = RemoveGoal(goalStore),
 )
 
 /** A fully-built [PortfolioViewModel] plus the in-memory store backing it, so a test can both
  *  drive the VM and inspect what it persisted. Shared with `PortfolioResetAmountTest.kt`
- *  (M11.2 Task 9) — the brief asks that suite to reuse this file's VM-construction helper
- *  verbatim rather than forking a second fixture. */
+ *  (M11.2 Task 9) and `ValueGoalTest.kt` (M11.2 Task 13) — every caller reuses this ONE
+ *  VM-construction helper rather than forking a second fixture (carry-notes §4 flags
+ *  test-helper duplication as live debt). */
 internal class PortfolioViewModelFixture(
     val viewModel: PortfolioViewModel,
     val portfolioStore: InMemoryPortfolioStore,
+    val goalStore: InMemoryGoalStore,
+    /** `formatMoney` text of cash + every seeded position's OWN cost basis, precomputed from
+     *  the SAME holdings/cash this fixture built via the identical `goalCurrentValueFloor()`
+     *  extension the view model itself falls back on — so a test can assert against it without
+     *  re-deriving the arithmetic (M11.2 Task 13, carry-notes §2.3). */
+    val expectedCostBasisFloorText: String,
 )
+
+/** Days of ACCOUNT age the fixture's default seeded transaction carries — comfortably past
+ *  `GoalMath.MINIMUM_HISTORY_DAYS` (180) so a caller that doesn't care about the projection gate
+ *  gets an account old enough to clear it. */
+private const val FIXTURE_DEFAULT_ACCOUNT_AGE_DAYS = 400L
+
+/** Default single holding used unless a test overrides `holdings`: 10 AAPL shares at $100
+ *  average cost — a $1,000 cost basis on top of the fixture's fixed $100,000 cash. */
+private fun fixtureDefaultHoldings(): List<Position> =
+    listOf(Position(aapl, BigDecimal.parseString("10"), Money.usd("100.00"), Money.usd("0")))
 
 internal fun portfolioViewModelFixture(
     // TestScope, not the bare CoroutineScope every non-VM helper here takes: the VM's own
@@ -100,15 +127,75 @@ internal fun portfolioViewModelFixture(
     // Job un-joined and fail every caller with `UncompletedCoroutinesError`.
     scope: kotlinx.coroutines.test.TestScope,
     repo: FakeMarketDataRepository = FakeMarketDataRepository(),
-    store: InMemoryPortfolioStore = InMemoryPortfolioStore(),
-    nowEpochSeconds: () -> Long = { 0L },
+    nowEpochSeconds: () -> Long = { 1_782_000_000L },
     zoneId: java.time.ZoneId = java.time.ZoneId.systemDefault(),
     notifyOrderFill: suspend (TradeSide, String, String, String) -> Unit = { _, _, _, _ -> },
     fetchDividendEvents: FetchDividendEvents? = null,
-): PortfolioViewModelFixture = PortfolioViewModelFixture(
-    viewModel = vm(repo, store, scope.backgroundScope, nowEpochSeconds, zoneId, notifyOrderFill, fetchDividendEvents),
-    portfolioStore = store,
-)
+    // M11.2 Task 13 knobs — kept in this ONE fixture rather than forked into a second helper.
+    /** Every symbol's price-history fetch throws, simulating an offline/rate-limited session.
+     *  `FetchPortfolioPerformance`'s own per-symbol `catch (Exception)` degrades that to an
+     *  empty curve (see its KDoc) — the empty-curve fallback is exercised via the VM's ordinary
+     *  SUCCESS branch, not its `catch (QuoteError)` branch. */
+    failHistory: Boolean = false,
+    /** Overrides the seeded portfolio's positions. `emptyList()` builds a genuinely all-cash
+     *  portfolio — no Buy transaction is seeded either, matching the real all-cash case where
+     *  `Portfolio.inceptionEpochSeconds()` is `null`. */
+    holdings: List<Position> = fixtureDefaultHoldings(),
+    /** How many days before [nowEpochSeconds] the seeded Buy transaction (when [holdings] is
+     *  non-empty) is dated — feeds `Portfolio.inceptionEpochSeconds()`. */
+    accountAgeDays: Long = FIXTURE_DEFAULT_ACCOUNT_AGE_DAYS,
+): PortfolioViewModelFixture {
+    val now = nowEpochSeconds()
+    val cash = Money.usd("100000")
+    val transactions = holdings.mapIndexed { index, position ->
+        Transaction(
+            id = "seed-${position.asset.symbol}-$index",
+            symbol = position.asset.symbol,
+            side = TradeSide.Buy,
+            quantity = position.quantity,
+            price = position.averageCost,
+            epochSeconds = now - accountAgeDays * 86_400L,
+        )
+    }
+    val seeded = Portfolio(cash = cash, positions = holdings, transactions = transactions, startingCash = cash)
+    val store = InMemoryPortfolioStore(seeded)
+    val goalStore = InMemoryGoalStore()
+
+    if (failHistory) {
+        repo.historyImpl = { _, _ -> throw QuoteError.RateLimited }
+    } else {
+        // A flat, 250-day-spanning daily price series for every held symbol — long enough to
+        // clear GoalMath's curve-SPAN gate on its own, independent of accountAgeDays, so a test
+        // that overrides only accountAgeDays (the insufficient-history divergence case)
+        // exercises ONLY the account-AGE gate, never a curve that's also too short.
+        repo.historyImpl = { symbol, _ ->
+            if (holdings.none { it.asset.symbol == symbol }) {
+                emptyList()
+            } else {
+                (0..250L).map { daysAgo -> PricePoint(now - daysAgo * 86_400L, Money.usd("100.00")) }
+                    .sortedBy { it.epochSeconds }
+            }
+        }
+    }
+    repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
+
+    val viewModel = vm(
+        repo = repo,
+        store = store,
+        scope = scope.backgroundScope,
+        nowEpochSeconds = nowEpochSeconds,
+        zoneId = zoneId,
+        notifyOrderFill = notifyOrderFill,
+        fetchDividendEvents = fetchDividendEvents,
+        goalStore = goalStore,
+    )
+    return PortfolioViewModelFixture(
+        viewModel = viewModel,
+        portfolioStore = store,
+        goalStore = goalStore,
+        expectedCostBasisFloorText = formatMoney(seeded.goalCurrentValueFloor().amountText),
+    )
+}
 
 class PortfolioViewModelTest {
 

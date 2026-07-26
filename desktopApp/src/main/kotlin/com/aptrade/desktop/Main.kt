@@ -121,6 +121,9 @@ fun main() = application {
             sellAsset = graph.sellAsset,
             resetPortfolio = graph.resetPortfolio,
             fetchPerformanceReport = graph.fetchPerformanceReport,
+            loadGoals = graph.loadGoals,
+            saveGoal = graph.saveGoal,
+            removeGoal = graph.removeGoal,
             scope = appScope,
             nowEpochSeconds = { System.currentTimeMillis() / 1000 },
             notifyOrderFill = graph.notifyOrderFill,
@@ -644,6 +647,8 @@ private fun AppRoot(
                         section = destination.section,
                         onSetSpan = portfolioViewModel::setSpan,
                         onSetBenchmark = portfolioViewModel::setBenchmark,
+                        onSetValueGoal = portfolioViewModel::setValueGoal,
+                        onRemoveValueGoal = portfolioViewModel::removeValueGoal,
                         onOpenDetail = onOpenDetail,
                         onTrade = { symbol, side ->
                             // Held-asset trades: reuse the row's name/kind + live price from state.

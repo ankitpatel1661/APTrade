@@ -43,23 +43,30 @@ import com.aptrade.desktop.designkit.DK
 import com.aptrade.desktop.designkit.InterFamily
 import com.aptrade.desktop.designkit.StatTile
 import com.aptrade.desktop.designkit.crosshairIndex
+import com.aptrade.desktop.goals.GoalCard
+import com.aptrade.shared.domain.GoalKind
+import com.aptrade.shared.domain.Money
 import com.aptrade.shared.l10n.L10n
 import com.aptrade.desktop.l10n.tr
 
 /** The Portfolio tab's chart-and-analytics surface — the Compose port of
  *  `Sources/APTradeApp/PerformanceSection.swift`, promoted (Task 12) to be THE performance
- *  chart block directly under the summary header. A header row carries the "PERFORMANCE"
- *  label, a live hovered-delta readout (macOS ExpandedValueCard parity), the five-span
- *  [SpanBar], and the SPY/QQQ/VTI benchmark picker; below it a crosshair-scrubbed 200dp
- *  overlay chart (portfolio gold, benchmark silver) and a 7-tile risk-metric grid. All state
- *  is read from [PortfolioUiState]; span/benchmark switches are raised through [onSetSpan] /
- *  [onSetBenchmark] (a one-shot report refetch on the VM). */
+ *  chart block directly under the summary header. Task 13 adds the value-goal card, rendered
+ *  FIRST and unconditionally (see its own doc below), followed by a header row carrying the
+ *  "PERFORMANCE" label, a live hovered-delta readout (macOS ExpandedValueCard parity), the
+ *  five-span [SpanBar], and the SPY/QQQ/VTI benchmark picker; below it a crosshair-scrubbed
+ *  200dp overlay chart (portfolio gold, benchmark silver) and an 8-tile risk-metric grid. All
+ *  state is read from [PortfolioUiState]; span/benchmark switches are raised through
+ *  [onSetSpan] / [onSetBenchmark] (a one-shot report refetch on the VM), and the goal card's
+ *  edits through [onSetValueGoal] / [onRemoveValueGoal]. */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun PerformanceSection(
     state: PortfolioUiState,
     onSetSpan: (PortfolioSpan) -> Unit,
     onSetBenchmark: (String) -> Unit,
+    onSetValueGoal: (Money) -> Unit,
+    onRemoveValueGoal: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val points = state.performancePoints
@@ -77,6 +84,19 @@ fun PerformanceSection(
         state.transactions.isNotEmpty() && points.size < 2
 
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // UNCONDITIONAL (carry-notes §1.3): the value-goal card sits ABOVE everything the
+        // report's load state governs. The Swift wave put it inside the `loaded` branch, so an
+        // all-cash portfolio — money deposited, nothing bought — collapsed the section and the
+        // card vanished. A goal is a plan; it is most useful before you hold anything. Reuses
+        // Task 10's shared `GoalCard` verbatim (same card the Income surface mounts) — never a
+        // second, forked implementation.
+        GoalCard(
+            title = tr(L10n.Key.ValueGoal),
+            kind = GoalKind.Value,
+            ui = state.valueGoal,
+            onSet = onSetValueGoal,
+            onRemove = onRemoveValueGoal,
+        )
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 // Small-caps section-label styling (letterSpacing 1.8sp, same idiom as
@@ -375,7 +395,7 @@ private fun LegendEntry(color: Color, dashed: Boolean, label: String) {
     }
 }
 
-/** The 7-tile risk grid. Metric text (including "—" for nulls) comes straight from
+/** The 8-tile risk grid. Metric text (including "—" for nulls) comes straight from
  *  [MetricTexts]; when the report hasn't loaded yet every tile shows "—". */
 @Composable
 private fun MetricGrid(metrics: MetricTexts?) {
@@ -387,6 +407,7 @@ private fun MetricGrid(metrics: MetricTexts?) {
         tr(L10n.Key.Sharpe) to (metrics?.sharpe ?: "—"),
         tr(L10n.Key.Beta) to (metrics?.beta ?: "—"),
         tr(L10n.Key.Alpha) to (metrics?.alpha ?: "—"),
+        tr(L10n.Key.SinceInception) to (metrics?.sinceInception ?: "—"),
     )
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
         tiles.chunked(4).forEach { rowTiles ->

@@ -115,6 +115,8 @@ fun PortfolioPane(
     section: PortfolioSection,
     onSetSpan: (PortfolioSpan) -> Unit,
     onSetBenchmark: (String) -> Unit,
+    onSetValueGoal: (Money) -> Unit,
+    onRemoveValueGoal: () -> Unit,
     onOpenDetail: (String) -> Unit,
     onTrade: (symbol: String, side: com.aptrade.shared.domain.TradeSide) -> Unit,
     defaultStartingCash: Money,
@@ -154,6 +156,8 @@ fun PortfolioPane(
                     state = state,
                     onSetSpan = onSetSpan,
                     onSetBenchmark = onSetBenchmark,
+                    onSetValueGoal = onSetValueGoal,
+                    onRemoveValueGoal = onRemoveValueGoal,
                     modifier = Modifier.padding(horizontal = 24.dp).padding(top = 4.dp, bottom = 20.dp),
                 )
             }
