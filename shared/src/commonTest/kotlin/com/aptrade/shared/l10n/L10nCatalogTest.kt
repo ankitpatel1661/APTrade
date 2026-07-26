@@ -55,12 +55,18 @@ import kotlin.test.assertTrue
  * `SessionAfterClose`/`SessionBeforeOpen` family instead of adding a near-duplicate pair),
  * plus `SidebarSearch`/`SidebarSettings` (Swift M10.1 Task 6) — bringing the total to 389; the
  * count below tracks the Kotlin-only total going forward, not the Swift source count.
+ * M11.2 Task 8 (goals, dividend calendar, income forecast, configurable starting balance) added
+ * 21 more: the calendar/forecast/goal block, the two reset-sheet strings, the starting-balance
+ * range hint, and `SinceInception` (Kotlin-first — no Swift counterpart, it names the metric
+ * introduced by M11.2 kickoff decision 4a.1). Swift's `estimatedShort` was NOT transcribed — the
+ * existing `IncomeEstimatedBadge` already carries exactly that word in all four languages, so it
+ * is reused rather than near-duplicated. That brings the total to 410.
  */
 class L10nCatalogTest {
 
     @Test
-    fun `catalog has exactly 389 keys (365 pre-M10_2 + 24 Home_Markets_Invest_Alerts_Sidebar keys from the M10_2 Task 1 Kotlin L10n port)`() {
-        assertEquals(389, L10n.Key.entries.size)
+    fun `catalog has exactly 410 keys (389 pre-M11_2 + 21 goals_calendar_forecast_reset keys from the M11_2 Task 8 Kotlin L10n port)`() {
+        assertEquals(410, L10n.Key.entries.size)
     }
 
     @Test
