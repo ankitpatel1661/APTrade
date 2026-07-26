@@ -1,6 +1,7 @@
 package com.aptrade.shared.infrastructure
 
 import com.aptrade.shared.domain.Money
+import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.settings.AccentTheme
 import com.aptrade.shared.settings.AppSettings
 import com.aptrade.shared.l10n.AppLanguage
@@ -436,5 +437,17 @@ class FileSettingsStoreTest {
         assertEquals(Money.usd("100000"), loaded.defaultStartingCash)
         // Field-level, NOT whole-blob: the neighbouring preference survives.
         assertEquals(true, loaded.dripEnabled)
+    }
+
+    /** Review Finding 4: `FileSettingsStore`'s own serialized-default text lives in
+     *  `jvmCommonMain`, a source set `StartingBalanceLiteralTest` (commonTest) cannot see -- so a
+     *  THIRD "100000" literal planted here would be invisible to that sweep. Pin the DTO's own
+     *  default against [Portfolio.DEFAULT_STARTING_CASH] directly (the one sanctioned literal),
+     *  never a locally re-typed "100000", so a drift shows up as a failing assertion inside the
+     *  very source set the earlier sweep could not reach. */
+    @Test
+    fun defaultStartingCashOnAMissingFileAgreesWithThePortfolioDefaultLiteral() = runBlocking {
+        val file = Files.createTempDirectory("aptrade-settings").resolve("settings.json")
+        assertEquals(Portfolio.DEFAULT_STARTING_CASH, FileSettingsStore(file).load().defaultStartingCash)
     }
 }

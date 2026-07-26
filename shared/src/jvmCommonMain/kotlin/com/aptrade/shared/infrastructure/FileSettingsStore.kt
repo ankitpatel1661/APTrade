@@ -53,9 +53,14 @@ class FileSettingsStore(private val file: Path) {
     )
 
     private companion object {
-        /** Serialized form of [Portfolio.DEFAULT_STARTING_CASH]; kept as text so the DTO stays a
-         *  pure @Serializable value with no BigDecimal serializer. */
-        const val DEFAULT_STARTING_CASH_TEXT = "100000"
+        /** Serialized form of [Portfolio.DEFAULT_STARTING_CASH] -- DERIVED, not a third hardcoded
+         *  "100000" literal (review Finding 4). `StartingBalanceLiteralTest` lives in
+         *  `commonTest`, which cannot see this `jvmCommonMain` source set, so a literal planted
+         *  here was structurally invisible to that sweep -- exactly the hiding place carry-notes
+         *  §2.7 predicted. Kept as text (not a literal `BigDecimal`) so the DTO stays a pure
+         *  @Serializable value with no BigDecimal serializer; `toStringExpanded()` is the same
+         *  lossless round-trip [save] already uses for this same field. */
+        val DEFAULT_STARTING_CASH_TEXT: String = Portfolio.DEFAULT_STARTING_CASH.amount.toStringExpanded()
     }
 
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
