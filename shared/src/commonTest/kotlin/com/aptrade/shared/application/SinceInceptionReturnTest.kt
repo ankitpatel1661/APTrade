@@ -45,12 +45,30 @@ class SinceInceptionReturnTest {
         assertEquals(0.20, result.metrics.sinceInceptionReturn!!, 1e-9)
     }
 
+    /** M11.2 Task 7 review Finding 1 (Critical): the ORIGINAL version of this fixture bought at
+     *  exactly the same price as the first historical close ($100 == $100), which makes the
+     *  curve's own opening value collapse algebraically to `startingCash` (cash-after-buy + qty *
+     *  first-close == startingCash whenever first-close == trade price). Under that fixture, a
+     *  `portfolio.startingCash`-based implementation and a `points.first().value`-based one are
+     *  BIT-IDENTICAL — the test could not tell them apart, and every other test in this file has
+     *  the same collapse, so NONE of them discriminated.
+     *
+     *  Fixed by making the first historical close ($80) differ from the trade price ($100), so the
+     *  curve's opening value and `startingCash` are genuinely different numbers:
+     *    cash after buy               = 100,000 - 100*100            = 90,000
+     *    curve's OWN opening value     = 90,000 + 100 * 80            = 98,000   (<> startingCash)
+     *    curve's latest value          = 90,000 + 100 * 200           = 110,000
+     *    CORRECT (from startingCash):  110,000 / 100,000 - 1          = 0.10
+     *    WRONG (from curve origin):    110,000 /  98,000 - 1          = 0.12244897959183673...
+     *  A silent revert to `points.first().value` would produce ~0.1224 here, not 0.10 -- far
+     *  outside the 1e-9 tolerance below, so this test now genuinely reddens on that regression
+     *  (verified by temporarily swapping the implementation and re-running; see task-7-report.md). */
     @Test
     fun theSameCurveAgainstADifferentOpeningBalanceGivesADifferentReturn() = runTest {
         val portfolio = Portfolio.starting(Money.usd("100000"))
             .buying(aapl, qty("100"), Money.usd("100"), 1_000_000L, "txn-1")
         val history = listOf(
-            PricePoint(1_000_000L, Money.usd("100")),
+            PricePoint(1_000_000L, Money.usd("80")),
             PricePoint(1_000_000L + 200 * day, Money.usd("200")),
         )
         val repository = PerfFakeMarketDataRepository(historiesBySymbol = mapOf("AAPL" to history))
@@ -58,7 +76,8 @@ class SinceInceptionReturnTest {
         val performance = FetchPortfolioPerformance(repository, store)
         val result = FetchPerformanceReport(repository, performance)
             .execute(Timeframe.OneYear, "SPY", portfolio)
-        // 100,000 cash - 10,000 spent + 20,000 holdings = 110,000 -> +10%.
+        // 100,000 cash - 10,000 spent + 20,000 holdings (100 * $200) = 110,000 -> +10% from
+        // startingCash. (From the curve's own $80 opening it would instead be +12.24%.)
         assertEquals(0.10, result.metrics.sinceInceptionReturn!!, 1e-9)
     }
 
