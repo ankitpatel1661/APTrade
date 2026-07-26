@@ -128,6 +128,19 @@ data class State(
      *  `forecast.isNotEmpty()` can never answer "is there anything to chart?". Exposed here rather
      *  than recomputed in the view so no pane has to reason about DividendMath's internals. */
     val hasForecastIncome: Boolean = false,
+    /** True when at least one holding that actually contributes to [forecast] (positive trailing
+     *  income, positive quantity — the same inclusion test `incomeForecast` applies internally)
+     *  has no entry in the last-loaded quote map. When that happens, `incomeForecast`'s own
+     *  per-symbol `?: averageCost` fallback silently reinvests THAT holding's DRIP compounding at
+     *  cost basis rather than its live price — the same overstatement mechanism an omitted
+     *  `pricesBySymbol` argument would cause (carry-notes §1.1), reached instead by an ordinary
+     *  offline/rate-limited quote-fetch failure. `hasForecastIncome` cannot signal this (the
+     *  forecast is still populated, just wrong), so this flag exists for Task 12 to caption the
+     *  DRIP chart with — mirrors [com.aptrade.shared.domain.goalCurrentValueFloor]'s KDoc
+     *  precedent of naming the "silent fallback vs. genuine data" distinction explicitly rather
+     *  than letting a caller conflate them. False whenever there is nothing forecastable at all
+     *  (an empty/all-zero-income portfolio has nothing to caption either). */
+    val forecastPricesAreEstimated: Boolean = false,
     /** `null` when no income goal is set — the card still RENDERS (carry-notes §1.3), showing its
      *  "Set a goal" affordance. */
     val incomeGoal: GoalCardUi? = null,
@@ -299,21 +312,43 @@ class IncomeViewModel(
     }
 
     private fun rebuildForecast() {
+        val asOf = nowEpochSeconds()
         val forecast = DividendMath.incomeForecast(
             positions = lastPositions,
             pricesBySymbol = lastPricesBySymbol,
             eventsBySymbol = lastEventsBySymbol,
             years = _state.value.horizon.years,
             dripEnabled = dripEnabled,
-            asOfEpochSeconds = nowEpochSeconds(),
+            asOfEpochSeconds = asOf,
         )
         _state.update {
             it.copy(
                 forecast = forecast,
                 hasForecastIncome = forecast.any { year -> year.income.amount > BigDecimal.ZERO },
+                forecastPricesAreEstimated = forecastPricesAreEstimated(lastPositions, lastEventsBySymbol, asOf),
             )
         }
         refreshGoalProjection()
+    }
+
+    /** True when a holding [incomeForecast][DividendMath.incomeForecast] would actually project
+     *  (positive trailing income, positive quantity — its own `trailing.amount <= ZERO ||
+     *  quantity <= ZERO` skip condition, reproduced here so this flag matches EXACTLY which
+     *  holdings the forecast includes) has no entry in [lastPricesBySymbol]. Calls
+     *  [DividendMath.trailingAnnualPerShare] directly — the same shared, pure function this file
+     *  already calls elsewhere (`buildHoldings`) — rather than inventing new arithmetic; this is
+     *  a membership check, not a re-derivation of the forecast's math. */
+    private fun forecastPricesAreEstimated(
+        positions: List<Position>,
+        eventsBySymbol: Map<String, List<DividendEvent>>,
+        asOfEpochSeconds: Long,
+    ): Boolean {
+        val forecastable = positions.filter { position ->
+            val events = eventsBySymbol[position.asset.symbol] ?: emptyList()
+            DividendMath.trailingAnnualPerShare(events, asOfEpochSeconds).amount > BigDecimal.ZERO &&
+                position.quantity > BigDecimal.ZERO
+        }
+        return forecastable.any { lastPricesBySymbol[it.asset.symbol] == null }
     }
 
     private fun refreshGoalProjection() {

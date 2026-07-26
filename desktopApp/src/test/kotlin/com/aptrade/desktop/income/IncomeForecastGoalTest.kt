@@ -1,7 +1,6 @@
 package com.aptrade.desktop.income
 
 import com.aptrade.desktop.FakeMarketDataRepository
-import com.aptrade.shared.application.GoalStore
 import com.aptrade.shared.application.LoadGoals
 import com.aptrade.shared.application.RemoveGoal
 import com.aptrade.shared.application.SaveGoal
@@ -11,7 +10,6 @@ import com.aptrade.shared.domain.DividendEvent
 import com.aptrade.shared.domain.GoalKind
 import com.aptrade.shared.domain.GoalMath
 import com.aptrade.shared.domain.GoalProjection
-import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.domain.PortfolioGoal
 import com.aptrade.shared.domain.Quote
@@ -26,20 +24,15 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** M11.2 Task 11. Forecast, dividend calendar, income goal, and the DRIP-toggle wire. */
+/** M11.2 Task 11. Forecast, dividend calendar, income goal, and the DRIP-toggle wire.
+ *  [FakePortfolioStore]/[MemoryGoalStore]/`usd`/`qty` are the file-level helpers shared with
+ *  [IncomeViewModelTest] -- see `IncomeTestSupport.kt`'s KDoc. */
 class IncomeForecastGoalTest {
     private val day = 86_400L
-    private fun usd(s: String) = Money.usd(s)
-    private fun qty(s: String) = BigDecimal.parseString(s)
     private val aapl = Asset("AAPL", "Apple Inc.", AssetKind.Stock)
 
     /** 2026-07-20T12:00:00Z — the same fixed "now" IncomeViewModelTest uses. */
     private val now = 1_784_548_800L
-
-    private class MemoryGoalStore(var goals: List<PortfolioGoal> = emptyList()) : GoalStore {
-        override suspend fun load(): List<PortfolioGoal> = goals
-        override suspend fun save(goals: List<PortfolioGoal>) { this.goals = goals }
-    }
 
     /** Twelve quarterly $0.25 payments — three years of flat history, cadence inferable. */
     private fun events(): List<DividendEvent> =
@@ -66,10 +59,7 @@ class IncomeForecastGoalTest {
         }
         market.dividendEventsImpl = { _, _ -> events() }
         val vm = IncomeViewModel(
-            portfolioStore = object : com.aptrade.shared.application.PortfolioStore {
-                override suspend fun load(): Portfolio = portfolio
-                override suspend fun save(portfolio: Portfolio) = Unit
-            },
+            portfolioStore = FakePortfolioStore(portfolio),
             marketDataRepository = market,
             scope = scope,
             nowEpochSeconds = { now },
@@ -113,6 +103,28 @@ class IncomeForecastGoalTest {
         assertTrue(quotedYear10 < costBasisYear10, "cost-basis DRIP must overstate the quoted run")
     }
 
+    /** BINDING (review Finding 2). A total quote-fetch failure makes DRIP silently reinvest every
+     *  symbol at cost basis inside `incomeForecast` -- the same overstatement mechanism
+     *  [dripCompoundsAtTheQuotedPriceNotCostBasis] pins, but reached legitimately (a real fetch
+     *  failure) rather than by a dropped argument. `hasForecastIncome` alone can't tell a caller
+     *  this happened -- the forecast is still populated, just wrong -- so `state` must carry its
+     *  own signal for Task 12 to caption the chart with. */
+    @Test
+    fun aTotalQuoteFetchFailureFlagsTheForecastPricesAsEstimated() = runTest {
+        val f = fixture(this, drip = true, quotePrice = null)
+        f.viewModel.load(); runCurrent()
+        assertTrue(f.viewModel.state.value.forecastPricesAreEstimated)
+    }
+
+    /** The mirror case: a real quote for every forecasted holding means DRIP reinvests at the
+     *  quoted price everywhere, so there is nothing to caption. */
+    @Test
+    fun aQuoteForEveryForecastedHoldingLeavesTheFlagFalse() = runTest {
+        val f = fixture(this, drip = true, quotePrice = "150")
+        f.viewModel.load(); runCurrent()
+        assertFalse(f.viewModel.state.value.forecastPricesAreEstimated)
+    }
+
     /** BINDING (carry-notes §2.2). Flipping DRIP must rebuild the chart AND refresh the ETA. */
     @Test
     fun dripDidChangeRebuildsTheForecastAndRefreshesTheGoalProjection() = runTest {
@@ -152,13 +164,31 @@ class IncomeForecastGoalTest {
         assertEquals(0.3125, f.viewModel.state.value.incomeGoal!!.fraction, 1e-9)
     }
 
-    /** BINDING (carry-notes §3.3): the ETA must not move when the chart horizon changes. */
+    /** BINDING (carry-notes §3.3): the ETA must not move when the chart horizon changes.
+     *
+     *  DISCRIMINATION (review Finding 1): a $400 target here never crosses within 30 years (this
+     *  fixture's flat-growth, DRIP-compounded curve tops out at ~$159 by year 30 -- see the
+     *  numbers below), so EVERY horizon reports [GoalProjection.BeyondHorizon] regardless of
+     *  which forecast length feeds `incomeProjection` -- the assertion would hold even if
+     *  `refreshGoalProjection` leaked `_state.value.horizon.years` in place of
+     *  `GoalMath.HORIZON_YEARS`. A $130 target crosses at year 6 (year 5 = 129.22, year 6 =
+     *  130.30 -- verified by direct computation of this fixture's exact BigDecimal forecast, and
+     *  matching the reviewer's independently re-derived numbers): year 6 -> $129.22, $130.30,
+     *  $131.38, $132.48, $133.58, $134.69 (year 10), ... $159.01 (year 30). A forecast truncated
+     *  to the `Five` pill's 5 entries never reaches $130 (last entry $129.22, still above
+     *  `current` $125, so `incomeProjection` falls through to [GoalProjection.BeyondHorizon]) --
+     *  while the correct always-30-year read crosses at year 6 and reports
+     *  [GoalProjection.Years]\(6.0\) from EVERY pill. This was verified to fail (RED) when
+     *  `refreshGoalProjection` was temporarily changed to pass `_state.value.horizon.years`
+     *  instead of `GoalMath.HORIZON_YEARS.toInt()`, then pass (GREEN) once reverted -- see the
+     *  task report's RED/GREEN transcript. */
     @Test
     fun theGoalEtaIsIndependentOfTheChartHorizon() = runTest {
-        val goals = MemoryGoalStore(listOf(PortfolioGoal(GoalKind.Income, usd("400"), 1L)))
+        val goals = MemoryGoalStore(listOf(PortfolioGoal(GoalKind.Income, usd("130"), 1L)))
         val f = fixture(this, drip = true, goals = goals)
         f.viewModel.load(); runCurrent()
         val atTen = f.viewModel.state.value.incomeGoal!!.projection
+        assertEquals(GoalProjection.Years(6.0), atTen, "sanity: the crossing must land at year 6")
         f.viewModel.setHorizon(ForecastHorizon.Five); runCurrent()
         assertEquals(atTen, f.viewModel.state.value.incomeGoal!!.projection)
         f.viewModel.setHorizon(ForecastHorizon.Thirty); runCurrent()
@@ -207,10 +237,7 @@ class IncomeForecastGoalTest {
         market.quotesImpl = { emptyList() }
         market.dividendEventsImpl = { _, _ -> emptyList() }
         val vm = IncomeViewModel(
-            portfolioStore = object : com.aptrade.shared.application.PortfolioStore {
-                override suspend fun load(): Portfolio = Portfolio.starting(usd("50000"))
-                override suspend fun save(portfolio: Portfolio) = Unit
-            },
+            portfolioStore = FakePortfolioStore(Portfolio.starting(usd("50000"))),
             marketDataRepository = market,
             scope = this,
             nowEpochSeconds = { now },
@@ -222,6 +249,8 @@ class IncomeForecastGoalTest {
         vm.load(); runCurrent()
         assertFalse(vm.state.value.hasForecastIncome)
         assertEquals(GoalProjection.InsufficientHistory, vm.state.value.incomeGoal!!.projection)
+        // No forecastable position at all -- nothing to caption as cost-basis-estimated either.
+        assertFalse(vm.state.value.forecastPricesAreEstimated)
     }
 
     // MARK: dividend calendar
@@ -247,10 +276,7 @@ class IncomeForecastGoalTest {
         market.quotesImpl = { emptyList() }
         market.dividendEventsImpl = { _, _ -> emptyList() }
         val vm = IncomeViewModel(
-            portfolioStore = object : com.aptrade.shared.application.PortfolioStore {
-                override suspend fun load(): Portfolio = Portfolio.starting(usd("50000"))
-                override suspend fun save(portfolio: Portfolio) = Unit
-            },
+            portfolioStore = FakePortfolioStore(Portfolio.starting(usd("50000"))),
             marketDataRepository = market,
             scope = this,
             nowEpochSeconds = { now },
