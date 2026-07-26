@@ -558,8 +558,12 @@ exercised. Use a target the forecast actually crosses.
 
 ```
 JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home \
-  ./gradlew :shared:test
+  ./gradlew :shared:jvmTest
 ```
+
+**CORRECTION 2026-07-26:** this originally read `:shared:test`, which runs the `shared` module's
+Android unit-test targets, not the JVM suite this document's test counts (709/711) track. Use
+`:shared:jvmTest`. See the top-level Verification section below for the full explanation.
 
 Known-red and **out of scope**: `:shared:compileTestKotlinMacosArm64` has failed since ~M8.2 on
 backtick test names containing `()` and `,`. Do not attempt to fix it, and do not name your new tests
@@ -614,8 +618,19 @@ Kotlin must also stay green after Task 5 (comments only, but prove it):
 
 ```
 JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home \
-  ./gradlew :shared:test :desktop:test :androidApp:testDebugUnitTest
+  ./gradlew :shared:jvmTest :desktop:test :androidApp:testDebugUnitTest
 ```
+
+**CORRECTION 2026-07-26 (Task 5 review):** an earlier revision of this section named
+`:shared:test` here. **That is wrong** — `:shared:test` runs the `shared` module's **Android**
+unit-test targets (`testDebugUnitTest`/`testReleaseUnitTest`), a different, narrower suite than the
+709/711-test JVM baseline this document tracks. The 709/711 figures are **`:shared:jvmTest`'s**
+counts specifically; use that target, not `:shared:test`, when checking them. A Task 6 implementer
+who ran `:shared:test` as originally instructed measured 586 and correctly flagged the mismatch
+instead of assuming the plan was right — this correction exists because of that catch.
+
+Also note: a fresh worktree needs a gitignored `local.properties` (pointing at a local Android SDK
+install) before **any** Gradle target here — including `:shared:jvmTest` — will run at all.
 
 Known-red and **out of scope**: `:shared:compileTestKotlinMacosArm64` has failed since ~M8.2 on
 backtick test names containing `()` and `,`. Do not attempt to fix it here.

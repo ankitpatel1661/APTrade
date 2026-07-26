@@ -201,8 +201,8 @@ object DividendMath {
      * being compared: the gap, in years, between each half's CENTROID (mean ex-date) — not the
      * window's total first-to-last span.
      *
-     * CARRY-NOTE 6 (recorded divergence from the Swift AS-BUILT, pending backport — human ruling,
-     * M11.2 Task 5 review Finding 1, corrected by Finding A): the original transcription compared
+     * CARRY-NOTE 6 (human ruling, M11.2 Task 5 review Finding 1, corrected by Finding A — ported to
+     * Swift by `feature/m11-swift-backport-parity`, closing carry-notes §4c): the original transcription compared
      * [trailingAnnualPerShare] sampled at two instants (`asOf`, and `window.first() + 1 year`).
      * That is an aliasing bug: whether a rolling 365-day window catches 4 or 5 payments of an
      * exact quarterly (91-day) cadence depends entirely on where `asOf` happens to fall relative
