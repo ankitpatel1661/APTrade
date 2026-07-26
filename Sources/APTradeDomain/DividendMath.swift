@@ -24,6 +24,9 @@ public enum DividendCadence: Equatable, Sendable {
 /// aggregation. No networking, no persistence — Foundation only.
 public enum DividendMath {
     private static let secondsPerDay: TimeInterval = 86_400
+    /// Average calendar year, including the leap-day quarter — the annualization unit for
+    /// `dividendGrowthRate`'s window, span and centroid arithmetic. Kotlin's `SECONDS_PER_YEAR`.
+    private static let secondsPerYear: TimeInterval = 365.25 * 86_400
 
     /// Shares held STRICTLY BEFORE `date`: sum of buy quantities minus sell
     /// quantities across transactions with `txn.date < date` (dividend entries
@@ -152,32 +155,147 @@ public enum DividendMath {
     /// years of history and clamped to `minDividendGrowth ... maxDividendGrowth`.
     /// Returns `0` when there is too little history to measure honestly
     /// (fewer than two years spanned, or fewer than two payments).
+    ///
+    /// Compares the AVERAGE PER-PAYMENT amount across the oldest half of the window against the
+    /// newest half (payment-count-normalized) rather than a raw day-windowed sum sampled at two
+    /// instants, so a cadence change (e.g. quarterly -> monthly) doesn't read as growth. The
+    /// annualization exponent's divisor is the elapsed time between the two quantities actually
+    /// being compared: the gap, in years, between each half's CENTROID (mean ex-date) — not the
+    /// window's total first-to-last span.
+    ///
+    /// WHY IT IS SHAPED THIS WAY (do not "simplify" it back). The original implementation sampled
+    /// `trailingAnnualPerShare` at two instants (`asOf`, and `window[0].exDate + 1 year`). That is
+    /// an aliasing bug: whether a rolling 365-day window catches 4 or 5 payments of an exact
+    /// quarterly (91-day) cadence depends entirely on where `asOf` falls relative to an ex-date —
+    /// four 91-day gaps span only 364 days, one day short of the window — so a genuinely FLAT
+    /// payer read anywhere from −20% to +25%/yr purely from ex-date phase (reproduced at
+    /// `0.13678039345929127` for a flat $0.25/quarter payer; see
+    /// `test_growthRate_flatHistoryWithExactCadenceAliasing_isZero`), compounding to a ~45x
+    /// divergence in reported income at a 30-year horizon. Comparing per-payment AVERAGES over
+    /// count-matched halves is immune to this: a flat payer's early- and late-half averages are
+    /// equal regardless of which instant `asOf` is, because no day-count window boundary is
+    /// computed at all. (The old code also mismatched its early anchor — `first + 365.25 days` —
+    /// against `trailingAnnualPerShare`'s strict 365-day window, a 21,600-second gap that
+    /// structurally excluded the early window's own first event. That class of bug cannot recur
+    /// here: this function computes no window-membership cutoff.)
+    ///
+    /// Both halves of the fix must stay together. Count-matched halves with the OLD
+    /// `totalSpanYears - 1` divisor removes the aliasing but introduces a different, systematic
+    /// bias: centroids are separated by roughly `span / 2`, not `span − 1`, and those coincide
+    /// only at exactly a two-year span. That defect is silent and calibrated-looking, and just as
+    /// capable of a multiple-x divergence at 30 years. The divisor must be the actual measured
+    /// interval — the centroid gap — which is what makes the annualization recover a known true
+    /// per-payment CAGR exactly (`test_growthRate_recoversAKnownTruePerPaymentCagr`).
+    ///
+    /// On an odd-count window the middle event is dropped from BOTH halves. That is deliberate:
+    /// assigning it to either half reintroduces an asymmetry between the two payment counts, and
+    /// with it the artifact this algorithm exists to remove — a flat payer carrying one year-end
+    /// special reads +19.97%/yr the moment that special lands on the middle event. Pinned by
+    /// `test_growthRate_oddCountWindow_dropsTheMiddleEventFromBothHalves`.
+    ///
+    /// RESIDUAL LIMITATION: count-matched halves are immune to phase relative to `asOf` — they are
+    /// NOT immune to phase relative to a payer's own cadence when that payer mixes an irregular,
+    /// much larger payment into an otherwise-regular schedule (a REIT/BDC paying a regular
+    /// quarterly rate plus a year-end special distribution can land that one oversized payment in
+    /// either half). Same class of artifact, roughly an order of magnitude smaller, and bounded by
+    /// the clamp like everything else this function returns.
+    ///
+    /// MEASURED-ZERO VS. UNMEASURABLE: every early return reports `0` regardless of WHY — a
+    /// genuinely flat payer with two full years of history and a payer with one payment ever both
+    /// read `0`. That conflation is right for `incomeForecast` (a forecast that cannot measure
+    /// growth should compound at 0%), but not for a caller that must tell "nothing to report" from
+    /// "reported a real zero" — see `hasMeasurableGrowth`, which shares every precondition through
+    /// `measuredDividendGrowthRate` so the two cannot drift apart.
     public static func dividendGrowthRate(events: [DividendEvent], asOf: Date) -> Decimal {
+        measuredDividendGrowthRate(events: events, asOf: asOf) ?? 0
+    }
+
+    /// True when `events` carries enough history for `dividendGrowthRate` to actually MEASURE a
+    /// rate, as opposed to defaulting to `0` purely for want of data. Shares
+    /// `measuredDividendGrowthRate`'s preconditions exactly — a genuinely flat payer with
+    /// sufficient history returns `true` here (with `dividendGrowthRate` reporting a real,
+    /// measured `0`); a payer with too little history returns `false` (with `dividendGrowthRate`
+    /// ALSO reporting `0`, indistinguishably, unless this function is consulted separately).
+    public static func hasMeasurableGrowth(events: [DividendEvent], asOf: Date) -> Bool {
+        measuredDividendGrowthRate(events: events, asOf: asOf) != nil
+    }
+
+    /// True when at least one position `incomeForecast` would actually project (positive trailing
+    /// income, positive quantity — its own identical inclusion test, reproduced here) has
+    /// `hasMeasurableGrowth` history for its own events. Lets a caller aggregate the per-symbol
+    /// measurability question across a whole portfolio in one call, the same way
+    /// `projectedAnnualIncome` aggregates the per-symbol income sum.
+    public static func anyPositionHasMeasurableGrowth(positions: [Position],
+                                                      eventsBySymbol: [String: [DividendEvent]],
+                                                      asOf: Date) -> Bool {
+        positions.contains { position in
+            let events = eventsBySymbol[position.asset.symbol] ?? []
+            return trailingAnnualPerShare(events: events, asOf: asOf).amount > 0
+                && position.quantity.amount > 0
+                && hasMeasurableGrowth(events: events, asOf: asOf)
+        }
+    }
+
+    /// The shared body behind `dividendGrowthRate` and `hasMeasurableGrowth`: `nil` wherever there
+    /// is too little data to measure honestly, a real (possibly zero) rate otherwise. See
+    /// `dividendGrowthRate`'s doc comment for the full derivation this implements.
+    private static func measuredDividendGrowthRate(events: [DividendEvent], asOf: Date) -> Decimal? {
+        let windowStart = asOf.addingTimeInterval(-5 * secondsPerYear)
         let window = events
-            .filter { $0.exDate <= asOf && $0.exDate >= asOf.addingTimeInterval(-5 * 365.25 * 86_400) }
+            .filter { $0.exDate <= asOf && $0.exDate >= windowStart }
             .sorted { $0.exDate < $1.exDate }
-        guard window.count >= 2 else { return 0 }
+        guard window.count >= 2 else { return nil }
 
-        let years = window[window.count - 1].exDate.timeIntervalSince(window[0].exDate) / (365.25 * 86_400)
-        guard years >= 2 else { return 0 }
+        let totalSpanYears = window[window.count - 1].exDate
+            .timeIntervalSince(window[0].exDate) / secondsPerYear
+        guard totalSpanYears >= 2 else { return nil }
 
-        // Compare the trailing-year rate at each end of the window so cadence changes
-        // (e.g. quarterly -> monthly) don't read as growth.
-        let early = trailingAnnualPerShare(events: window,
-                                           asOf: window[0].exDate.addingTimeInterval(365.25 * 86_400))
-        let late = trailingAnnualPerShare(events: window, asOf: asOf)
-        guard early.amount > 0, late.amount > 0 else { return 0 }
+        // Count-normalized halves, NOT a day-windowed sum sampled at an instant — see the doc
+        // comment on `dividendGrowthRate` for why that distinction is the entire fix. On an odd
+        // count the middle event falls out of both halves, by design.
+        let half = window.count / 2
+        let earlyHalf = Array(window[0..<half])
+        let lateHalf = Array(window[(window.count - half)...])
+        let earlyAvg = averagePerPayment(earlyHalf)
+        let lateAvg = averagePerPayment(lateHalf)
+        guard earlyAvg > 0, lateAvg > 0 else { return nil }
 
-        let spanYears = years - 1
-        guard spanYears >= 1 else { return 0 }
+        // The annualization exponent's divisor: the elapsed time between what is actually being
+        // compared — each half's centroid (mean ex-date) — in years, NOT the window's total
+        // first-to-last span, and NOT `span - 1`.
+        let centroidGapYears = (meanEpochSeconds(lateHalf) - meanEpochSeconds(earlyHalf)) / secondsPerYear
+        guard centroidGapYears > 0, centroidGapYears.isFinite else { return nil }
 
-        let ratio = NSDecimalNumber(decimal: late.amount / early.amount).doubleValue
-        guard ratio > 0 else { return 0 }
-        let rate = pow(ratio, 1.0 / spanYears) - 1.0
-        guard rate.isFinite else { return 0 }
+        let ratio = lateAvg / earlyAvg
+        guard ratio > 0 else { return nil }
+        let rate = pow(ratio, 1.0 / centroidGapYears) - 1.0
+        guard rate.isFinite else { return nil }
 
-        let asDecimal = Decimal(rate)
-        return min(max(asDecimal, minDividendGrowth), maxDividendGrowth)
+        return clampGrowth(Decimal(rate))
+    }
+
+    /// Average per-share payment amount across `events` (assumed non-empty; callers only pass
+    /// non-empty half-windows), as a `Double` — the annualization root below is a fractional
+    /// exponentiation `Decimal` cannot do, so the ratio is carried in `Double` and the clamp
+    /// bounds the blast radius of any drift.
+    private static func averagePerPayment(_ events: [DividendEvent]) -> Double {
+        guard !events.isEmpty else { return 0 }
+        var total = Decimal(0)
+        for event in events { total += event.amountPerShare.amount }
+        return NSDecimalNumber(decimal: total / Decimal(events.count)).doubleValue
+    }
+
+    /// Mean ex-date (epoch seconds) across `events` (assumed non-empty) — the "centroid"
+    /// `measuredDividendGrowthRate` compares between its early and late halves.
+    private static func meanEpochSeconds(_ events: [DividendEvent]) -> Double {
+        guard !events.isEmpty else { return 0 }
+        var total = 0.0
+        for event in events { total += event.exDate.timeIntervalSince1970 }
+        return total / Double(events.count)
+    }
+
+    private static func clampGrowth(_ value: Decimal) -> Decimal {
+        min(max(value, minDividendGrowth), maxDividendGrowth)
     }
 
     /// One projected year of dividend income. `yearOffset` 1 is the trailing twelve-month
@@ -264,6 +382,34 @@ public enum DividendMath {
 
     /// Rolls each holding's inferred payment cadence forward from its last real event,
     /// emitting estimated payments in `(asOf, through]`, ascending by date.
+    ///
+    /// Applies the SAME inclusion test the multi-year forecast (`incomeForecast`) and the summary
+    /// cards (`projectedAnnualIncome`) use: `trailingAnnualPerShare(events, asOf).amount > 0`
+    /// (carry-notes §4g). A payer whose last REAL ex-date has aged out of the trailing-annual
+    /// window — but is still recent enough for `inferredCadence` to infer a cadence from — must
+    /// read as zero here too, or this calendar alone would print confident dollar rows for a
+    /// holding those surfaces value at zero. The `while next <= asOf { next += step }`
+    /// roll-forward below has no staleness bound of its own: it will happily roll a payer that
+    /// stopped paying a year ago into next quarter. The zero-trailing-income guard is what
+    /// actually bounds "how stale is too stale to project."
+    ///
+    /// The "Upcoming Dividends" list is the one income surface that does NOT run this test — it
+    /// filters on `nextProjected(events)?.exDate > asOf` instead (`IncomeViewModel.buildUpcoming`)
+    /// and never consults `trailingAnnualPerShare`. The two tests are different, but they provably
+    /// cannot disagree in the direction that would matter: `cadenceInterval` is capped at 365 days
+    /// (`.annual`), so `nextProjected.exDate = last + interval > asOf` implies
+    /// `last > asOf − 365d`, i.e. the last real ex-date is inside `trailingAnnualPerShare`'s
+    /// window and the trailing test is necessarily positive. Upcoming can therefore never surface
+    /// a row this test values at zero.
+    ///
+    /// The residual asymmetry runs the OTHER way and is harmless: a quarterly payer whose last
+    /// ex-date is ~300 days old passes the trailing test, so this calendar rolls it forward into
+    /// four estimated rows, while Upcoming — whose single `nextProjected` lands ~209 days in the
+    /// past — shows nothing at all. A stale-but-in-window payer appears on the calendar and not in
+    /// Upcoming; it never appears in Upcoming and not on the calendar.
+    ///
+    /// Any future income surface should apply this same test; any task changing it changes it in
+    /// this one place.
     public static func projectedSchedule(positions: [Position],
                                          eventsBySymbol: [String: [DividendEvent]],
                                          through: Date,
@@ -273,6 +419,7 @@ public enum DividendMath {
             let shares = position.quantity.amount
             guard shares > 0 else { continue }
             let events = eventsBySymbol[position.asset.symbol] ?? []
+            guard trailingAnnualPerShare(events: events, asOf: asOf).amount > 0 else { continue }
             guard let seed = nextProjected(events: events),
                   let cadence = inferredCadence(events: events) else { continue }
 

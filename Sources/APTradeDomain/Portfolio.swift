@@ -57,6 +57,18 @@ public struct Portfolio: Equatable, Codable, Sendable {
         positions.first { $0.asset.symbol == symbol }
     }
 
+    /// The date of the EARLIEST transaction — the account's inception instant — or `nil`
+    /// when nothing has ever traded.
+    ///
+    /// ONE named derivation, deliberately: `FetchPortfolioPerformanceUseCase`'s
+    /// `sinceInception` curve trim and `GoalMath.accountAgeDays`'s history floor both need
+    /// exactly this signal, and they must not be able to drift apart. Every consumer calls
+    /// here; nobody re-derives `transactions.map(\.date).min()` locally.
+    ///
+    /// Computed, not stored: nothing new to persist, so `Codable` and every saved payload
+    /// are untouched.
+    public var inceptionDate: Date? { transactions.map(\.date).min() }
+
     public func buying(_ asset: Asset, quantity: Quantity, at price: Money,
                        on date: Date = Date(), pieId: String? = nil, isDrip: Bool = false) throws -> Portfolio {
         guard !quantity.isZero else { throw TradeError.invalidQuantity }

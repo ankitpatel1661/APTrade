@@ -130,7 +130,10 @@ public struct FetchPortfolioPerformanceUseCase: Sendable {
         }
 
         var series = portfolio.performanceSeries(histories: histories)
-        if sinceInception, let firstDate = portfolio.transactions.map(\.date).min() {
+        // `Portfolio.inceptionDate` is the ONE named derivation of the account's first
+        // transaction date, shared with `GoalMath`'s account-age history floor so this trim
+        // and that floor cannot drift apart. Do not re-derive it locally here.
+        if sinceInception, let firstDate = portfolio.inceptionDate {
             let inceptionDay = Calendar.current.startOfDay(for: firstDate)
             let trimmed = series.filter { $0.date >= inceptionDay }
             if !trimmed.isEmpty { series = trimmed }

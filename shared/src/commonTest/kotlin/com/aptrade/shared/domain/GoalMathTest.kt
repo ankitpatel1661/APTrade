@@ -350,6 +350,34 @@ class GoalMathTest {
         )
     }
 
+    /**
+     * Task 6b (M11.2 backport branch) — twin of the Swift discrimination test
+     * `test_incomeProjection_dripCompoundedWithUnmeasurableGrowth_crossingWithinHorizonStillWins`.
+     * Every OTHER `hasMeasurableGrowth = false` test in this file (`anEmptyForecastReportsInsufficientHistory`,
+     * `aFlatForecastWithUnmeasurableGrowthReportsInsufficientHistoryNotNotOnTrack`,
+     * `incomeAndValueGoalsAgreeForAYoungPositionWithUnmeasurableGrowth`,
+     * `aDripCompoundedForecastWithUnmeasurableGrowthReportsInsufficientHistoryNotBeyondHorizon`)
+     * uses a target NO forecast year crosses, so hoisting the `hasMeasurableGrowth` guard above
+     * the crossing check in `incomeProjection` would satisfy all of them silently.
+     *
+     * PIN THE BRANCH ORDER: the crossing check MUST run before the `hasMeasurableGrowth` guard --
+     * a young DRIP payer whose reinvested shares alone push income past a modest, in-horizon
+     * target is validly "on track" and must report the concrete crossing year, even though this
+     * same forecast's per-share growth rate could not be measured. Same DRIP-compounded fixture
+     * as `aDripCompoundedForecastWithUnmeasurableGrowthReportsInsufficientHistoryNotBeyondHorizon`
+     * ($125 -> $130.30 -> $159.01), but with `target: 150` -- crossed at year 3 -- instead of an
+     * uncrossable `999999`, so the crossing check actually has something to find. A `target: 200`
+     * would NOT discriminate here: 159.01 never reaches it, so the crossing branch would never be
+     * exercised and the guard-hoisted mutant would pass unnoticed.
+     */
+    @Test
+    fun dripCompoundedForecastWithUnmeasurableGrowthCrossingWithinHorizonStillWinsOverTheGate() {
+        val projection = GoalMath.incomeProjection(
+            usd("125"), usd("150"), forecast("125", "130.30", "159.01"), hasMeasurableGrowth = false,
+        )
+        assertEquals(GoalProjection.Years(3.0), projection)
+    }
+
     // MARK: end-to-end account-age wiring
 
     /** The KDoc on [GoalMath.MINIMUM_HISTORY_DAYS] claims [Portfolio.inceptionEpochSeconds] is the

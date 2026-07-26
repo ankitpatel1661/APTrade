@@ -35,6 +35,21 @@ private final class FailingHistoryRepo: MarketDataRepository, @unchecked Sendabl
     }
 }
 
+/// 500 consecutive daily closes drifting gently upwards, so the equity curve spans ~499
+/// days and clears `GoalMath.minimumHistoryDays`' CURVE-SPAN gate outright. That leaves the
+/// ACCOUNT-AGE gate as the only thing a projection test can be moving.
+private final class SeasonedPriceRepo: MarketDataRepository, @unchecked Sendable {
+    func quote(for symbol: String) async throws -> Quote {
+        Quote(symbol: symbol, price: Money(amount: 125), previousClose: Money(amount: 124))
+    }
+    func history(for symbol: String, timeframe: Timeframe) async throws -> [PricePoint] {
+        (0..<500).map { i in
+            PricePoint(date: Date(timeIntervalSince1970: TimeInterval(i) * 86_400),
+                       close: Money(amount: Decimal(100) + Decimal(i) / 20))
+        }
+    }
+}
+
 private final class InMemoryGoalStore: GoalStore, @unchecked Sendable {
     private var goals: [PortfolioGoal]
     init(_ goals: [PortfolioGoal] = []) { self.goals = goals }
@@ -213,5 +228,52 @@ final class PerformanceViewModelTests: XCTestCase {
         await vm.onAppear()
         XCTAssertNil(vm.valueGoal, "a goal cleared by an external reset must not linger after re-appearing")
         XCTAssertNil(vm.valueGoalProjection)
+    }
+
+    // MARK: - Account-age history gate wiring (Task 4d)
+
+    /// Builds a view model over a portfolio whose single buy happened `boughtOnDay` days
+    /// into a 500-day price window, evaluated `asOfDay` days into that same window. The
+    /// equity curve is identical in both arrangements (~499 days, comfortably past the
+    /// curve-span gate) — only the ACCOUNT's age changes.
+    private func seasonedSUT(boughtOnDay: Int, asOfDay: Int) -> PerformanceViewModel {
+        let aapl = Asset(symbol: "AAPL", name: "Apple", kind: .stock)
+        let portfolio = try! Portfolio.starting()
+            .buying(aapl, quantity: Quantity(Decimal(10)), at: Money(amount: 100),
+                    on: Date(timeIntervalSince1970: TimeInterval(boughtOnDay) * 86_400))
+        let store = MemoryStore(portfolio)
+        let goalStore = InMemoryGoalStore([PortfolioGoal(kind: .value, target: Money(amount: 500_000),
+                                                         createdAt: Date(timeIntervalSince1970: 1))])
+        return PerformanceViewModel(
+            compute: ComputePerformanceMetricsUseCase(repository: SeasonedPriceRepo(), store: store),
+            loadGoals: LoadGoalsUseCase(store: goalStore),
+            saveGoal: SaveGoalUseCase(store: goalStore),
+            removeGoal: RemoveGoalUseCase(store: goalStore),
+            fetchPortfolio: FetchPortfolioUseCase(store: store),
+            now: { Date(timeIntervalSince1970: TimeInterval(asOfDay) * 86_400) })
+    }
+
+    /// THE DIVERGENCE, at the wiring level: a 20-day-old account holding a symbol with 500
+    /// days of price history has a curve that sails past the span gate. Only the account age
+    /// — read from `Portfolio.inceptionDate` and passed by `refreshValueProjection` — can
+    /// make this honestly report `.insufficientHistory`. If the view model failed to pass
+    /// the age (or passed a constant), this reads as a concrete projection instead.
+    @MainActor
+    func test_load_newAccountHoldingASeasonedSymbol_projectsInsufficientHistory() async {
+        let vm = seasonedSUT(boughtOnDay: 480, asOfDay: 500)
+        await vm.load()
+        XCTAssertEqual(vm.valueGoalProjection, .insufficientHistory)
+    }
+
+    /// The control for the test above: the SAME curve and the SAME goal, with the buy moved
+    /// to the start of the window so the account is 500 days old. The projection must come
+    /// back as a real reading — proving the test above fails on account age specifically and
+    /// not because this fixture can never project at all.
+    @MainActor
+    func test_load_seasonedAccount_projectsFromTheCurve() async {
+        let vm = seasonedSUT(boughtOnDay: 0, asOfDay: 500)
+        await vm.load()
+        XCTAssertNotNil(vm.valueGoalProjection)
+        XCTAssertNotEqual(vm.valueGoalProjection, .insufficientHistory)
     }
 }

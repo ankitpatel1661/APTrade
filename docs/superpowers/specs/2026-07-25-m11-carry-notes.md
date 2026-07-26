@@ -135,6 +135,8 @@ The equivalence holds only because no held position can have a non-positive quan
 
 `incomeProjection` always receives a forecast of exactly `horizonYears` (30) length, independent of the 5/10/20/30 pill. A shorter forecast makes an unreachable goal indistinguishable from one reached in year 31 — "not on track" where "beyond horizon" is correct.
 
+**Now pinned on Swift (final fix wave, 2026-07-26).** Until then this rule was enforced by nothing but two doc comments: replacing `years: Int(GoalMath.horizonYears)` with `years: 10` — or with the pill's own `horizon.rawValue` — at `IncomeViewModel.refreshGoalProjection` left all 713 tests green. `IncomeViewModelTests.test_incomeGoalProjection_usesFullGoalHorizon_notTheSelectedChartPill` closes it: a goal crossed only in year 13 must read `.years(13)` on every pill, and both wrong implementations report `.beyondHorizon` instead. **M11.3 (Android) must carry the equivalent test**, not just the equivalent call site.
+
 ### 3.4 Goal state must re-read on every appearance
 
 Reset clears goals. If a screen gates its reload on a first-load flag, it will keep showing a deleted goal with a progress bar and ETA computed against the pre-reset curve. The Swift wave had exactly this asymmetry — one screen self-healed, its symmetric twin did not.
@@ -174,6 +176,12 @@ Carried from M11.1's ledger so they are not lost when its scratch workspace is d
 
 ## 4a. Two M11.2 decisions the user made at kickoff (2026-07-25)
 
+**§4a.2 and §4a.3 below are CLOSED ON BOTH PLATFORMS as of `feature/m11-swift-backport-parity`
+(2026-07-26).** Swift now ports the identical behaviour described in each subsection. The
+"backport candidate" / "divergence" framing in the subsections below is historical — it describes
+the gap as it stood at M11.2 kickoff, before this branch closed it. Do not re-open either in
+M11.3.
+
 Both were left deliberately open by §2.1 and §1.2. Both create **recorded, intentional twin divergences** — comment-document them in the Kotlin source the way M10.2 documented its four, and treat each as a Swift backport candidate rather than an accident.
 
 ### 4a.1 `startingCash` is ported **and given a real consumer**
@@ -183,6 +191,12 @@ Do not port it as dead state, and do not drop it. Kotlin ports the field **and**
 This is the right home for it now that the starting balance is user-chosen — a $10k practice run and a $1M one should not both report return against whatever the curve happened to open at. **Swift currently has the field with no reader; this is a backport candidate once Kotlin proves the metric.**
 
 ### 4a.2 The history floor measures **account age**, not price-history span
+
+**CLOSED on both platforms by `feature/m11-swift-backport-parity` (2026-07-26).** Swift's
+`GoalMath.annualGrowthRate` now takes an `accountAgeDays: Double?` parameter and gates on it in
+addition to the existing curve-span gate, exactly as described below; `Portfolio.inceptionDate`
+supplies the age the same way `Portfolio.inceptionEpochSeconds` does in Kotlin. Both platforms
+require account age >= 180 days AND curve span >= 180 days.
 
 Swift's as-built measures the span of the 1-year price window, which is ~365 days for anyone holding a seasoned symbol — so the floor is nearly inert there (see §1.2). Kotlin measures **from the first transaction date** instead, which is what the 30→180 raise was actually intended to protect.
 
@@ -195,6 +209,11 @@ Consequence to accept deliberately: a genuinely new account gets the insufficien
 **Both gates are required.** Account age ≥ 180 days **and** curve span ≥ 180 days. Changing *what* the primary floor measures was the intent; dropping the span protection was not. Swift already has the span gate — the Kotlin port must keep it and add the age gate on top, not swap one for the other.
 
 ### 4a.3 `incomeProjection` enforces the horizon constant (M11.2 addition, backport candidate)
+
+**CLOSED on both platforms by `feature/m11-swift-backport-parity` (2026-07-26).** Swift's
+`GoalMath.incomeProjection` now clamps the crossing itself to `horizonYears` before returning
+`.years(...)`, matching Kotlin exactly — a crossing beyond the horizon reports `.beyondHorizon` on
+both platforms, never an unbounded concrete year count.
 
 Swift's `incomeProjection` returns `.years(crossing.yearOffset)` unbounded, so a crossing at year 35 renders a concrete "35 yrs" while `valueProjection` returns `.beyondHorizon` for the same span — the two symmetric cards disagree, and the "> 30 yrs" rule is satisfied only by caller discipline that nothing enforces.
 
@@ -215,6 +234,15 @@ M11.3's plan must include, as an explicit task step: give Android's `reset()` a 
 ---
 
 ## 4c. A REAL DEFECT IN THE SHIPPED SWIFT CODE — found during M11.2, backport owed
+
+**CLOSED on both platforms by `feature/m11-swift-backport-parity` (2026-07-26), including §4c.1's
+full 7-step backport checklist.** Swift's `DividendMath.dividendGrowthRate` now derives growth from
+count-matched half-window averages and a centroid-gap annualization divisor, identical to Kotlin's
+`measuredDividendGrowthRate`. All 7 checklist items in §4c.1 below are done: the payment-count
+normalization and centroid-gap divisor landed together, plus the anti-aliasing pin, the
+discriminating mid-range annualization test, the true-CAGR-recovery test, a DRIP-with-non-zero-
+growth test, and corrected clamp-test comments. The defect described below is **historical** — it
+was live on `main` at M11.1 and is fixed on both platforms now.
 
 **`DividendMath.dividendGrowthRate` manufactures growth from ex-date phase alone. This is live in M11.1 on `main` right now.**
 
@@ -245,7 +273,8 @@ A true 10% grower with 5 years of history reported 6.560% under the round-1 fix 
 
 **USER RULING 2026-07-25 (round 2): the annualization divisor must be the actual elapsed time between what's being compared** — the gap, in years, between each half's centroid (mean ex-date), not the total window span and not `span − 1`. This is now implemented (`DividendMath.kt`'s `dividendGrowthRate`, CARRY-NOTE 6) and verified to recover a known true per-payment CAGR exactly (`dividendGrowthRateRecoversAKnownTruePerPaymentCagr`).
 
-**Backport checklist for Swift (`Sources/APTradeDomain/DividendMath.swift`), owed and not yet done:**
+**Backport checklist for Swift (`Sources/APTradeDomain/DividendMath.swift`) — ALL 7 STEPS DONE by
+`feature/m11-swift-backport-parity` (2026-07-26), Task 1:**
 1. Port the payment-count normalization from the Kotlin `dividendGrowthRate` — compare average per-payment amount across count-matched oldest/newest halves of the window (`window[0 ..< size/2]` and `window[size - size/2 ..< size]`), not a raw day-windowed sum sampled at two instants. **On an odd-count window, the middle event is dropped from both halves** (`size/2` truncates), not included in either — a porter who instead assigns it to one half reintroduces an asymmetry between the two counts.
 2. **Port the centroid-gap annualization divisor, not `span − 1`.** The divisor is `(late-half centroid − early-half centroid) / SECONDS_PER_YEAR`, where each half's centroid is the mean ex-date (epoch seconds) of its events. Porting step 1 without this step reproduces a *different*, still-wrong bias (see 4c.1 above) — do these together, not in sequence.
 3. Add the test the round-1 Kotlin fix added: the aliasing fixture (newest event exactly at `asOf`, exact 91-day spacing) must read **0.0**, not 13.7%.
@@ -255,6 +284,10 @@ A true 10% grower with 5 years of history reported 6.560% under the round-1 fix 
 7. Correct the Swift equivalents of the two clamp tests whose comments state raw rates the code does not actually compute.
 
 Until steps 1 **and** 2 both land, Kotlin and Swift will report **different growth rates for identical data** — a deliberate, recorded divergence, not a transcription slip. Porting step 1 alone is not a stopping point: it removes the aliasing bug but (per 4c.1 above) reproduces a *different* systematic bias unless step 2's centroid-gap divisor lands with it.
+
+**Both steps landed together in `feature/m11-swift-backport-parity` Task 1 (2026-07-26).** Kotlin
+and Swift now report identical growth rates for identical data; the divergence described in this
+paragraph is closed.
 
 ---
 
@@ -282,11 +315,24 @@ Found 2026-07-25 during M11.2 Task 8, confirmed independently by the task review
 
 By the end of M11.2 this had been caught **five separate times**, in code that was otherwise correct. It is the single most valuable thing the review layer found, and M11.3 should expect it.
 
+**Update from `feature/m11-swift-backport-parity` (2026-07-26): six more instances, in otherwise-correct code.** The count below is eleven, not five — the value of this section is the pattern, not the tally. Instances 10 and 11 came from the *final* review of a branch whose entire premise was this failure mode, after two prior review rounds; assume M11.3's last pass will still find some.
+
 1. **M11.1 Task 6 / M11.2 Task 5** — every dividend-growth assertion resolved to exactly `0.0` or exactly a clamp bound, so **inverting the annualization root entirely left the whole suite green**. Both platforms had this shape.
 2. **M11.2 Task 7** — the test proving the since-inception return measures from `startingCash` used fixtures where the trade price equalled the first historical close, making `startingCash` *algebraically identical* to the curve's opening value. Both implementations produced bit-identical numbers.
 3. **M11.2 Task 8** — the L10n completeness test called `L10n.string()`, which falls back to `key.english`, so **no missing translation could ever fail it**. See §4d.
 4. **M11.2 Task 11** — the test guarding "the goal ETA must not move when the chart horizon changes" used a fixture whose projection was `BeyondHorizon` at *every* horizon, so it passed identically whether or not the horizon leaked into the goal curve.
 5. **M11.2 whole-branch review** — the test guarding the milestone's *headline* cross-task constraint (toggling DRIP must refresh the income-goal ETA, not just the chart) asserted `beforeProjection != after || beforeProjection is BeyondHorizon`. The fixture's target made `beforeProjection` `BeyondHorizon`, so the second disjunct was unconditionally true and **deleting the entire `refreshGoalProjection()` tail call left it green.** Caught only because the whole-branch review re-derived the fixture's state machine rather than reading the assertion.
+6. **`feature/m11-swift-backport-parity` Task 1 (Swift)** — the odd-count middle-drop rule: every growth fixture in the existing Swift suite had an **even** in-window payment count, so writing the late-half slice to include the middle event on an odd-count window (instead of dropping it from both halves) was a **100% silent mutation** — no existing test could distinguish the correct drop-from-both-halves behaviour from the wrong assign-to-late-half behaviour. Caught only by deliberately introducing the wrong half-assignment and confirming a discriminating fixture (13 payments, odd count) went from `0.0` to `0.19965989176749388`.
+7. **`feature/m11-swift-backport-parity` Task 3 (Swift)** — the branch order in `incomeProjection`: hoisting the measurability guard above the crossing check left the whole suite green, because no existing test combined `hasMeasurableGrowth = false` with a target that a forecast year actually crosses within the horizon. Every `hasMeasurableGrowth = false` fixture used a target no forecast year reached, so the crossing branch was never exercised with that flag set to false.
+8. **`feature/m11-swift-backport-parity` Task 3 (Swift)** — the `IncomeViewModel` wiring: replacing the wired `DividendMath.anyPositionHasMeasurableGrowth(...)` argument at the `incomeProjection` call site with a literal `true` (i.e. the §4f.2 fix landing in `GoalMath` but never reaching the view model that calls it) left **all 699 tests green**. The domain function was thoroughly tested in isolation; nothing in the suite proved the view model actually consulted it rather than hardcoding the happy path.
+9. **`feature/m11-swift-backport-parity` Task 4 (Swift)** — the account-age gate threshold: changing the account-age comparison to a strict `>` (a real semantic divergence from Kotlin, where exactly 180.0 days must pass the gate) **or** introducing a second, independently hardcoded `>= 30.0` threshold in place of the shared `minimumHistoryDays` constant, both left all 60 targeted tests green. The pre-existing curve-span gate had an exact 179/180-day boundary pin from earlier work; the account-age gate — the entire subject of that task — had no equivalent boundary pin at all.
+
+10. **`feature/m11-swift-backport-parity` final review (Swift)** — §3.3 itself, the branch's headline cross-task invariant, was enforced by **nothing**: replacing `years: Int(GoalMath.horizonYears)` with `years: 10` at `IncomeViewModel.refreshGoalProjection` left **all 713 tests green**. Task 3 had written a long warning into `GoalMath.incomeProjection`'s doc comment ("a caller that hands in a short forecast silently narrows its own horizon") and Task 11's own §3.3 test is instance 4 above — the milestone had *already* caught this exact rule asserting nothing once, and the replacement still did not exist. **A doc comment describing a caller obligation is not coverage; it is a note that coverage is missing.**
+11. **`feature/m11-swift-backport-parity` final review (both platforms)** — the two-year measurability floor (`totalSpanYears >= 2`) was bracketed but not pinned: `>= 0` REDded 3 tests and `>= 5` REDded 14, but the plausible **one-step loosening** `>= 1` was silent on Swift *and* Kotlin, because the nearest fixtures span ~0.75 years and leave 1.25 years of slack below the floor. A constant is not pinned by tests that fail when you move it far; it is pinned by a pair that straddles it. Note the shape: instance 9 (Task 4's age gate) is the *same* miss, one milestone earlier, and its fix — a 179.9/180 boundary pair — is exactly what this one needed.
+
+Instances 6 and 7 had **identical, previously-unnoticed twins in the Kotlin suite** — Kotlin's behaviour was already correct in both cases, but its tests could not have caught a regression either. `feature/m11-swift-backport-parity` Task 6 closed both twins with discriminating fixtures, so Kotlin is now better covered than it was as this milestone's "authoritative reference."
+
+**The discipline that caught all six of 6–11, stated plainly: mutate the production code and confirm the test goes RED — do not review by reading assertions.** Every one of instances 6 through 11 was found exactly that way, by temporarily introducing the specific wrong implementation and watching a fixture fail (or, worse, watching it stay green); none of the six would have been found by reading the test code and its assertions, however carefully. Instance 10 is the sharpest case: the code was correct, the doc comment was correct and detailed, and the rule was still entirely unenforced.
 
 **The pattern:** the fixture makes the two behaviours being distinguished produce the same output. The test then documents an intention rather than enforcing it, and reads as coverage in every subsequent review.
 
@@ -303,7 +349,14 @@ By the end of M11.2 this had been caught **five separate times**, in code that w
 
 Both are shipped on `main` in M11.1 right now, and the Kotlin wave has deliberately diverged from both. **Backport owed**, alongside §4c's growth-rate fix.
 
+**§4f.1 and §4f.2 are both CLOSED on both platforms by `feature/m11-swift-backport-parity`
+(2026-07-26)**, alongside §4c. The defects below are historical — they describe what was live on
+`main` at M11.1 close and are fixed on both platforms now.
+
 ### 4f.1 The Swift Dividend Calendar resurrects suspended dividends
+
+**CLOSED (Task 2).** `projectedSchedule` now applies the same `trailingAnnualPerShare(...) > 0`
+inclusion guard Kotlin already had, immediately before rolling a cadence forward.
 
 `Sources/APTradeDomain/DividendMath.swift:267-282` rolls a stale cadence projection forward with **no trailing-income guard**. A holding whose last real ex-date is ~400 days ago — still inside the event lookback, so a cadence is inferable — produces four quarterly calendar rows at the old per-share amount, with month totals, while three neighbouring components on the same screen correctly value it at zero: the summary card's projected-annual (365-day trailing window), the forecast chart (skips `trailing <= 0`), and the Upcoming Dividends list (`nextProjected` lands in the past and is filtered).
 
@@ -311,15 +364,33 @@ The "est." badge disclaims **the date**, not **that the company still pays**. Ko
 
 ### 4f.2 The Swift income card gives a confident verdict off an unmeasurable growth rate
 
+**CLOSED (Task 3).** `GoalMath.incomeProjection` now takes a `hasMeasurableGrowth: Bool` parameter
+and gates on it before the not-on-track fallthrough, identical to Kotlin's `incomeProjection`; the
+call site in `IncomeViewModel.swift` wires it from `DividendMath.anyPositionHasMeasurableGrowth`.
+
 `Sources/APTradeDomain/GoalMath.swift:83` has no measurability parameter. `dividendGrowthRate` returns `0` both for a genuinely flat payer **and** when growth cannot be measured (fewer than two payments, or under a two-year span). So a young account with three quarterly payments reads **"Not on track at current rate"** on the income card while the value card, on the same account, reads **"Tracking — needs more history"** — because `valueProjection` has a history floor and `incomeProjection` has none.
 
 This is §2.4's asymmetry, still open on Swift for the has-income-but-unmeasurable-growth case. Kotlin split `measuredDividendGrowthRate(): BigDecimal?` out so `dividendGrowthRate` and `hasMeasurableGrowth` **share one function body** and cannot drift, then gated `incomeProjection` on it.
 
 ## 4g. One rule governs every income surface
 
-`trailingAnnualPerShare(events, asOf).amount > 0` is the single staleness/inclusion test for **all four** income surfaces: the multi-year forecast, the summary card's projected annual, the Upcoming Dividends list, and the Dividend Calendar. M11.2 had to add it to the calendar after the whole-branch review found that surface disagreeing with the other three on the same screen.
+`trailingAnnualPerShare(events, asOf).amount > 0` is the single staleness/inclusion test for **three** income surfaces: the multi-year forecast, the summary card's projected annual, and the Dividend Calendar. M11.2 had to add it to the calendar after the whole-branch review found that surface disagreeing with the others on the same screen.
+
+**Correction (final fix wave, 2026-07-26).** Earlier revisions of this section — and the Swift `projectedSchedule` doc comment that quoted it — said **four** surfaces, counting the Upcoming Dividends list. That is not what the code does. `IncomeViewModel.buildUpcoming` filters on `DividendMath.nextProjected(events)?.exDate > asOf` and never calls `trailingAnnualPerShare` at all. The two surfaces run *different* tests.
+
+They provably cannot disagree in the unsafe direction. `cadenceInterval` is capped at 365 days (`.annual`), so a row surviving Upcoming's filter satisfies `last + interval > asOf` with `interval ≤ 365d`, hence `last > asOf − 365d` — the last real ex-date is inside the trailing-annual window and the trailing test is necessarily positive. **Upcoming can never show a row the trailing test values at zero**, which is the property §4f.1 needed, so §4f.1 is genuinely closed.
+
+The residual asymmetry runs the other way and is harmless: a quarterly payer whose last ex-date is ~300 days old passes the trailing test, so the Calendar rolls it into four estimated rows, while Upcoming — whose single `nextProjected` lands ~209 days in the past — shows nothing. Stale-but-in-window payers appear on the calendar and not in Upcoming; the reverse cannot happen.
 
 Any future task adding an income surface must apply the same test. Any task changing it must change it in one place. (Note the all-zero-forecast guard from §2.4 is now *coextensive* with the measurability guard in production — an all-zero forecast implies no position passed this inclusion test. Both are kept for clarity; do not read the overlap as a defect and delete the wrong one.)
+
+### 4g.1 Known limitation: `anyPositionHasMeasurableGrowth` is an **any**, not an **all**
+
+Recorded, **not a defect and not a divergence** — Swift's `positions.contains { … }` and Kotlin's `positions.any { … }` are byte-identical, and GC1 makes Kotlin authoritative. Do not "fix" one side.
+
+`DividendMath.anyPositionHasMeasurableGrowth` returns `true` as soon as **one** forecast-included holding has enough history to measure a growth rate. It says nothing about the rest of the portfolio. A portfolio holding KO (20 years of dividends, ~$100/yr of income) alongside NEWCO (six months of history, ~$10,000/yr of income) reports `true`, so `GoalMath.incomeProjection` gives a confident ETA off a forecast whose growth is ~99% defaulted-zero: KO's measured rate compounds a rounding error while NEWCO — the position that actually drives the curve — sits flat because its growth could not be measured.
+
+This is a partial residue of §4f.2's failure mode: the gate stops the *fully* unmeasurable portfolio from getting a confident verdict, not the *mostly* unmeasurable one. A future reader must not read `hasMeasurableGrowth == true` as "the whole forecast is measurable". If this is ever tightened, the candidates are an income-weighted majority test or an all-positions test, and it must be changed on both platforms in the same wave.
 
 ---
 
@@ -328,3 +399,67 @@ Any future task adding an income surface must apply the same test. Any task chan
 - **Budget a top-tier whole-branch review at close.** Per-task reviews are structurally blind to *seam* defects — every one of §2.2, §2.3, §2.4 and §3.4 lived between two tasks and no single task's review could have seen them. The whole-branch review found all four.
 - **A defaulted parameter whose omission is a correctness bug is not a default — it is a re-armed bug with a compiler that will never complain.** This applies to `pricesBySymbol` and to any Kotlin equivalent.
 - **Verify a symbol's real declaration before calling it**, and verify the *cost* of an option before presenting it as a reason to decline one.
+
+---
+
+## 6. `feature/m11-swift-backport-parity` close-out (2026-07-26)
+
+This branch brought Swift to full parity with Kotlin on all five recorded divergences: §4a.2,
+§4a.3, §4c (with §4c.1's complete 7-step checklist), §4f.1 and §4f.2. §4b (Android's reset ignoring
+`AppSettings.defaultStartingCash`) remains open — it is M11.3's, untouched by this branch. §4e
+gained four more "tests that cannot fail" instances (now nine total; see the update in that
+section). Two more items came out of this branch's execution and are recorded here.
+
+### 6a. Open item: five pre-existing §3.1 fixture violations in Swift's `GoalMathTests.swift`
+
+Found by this branch's Task 3 review. **Not fixed here — deliberately left for a separate change
+with its own review.**
+
+Carry-notes §3.1 requires that an income goal's `current` equal forecast year 1
+(`DividendMath.projectedAnnualIncome` must equal `incomeForecast`'s `yearOffset == 1`). Five
+existing fixtures in `Tests/APTradeDomainTests/GoalMathTests.swift` violate this by construction —
+each hand-picks a `current` value that does not match its forecast's first year:
+
+- `test_incomeProjection_returnsCrossingYear`
+- `test_incomeProjection_targetMetInFirstForecastYear`
+- `test_incomeProjection_decliningForecastBelowTarget_isNotOnTrack`
+- `test_incomeProjection_neverReachesWithinHorizonLengthForecast_isBeyondHorizon`
+- `test_incomeProjection_neverCrossesWithinForecast_isBeyondHorizon`
+
+The first four are cosmetic — the §3.1 violation happens not to change the asserted outcome. The
+**fourth, `test_incomeProjection_neverReachesWithinHorizonLengthForecast_isBeyondHorizon`, has
+crossed from cosmetic into wrong by construction**: its forecast is flat at `1000` while `current`
+is hand-set to `500`, so the fallthrough condition `last.income > current` reads `1000 > 500` —
+true — and the test asserts `.beyondHorizon`. But `current` **is** forecast year 1 in production
+(§3.1's whole point), so a flat-at-1000 forecast's real `current` is `1000`, and `last.income >
+current` becomes `1000 > 1000` — false — which is `.notOnTrack`. The fixture asserts a state
+production code cannot actually produce: honoring §3.1 (`current = 1000`) flips the expected
+outcome from `.beyondHorizon` to `.notOnTrack`.
+
+Do not fix these as a side effect of an unrelated change. They need their own review because fixing
+the fourth changes its asserted outcome, not just its inputs.
+
+### 6b. Plan verification section corrected — `:shared:test` is not `:shared:jvmTest`
+
+The plan `docs/superpowers/plans/2026-07-26-m11-swift-backport-parity.md` told the Verification
+section's reader to run `./gradlew :shared:test` and stated a 709-test baseline. **That command and
+that baseline do not match.** `:shared:test` runs the **Android** unit-test targets
+(`testDebugUnitTest` / `testReleaseUnitTest`) for the `shared` module; the 709/711 figures are
+`:shared:jvmTest`'s counts. A Task 6 implementer who ran `:shared:test` as instructed measured 586
+and correctly flagged the mismatch instead of assuming the plan was right.
+
+**Corrected guidance for M11.3 and beyond:** use `:shared:jvmTest` when checking the
+709/711-style JVM test counts referenced in this document; `:shared:test` is a different, narrower,
+Android-target-only suite and will report a different number. Also: a fresh worktree needs a
+gitignored `local.properties` (pointing at a local Android SDK) before any Gradle target — including
+`:shared:jvmTest` — will run at all.
+
+### 6c. Final branch numbers
+
+- **Swift:** 686 → 715 tests (baseline `main` at `f783291`), 0 failures. (713 at the whole-branch
+  review; the final fix wave added the §3.3 horizon pin and the two-year-span boundary pair.)
+- **Kotlin `:shared:jvmTest`:** 709 → 712, 0 failures. No Kotlin *behaviour* changed on this branch
+  — all three additions are tests (Task 6, §4e instances 6 and 7's Kotlin twins, plus the final
+  wave's two-year-span boundary pair).
+- **Still known-red and out of scope:** `./gradlew :shared:compileTestKotlinMacosArm64` fails,
+  failing since ~M8.2, on backtick test names containing `()` and `,`. Not attempted here; see §4d.

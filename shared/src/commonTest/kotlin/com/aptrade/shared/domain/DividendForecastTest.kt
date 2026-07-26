@@ -4,6 +4,7 @@ import com.ionspin.kotlin.bignum.decimal.BigDecimal
 import kotlin.math.pow
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -75,6 +76,54 @@ class DividendForecastTest {
     @Test
     fun growthRateIsZeroWhenTheWindowSpansUnderTwoYears() {
         assertEquals(BigDecimal.ZERO, DividendMath.dividendGrowthRate(flatQuarterly("A"), now))
+    }
+
+    /**
+     * GC4 twin of Swift's `test_hasMeasurableGrowth_pinsTheTwoYearSpanFloorOnBothSides`. The
+     * `if (totalSpanYears < 2.0) return null` floor in [DividendMath.measuredDividendGrowthRate]
+     * is load-bearing for a user-visible verdict (`GoalProjection.InsufficientHistory` on the
+     * income goal), and it was unpinned in the permissive direction on BOTH platforms: loosening
+     * the floor to one year was silent across the whole suite, because the nearest fixtures span
+     * ~0.75 years and leave over a year of slack below it. The wrong implementation this rejects
+     * is `if (totalSpanYears < 1.0) return null`.
+     *
+     * `SECONDS_PER_YEAR` is 365.25 days, so the floor sits at 730.5 days between the oldest and
+     * newest in-window event. Both fixtures are two-event windows -- `window.size >= 2` passes,
+     * `half` is 1, each half is a single event and the centroid gap equals the span -- so the span
+     * guard is the only thing that differs between them.
+     */
+    @Test
+    fun hasMeasurableGrowthPinsTheTwoYearSpanFloorOnBothSides() {
+        val yearSeconds = 365.25 * day          // SECONDS_PER_YEAR
+        val newest = now - 10 * day             // both fixtures end 10 days before `now`
+
+        // 1.99-year span = 726.8475 days: 3.6525 days under the floor.
+        val justUnderFloor = listOf(
+            event("A", newest - (1.99 * yearSeconds).toLong(), "0.40"),
+            event("A", newest, "0.50"),
+        )
+        // 2.01-year span = 734.1525 days: 3.6525 days over it.
+        val justOverFloor = listOf(
+            event("A", newest - (2.01 * yearSeconds).toLong(), "0.40"),
+            event("A", newest, "0.50"),
+        )
+
+        assertFalse(
+            DividendMath.hasMeasurableGrowth(justUnderFloor, now),
+            "a 1.99-year span is below the two-year floor -- growth must read as unmeasurable",
+        )
+        assertTrue(
+            DividendMath.hasMeasurableGrowth(justOverFloor, now),
+            "a 2.01-year span clears the two-year floor and must measure",
+        )
+
+        // The public rate is 0 below the floor purely for want of data; above it the same fixture
+        // shape measures a real non-zero rate. Pinned so "measurable" is not vacuous here.
+        assertEquals(BigDecimal.ZERO, DividendMath.dividendGrowthRate(justUnderFloor, now))
+        assertTrue(
+            DividendMath.dividendGrowthRate(justOverFloor, now).doubleValue(false) > 0.0,
+            "the over-floor fixture must report a real measured rate",
+        )
     }
 
     @Test
@@ -178,6 +227,46 @@ class DividendForecastTest {
         }
         val rate = DividendMath.dividendGrowthRate(events, now)
         assertEquals(trueRate, rate.doubleValue(false), 1e-6)
+    }
+
+    /**
+     * Task 6a (M11.2 backport branch) — twin of the Swift discrimination test
+     * `test_growthRate_oddCountWindow_dropsTheMiddleEventFromBothHalves`. Every OTHER fixture in
+     * this file has an even in-window payment count, so `measuredDividendGrowthRate`'s
+     * `lateHalf = window.subList(window.size - half, window.size)` (dropping the middle event
+     * from BOTH halves on an odd count) and the wrong `window.subList(half, window.size)`
+     * (assigning the middle event to the late half) agree everywhere else in this suite — this
+     * is the one fixture that tells them apart.
+     *
+     * Thirteen quarterly (91-day) $0.25 payments, flat except an $0.85 year-end special landing
+     * EXACTLY on the middle (7th) event. Correct implementation (middle dropped from both
+     * halves): both halves average exactly $0.25/payment, ratio 1.0, so the rate is EXACTLY 0.0.
+     * Wrong implementation (middle assigned to the late half): the late half's average is
+     * pulled up by the $0.85 outlier and reads 0.19965989176749388 — a specific, non-clamped,
+     * non-zero artifact, not a vacuous pass.
+     */
+    @Test
+    fun growthRateOddCountWindowDropsTheMiddleEventFromBothHalves() {
+        val events = (0 until 13).map { i ->
+            val offsetDays = (12 - i) * 91
+            event("A", now - offsetDays * day, if (offsetDays == 546) "0.85" else "0.25")
+        }
+        assertEquals(13, events.size)
+        assertEquals(1, events.size % 2, "fixture must carry an ODD count to bite")
+
+        // Confirm the in-window count is genuinely odd AFTER the 5-year window filter
+        // `measuredDividendGrowthRate` actually applies — not merely the constructed count.
+        // Same formula as DividendMath.kt's private `windowStart` (5.0 * 365.25-day years).
+        val windowStart = now - (5.0 * 365.25 * day).toLong()
+        assertTrue(
+            events.all { it.exDateEpochSeconds > windowStart && it.exDateEpochSeconds <= now },
+            "sanity: every event must actually survive the 5-year window filter",
+        )
+
+        // The middle payment must fall out of BOTH halves, not into the late one -- assigning
+        // it to the late half reads 0.19965989176749388 of pure artifact, verified by
+        // temporarily reintroducing that mutation (see the task report's RED/GREEN transcript).
+        assertEquals(0.0, DividendMath.dividendGrowthRate(events, now).doubleValue(false), 1e-9)
     }
 
     /** Carry-notes §3.6: the per-symbol clamp is −0.20 … 0.25 and is INDEPENDENT of GoalMath's

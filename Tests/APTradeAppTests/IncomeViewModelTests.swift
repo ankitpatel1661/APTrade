@@ -111,6 +111,22 @@ final class IncomeViewModelTests: XCTestCase {
         }
     }
 
+    /// Twelve quarterly ex-dates from 2023-08-14 to 2026-05-14 — a 2.7488-year span, past
+    /// `measuredDividendGrowthRate`'s two-year floor, so the growth rate below is genuinely
+    /// MEASURED rather than defaulted to zero (unlike `quarterlyHistory`'s ~9 months).
+    /// The first six payments pay `early`, the last six pay `late`, so the count-matched
+    /// halves sit at an exact `late / early` ratio across a 1.5003422313483916-year centroid
+    /// gap. All four payments inside `fixedNow`'s trailing 365 days pay `late`.
+    private func growingHistory(_ symbol: String, early: String, late: String) -> [DividendEvent] {
+        let exDates = [utc(2023, 8, 14), utc(2023, 11, 14), utc(2024, 2, 14), utc(2024, 5, 14),
+                       utc(2024, 8, 14), utc(2024, 11, 14), utc(2025, 2, 14), utc(2025, 5, 14),
+                       utc(2025, 8, 14), utc(2025, 11, 14), utc(2026, 2, 14), utc(2026, 5, 14)]
+        return exDates.enumerated().map { index, exDate in
+            DividendEvent(symbol: symbol, exDate: exDate,
+                          amountPerShare: usd(index < 6 ? early : late))
+        }
+    }
+
     // MARK: - (a) cards computed from ledger + events fixture (exact Money math)
 
     func test_cards_computedFromLedgerAndEvents_exactMoneyMath() async throws {
@@ -420,6 +436,108 @@ final class IncomeViewModelTests: XCTestCase {
         vm.setIncomeGoal(Money(amount: 200))
         XCTAssertEqual(vm.incomeGoalProjection, .reached,
                        "current must equal the trailing-12mo rate (year 1), matching the forecast chart")
+    }
+
+    // MARK: - (k.2) gap coverage: §4f.2 live defect — measurability must actually reach the ViewModel
+
+    /// §4f.2 (review Important 2). `quarterlyHistory` spans under two years (four payments,
+    /// 2025-08-14 -> 2026-05-14, ~9 months) — too little history for
+    /// `DividendMath.hasMeasurableGrowth` to measure an actual rate, so it reports `false`
+    /// and the forecast compounds at a defaulted 0%: flat at year 1's $200 for all 30
+    /// years. A target the flat forecast never crosses (5,000, well above $200) must
+    /// therefore read `.insufficientHistory` — "needs more history," the SAME reading
+    /// `valueProjection` already gives an equivalently young account — not `.notOnTrack`,
+    /// which would misreport an absence of data as a failing rate. This is the actual
+    /// user-visible defect §4f.2 fixes: before the fix, the income card read "Not on
+    /// track at current rate" for exactly this young-account shape while the value card
+    /// read "Tracking — needs more history" for the identical situation.
+    ///
+    /// Proves the ViewModel actually WIRES `DividendMath.anyPositionHasMeasurableGrowth`
+    /// into `GoalMath.incomeProjection` — the four `GoalMathTests` added for §4f.2 only
+    /// prove `GoalMath.incomeProjection` itself is correct; nothing else in this file
+    /// exercises `refreshGoalProjection()`'s `hasMeasurableGrowth` argument at all — the
+    /// wrong implementation this rejects is the call site's argument being a literal
+    /// `true` (i.e. `DividendMath.anyPositionHasMeasurableGrowth`'s result never actually
+    /// reaching `GoalMath.incomeProjection`).
+    @MainActor
+    func test_incomeGoalProjection_unmeasurableGrowth_isInsufficientHistory_notNotOnTrack() async {
+        let events = quarterlyHistory("AAA", "0.50")   // spans ~9 months — under the 2-year floor
+        let vm = makeSUT(holdings: [("AAA", "100")], events: ["AAA": events])
+        await vm.load()
+
+        // Sanity: year 1 income really is $200, and the forecast really is flat (0%
+        // measured growth), so the ONLY thing that can make this insufficient vs.
+        // not-on-track is hasMeasurableGrowth, not a crossing or a genuinely declining rate.
+        XCTAssertEqual(vm.forecast.first { $0.yearOffset == 1 }?.income, Money(amount: 200))
+        XCTAssertEqual(vm.forecast.last?.income, Money(amount: 200))
+
+        vm.setIncomeGoal(Money(amount: 5_000))
+        XCTAssertEqual(vm.incomeGoalProjection, .insufficientHistory,
+                       "a young payer's unmeasurable growth must gate the income goal the same way "
+                       + "it already gates the value goal, not report .notOnTrack")
+    }
+
+    // MARK: - (k.3) carry-notes §3.3: the goal ETA is pinned to GoalMath.horizonYears, not the pill
+
+    /// Carry-notes §3.3 — the branch's headline cross-task invariant, and until now enforced by
+    /// nothing but a doc comment: `refreshGoalProjection()` must always build its own forecast
+    /// `Int(GoalMath.horizonYears)` years long, independent of the chart's `horizon` pill, so a
+    /// goal genuinely reachable in year 13 reads `.years(13)` on every pill rather than degrading
+    /// to `.beyondHorizon` on the short ones.
+    ///
+    /// GC4 — the wrong implementations this rejects, both of which left all 713 tests green:
+    ///   * `years: 10` (a literal) at `IncomeViewModel.refreshGoalProjection`
+    ///   * `years: horizon.rawValue` (the chart pill's own horizon)
+    /// Under either one the truncated curve never reaches the target, so `incomeProjection` falls
+    /// through to `last.income > current` and returns `.beyondHorizon` — a DIFFERENT
+    /// `GoalProjection` case from the `.years(13)` the full curve produces, which is what makes
+    /// this fixture discriminating rather than merely green. The two sanity assertions below make
+    /// that explicit: the 10-year curve the chart shows genuinely never crosses $1,000, and the
+    /// 30-year one genuinely does.
+    ///
+    /// Fixture arithmetic (`growingHistory` + 100 shares, DRIP off): trailing 365d = 4 × $0.60 =
+    /// $2.40/share → year 1 = $240. Measured growth = 1.2^(1/1.5003422313483916) − 1 =
+    /// 0.129211926486545 (inside the ±25%/−20% clamp, so the clamp is not what this test is
+    /// pinning). Year 12 = $913.57 (below target by 8.6%), year 13 = $1,031.61 (above by 3.2%),
+    /// year 10 = $716.46, year 30 = $8,141.41.
+    @MainActor
+    func test_incomeGoalProjection_usesFullGoalHorizon_notTheSelectedChartPill() async {
+        let vm = makeSUT(holdings: [("GRW", "100")],
+                         events: ["GRW": growingHistory("GRW", early: "0.50", late: "0.60")])
+        await vm.load()
+        XCTAssertEqual(vm.horizon, .ten)
+        XCTAssertEqual(vm.forecast.first { $0.yearOffset == 1 }?.income, Money(amount: 240))
+
+        let target = Money(amount: 1_000)
+        // Sanity 1: the curve the CHART is showing never reaches the target, so any
+        // implementation that projected the goal over `horizon.rawValue` years would have to
+        // report something other than a concrete ETA.
+        XCTAssertTrue(vm.forecast.allSatisfy { $0.income.amount < target.amount },
+                      "fixture is not discriminating: the 10-year chart curve already crosses the target")
+
+        vm.setIncomeGoal(target)
+        guard case .years(let crossing)? = vm.incomeGoalProjection else {
+            return XCTFail("expected a concrete ETA from the full-horizon curve, got "
+                           + String(describing: vm.incomeGoalProjection))
+        }
+        XCTAssertEqual(crossing, 13)
+        // Derived from the constant, never a hardcoded 30: the ETA must sit inside the goal
+        // horizon and strictly beyond the selected pill — that gap is exactly the region a
+        // pill-scoped or literal-10 forecast cannot see.
+        XCTAssertLessThanOrEqual(crossing, GoalMath.horizonYears)
+        XCTAssertGreaterThan(crossing, Double(vm.horizon.rawValue))
+
+        // Sanity 2 + the invariant itself: flipping the pill re-enters `rebuildForecast()` →
+        // `refreshGoalProjection()`, and the ETA must not move — including on the pills whose own
+        // curve stops short of year 13.
+        for pill in [IncomeViewModel.ForecastHorizon.five, .twenty, .thirty, .ten] {
+            vm.horizon = pill
+            XCTAssertEqual(vm.forecast.count, pill.rawValue)
+            XCTAssertEqual(vm.incomeGoalProjection, .years(13),
+                           "the goal ETA moved when the chart horizon changed to \(pill.label) — "
+                           + "carry-notes §3.3 requires it be projected over GoalMath.horizonYears "
+                           + "regardless of the pill")
+        }
     }
 
     // MARK: - (l) gap coverage: carried constraint 1 — pricesBySymbol must reach incomeForecast

@@ -21,28 +21,31 @@ sealed class GoalProjection {
 }
 
 /** Progress and honest time-to-target math for portfolio goals. Pure. Transcribed from
- *  `Sources/APTradeDomain/GoalMath.swift` AS-BUILT, with one recorded divergence at
- *  [GoalMath.MINIMUM_HISTORY_DAYS]. */
+ *  `Sources/APTradeDomain/GoalMath.swift` AS-BUILT — full parity as of
+ *  `feature/m11-swift-backport-parity` (carry-notes §4a.2/§4a.3/§4c/§4f.1/§4f.2, all closed on
+ *  both platforms). */
 object GoalMath {
 
     /**
      * Minimum days of ACCOUNT history before a growth rate is trustworthy.
      *
-     * RECORDED DIVERGENCE FROM SWIFT (M11.2 kickoff decision 4a.2, carry-notes §1.2/§4a.2):
-     * Swift's twin measures the span of the equity curve it is handed — but that curve is the
-     * one-year PRICE window with a flat pre-inception cash point, so its span is ~365 days for
-     * anyone holding any seasoned symbol and the floor is very nearly inert there. Kotlin
-     * measures instead from the account's FIRST TRANSACTION (see
-     * [Portfolio.inceptionEpochSeconds] — the one named derivation, shared with
-     * `FetchPortfolioPerformance`'s sinceInception trim so the metric and this floor cannot
-     * drift apart).
+     * Both platforms measure this from the account's FIRST TRANSACTION (Kotlin:
+     * [Portfolio.inceptionEpochSeconds]; Swift: `Portfolio.inceptionDate`), not from the span of
+     * the priced equity curve — the curve is a one-year PRICE window with a flat pre-inception
+     * cash point, so its span is ~365 days for anyone holding any seasoned symbol and would leave
+     * the floor nearly inert if that were the only measure (M11.2 kickoff decision §4a.2,
+     * carry-notes §1.2/§4a.2). Each platform's derivation is the one named spot for this
+     * computation, shared with its own sinceInception trim so the metric and this floor cannot
+     * drift apart.
      *
      * Consequence, accepted deliberately: a genuinely new account reports insufficient history
      * regardless of how seasoned its holdings are. That is the honest reading, because the
      * projection extrapolates THE ACCOUNT'S growth rate; a user who transfers in a long-held
      * position still waits until the account itself has 180 days behind it.
      *
-     * This is a Swift BACKPORT CANDIDATE, not a transcription slip.
+     * Account age is a SEPARATE gate from curve span, not a replacement for it — both Kotlin and
+     * Swift require account age >= 180 days AND curve span >= 180 days (see [annualGrowthRate]).
+     * Closed on both platforms by `feature/m11-swift-backport-parity`, carry-notes §4a.2.
      *
      * Why 180 and not 30: a 30-day window annualized by 365.25/days is a 12.175x extrapolation —
      * a portfolio up 5% in its first month reads as +80%/yr, sails under the +100% clamp, and
@@ -100,8 +103,9 @@ object GoalMath {
      * [MINIMUM_HISTORY_DAYS]'s KDoc says this type promises never to produce. An earlier revision
      * of this function read the "measure account age INSTEAD of price-history span" ruling as a
      * replacement rather than an addition and dropped the span floor to 1 day; that was wrong and
-     * is fixed here. Swift already gates on curve span; Kotlin adds the age gate on top of it,
-     * not in place of it.
+     * is fixed here. Swift gates on both as well — the age gate on top of the curve-span gate, not
+     * in place of it (`feature/m11-swift-backport-parity`, carry-notes §4a.2, closed on both
+     * platforms).
      *
      * FRACTIONAL EXPONENTIATION (carry-notes §4): ionspin's `BigDecimal.pow` takes Int/Long only,
      * so the annualization routes through Double, as the Swift twin does.
@@ -167,12 +171,13 @@ object GoalMath {
      * fallthrough below reports [GoalProjection.BeyondHorizon] for ANY such forecast regardless of
      * its length, so a caller that hands in a short forecast silently narrows its own horizon.
      *
-     * DELIBERATE DIVERGENCE FROM SWIFT, BACKPORT CANDIDATE (carry-notes §4a.3): Swift's twin
-     * returns `.years(crossing.yearOffset)` unbounded, so a crossing at year 35 renders a concrete
-     * "35 yrs" while [valueProjection] would report [GoalProjection.BeyondHorizon] for the
+     * HORIZON CLAMP ON THE CROSSING ITSELF (carry-notes §4a.3, closed on both platforms by
+     * `feature/m11-swift-backport-parity`): without this clamp, a crossing at year 35 would render
+     * a concrete "35 yrs" while [valueProjection] reports [GoalProjection.BeyondHorizon] for the
      * identical span — the two symmetric cards would disagree, and the "> 30 yrs" rule would be
-     * satisfied only by caller discipline nothing enforces. Kotlin clamps the crossing itself to
-     * [HORIZON_YEARS] so the boundary is provably identical in both projections.
+     * satisfied only by caller discipline nothing enforces. Both platforms clamp the crossing
+     * itself to [HORIZON_YEARS] so the boundary is provably identical in both projections and in
+     * both languages.
      *
      * [hasMeasurableGrowth] (review Finding 3): `false` when NO symbol contributing to [forecast]
      * has enough history for [DividendMath.dividendGrowthRate] to measure an actual rate — pass
