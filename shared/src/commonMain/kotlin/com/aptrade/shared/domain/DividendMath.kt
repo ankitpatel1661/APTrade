@@ -194,8 +194,25 @@ object DividendMath {
      * is too little history to measure honestly (fewer than two years spanned, or fewer than two
      * payments).
      *
-     * The trailing-year rate is compared at EACH END of the window rather than raw per-payment
-     * amounts, so a cadence change (e.g. quarterly -> monthly) doesn't read as growth.
+     * Compares the AVERAGE PER-PAYMENT amount across the oldest half of the window against the
+     * newest half (payment-count-normalized) rather than a raw day-windowed sum sampled at two
+     * instants, so a cadence change (e.g. quarterly -> monthly) doesn't read as growth.
+     *
+     * CARRY-NOTE 6 (recorded divergence from the Swift AS-BUILT, pending backport — human ruling,
+     * M11.2 Task 5 review Finding 1): the original transcription compared [trailingAnnualPerShare]
+     * sampled at two instants (`asOf`, and `window.first() + 1 year`). That is an aliasing bug:
+     * whether a rolling 365-day window catches 4 or 5 payments of an exact quarterly (91-day)
+     * cadence depends entirely on where `asOf` happens to fall relative to an ex-date — four
+     * 91-day gaps span only 364 days, one day short of the window — so a genuinely FLAT payer
+     * could read anywhere from −20%…+25%/yr purely from ex-date phase, compounding to a ~45x
+     * divergence in reported income at a 30-year horizon. Comparing per-payment AVERAGES over
+     * count-matched halves of the window is immune to this: a flat payer's early-half and
+     * late-half averages are equal regardless of which instant `asOf` happens to be, because no
+     * day-count window boundary is computed at all. (The original approach also had a second,
+     * compounding defect: its early anchor was offset by `SECONDS_PER_YEAR` = 365.25 days while
+     * [trailingAnnualPerShare]'s window is a strict 365 days — a structural 21,600-second/6-hour
+     * mismatch that could exclude the anchor's own boundary event. That class of bug cannot recur
+     * here, since no window-membership cutoff is computed by this function at all.)
      *
      * FRACTIONAL EXPONENTIATION (carry-notes §4): ionspin's `BigDecimal.pow` takes Int/Long only,
      * so the n-th root routes through Double exactly as the Swift twin does. Tolerance-covered by
@@ -208,23 +225,36 @@ object DividendMath {
             .sortedBy { it.exDateEpochSeconds }
         if (window.size < 2) return BigDecimal.ZERO
 
-        val years = (window.last().exDateEpochSeconds - window.first().exDateEpochSeconds).toDouble() /
+        val totalSpanYears = (window.last().exDateEpochSeconds - window.first().exDateEpochSeconds).toDouble() /
             SECONDS_PER_YEAR
-        if (years < 2.0) return BigDecimal.ZERO
-
-        val early = trailingAnnualPerShare(window, window.first().exDateEpochSeconds + SECONDS_PER_YEAR.toLong())
-        val late = trailingAnnualPerShare(window, asOfEpochSeconds)
-        if (early.amount <= BigDecimal.ZERO || late.amount <= BigDecimal.ZERO) return BigDecimal.ZERO
-
-        val spanYears = years - 1.0
+        if (totalSpanYears < 2.0) return BigDecimal.ZERO
+        val spanYears = totalSpanYears - 1.0
         if (spanYears < 1.0) return BigDecimal.ZERO
 
-        val ratio = late.amount.divide(early.amount, MONEY_MATH).doubleValue(false)
+        // Count-normalized halves, NOT a day-windowed sum sampled at an instant — see the
+        // CARRY-NOTE 6 KDoc above for why that distinction is the entire fix.
+        val half = window.size / 2
+        val earlyAvg = averagePerPayment(window.subList(0, half))
+        val lateAvg = averagePerPayment(window.subList(window.size - half, window.size))
+        if (earlyAvg <= 0.0 || lateAvg <= 0.0) return BigDecimal.ZERO
+
+        val ratio = lateAvg / earlyAvg
         if (ratio <= 0.0) return BigDecimal.ZERO
         val rate = ratio.pow(1.0 / spanYears) - 1.0
         if (!rate.isFinite()) return BigDecimal.ZERO
 
         return clampGrowth(BigDecimal.fromDouble(rate))
+    }
+
+    /**
+     * Average per-share payment amount across [events] (assumed non-empty; callers only pass
+     * non-empty half-windows), as a Double — see the fractional-exponentiation note on
+     * [dividendGrowthRate] for why this computation is Double-based rather than exact BigDecimal.
+     */
+    private fun averagePerPayment(events: List<DividendEvent>): Double {
+        var total = BigDecimal.ZERO
+        for (event in events) total += event.amountPerShare.amount
+        return total.divide(BigDecimal.fromInt(events.size), MONEY_MATH).doubleValue(false)
     }
 
     private fun clampGrowth(value: BigDecimal): BigDecimal = when {
@@ -270,10 +300,10 @@ object DividendMath {
             var perShare: BigDecimal,
             var price: BigDecimal,
             val growth: BigDecimal,
+            val currencyCode: String,
         )
 
         val projections = mutableListOf<Projection>()
-        var currency = "USD"
         for (position in positions) {
             val events = eventsBySymbol[position.asset.symbol] ?: emptyList()
             val trailing = trailingAnnualPerShare(events, asOfEpochSeconds)
@@ -282,31 +312,37 @@ object DividendMath {
             // exactly what makes year 1 equal projectedAnnualIncome. Keep it: if that model ever
             // changes, this is where the divergence would start (carry-notes §3.1).
             if (trailing.amount <= BigDecimal.ZERO || position.quantity <= BigDecimal.ZERO) continue
-            currency = trailing.currencyCode
             projections += Projection(
                 shares = position.quantity,
                 perShare = trailing.amount,
                 price = pricesBySymbol[position.asset.symbol]?.amount ?: position.averageCost.amount,
                 growth = dividendGrowthRate(events, asOfEpochSeconds),
+                currencyCode = trailing.currencyCode,
             )
         }
 
         val out = mutableListOf<ForecastYear>()
         for (offset in 1..years) {
-            var total = BigDecimal.ZERO
+            // Accumulated through Money.plus (which `require`s matching currency codes), NOT a
+            // raw BigDecimal var with a last-writer-wins currency tag — otherwise a genuine
+            // multi-currency mix would silently blend amounts here while its sibling
+            // [projectedAnnualIncome] throws on the exact same input (M11.2 Task 5 review
+            // Finding 5). USD-only today, but the two share a year-1-equality invariant and must
+            // fail the same way.
+            var total: Money? = null
             for (projection in projections) {
                 if (offset > 1) {
                     val factor = BigDecimal.ONE + projection.growth
                     projection.perShare = projection.perShare * factor
                     projection.price = projection.price * factor
                 }
-                val income = projection.shares * projection.perShare
-                total += income
+                val income = Money(projection.shares * projection.perShare, projection.currencyCode)
+                total = (total ?: Money(BigDecimal.ZERO, income.currencyCode)) + income
                 if (dripEnabled && projection.price > BigDecimal.ZERO) {
-                    projection.shares += income.divide(projection.price, MONEY_MATH)
+                    projection.shares += income.amount.divide(projection.price, MONEY_MATH)
                 }
             }
-            out += ForecastYear(offset, Money(total, currency))
+            out += ForecastYear(offset, total ?: Money(BigDecimal.ZERO, "USD"))
         }
         return out
     }
