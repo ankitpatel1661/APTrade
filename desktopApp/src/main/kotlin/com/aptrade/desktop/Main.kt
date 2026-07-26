@@ -656,7 +656,16 @@ private fun AppRoot(
                             onOpenTrade(TradeTarget(asset, side, row?.priceText))
                         },
                         defaultStartingCash = notificationSettings.defaultStartingCash,
-                        onReset = { amount -> portfolioViewModel.reset(amount) },
+                        // Mirrors the Swift AS-BUILT's reset-confirm handler
+                        // (Sources/APTradeApp/PortfolioView.swift: `settingsVM.settings.
+                        // defaultStartingCash = amount` before `viewModel.reset(startingCash:)`):
+                        // a typed-in amount becomes the new remembered default, not just this
+                        // one reset's balance — otherwise every future reset would silently
+                        // revert to the old default the next time the dialog opens.
+                        onReset = { amount ->
+                            onUpdateNotificationSettings { it.copy(defaultStartingCash = amount) }
+                            portfolioViewModel.reset(amount)
+                        },
                         onExportCsv = {
                             exportScope.launch { saveTextFile("portfolio.csv", portfolioViewModel.exportCsv()) }
                         },
