@@ -383,17 +383,33 @@ public enum DividendMath {
     /// Rolls each holding's inferred payment cadence forward from its last real event,
     /// emitting estimated payments in `(asOf, through]`, ascending by date.
     ///
-    /// Applies the SAME inclusion test `incomeProjection`/the summary cards/the "Upcoming
-    /// Dividends" list all use (carry-notes §4g): `trailingAnnualPerShare(events, asOf).amount > 0`
-    /// is the single staleness/inclusion test for all four income surfaces. A payer whose last
-    /// REAL ex-date has aged out of the trailing-annual window — but is still recent enough for
-    /// `inferredCadence` to infer a cadence from — must read as zero here too, or this calendar
-    /// alone would print confident dollar rows for a holding every other surface values at zero.
-    /// The `while next <= asOf { next += step }` roll-forward below has no staleness bound of its
-    /// own: it will happily roll a payer that stopped paying a year ago into next quarter. The
-    /// zero-trailing-income guard is what actually bounds "how stale is too stale to project."
-    /// Any future income surface should apply the same test; any task changing the test changes
-    /// it in this one place.
+    /// Applies the SAME inclusion test the multi-year forecast (`incomeForecast`) and the summary
+    /// cards (`projectedAnnualIncome`) use: `trailingAnnualPerShare(events, asOf).amount > 0`
+    /// (carry-notes §4g). A payer whose last REAL ex-date has aged out of the trailing-annual
+    /// window — but is still recent enough for `inferredCadence` to infer a cadence from — must
+    /// read as zero here too, or this calendar alone would print confident dollar rows for a
+    /// holding those surfaces value at zero. The `while next <= asOf { next += step }`
+    /// roll-forward below has no staleness bound of its own: it will happily roll a payer that
+    /// stopped paying a year ago into next quarter. The zero-trailing-income guard is what
+    /// actually bounds "how stale is too stale to project."
+    ///
+    /// The "Upcoming Dividends" list is the one income surface that does NOT run this test — it
+    /// filters on `nextProjected(events)?.exDate > asOf` instead (`IncomeViewModel.buildUpcoming`)
+    /// and never consults `trailingAnnualPerShare`. The two tests are different, but they provably
+    /// cannot disagree in the direction that would matter: `cadenceInterval` is capped at 365 days
+    /// (`.annual`), so `nextProjected.exDate = last + interval > asOf` implies
+    /// `last > asOf − 365d`, i.e. the last real ex-date is inside `trailingAnnualPerShare`'s
+    /// window and the trailing test is necessarily positive. Upcoming can therefore never surface
+    /// a row this test values at zero.
+    ///
+    /// The residual asymmetry runs the OTHER way and is harmless: a quarterly payer whose last
+    /// ex-date is ~300 days old passes the trailing test, so this calendar rolls it forward into
+    /// four estimated rows, while Upcoming — whose single `nextProjected` lands ~209 days in the
+    /// past — shows nothing at all. A stale-but-in-window payer appears on the calendar and not in
+    /// Upcoming; it never appears in Upcoming and not on the calendar.
+    ///
+    /// Any future income surface should apply this same test; any task changing it changes it in
+    /// this one place.
     public static func projectedSchedule(positions: [Position],
                                          eventsBySymbol: [String: [DividendEvent]],
                                          through: Date,

@@ -135,6 +135,8 @@ The equivalence holds only because no held position can have a non-positive quan
 
 `incomeProjection` always receives a forecast of exactly `horizonYears` (30) length, independent of the 5/10/20/30 pill. A shorter forecast makes an unreachable goal indistinguishable from one reached in year 31 — "not on track" where "beyond horizon" is correct.
 
+**Now pinned on Swift (final fix wave, 2026-07-26).** Until then this rule was enforced by nothing but two doc comments: replacing `years: Int(GoalMath.horizonYears)` with `years: 10` — or with the pill's own `horizon.rawValue` — at `IncomeViewModel.refreshGoalProjection` left all 713 tests green. `IncomeViewModelTests.test_incomeGoalProjection_usesFullGoalHorizon_notTheSelectedChartPill` closes it: a goal crossed only in year 13 must read `.years(13)` on every pill, and both wrong implementations report `.beyondHorizon` instead. **M11.3 (Android) must carry the equivalent test**, not just the equivalent call site.
+
 ### 3.4 Goal state must re-read on every appearance
 
 Reset clears goals. If a screen gates its reload on a first-load flag, it will keep showing a deleted goal with a progress bar and ETA computed against the pre-reset curve. The Swift wave had exactly this asymmetry — one screen self-healed, its symmetric twin did not.
@@ -313,7 +315,7 @@ Found 2026-07-25 during M11.2 Task 8, confirmed independently by the task review
 
 By the end of M11.2 this had been caught **five separate times**, in code that was otherwise correct. It is the single most valuable thing the review layer found, and M11.3 should expect it.
 
-**Update from `feature/m11-swift-backport-parity` (2026-07-26): four more instances, in otherwise-correct code.** The count below is nine, not five — the value of this section is the pattern, not the tally.
+**Update from `feature/m11-swift-backport-parity` (2026-07-26): six more instances, in otherwise-correct code.** The count below is eleven, not five — the value of this section is the pattern, not the tally. Instances 10 and 11 came from the *final* review of a branch whose entire premise was this failure mode, after two prior review rounds; assume M11.3's last pass will still find some.
 
 1. **M11.1 Task 6 / M11.2 Task 5** — every dividend-growth assertion resolved to exactly `0.0` or exactly a clamp bound, so **inverting the annualization root entirely left the whole suite green**. Both platforms had this shape.
 2. **M11.2 Task 7** — the test proving the since-inception return measures from `startingCash` used fixtures where the trade price equalled the first historical close, making `startingCash` *algebraically identical* to the curve's opening value. Both implementations produced bit-identical numbers.
@@ -325,9 +327,12 @@ By the end of M11.2 this had been caught **five separate times**, in code that w
 8. **`feature/m11-swift-backport-parity` Task 3 (Swift)** — the `IncomeViewModel` wiring: replacing the wired `DividendMath.anyPositionHasMeasurableGrowth(...)` argument at the `incomeProjection` call site with a literal `true` (i.e. the §4f.2 fix landing in `GoalMath` but never reaching the view model that calls it) left **all 699 tests green**. The domain function was thoroughly tested in isolation; nothing in the suite proved the view model actually consulted it rather than hardcoding the happy path.
 9. **`feature/m11-swift-backport-parity` Task 4 (Swift)** — the account-age gate threshold: changing the account-age comparison to a strict `>` (a real semantic divergence from Kotlin, where exactly 180.0 days must pass the gate) **or** introducing a second, independently hardcoded `>= 30.0` threshold in place of the shared `minimumHistoryDays` constant, both left all 60 targeted tests green. The pre-existing curve-span gate had an exact 179/180-day boundary pin from earlier work; the account-age gate — the entire subject of that task — had no equivalent boundary pin at all.
 
+10. **`feature/m11-swift-backport-parity` final review (Swift)** — §3.3 itself, the branch's headline cross-task invariant, was enforced by **nothing**: replacing `years: Int(GoalMath.horizonYears)` with `years: 10` at `IncomeViewModel.refreshGoalProjection` left **all 713 tests green**. Task 3 had written a long warning into `GoalMath.incomeProjection`'s doc comment ("a caller that hands in a short forecast silently narrows its own horizon") and Task 11's own §3.3 test is instance 4 above — the milestone had *already* caught this exact rule asserting nothing once, and the replacement still did not exist. **A doc comment describing a caller obligation is not coverage; it is a note that coverage is missing.**
+11. **`feature/m11-swift-backport-parity` final review (both platforms)** — the two-year measurability floor (`totalSpanYears >= 2`) was bracketed but not pinned: `>= 0` REDded 3 tests and `>= 5` REDded 14, but the plausible **one-step loosening** `>= 1` was silent on Swift *and* Kotlin, because the nearest fixtures span ~0.75 years and leave 1.25 years of slack below the floor. A constant is not pinned by tests that fail when you move it far; it is pinned by a pair that straddles it. Note the shape: instance 9 (Task 4's age gate) is the *same* miss, one milestone earlier, and its fix — a 179.9/180 boundary pair — is exactly what this one needed.
+
 Instances 6 and 7 had **identical, previously-unnoticed twins in the Kotlin suite** — Kotlin's behaviour was already correct in both cases, but its tests could not have caught a regression either. `feature/m11-swift-backport-parity` Task 6 closed both twins with discriminating fixtures, so Kotlin is now better covered than it was as this milestone's "authoritative reference."
 
-**The discipline that caught all four of 6–9, stated plainly: mutate the production code and confirm the test goes RED — do not review by reading assertions.** Every one of instances 6 through 9 was found exactly that way, by temporarily introducing the specific wrong implementation and watching a fixture fail (or, worse, watching it stay green); none of the four would have been found by reading the test code and its assertions, however carefully.
+**The discipline that caught all six of 6–11, stated plainly: mutate the production code and confirm the test goes RED — do not review by reading assertions.** Every one of instances 6 through 11 was found exactly that way, by temporarily introducing the specific wrong implementation and watching a fixture fail (or, worse, watching it stay green); none of the six would have been found by reading the test code and its assertions, however carefully. Instance 10 is the sharpest case: the code was correct, the doc comment was correct and detailed, and the rule was still entirely unenforced.
 
 **The pattern:** the fixture makes the two behaviours being distinguished produce the same output. The test then documents an intention rather than enforcing it, and reads as coverage in every subsequent review.
 
@@ -369,9 +374,23 @@ This is §2.4's asymmetry, still open on Swift for the has-income-but-unmeasurab
 
 ## 4g. One rule governs every income surface
 
-`trailingAnnualPerShare(events, asOf).amount > 0` is the single staleness/inclusion test for **all four** income surfaces: the multi-year forecast, the summary card's projected annual, the Upcoming Dividends list, and the Dividend Calendar. M11.2 had to add it to the calendar after the whole-branch review found that surface disagreeing with the other three on the same screen.
+`trailingAnnualPerShare(events, asOf).amount > 0` is the single staleness/inclusion test for **three** income surfaces: the multi-year forecast, the summary card's projected annual, and the Dividend Calendar. M11.2 had to add it to the calendar after the whole-branch review found that surface disagreeing with the others on the same screen.
+
+**Correction (final fix wave, 2026-07-26).** Earlier revisions of this section — and the Swift `projectedSchedule` doc comment that quoted it — said **four** surfaces, counting the Upcoming Dividends list. That is not what the code does. `IncomeViewModel.buildUpcoming` filters on `DividendMath.nextProjected(events)?.exDate > asOf` and never calls `trailingAnnualPerShare` at all. The two surfaces run *different* tests.
+
+They provably cannot disagree in the unsafe direction. `cadenceInterval` is capped at 365 days (`.annual`), so a row surviving Upcoming's filter satisfies `last + interval > asOf` with `interval ≤ 365d`, hence `last > asOf − 365d` — the last real ex-date is inside the trailing-annual window and the trailing test is necessarily positive. **Upcoming can never show a row the trailing test values at zero**, which is the property §4f.1 needed, so §4f.1 is genuinely closed.
+
+The residual asymmetry runs the other way and is harmless: a quarterly payer whose last ex-date is ~300 days old passes the trailing test, so the Calendar rolls it into four estimated rows, while Upcoming — whose single `nextProjected` lands ~209 days in the past — shows nothing. Stale-but-in-window payers appear on the calendar and not in Upcoming; the reverse cannot happen.
 
 Any future task adding an income surface must apply the same test. Any task changing it must change it in one place. (Note the all-zero-forecast guard from §2.4 is now *coextensive* with the measurability guard in production — an all-zero forecast implies no position passed this inclusion test. Both are kept for clarity; do not read the overlap as a defect and delete the wrong one.)
+
+### 4g.1 Known limitation: `anyPositionHasMeasurableGrowth` is an **any**, not an **all**
+
+Recorded, **not a defect and not a divergence** — Swift's `positions.contains { … }` and Kotlin's `positions.any { … }` are byte-identical, and GC1 makes Kotlin authoritative. Do not "fix" one side.
+
+`DividendMath.anyPositionHasMeasurableGrowth` returns `true` as soon as **one** forecast-included holding has enough history to measure a growth rate. It says nothing about the rest of the portfolio. A portfolio holding KO (20 years of dividends, ~$100/yr of income) alongside NEWCO (six months of history, ~$10,000/yr of income) reports `true`, so `GoalMath.incomeProjection` gives a confident ETA off a forecast whose growth is ~99% defaulted-zero: KO's measured rate compounds a rounding error while NEWCO — the position that actually drives the curve — sits flat because its growth could not be measured.
+
+This is a partial residue of §4f.2's failure mode: the gate stops the *fully* unmeasurable portfolio from getting a confident verdict, not the *mostly* unmeasurable one. A future reader must not read `hasMeasurableGrowth == true` as "the whole forecast is measurable". If this is ever tightened, the candidates are an income-weighted majority test or an all-positions test, and it must be changed on both platforms in the same wave.
 
 ---
 
@@ -437,8 +456,10 @@ gitignored `local.properties` (pointing at a local Android SDK) before any Gradl
 
 ### 6c. Final branch numbers
 
-- **Swift:** 686 → 713 tests (baseline `main` at `f783291`), 0 failures.
-- **Kotlin `:shared:jvmTest`:** 709 → 711, 0 failures. No Kotlin *behaviour* changed on this branch
-  — both additions are tests (Task 6, §4e instances 6 and 7's Kotlin twins).
+- **Swift:** 686 → 715 tests (baseline `main` at `f783291`), 0 failures. (713 at the whole-branch
+  review; the final fix wave added the §3.3 horizon pin and the two-year-span boundary pair.)
+- **Kotlin `:shared:jvmTest`:** 709 → 712, 0 failures. No Kotlin *behaviour* changed on this branch
+  — all three additions are tests (Task 6, §4e instances 6 and 7's Kotlin twins, plus the final
+  wave's two-year-span boundary pair).
 - **Still known-red and out of scope:** `./gradlew :shared:compileTestKotlinMacosArm64` fails,
   failing since ~M8.2, on backtick test names containing `()` and `,`. Not attempted here; see §4d.
