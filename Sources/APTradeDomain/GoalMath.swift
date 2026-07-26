@@ -80,16 +80,53 @@ public enum GoalMath {
     /// no holdings, whose forecast is all-zero years) reports `.insufficientHistory` —
     /// there is no data to be "off track" against, so `.notOnTrack` would misstate the
     /// situation as a failing rate rather than an absence of one.
+    ///
+    /// `forecast` must always be exactly `horizonYears` long, independent of whatever
+    /// horizon a chart beside it is displaying — a truncated forecast makes an
+    /// unreachable goal indistinguishable from one reached in year 31: the
+    /// uncrossed-but-growing fallthrough below reports `.beyondHorizon` for ANY such
+    /// forecast regardless of its length, so a caller that hands in a short forecast
+    /// silently narrows its own horizon.
+    ///
+    /// A crossing beyond `horizonYears` itself clamps to `.beyondHorizon` rather than
+    /// rendering a concrete `.years(35)` — otherwise a crossing at year 35 would render a
+    /// concrete ETA while `valueProjection` would report `.beyondHorizon` for the
+    /// identical span, and the two symmetric goal cards would disagree.
+    ///
+    /// `hasMeasurableGrowth`: `false` when NO symbol contributing to `forecast` has
+    /// enough history for `DividendMath.dividendGrowthRate` to measure an actual rate —
+    /// pass `DividendMath.anyPositionHasMeasurableGrowth`'s result.
+    /// `DividendMath.dividendGrowthRate` returns `0` both for a genuinely flat, seasoned
+    /// payer AND for a payer with too little history to measure at all, so a forecast
+    /// built entirely from unmeasurable symbols reads `.insufficientHistory` for the SAME
+    /// reason a value-goal card would report `.insufficientHistory` for an equivalently
+    /// young account — not because nothing is growing, but because nothing could be
+    /// measured.
+    ///
+    /// Checked in the uncrossed, non-all-zero fallthrough. This is a NEW decision
+    /// surface, not a strict refinement of that branch: with DRIP enabled, reinvestment
+    /// compounds share count — and therefore income — even at an exactly-0% MEASURED
+    /// per-share growth rate, so `forecast` can be genuinely increasing (e.g.
+    /// $125 -> $130.30 -> $159.01) purely from share count while `hasMeasurableGrowth` is
+    /// still false. Absent this guard, that shape falls through to
+    /// `last.income > current` and reports `.beyondHorizon`; WITH the guard it reports
+    /// `.insufficientHistory` instead. For a DRIP-on young payer this is a real behaviour
+    /// change, not a no-op — defensible on the merits (the growth rate genuinely could
+    /// not be measured, so declining to project a horizon is the honest answer for the
+    /// same reason the all-zero and flat-forecast cases above decline to), but it must be
+    /// described as what it is: a case this guard can FLIP, not one it merely confirms.
     public static func incomeProjection(current: Money, target: Money,
-                                        forecast: [DividendMath.ForecastYear]) -> GoalProjection {
+                                        forecast: [DividendMath.ForecastYear],
+                                        hasMeasurableGrowth: Bool) -> GoalProjection {
         if let shortCircuit = degenerateOrReachedProjection(current: current, target: target) {
             return shortCircuit
         }
         guard let last = forecast.last else { return .insufficientHistory }
         if let crossing = forecast.first(where: { $0.income.amount >= target.amount }) {
-            return .years(Double(crossing.yearOffset))
+            return Double(crossing.yearOffset) > horizonYears ? .beyondHorizon : .years(Double(crossing.yearOffset))
         }
         guard forecast.contains(where: { $0.income.amount > 0 }) else { return .insufficientHistory }
+        guard hasMeasurableGrowth else { return .insufficientHistory }
         return last.income.amount > current.amount ? .beyondHorizon : .notOnTrack
     }
 

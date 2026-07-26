@@ -257,9 +257,15 @@ final class IncomeViewModel: ObservableObject {
         let current = DividendMath.projectedAnnualIncome(positions: lastPositions,
                                                          eventsBySymbol: lastEventsBySymbol,
                                                          asOf: now())
+        // Same positions/events `full` above was built from, so measurability and the
+        // forecast it gates can never disagree about which portfolio snapshot they describe.
+        let hasMeasurableGrowth = DividendMath.anyPositionHasMeasurableGrowth(positions: lastPositions,
+                                                                              eventsBySymbol: lastEventsBySymbol,
+                                                                              asOf: now())
         incomeGoalProjection = GoalMath.incomeProjection(current: current,
                                                          target: goal.target,
-                                                         forecast: full)
+                                                         forecast: full,
+                                                         hasMeasurableGrowth: hasMeasurableGrowth)
     }
 
     func setIncomeGoal(_ target: Money) {
