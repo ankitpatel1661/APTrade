@@ -1,13 +1,18 @@
 package com.aptrade.desktop.income
 
 import com.aptrade.desktop.FakeMarketDataRepository
+import com.aptrade.shared.application.GoalStore
+import com.aptrade.shared.application.LoadGoals
 import com.aptrade.shared.application.PortfolioStore
 import com.aptrade.shared.application.QuoteError
+import com.aptrade.shared.application.RemoveGoal
+import com.aptrade.shared.application.SaveGoal
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.DividendEvent
 import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.Portfolio
+import com.aptrade.shared.domain.PortfolioGoal
 import com.aptrade.shared.domain.MONEY_MATH
 import com.aptrade.shared.domain.Quote
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
@@ -26,7 +31,7 @@ import kotlin.test.assertTrue
  *  must never surface). */
 class IncomeViewModelTest {
 
-    private class FakePortfolioStore(initial: Portfolio) : PortfolioStore {
+    internal class FakePortfolioStore(initial: Portfolio) : PortfolioStore {
         var portfolio: Portfolio = initial
         override suspend fun load(): Portfolio = portfolio
         override suspend fun save(portfolio: Portfolio) {
@@ -34,17 +39,23 @@ class IncomeViewModelTest {
         }
     }
 
-    private fun usd(s: String): Money = Money(BigDecimal.parseString(s), "USD")
-    private fun qty(s: String): BigDecimal = BigDecimal.parseString(s)
+    /** In-memory [GoalStore] for tests that don't otherwise care about goal persistence. */
+    private class MemoryGoalStore(var goals: List<PortfolioGoal> = emptyList()) : GoalStore {
+        override suspend fun load(): List<PortfolioGoal> = goals
+        override suspend fun save(goals: List<PortfolioGoal>) { this.goals = goals }
+    }
+
+    internal fun usd(s: String): Money = Money(BigDecimal.parseString(s), "USD")
+    internal fun qty(s: String): BigDecimal = BigDecimal.parseString(s)
 
     /** 2026-07-20 12:00:00 UTC — a fixed "now" so calendar-year and month-bucket math is
      *  deterministic across runs. Matches the Swift fixture's `fixedNow` exactly. */
-    private val fixedNow: Long = LocalDateTime.of(2026, 7, 20, 12, 0, 0).toEpochSecond(ZoneOffset.UTC)
+    internal val fixedNow: Long = LocalDateTime.of(2026, 7, 20, 12, 0, 0).toEpochSecond(ZoneOffset.UTC)
 
-    private fun utc(year: Int, month: Int, day: Int): Long =
+    internal fun utc(year: Int, month: Int, day: Int): Long =
         LocalDateTime.of(year, month, day, 12, 0, 0).toEpochSecond(ZoneOffset.UTC)
 
-    private fun quote(symbol: String, price: String): Quote =
+    internal fun quote(symbol: String, price: String): Quote =
         Quote(symbol, usd(price), usd(price), 0.0)
 
     private fun makeVm(
@@ -60,11 +71,16 @@ class IncomeViewModelTest {
         market.dividendEventsImpl = { symbol, _ ->
             events[symbol]?.invoke() ?: emptyList()
         }
+        val goals = MemoryGoalStore()
         val vm = IncomeViewModel(
             portfolioStore = store,
             marketDataRepository = market,
             scope = scope,
             nowEpochSeconds = { now },
+            loadGoals = LoadGoals(goals),
+            saveGoal = SaveGoal(goals),
+            removeGoal = RemoveGoal(goals),
+            isDripEnabled = { false },
         )
         return vm to market
     }

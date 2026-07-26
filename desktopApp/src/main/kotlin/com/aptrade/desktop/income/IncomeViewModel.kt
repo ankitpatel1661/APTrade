@@ -1,17 +1,27 @@
 package com.aptrade.desktop.income
 
+import com.aptrade.desktop.goals.GoalCardUi
+import com.aptrade.desktop.goals.goalCardUi
+import com.aptrade.shared.application.LoadGoals
 import com.aptrade.shared.application.MarketDataRepository
 import com.aptrade.shared.application.PortfolioStore
 import com.aptrade.shared.application.QuoteError
+import com.aptrade.shared.application.RemoveGoal
+import com.aptrade.shared.application.SaveGoal
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.DividendEvent
 import com.aptrade.shared.domain.DividendMath
+import com.aptrade.shared.domain.ForecastYear
+import com.aptrade.shared.domain.GoalKind
+import com.aptrade.shared.domain.GoalMath
 import com.aptrade.shared.domain.MONEY_MATH
 import com.aptrade.shared.domain.MarketCalendar
 import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.Portfolio
+import com.aptrade.shared.domain.PortfolioGoal
 import com.aptrade.shared.domain.Position
 import com.aptrade.shared.domain.Quote
+import com.aptrade.shared.domain.ScheduledDividend
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.domain.Transaction
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
@@ -71,6 +81,30 @@ data class HistoryEntry(
     val wasReinvested: Boolean,
 )
 
+/** Forecast chart horizon. Presented as pills (5/10/20/30) — no free slider. */
+enum class ForecastHorizon(val years: Int) {
+    Five(5), Ten(10), Twenty(20), Thirty(30);
+
+    val label: String get() = "${years}y"
+}
+
+/** One month's worth of estimated upcoming dividend payments.
+ *
+ *  [rows] are [ScheduledDividend]s — cadence projections rolled forward from each holding's last
+ *  REAL event, never announced ex-dates (carry-notes §3.7). Every row the UI renders from this
+ *  must be labeled an estimate.
+ *
+ *  [id] is the UTC `"yyyy-MM"` bucket key; the pane formats the human month title from it, the
+ *  same division of labour `MonthBar.id`/`monthLabel` already uses. There can be up to THIRTEEN
+ *  entries: the window is a fixed 365 days, so with "now" mid-month the first and last buckets are
+ *  both partial — and across a year boundary they share a month NAME with different years. The UI
+ *  must therefore render the year too and must not assume a 12-item grid. */
+data class CalendarMonth(
+    val id: String,
+    val rows: List<ScheduledDividend>,
+    val total: Money,
+)
+
 data class State(
     val cards: SummaryCards? = null,
     /** Last 12 received months + up to 3 projected. */
@@ -82,6 +116,21 @@ data class State(
     /** Newest first. */
     val history: List<HistoryEntry> = emptyList(),
     val isLoading: Boolean = false,
+    /** Estimated payouts over the next 365 days, grouped by UTC month, ascending. */
+    val calendarMonths: List<CalendarMonth> = emptyList(),
+    /** Per-holding-summed annual income projected [horizon] years forward. `forecast[0]`
+     *  (yearOffset 1) is the trailing-twelve-month rate with NO growth — and is also exactly what
+     *  the income goal's progress is measured against. */
+    val forecast: List<ForecastYear> = emptyList(),
+    val horizon: ForecastHorizon = ForecastHorizon.Ten,
+    /** Whether [forecast] holds any actual income. `incomeForecast` always returns `horizon`
+     *  entries — for a portfolio holding no dividend payer, every entry is a zero `Money` — so
+     *  `forecast.isNotEmpty()` can never answer "is there anything to chart?". Exposed here rather
+     *  than recomputed in the view so no pane has to reason about DividendMath's internals. */
+    val hasForecastIncome: Boolean = false,
+    /** `null` when no income goal is set — the card still RENDERS (carry-notes §1.3), showing its
+     *  "Set a goal" affordance. */
+    val incomeGoal: GoalCardUi? = null,
 )
 
 /** Income tab: dividend summary cards, monthly bars (received + projected), upcoming
@@ -106,9 +155,31 @@ class IncomeViewModel(
     private val calendar: MarketCalendar = MarketCalendar(),
     private val scope: CoroutineScope,
     private val nowEpochSeconds: () -> Long,
+    private val loadGoals: LoadGoals,
+    private val saveGoal: SaveGoal,
+    private val removeGoal: RemoveGoal,
+    /** Reads the persisted DRIP toggle LIVE on each load — never captured once at construction,
+     *  since the user can flip it at any point during a run. Suspend because Kotlin's settings
+     *  store is real file I/O (the same recorded divergence `ProcessDueDividends` documents). */
+    private val isDripEnabled: suspend () -> Boolean,
 ) {
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state
+
+    // Inputs the forecast rebuild needs, cached during load() so changing the horizon or flipping
+    // DRIP recomputes without a network round trip.
+    private var lastPositions: List<Position> = emptyList()
+    private var lastEventsBySymbol: Map<String, List<DividendEvent>> = emptyMap()
+
+    /** Quotes from the last load, as `[symbol: price]`. Passed to `DividendMath.incomeForecast` so
+     *  DRIP reinvestment compounds at the REAL quoted price rather than silently falling back to
+     *  cost basis for every symbol. That fallback is `incomeForecast`'s own per-symbol behaviour
+     *  for a symbol genuinely missing a quote — it must never become the behaviour for ALL symbols
+     *  via an omitted argument (carry-notes §1.1). */
+    private var lastPricesBySymbol: Map<String, Money> = emptyMap()
+
+    private var dripEnabled: Boolean = false
+    private var incomeGoal: PortfolioGoal? = null
 
     fun load() {
         scope.launch {
@@ -169,9 +240,135 @@ class IncomeViewModel(
                         history = history,
                     )
                 }
+
+                lastPositions = portfolio.positions
+                lastEventsBySymbol = eventsBySymbol
+                lastPricesBySymbol = quotes.mapValues { (_, quote) -> quote.price }
+                dripEnabled = isDripEnabled()
+                // Re-read on EVERY load, never gated on a first-load flag: a portfolio reset
+                // clears goals as a side effect, and a screen that trusted its first read would
+                // keep showing a deleted goal with a progress bar and an ETA computed against the
+                // pre-reset curve (carry-notes §3.4).
+                incomeGoal = loadGoals.execute().firstOrNull { it.kind == GoalKind.Income }
+                _state.update { it.copy(calendarMonths = buildCalendar(portfolio.positions, eventsBySymbol, asOf)) }
+                rebuildForecast()
             } finally {
                 _state.update { it.copy(isLoading = false) }
             }
+        }
+    }
+
+    // MARK: - Forecast & income goal
+
+    fun setHorizon(horizon: ForecastHorizon) {
+        if (_state.value.horizon == horizon) return
+        _state.update { it.copy(horizon = horizon) }
+        rebuildForecast()
+    }
+
+    /** Call after the persisted DRIP setting changes.
+     *
+     *  BINDING (carry-notes §2.2): the toggle and the forecast chart live on the SAME screen, and
+     *  the chart's caption actively promises DRIP compounding. Without this, flipping the toggle
+     *  left every displayed year understated until the user happened to tap a horizon pill. It
+     *  refreshes the income-goal projection too — that ETA reads the same curve, so rebuilding
+     *  only the chart would leave it stale against a curve that just changed.
+     *
+     *  Takes the new value directly rather than re-reading the suspend settings store, so the
+     *  rebuild cannot race the persist. */
+    fun dripDidChange(enabled: Boolean) {
+        dripEnabled = enabled
+        rebuildForecast()
+    }
+
+    fun setIncomeGoal(target: Money) {
+        val goal = PortfolioGoal(GoalKind.Income, target, nowEpochSeconds())
+        scope.launch {
+            saveGoal.execute(goal)
+            incomeGoal = goal
+            refreshGoalProjection()
+        }
+    }
+
+    fun removeIncomeGoal() {
+        scope.launch {
+            removeGoal.execute(GoalKind.Income)
+            incomeGoal = null
+            _state.update { it.copy(incomeGoal = null) }
+        }
+    }
+
+    private fun rebuildForecast() {
+        val forecast = DividendMath.incomeForecast(
+            positions = lastPositions,
+            pricesBySymbol = lastPricesBySymbol,
+            eventsBySymbol = lastEventsBySymbol,
+            years = _state.value.horizon.years,
+            dripEnabled = dripEnabled,
+            asOfEpochSeconds = nowEpochSeconds(),
+        )
+        _state.update {
+            it.copy(
+                forecast = forecast,
+                hasForecastIncome = forecast.any { year -> year.income.amount > BigDecimal.ZERO },
+            )
+        }
+        refreshGoalProjection()
+    }
+
+    private fun refreshGoalProjection() {
+        val goal = incomeGoal
+        if (goal == null) {
+            _state.update { it.copy(incomeGoal = null) }
+            return
+        }
+        val asOf = nowEpochSeconds()
+        // ALWAYS a full-horizon curve, independent of the chart's 5/10/20/30 pill (carry-notes
+        // §3.3): a truncated forecast makes an unreachable goal indistinguishable from one reached
+        // in year 31, i.e. "not on track" where "beyond horizon" is correct.
+        val fullHorizon = DividendMath.incomeForecast(
+            positions = lastPositions,
+            pricesBySymbol = lastPricesBySymbol,
+            eventsBySymbol = lastEventsBySymbol,
+            years = GoalMath.HORIZON_YEARS.toInt(),
+            dripEnabled = dripEnabled,
+            asOfEpochSeconds = asOf,
+        )
+        // The SAME measure as forecast year 1 — both are projectedAnnualIncome's sum of
+        // trailingAnnualPerShare x shares — so the card's progress % and ETA agree with what the
+        // chart beside it shows for year 1 (carry-notes §3.1).
+        val current = DividendMath.projectedAnnualIncome(lastPositions, lastEventsBySymbol, asOf)
+        val projection = GoalMath.incomeProjection(current, goal.target, fullHorizon)
+        _state.update { it.copy(incomeGoal = goalCardUi(goal, current, projection)) }
+    }
+
+    // MARK: - Dividend calendar
+
+    /** Groups the next 365 days of ESTIMATED payouts into ascending UTC month buckets. */
+    private fun buildCalendar(
+        positions: List<Position>,
+        eventsBySymbol: Map<String, List<DividendEvent>>,
+        asOfEpochSeconds: Long,
+    ): List<CalendarMonth> {
+        val scheduled = DividendMath.projectedSchedule(
+            positions = positions,
+            eventsBySymbol = eventsBySymbol,
+            throughEpochSeconds = asOfEpochSeconds + 365 * SECONDS_PER_DAY,
+            asOfEpochSeconds = asOfEpochSeconds,
+        )
+        if (scheduled.isEmpty()) return emptyList()
+
+        val grouped = linkedMapOf<String, MutableList<ScheduledDividend>>()
+        for (row in scheduled) {
+            grouped.getOrPut(monthKey(row.exDateEpochSeconds)) { mutableListOf() } += row
+        }
+        return grouped.entries.sortedBy { it.key }.map { (key, rows) ->
+            val currency = rows.first().estimatedAmount.currencyCode
+            CalendarMonth(
+                id = key,
+                rows = rows,
+                total = Money(rows.fold(BigDecimal.ZERO) { acc, r -> acc + r.estimatedAmount.amount }, currency),
+            )
         }
     }
 

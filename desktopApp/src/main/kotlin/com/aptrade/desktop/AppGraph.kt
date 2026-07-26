@@ -239,6 +239,12 @@ class AppGraph(
         calendar = marketCalendar,
         scope = scope,
         nowEpochSeconds = nowEpochSeconds,
+        loadGoals = loadGoals,
+        saveGoal = saveGoal,
+        removeGoal = removeGoal,
+        // Reads the live toggle at load time — the same `{ settingsStore.load().dripEnabled }`
+        // seam `processDueDividends` already uses, so there is still exactly ONE persisted field.
+        isDripEnabled = { settingsStore.load().dripEnabled },
     )
 
     // Screener (M9.2 Task 7) — full-universe technical scans over the S&P 500. Shares the
