@@ -4,6 +4,7 @@ import com.ionspin.kotlin.bignum.decimal.BigDecimal
 import kotlin.math.pow
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -75,6 +76,54 @@ class DividendForecastTest {
     @Test
     fun growthRateIsZeroWhenTheWindowSpansUnderTwoYears() {
         assertEquals(BigDecimal.ZERO, DividendMath.dividendGrowthRate(flatQuarterly("A"), now))
+    }
+
+    /**
+     * GC4 twin of Swift's `test_hasMeasurableGrowth_pinsTheTwoYearSpanFloorOnBothSides`. The
+     * `if (totalSpanYears < 2.0) return null` floor in [DividendMath.measuredDividendGrowthRate]
+     * is load-bearing for a user-visible verdict (`GoalProjection.InsufficientHistory` on the
+     * income goal), and it was unpinned in the permissive direction on BOTH platforms: loosening
+     * the floor to one year was silent across the whole suite, because the nearest fixtures span
+     * ~0.75 years and leave over a year of slack below it. The wrong implementation this rejects
+     * is `if (totalSpanYears < 1.0) return null`.
+     *
+     * `SECONDS_PER_YEAR` is 365.25 days, so the floor sits at 730.5 days between the oldest and
+     * newest in-window event. Both fixtures are two-event windows -- `window.size >= 2` passes,
+     * `half` is 1, each half is a single event and the centroid gap equals the span -- so the span
+     * guard is the only thing that differs between them.
+     */
+    @Test
+    fun hasMeasurableGrowthPinsTheTwoYearSpanFloorOnBothSides() {
+        val yearSeconds = 365.25 * day          // SECONDS_PER_YEAR
+        val newest = now - 10 * day             // both fixtures end 10 days before `now`
+
+        // 1.99-year span = 726.8475 days: 3.6525 days under the floor.
+        val justUnderFloor = listOf(
+            event("A", newest - (1.99 * yearSeconds).toLong(), "0.40"),
+            event("A", newest, "0.50"),
+        )
+        // 2.01-year span = 734.1525 days: 3.6525 days over it.
+        val justOverFloor = listOf(
+            event("A", newest - (2.01 * yearSeconds).toLong(), "0.40"),
+            event("A", newest, "0.50"),
+        )
+
+        assertFalse(
+            DividendMath.hasMeasurableGrowth(justUnderFloor, now),
+            "a 1.99-year span is below the two-year floor -- growth must read as unmeasurable",
+        )
+        assertTrue(
+            DividendMath.hasMeasurableGrowth(justOverFloor, now),
+            "a 2.01-year span clears the two-year floor and must measure",
+        )
+
+        // The public rate is 0 below the floor purely for want of data; above it the same fixture
+        // shape measures a real non-zero rate. Pinned so "measurable" is not vacuous here.
+        assertEquals(BigDecimal.ZERO, DividendMath.dividendGrowthRate(justUnderFloor, now))
+        assertTrue(
+            DividendMath.dividendGrowthRate(justOverFloor, now).doubleValue(false) > 0.0,
+            "the over-floor fixture must report a real measured rate",
+        )
     }
 
     @Test

@@ -244,6 +244,42 @@ final class DividendMathForecastTests: XCTestCase {
         XCTAssertFalse(DividendMath.hasMeasurableGrowth(events: [], asOf: asOf))
     }
 
+    /// GC4 — the two-year span floor at `measuredDividendGrowthRate`'s `guard totalSpanYears >= 2`
+    /// is now load-bearing for a user-visible verdict (`.insufficientHistory` on the income goal),
+    /// so it gets the same boundary pin Task 4's 180-day account-age gate got.
+    ///
+    /// Before this test the constant was bracketed but not pinned: `>= 0` REDded 3 tests and
+    /// `>= 5` REDded 14, but the plausible one-step loosening — `>= 1` — was SILENT across all 713
+    /// tests, because the nearest fixtures span ~0.75 years and leave 1.25 years of slack below the
+    /// floor. The wrong implementation this rejects is exactly that `guard totalSpanYears >= 1`.
+    ///
+    /// `secondsPerYear` is 365.25 days, so the floor is 730.5 days between the oldest and newest
+    /// in-window event. Both fixtures are two-event windows (`window.count >= 2` passes, `half` is
+    /// 1, each half is one event, the centroid gap equals the span), so the span guard is the ONLY
+    /// thing that differs between them.
+    func test_hasMeasurableGrowth_pinsTheTwoYearSpanFloorOnBothSides() {
+        let yearDays = 365.25   // `DividendMath.secondsPerYear`, expressed in days
+        let newest = 10.0       // both fixtures end 10 days before `growthNow`
+
+        // 1.99-year span = 726.8475 days — 3.6525 days under the floor.
+        let justUnderFloor = [growthEvent(newest + 1.99 * yearDays, "0.40"),
+                              growthEvent(newest, "0.50")]
+        // 2.01-year span = 734.1525 days — 3.6525 days over it.
+        let justOverFloor = [growthEvent(newest + 2.01 * yearDays, "0.40"),
+                             growthEvent(newest, "0.50")]
+
+        XCTAssertFalse(DividendMath.hasMeasurableGrowth(events: justUnderFloor, asOf: growthNow),
+                       "a 1.99-year span is below the two-year floor — growth must read as "
+                       + "unmeasurable, not as a measured rate")
+        XCTAssertTrue(DividendMath.hasMeasurableGrowth(events: justOverFloor, asOf: growthNow),
+                      "a 2.01-year span clears the two-year floor and must measure")
+
+        // The public rate is `0` below the floor purely for want of data; above it the same
+        // fixture shape measures a real non-zero rate. Pinned so "measurable" is not vacuous.
+        XCTAssertEqual(DividendMath.dividendGrowthRate(events: justUnderFloor, asOf: growthNow), 0)
+        XCTAssertNotEqual(DividendMath.dividendGrowthRate(events: justOverFloor, asOf: growthNow), 0)
+    }
+
     /// GC4 — this rejects an `anyPositionHasMeasurableGrowth` that forwards straight to
     /// `hasMeasurableGrowth` without reproducing `incomeForecast`'s inclusion test. Each of the
     /// last three rows has fully measurable growth history and is excluded for a different
