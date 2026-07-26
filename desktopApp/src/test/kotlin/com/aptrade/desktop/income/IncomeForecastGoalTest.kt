@@ -125,25 +125,40 @@ class IncomeForecastGoalTest {
         assertFalse(f.viewModel.state.value.forecastPricesAreEstimated)
     }
 
-    /** BINDING (carry-notes §2.2). Flipping DRIP must rebuild the chart AND refresh the ETA. */
+    /** BINDING (carry-notes §2.2). Flipping DRIP must rebuild the chart AND refresh the ETA.
+     *
+     *  DISCRIMINATION (review Finding 1). The original fixture targeted $50000 against a curve
+     *  whose year-30 value tops out at ~$159 REGARDLESS of DRIP, so `beforeProjection` was always
+     *  [GoalProjection.BeyondHorizon] and the assertion's `|| beforeProjection is BeyondHorizon`
+     *  disjunct made it pass unconditionally -- deleting `rebuildForecast()`'s trailing
+     *  `refreshGoalProjection()` call left this test green. Retargeted to $130: with DRIP OFF this
+     *  fixture's per-share rate is genuinely flat (0% measured growth -- events() is an
+     *  exact-quarterly, flat-$0.25 3-year history) and no shares are reinvested, so income sits at
+     *  exactly $125/yr forever; current ($125) never reaches $130, so the PRE-flip projection is
+     *  [GoalProjection.NotOnTrack]. With DRIP ON the same $125/yr compounds via reinvestment at
+     *  the $150 quoted price and crosses $130 at year 6 (year 5 = $129.22, year 6 = $130.30 --
+     *  the exact numbers [theGoalEtaIsIndependentOfTheChartHorizon] derives and pins for this
+     *  IDENTICAL fixture), so the POST-flip projection is [GoalProjection.Years]\(6.0\) -- a
+     *  DIFFERENT sealed-class case, not merely a different number, so no disjunction is needed to
+     *  express "changed." Verified to fail (RED) with `refreshGoalProjection()`'s call inside
+     *  `rebuildForecast()` removed (reporting `NotOnTrack`, i.e. stale), then pass (GREEN) once
+     *  restored (reporting `Years(6.0)`); see the task report's RED/GREEN transcript. */
     @Test
     fun dripDidChangeRebuildsTheForecastAndRefreshesTheGoalProjection() = runTest {
-        val goals = MemoryGoalStore(listOf(PortfolioGoal(GoalKind.Income, usd("50000"), 1L)))
+        val goals = MemoryGoalStore(listOf(PortfolioGoal(GoalKind.Income, usd("130"), 1L)))
         val f = fixture(this, drip = false, goals = goals)
         f.viewModel.load(); runCurrent()
         val before = f.viewModel.state.value.forecast.last().income.amount
         val beforeProjection = f.viewModel.state.value.incomeGoal!!.projection
+        assertEquals(GoalProjection.NotOnTrack, beforeProjection, "sanity: DRIP off never reaches $130")
 
         f.viewModel.dripDidChange(enabled = true); runCurrent()
         val after = f.viewModel.state.value.forecast.last().income.amount
         assertTrue(after > before, "DRIP on must raise the far-year forecast")
-        // The projection is recomputed off the same rebuilt assumption — not left stale.
-        assertNotNull(f.viewModel.state.value.incomeGoal)
-        assertTrue(
-            beforeProjection != f.viewModel.state.value.incomeGoal!!.projection ||
-                beforeProjection is GoalProjection.BeyondHorizon,
-            "the ETA must be recomputed against the curve that just changed",
-        )
+        // The projection is recomputed off the same rebuilt curve -- not left stale -- and lands
+        // on a DIFFERENT sealed-class case entirely, so no disjunction is needed to express
+        // "changed."
+        assertEquals(GoalProjection.Years(6.0), f.viewModel.state.value.incomeGoal!!.projection)
     }
 
     // MARK: income goal
@@ -251,6 +266,43 @@ class IncomeForecastGoalTest {
         assertEquals(GoalProjection.InsufficientHistory, vm.state.value.incomeGoal!!.projection)
         // No forecastable position at all -- nothing to caption as cost-basis-estimated either.
         assertFalse(vm.state.value.forecastPricesAreEstimated)
+    }
+
+    /** DISCRIMINATION (review Finding 3). AAPL has only THREE quarterly payments over ~8
+     *  months (events at now-182d, now-91d, now) -- real trailing income ($75/yr = 100 shares x
+     *  3 x $0.25), but [DividendMath.dividendGrowthRate] cannot measure a rate for it: the span
+     *  (~0.5yr) is under the two-year floor, so [DividendMath.hasMeasurableGrowth] is false and
+     *  the forecast is flat at $75/yr for every year (no growth to compound). That is the SAME
+     *  "too little history to know" situation [GoalMath.valueProjection] already reports as
+     *  insufficient history for an equivalently young position (carry-notes §2.4's sibling
+     *  asymmetry, still open for this case until now). The WRONG implementation this rejects is
+     *  `refreshGoalProjection` calling the pre-Finding-3 `incomeProjection` overload that ignores
+     *  measurability entirely -- verified to fail (RED) reporting `NotOnTrack`, then pass (GREEN)
+     *  reporting `InsufficientHistory` once the `hasMeasurableGrowth` wiring was added; see the
+     *  task report's RED/GREEN transcript. */
+    @Test
+    fun aPayerWithUnmeasurableGrowthReportsInsufficientHistoryNotNotOnTrack() = runTest {
+        val goals = MemoryGoalStore(listOf(PortfolioGoal(GoalKind.Income, usd("6000"), 1L)))
+        val youngEvents = (0 until 3).map { i -> DividendEvent("AAPL", now - (2 - i) * 91 * day, usd("0.25")) }
+        val portfolio = Portfolio.starting(usd("50000"))
+            .buying(aapl, qty("100"), usd("50"), now - 800 * day, "txn-1")
+        val market = FakeMarketDataRepository()
+        market.quotesImpl = { symbols -> symbols.map { Quote(it, usd("150"), usd("150"), 0.0) } }
+        market.dividendEventsImpl = { _, _ -> youngEvents }
+        val vm = IncomeViewModel(
+            portfolioStore = FakePortfolioStore(portfolio),
+            marketDataRepository = market,
+            scope = this,
+            nowEpochSeconds = { now },
+            loadGoals = LoadGoals(goals),
+            saveGoal = SaveGoal(goals),
+            removeGoal = RemoveGoal(goals),
+            isDripEnabled = { false },
+        )
+        vm.load(); runCurrent()
+        // Sanity: there IS real trailing income -- this is NOT the already-covered all-zero case.
+        assertEquals(usd("75"), vm.state.value.forecast.first().income)
+        assertEquals(GoalProjection.InsufficientHistory, vm.state.value.incomeGoal!!.projection)
     }
 
     // MARK: dividend calendar

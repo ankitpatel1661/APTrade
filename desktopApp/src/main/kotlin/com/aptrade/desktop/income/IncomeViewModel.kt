@@ -373,7 +373,12 @@ class IncomeViewModel(
         // trailingAnnualPerShare x shares — so the card's progress % and ETA agree with what the
         // chart beside it shows for year 1 (carry-notes §3.1).
         val current = DividendMath.projectedAnnualIncome(lastPositions, lastEventsBySymbol, asOf)
-        val projection = GoalMath.incomeProjection(current, goal.target, fullHorizon)
+        // Review Finding 3: tells "measured zero growth" (a genuinely flat, seasoned payer) apart
+        // from "growth could not be measured at all" (e.g. a payer with only a few months of
+        // history) -- both read as dividendGrowthRate == 0.0, but only the first is honestly
+        // "not on track."
+        val hasMeasurableGrowth = DividendMath.anyPositionHasMeasurableGrowth(lastPositions, lastEventsBySymbol, asOf)
+        val projection = GoalMath.incomeProjection(current, goal.target, fullHorizon, hasMeasurableGrowth)
         _state.update { it.copy(incomeGoal = goalCardUi(goal, current, projection)) }
     }
 
