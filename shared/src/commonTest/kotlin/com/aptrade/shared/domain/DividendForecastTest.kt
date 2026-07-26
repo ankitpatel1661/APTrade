@@ -97,7 +97,7 @@ class DividendForecastTest {
     fun aDoublingOverTwoYearsAnnualizesAndClampsToTheUpperBound() {
         // Early quarterly $0.25/payment -> late quarterly $0.50/payment (per-payment average
         // doubles). Raw annualized rate is ~37.50% (2.0^(1/centroidGapYears) - 1; the early/late
-        // half-centroid gap here is ~2.0 years) — comfortably past MAX_DIVIDEND_GROWTH, so this
+        // half-centroid gap here is ~2.1766 years) — comfortably past MAX_DIVIDEND_GROWTH, so this
         // is a clamp-engagement test, not a literal "doubles in two years" scenario.
         val early = (0 until 4).map { i -> event("A", now - (1095 - i * 91) * day, "0.25") }
         val late = (0 until 4).map { i -> event("A", now - (300 - i * 91) * day, "0.50") }
@@ -137,8 +137,9 @@ class DividendForecastTest {
         val newestOffset = 27 * day
         // Engineered so the early-half centroid sits EXACTLY 2.0 years before the late-half
         // centroid (late centroid = mean(300, 209, 118, 27) days = 163.5 days before `now`; this
-        // oldest-early offset places the early centroid at 163.5 + 730.5 = 894.0 + 136.5... see
-        // the exact arithmetic verified independently in Python, reproduced in the review report).
+        // oldest-early offset places the early centroid at 163.5 + 730.5 = 894.0 days before
+        // `now` — see the exact arithmetic verified independently in Python, reproduced in the
+        // review report).
         val oldestOffset = (1030.5 * 86_400.0).toLong()
         val early = (0 until 4).map { i -> event("A", now - (oldestOffset - i * 91 * day), "0.25") }
         val late = (0 until 4).map { i -> event("A", now - (newestOffset + (3 - i) * 91 * day), "0.36") }
@@ -172,7 +173,7 @@ class DividendForecastTest {
         val offsetsDays = (0 until 12).map { i -> newestOffset + 91L * (11 - i) } // oldest .. newest
         val oldestOffsetDays = offsetsDays.first()
         val events = offsetsDays.map { offsetDays ->
-            val amount = 0.25 * Math.pow(1.0 + trueRate, (oldestOffsetDays - offsetDays) / 365.25)
+            val amount = 0.25 * (1.0 + trueRate).pow((oldestOffsetDays - offsetDays) / 365.25)
             event("A", now - offsetDays * day, amount.toString())
         }
         val rate = DividendMath.dividendGrowthRate(events, now)
