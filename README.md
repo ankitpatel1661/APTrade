@@ -70,13 +70,13 @@ Every app carries: a **four-destination IA** — **Home** (the opening dashboard
   - **Performance** — risk & return analytics computed on a trade-aware equity curve (replaying the transaction log, not just today's holdings backward): **Total Return**, **Annualized Return (CAGR)**, **Volatility**, **Max Drawdown**, **Sharpe**, **Beta**, and **Alpha**. A normalized overlay chart compares the portfolio against a selectable benchmark (**SPY · QQQ · VTI**), and a **diversification score** (effective holdings, Herfindahl-based) flags single-name and asset-class concentration.
 - **P&L-over-time chart** — unrealized P&L reconstructed from real historical prices over a selectable timeframe, colored green/red by direction; tap the sparkline to expand it inline with axes and a hover crosshair.
 - **Export** the portfolio from a button in the Portfolio header — on macOS/iPhone as a **PDF**, **Excel (.xlsx)**, or **Word (.docx)** statement (genuine, standards-compliant documents saved via a native save panel / file exporter); Windows offers a **CSV / JSON / PDF** chooser and Android a **CSV / JSON** share sheet (per-platform divergences recorded in each app's section below).
-- **Reset** the portfolio to a chosen starting balance at any time — a validated sheet (**$1,000–$10,000,000**) remembers your last-used amount as the default for next time. *(Swift wave — macOS + iPhone; Windows/Android land in M11.2.)*
+- **Reset** the portfolio to a chosen starting balance at any time — a validated sheet (**$1,000–$10,000,000**) remembers your last-used amount as the default for next time. *(macOS + iPhone (M11.1) and Windows desktop + shared core (M11.2); Android lands in M11.3.)*
 
 ### Goals
 - **Set a value goal** on Portfolio · Performance — a target total portfolio value tracked against your current holdings, shown as a progress bar, a percent-to-goal readout, and a projected completion date extrapolated from recent growth.
 - **Set an income goal** on Invest · Income — a target annual dividend income tracked against your projected income (the 12-month projection, or the multi-year forecast where it's the better estimate), with the same progress/percentage/projection treatment.
 - Goals persist locally and **clear automatically on portfolio reset**, so a fresh start never carries a stale target.
-- *(Swift wave — macOS + iPhone; Windows/Android land in M11.2.)*
+- *(macOS + iPhone (M11.1) and Windows desktop + shared core (M11.2); Android lands in M11.3.)*
 
 ### Alerts & notifications
 - **Alerts center** — every alert across every symbol in one list, reached from Home's bell (badged) or its Alerts card: armed vs. already-triggered states rendered distinctly, one-tap remove, and tap-through to the symbol's detail. The Home badge and card count **armed alerts only** — the settled cross-platform semantic.
@@ -118,7 +118,7 @@ Every app carries: a **four-destination IA** — **Home** (the opening dashboard
 - **Platform status:** shipped on all four platforms — macOS + iPhone (M8.1), Windows desktop (M8.2), and Android (M8.3) — closing Milestone 8.
 - **Upcoming Dividends calendar** — a 12-month projected payout schedule on Invest · Income, every row explicitly labeled **"est."** so a projection is never mistaken for a confirmed payment.
 - **Multi-year income forecast** — a 5 / 10 / 20 / 30-year projection chart with a horizon picker, modeling dividend growth and, when DRIP is enabled, reinvestment compounding; the income goal card projects off this same forecast.
-- **Platform status (calendar & forecast):** Swift wave only — macOS + iPhone (M11.1); Windows/Android forecast parity is scoped for M11.2.
+- **Platform status (calendar & forecast):** macOS + iPhone (M11.1) and Windows desktop + shared core (M11.2); Android forecast parity is scoped for M11.3.
 
 ### Technical Screener
 - **On-demand S&P 500 scan** — a scan bar runs `ScreenerScanEngine` over the bundled S&P 500 universe on request (there is no scheduled or background scan): symbols are grouped into throttled batches of 4 concurrent fetches, a rate-limited batch sleeps and retries once in full before any symbol in it is marked failed, and progress reports incrementally (`done / total`) as each batch completes — one bad symbol never stops or corrupts the rest of the scan.

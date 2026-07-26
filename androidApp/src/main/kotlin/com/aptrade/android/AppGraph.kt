@@ -30,6 +30,7 @@ import com.aptrade.shared.application.FetchPortfolioPerformance
 import com.aptrade.shared.application.FetchProfile
 import com.aptrade.shared.application.FetchSearch
 import com.aptrade.shared.application.FetchWatchlist
+import com.aptrade.shared.application.GoalStore
 import com.aptrade.shared.application.HomeFeedAssembler
 import com.aptrade.shared.application.HomeIncomeSummary
 import com.aptrade.shared.application.HomeUpcomingDividend
@@ -62,6 +63,7 @@ import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.domain.WatchlistEntry
 import com.aptrade.shared.infrastructure.FileAlertStore
 import com.aptrade.shared.infrastructure.FileBookmarkStore
+import com.aptrade.shared.infrastructure.FileGoalStore
 import com.aptrade.shared.infrastructure.FilePieStore
 import com.aptrade.shared.infrastructure.FilePortfolioStore
 import com.aptrade.shared.infrastructure.FileScreenerSnapshotStore
@@ -137,6 +139,7 @@ object AppGraph {
             FilePieStore(configDir().resolve("pies.json")),
             schedulerStateStore,
             isDripEnabled = { settingsStore.load().dripEnabled },
+            goalStore = goalStore,
         )
     }
 
@@ -156,6 +159,9 @@ object AppGraph {
     val alertStore by lazy { FileAlertStore(configDir().resolve("alerts.json")) }
     val settingsStore by lazy { FileSettingsStore(configDir().resolve("settings.json")) }
     val bookmarkStore by lazy { FileBookmarkStore(configDir().resolve("bookmarks.json")) }
+    // Portfolio goals (M11.2 Task 4) — same lazily-backed, configDir-rooted shape as every
+    // other store above; own file per GoalStore's own KDoc (Carry-notes §2.5).
+    val goalStore: GoalStore by lazy { FileGoalStore(configDir().resolve("goals.json")) }
 
     // Market-activity scheduler markers (Task 8) — same filename desktop's AppGraph uses
     // (resolveConfigDir().resolve("schedulerState.json")), rooted at THIS app's configDir()
@@ -596,6 +602,11 @@ class PortfolioGraph(
     // mirroring desktop AppGraph's flat wiring exactly.
     stateStore: SchedulerStateStore,
     isDripEnabled: suspend () -> Boolean,
+    // Portfolio goals (M11.2 Task 4) — REQUIRED, mirroring ResetPortfolio's own required
+    // goalStore param: a construction site that forgets it must fail to compile, not silently
+    // discard goal saves (carry-notes §4). Arrives as a constructor param from AppGraph (which
+    // owns `goalStore`), the same shape `stateStore`/`isDripEnabled` already use above.
+    goalStore: GoalStore,
 ) {
     val fetchPortfolio = FetchPortfolio(portfolioStore)
 
@@ -607,7 +618,7 @@ class PortfolioGraph(
     private val portfolioMutex = Mutex()
     val buyAsset = BuyAsset(repository, portfolioStore, portfolioMutex)
     val sellAsset = SellAsset(repository, portfolioStore, portfolioMutex)
-    val resetPortfolio = ResetPortfolio(portfolioStore, portfolioMutex)
+    val resetPortfolio = ResetPortfolio(portfolioStore, portfolioMutex, goalStore)
     val fetchPortfolioPerformance = FetchPortfolioPerformance(repository, portfolioStore)
     val fetchPerformanceReport = FetchPerformanceReport(repository, fetchPortfolioPerformance)
 

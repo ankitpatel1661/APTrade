@@ -1,8 +1,11 @@
 package com.aptrade.shared.infrastructure
 
+import com.aptrade.shared.domain.Money
+import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.l10n.AppLanguage
 import com.aptrade.shared.settings.AccentTheme
 import com.aptrade.shared.settings.AppSettings
+import com.ionspin.kotlin.bignum.decimal.BigDecimal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
@@ -44,7 +47,21 @@ class FileSettingsStore(private val file: Path) {
         val language: String = AppLanguage.English.code,
         val dripEnabled: Boolean = false,
         val dividendNotifications: Boolean = true,
+        /** Plain decimal text, the same lossless convention `FilePortfolioStore.MoneyDTO` uses.
+         *  USD-only per the milestone constraint, so no currency code is persisted. */
+        val defaultStartingCash: String = DEFAULT_STARTING_CASH_TEXT,
     )
+
+    private companion object {
+        /** Serialized form of [Portfolio.DEFAULT_STARTING_CASH] -- DERIVED, not a third hardcoded
+         *  "100000" literal (review Finding 4). `StartingBalanceLiteralTest` lives in
+         *  `commonTest`, which cannot see this `jvmCommonMain` source set, so a literal planted
+         *  here was structurally invisible to that sweep -- exactly the hiding place carry-notes
+         *  §2.7 predicted. Kept as text (not a literal `BigDecimal`) so the DTO stays a pure
+         *  @Serializable value with no BigDecimal serializer; `toStringExpanded()` is the same
+         *  lossless round-trip [save] already uses for this same field. */
+        val DEFAULT_STARTING_CASH_TEXT: String = Portfolio.DEFAULT_STARTING_CASH.amount.toStringExpanded()
+    }
 
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
 
@@ -77,6 +94,13 @@ class FileSettingsStore(private val file: Path) {
                     ?: AppLanguage.English,
                 dripEnabled = dto.dripEnabled,
                 dividendNotifications = dto.dividendNotifications,
+                // Field-level lenient decode (same family as `language` above, NOT the whole-blob
+                // fallback `accent` triggers): an unparseable amount is one bad preference, not a
+                // reason to discard the user's notification and security choices.
+                defaultStartingCash = runCatching { BigDecimal.parseString(dto.defaultStartingCash) }
+                    .getOrNull()
+                    ?.let { Money(it, "USD") }
+                    ?: Portfolio.DEFAULT_STARTING_CASH,
             )
         } catch (e: SerializationException) {
             AppSettings()
@@ -104,6 +128,7 @@ class FileSettingsStore(private val file: Path) {
             language = settings.language.code,
             dripEnabled = settings.dripEnabled,
             dividendNotifications = settings.dividendNotifications,
+            defaultStartingCash = settings.defaultStartingCash.amount.toStringExpanded(),
         )
         val text = json.encodeToString(SettingsDTO.serializer(), dto)
         val temp = Files.createTempFile(file.parent, "settings", ".tmp")

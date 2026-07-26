@@ -3,6 +3,7 @@ package com.aptrade.shared.l10n
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -55,20 +56,41 @@ import kotlin.test.assertTrue
  * `SessionAfterClose`/`SessionBeforeOpen` family instead of adding a near-duplicate pair),
  * plus `SidebarSearch`/`SidebarSettings` (Swift M10.1 Task 6) — bringing the total to 389; the
  * count below tracks the Kotlin-only total going forward, not the Swift source count.
+ * M11.2 Task 8 (goals, dividend calendar, income forecast, configurable starting balance) added
+ * 21 more: the calendar/forecast/goal block, the two reset-sheet strings, the starting-balance
+ * range hint, and `SinceInception` (Kotlin-first — no Swift counterpart, it names the metric
+ * introduced by M11.2 kickoff decision 4a.1). Swift's `estimatedShort` was NOT transcribed — the
+ * existing `IncomeEstimatedBadge` already carries exactly that word in all four languages, so it
+ * is reused rather than near-duplicated. That brings the total to 410.
+ * M11.2 Task 12 (desktop Income UI) added 1 more: `ForecastPricesEstimatedCaption`. Task 11 added
+ * `State.forecastPricesAreEstimated` (a Kotlin-only signal — Swift has no equivalent) to flag when
+ * a total quote-fetch failure forces the income forecast's DRIP compounding to fall back to
+ * cost-basis pricing; Task 12's brief predates that flag and has no caption copy for it, and no
+ * existing key fit (`EstimatedCost`/`EstimatedProceeds`/`IncomeEstimatedBadge` are all short badge
+ * words, not a sentence explaining a price fallback). Bringing the total to 411.
  */
 class L10nCatalogTest {
 
     @Test
-    fun `catalog has exactly 389 keys (365 pre-M10_2 + 24 Home_Markets_Invest_Alerts_Sidebar keys from the M10_2 Task 1 Kotlin L10n port)`() {
-        assertEquals(389, L10n.Key.entries.size)
+    fun `catalog has exactly 411 keys (410 pre-Task_12 + 1 ForecastPricesEstimatedCaption key added by M11_2 Task 12)`() {
+        assertEquals(411, L10n.Key.entries.size)
     }
 
     @Test
-    fun `every key resolves to a non-blank string for all four languages`() {
+    fun `every key has a non-blank table row for every non-English language`() {
+        // Asserts against L10n.table directly, NOT L10n.string(...) — mirrors
+        // Tests/APTradeAppTests/L10nTests.swift:7-18, which reads its table directly for the
+        // same reason: string()/tr()'s own English fallback would silently mask a missing or
+        // blank row, so going through it here would make this test unable to fail no matter
+        // what is (or isn't) in the table. English has no table row by design (it resolves via
+        // Key.english — see the KDoc above `table`), so only the translated languages are
+        // checked here.
         for (key in L10n.Key.entries) {
             for (language in AppLanguage.entries) {
-                val value = L10n.string(key, language)
-                assertFalse(value.isBlank(), "blank resolution for $key in $language")
+                if (language == AppLanguage.English) continue
+                val row = assertNotNull(L10n.table[language], "missing table for $language")
+                val value = assertNotNull(row[key], "missing $language translation for $key")
+                assertFalse(value.isBlank(), "blank $language translation for $key")
             }
         }
     }

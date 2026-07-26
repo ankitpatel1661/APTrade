@@ -121,6 +121,9 @@ fun main() = application {
             sellAsset = graph.sellAsset,
             resetPortfolio = graph.resetPortfolio,
             fetchPerformanceReport = graph.fetchPerformanceReport,
+            loadGoals = graph.loadGoals,
+            saveGoal = graph.saveGoal,
+            removeGoal = graph.removeGoal,
             scope = appScope,
             nowEpochSeconds = { System.currentTimeMillis() / 1000 },
             notifyOrderFill = graph.notifyOrderFill,
@@ -644,6 +647,8 @@ private fun AppRoot(
                         section = destination.section,
                         onSetSpan = portfolioViewModel::setSpan,
                         onSetBenchmark = portfolioViewModel::setBenchmark,
+                        onSetValueGoal = portfolioViewModel::setValueGoal,
+                        onRemoveValueGoal = portfolioViewModel::removeValueGoal,
                         onOpenDetail = onOpenDetail,
                         onTrade = { symbol, side ->
                             // Held-asset trades: reuse the row's name/kind + live price from state.
@@ -655,7 +660,17 @@ private fun AppRoot(
                             )
                             onOpenTrade(TradeTarget(asset, side, row?.priceText))
                         },
-                        onReset = portfolioViewModel::reset,
+                        defaultStartingCash = notificationSettings.defaultStartingCash,
+                        // Mirrors the Swift AS-BUILT's reset-confirm handler
+                        // (Sources/APTradeApp/PortfolioView.swift: `settingsVM.settings.
+                        // defaultStartingCash = amount` before `viewModel.reset(startingCash:)`):
+                        // a typed-in amount becomes the new remembered default, not just this
+                        // one reset's balance — otherwise every future reset would silently
+                        // revert to the old default the next time the dialog opens.
+                        onReset = { amount ->
+                            onUpdateNotificationSettings { it.copy(defaultStartingCash = amount) }
+                            portfolioViewModel.reset(amount)
+                        },
                         onExportCsv = {
                             exportScope.launch { saveTextFile("portfolio.csv", portfolioViewModel.exportCsv()) }
                         },

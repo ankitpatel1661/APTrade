@@ -62,6 +62,10 @@ class FilePortfolioStore(private val file: Path) : PortfolioStore {
         val cash: MoneyDTO,
         val positions: List<PositionDTO>,
         val transactions: List<TransactionDTO>,
+        /** Nullable + defaulted so a payload written before M11.2 (no such key) still decodes;
+         *  it falls back to `cash` below, matching `Portfolio`'s own constructor default rather
+         *  than failing the whole load the way an unknown enum does. */
+        val startingCash: MoneyDTO? = null,
     )
 
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
@@ -102,7 +106,11 @@ class FilePortfolioStore(private val file: Path) : PortfolioStore {
                 Transaction(txnDto.id, txnDto.symbol, side, BigDecimal.parseString(txnDto.quantity), price, txnDto.epochSeconds, txnDto.pieId, txnDto.isDrip)
             }
 
-            Portfolio(cash, positions, transactions)
+            val startingCash = dto.startingCash?.let {
+                Money(amount = BigDecimal.parseString(it.amount), currencyCode = it.currency)
+            } ?: cash
+
+            Portfolio(cash, positions, transactions, startingCash)
         } catch (e: SerializationException) {
             null
         } catch (e: IllegalArgumentException) {
@@ -134,6 +142,10 @@ class FilePortfolioStore(private val file: Path) : PortfolioStore {
                     isDrip = txn.isDrip,
                 )
             },
+            startingCash = MoneyDTO(
+                portfolio.startingCash.amount.toStringExpanded(),
+                portfolio.startingCash.currencyCode,
+            ),
         )
         val text = json.encodeToString(PortfolioDTO.serializer(), dto)
         val temp = Files.createTempFile(file.parent, "portfolio", ".tmp")

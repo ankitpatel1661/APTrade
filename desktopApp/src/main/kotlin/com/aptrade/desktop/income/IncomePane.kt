@@ -3,7 +3,9 @@ package com.aptrade.desktop.income
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,9 +54,12 @@ import com.aptrade.desktop.designkit.InterFamily
 import com.aptrade.desktop.designkit.formatMoney
 import com.aptrade.desktop.designkit.formatPercent
 import com.aptrade.desktop.designkit.formatShares
+import com.aptrade.desktop.goals.GoalCard
 import com.aptrade.desktop.income.State as IncomeState
 import com.aptrade.desktop.infra.AppSettings
 import com.aptrade.desktop.l10n.tr
+import com.aptrade.shared.domain.ForecastYear
+import com.aptrade.shared.domain.GoalKind
 import com.aptrade.shared.l10n.L10n
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -121,7 +126,27 @@ fun IncomePane(
     ) {
         DripCard(
             checked = notificationSettings.dripEnabled,
-            onCheckedChange = { checked -> onUpdateNotificationSettings { it.copy(dripEnabled = checked) } },
+            onCheckedChange = { checked ->
+                onUpdateNotificationSettings { it.copy(dripEnabled = checked) }
+                // BINDING (carry-notes §2.2): the persist above is fire-and-forget and nothing
+                // observes the setting, so without this call the forecast chart directly below —
+                // whose caption promises DRIP compounding — would keep the old assumption until
+                // the user happened to tap a horizon pill, understating every displayed year. It
+                // refreshes the income-goal projection too, which reads the same curve.
+                viewModel.dripDidChange(enabled = checked)
+            },
+        )
+        // The DRIP card and the income-goal card are this pane's reachability floor: BOTH render
+        // above the state switch, unconditionally (carry-notes §1.3). Turning DRIP on, or setting
+        // an income goal, BEFORE a first payout is the common case, not an edge case — the Swift
+        // wave shipped the goal card inside the ledger branch and a user holding no dividend payer
+        // could never set an income goal at all.
+        GoalCard(
+            title = tr(L10n.Key.IncomeGoal),
+            kind = GoalKind.Income,
+            ui = state.incomeGoal,
+            onSet = { amount -> viewModel.setIncomeGoal(amount) },
+            onRemove = { viewModel.removeIncomeGoal() },
         )
         when {
             state.isLoading && state.cards == null -> LoadingState()
@@ -129,7 +154,7 @@ fun IncomePane(
             // would otherwise render as a wall of zeroed cards and empty lists. Mirrors
             // IncomeSection.swift's `isEmptyLedger`.
             state.history.isEmpty() && state.upcoming.isEmpty() -> EmptyIncomeState()
-            else -> IncomeContent(state)
+            else -> IncomeContent(state, onSetHorizon = { viewModel.setHorizon(it) })
         }
     }
 }
@@ -205,13 +230,15 @@ private fun BanknoteGlyph() {
  *  below it, same 20dp rhythm), so this inner `Column` only needs its OWN inter-section
  *  spacing, not a second copy of the page margins. */
 @Composable
-private fun IncomeContent(state: IncomeState) {
+private fun IncomeContent(state: IncomeState, onSetHorizon: (ForecastHorizon) -> Unit) {
     Column(
         Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         state.cards?.let { SummaryCardsGrid(it) }
         if (state.months.isNotEmpty()) MonthlyChart(state.months)
+        DividendCalendarCard(state.calendarMonths)
+        ForecastCard(state.forecast, state.hasForecastIncome, state.forecastPricesAreEstimated, state.horizon, onSetHorizon)
         // Upcoming + Income-by-Holding share one row when both are non-empty (UAT polish):
         // both tables stay visible without scrolling and neither stretches symbol-to-price
         // across the whole pane width.
@@ -226,6 +253,224 @@ private fun IncomeContent(state: IncomeState) {
             state.holdings.isNotEmpty() -> HoldingsSection(state.holdings)
         }
         if (state.history.isNotEmpty()) HistorySection(state.history)
+    }
+}
+
+// MARK: - Dividend calendar
+
+private val calendarMonthTitleFormatter: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("MMMM yyyy", Locale.US)
+
+/** Full "August 2026" title for a `"yyyy-MM"` bucket key. The YEAR is always rendered: the
+ *  underlying window is a fixed 365 days, so across a year boundary two partial buckets can share
+ *  a month name, and the year is what disambiguates them. Falls back to the raw key on a malformed
+ *  bucket rather than crashing the whole card over one bad group — same idiom as [monthLabel]. */
+private fun calendarMonthTitle(key: String): String = try {
+    YearMonth.parse(key).format(calendarMonthTitleFormatter)
+} catch (e: Exception) {
+    key
+}
+
+/** The (up to 13-month) projected payout calendar.
+ *
+ *  TITLED "Dividend Calendar" (carry-notes §1.4, BINDING) — deliberately NOT
+ *  `L10n.Key.IncomeUpcomingTitle` ("Upcoming Dividends"), which belongs to the pre-existing
+ *  next-payout list further down this same scroll view. Two identically-titled cards shipped
+ *  briefly on Swift before this was caught.
+ *
+ *  EVERY row is an estimate (carry-notes §3.7): the upstream feed exposes no forward-declared
+ *  ex-dates, so the card carries the disclaimer in its header and again per row. */
+@Composable
+private fun DividendCalendarCard(months: List<CalendarMonth>) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(DK.surface)
+            .border(1.dp, DK.hairline, RoundedCornerShape(16.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            SectionHeader(tr(L10n.Key.DividendCalendarTitle))
+            Spacer(Modifier.weight(1f))
+            Text(
+                tr(L10n.Key.IncomeEstimatedBadge).lowercase(),
+                style = TextStyle(fontFamily = InterFamily, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = DK.textTertiary),
+            )
+        }
+        if (months.isEmpty()) {
+            Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
+                Text(
+                    tr(L10n.Key.NoDividendPayersHeld),
+                    style = TextStyle(fontFamily = InterFamily, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = DK.textSecondary),
+                )
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                // Up to 13 buckets (carry-notes §3.6, [CalendarMonth]'s own KDoc): the window is
+                // a fixed 365 days, so with "now" mid-month the first and last buckets are both
+                // partial and can share a month NAME across a year boundary. Rendered in the
+                // model's ascending order, one group per `id` — never collapsed or assumed to be
+                // exactly 12 — with `calendarMonthTitle` carrying the year to disambiguate.
+                for (month in months) CalendarMonthGroup(month)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarMonthGroup(month: CalendarMonth) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                calendarMonthTitle(month.id),
+                style = TextStyle(fontFamily = InterFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = DK.textTertiary, letterSpacing = 0.4.sp),
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                formatMoney(month.total.amountText),
+                style = TextStyle(fontFamily = InterFamily, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = DK.textSecondary, fontFeatureSettings = "tnum"),
+            )
+        }
+        // Two holdings can legitimately project onto the exact same ex-date within a month, so
+        // rows are rendered in list order — never keyed by date, which could collide.
+        for (row in month.rows) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    row.symbol,
+                    style = TextStyle(fontFamily = InterFamily, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DK.textPrimary),
+                )
+                Text(
+                    // NOTE: ScheduledDividend's field is `exDateEpochSeconds`, not
+                    // `estimatedExDateEpochSeconds` like the pre-existing UpcomingRow (carry-notes
+                    // §3.7) — the naming is inconsistent in the shared core; bound deliberately.
+                    dateText(row.exDateEpochSeconds),
+                    style = TextStyle(fontFamily = InterFamily, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = DK.textTertiary),
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    formatMoney(row.estimatedAmount.amountText),
+                    style = TextStyle(fontFamily = InterFamily, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = DK.textSecondary, fontFeatureSettings = "tnum"),
+                )
+                Text(
+                    tr(L10n.Key.IncomeEstimatedBadge).lowercase(),
+                    style = TextStyle(fontFamily = InterFamily, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = DK.textTertiary),
+                )
+            }
+        }
+    }
+}
+
+// MARK: - Forecast
+
+private const val FORECAST_CHART_HEIGHT_DP = 160
+
+/** Multi-year income forecast with 5/10/20/30 horizon pills.
+ *
+ *  The header WRAPS rather than sharing one fixed-width row with the pills: carry-notes §4 records
+ *  the Swift picker's narrow-width behaviour as unverified at 375pt, and the instruction for
+ *  Kotlin is to design for narrow width from the start rather than inherit an unconfirmed
+ *  fallback. Title on its own line, pills below, scrollable if the window is genuinely tiny.
+ *
+ *  [hasIncome] — NOT `forecast.isNotEmpty()` (carry-notes §1.1): `incomeForecast` always returns
+ *  `horizon` entries, all zero for a portfolio holding no dividend payer, so an emptiness check can
+ *  never distinguish "nothing to chart" from "a flat zero curve" and would render the latter as if
+ *  it were real data.
+ *
+ *  [pricesAreEstimated] captions the chart when a total quote-fetch failure forced the forecast's
+ *  DRIP compounding to fall back to cost-basis pricing for at least one contributing holding
+ *  (carry-notes §1.2, `State.forecastPricesAreEstimated`'s KDoc) — the same ~66% overstatement this
+ *  milestone exists to prevent, reachable here through an ordinary offline/rate-limited quote
+ *  fetch rather than a missing argument. */
+@Composable
+private fun ForecastCard(
+    forecast: List<ForecastYear>,
+    hasIncome: Boolean,
+    pricesAreEstimated: Boolean,
+    horizon: ForecastHorizon,
+    onSetHorizon: (ForecastHorizon) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(DK.surface)
+            .border(1.dp, DK.hairline, RoundedCornerShape(16.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        SectionHeader(tr(L10n.Key.IncomeForecastTitle))
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            for (option in ForecastHorizon.entries) {
+                HorizonPill(option.label, option == horizon) { onSetHorizon(option) }
+            }
+        }
+        if (!hasIncome) {
+            Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
+                Text(
+                    tr(L10n.Key.NoDividendPayersHeld),
+                    style = TextStyle(fontFamily = InterFamily, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = DK.textSecondary),
+                )
+            }
+        } else {
+            ForecastChart(forecast)
+            Text(
+                tr(L10n.Key.ForecastCaption),
+                style = TextStyle(fontFamily = InterFamily, fontSize = 10.sp, fontWeight = FontWeight.Medium, color = DK.textTertiary),
+            )
+            if (pricesAreEstimated) {
+                Text(
+                    tr(L10n.Key.ForecastPricesEstimatedCaption),
+                    style = TextStyle(fontFamily = InterFamily, fontSize = 10.sp, fontWeight = FontWeight.Medium, color = DK.textTertiary),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HorizonPill(label: String, selected: Boolean, onClick: () -> Unit) {
+    Text(
+        label,
+        style = TextStyle(
+            fontFamily = InterFamily, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+            color = if (selected) DK.gold else DK.textTertiary, fontFeatureSettings = "tnum",
+        ),
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (selected) DK.gold.copy(alpha = 0.12f) else Color.Transparent)
+            .border(1.dp, if (selected) DK.gold.copy(alpha = 0.4f) else DK.hairline, RoundedCornerShape(50))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    )
+}
+
+/** Gold area+line over the forecast years, scaled to the largest year. Same Canvas idiom the
+ *  monthly chart already uses — no new chart dependency. */
+@Composable
+private fun ForecastChart(forecast: List<ForecastYear>) {
+    val values = forecast.map { it.income.amount.doubleValue(false) }
+    val maxValue = values.maxOrNull() ?: 0.0
+    if (values.size < 2 || maxValue <= 0.0) return
+    Canvas(Modifier.fillMaxWidth().height(FORECAST_CHART_HEIGHT_DP.dp)) {
+        val stepX = size.width / (values.size - 1).toFloat()
+        fun y(v: Double) = (size.height - (v / maxValue * size.height)).toFloat()
+        val path = androidx.compose.ui.graphics.Path().apply {
+            moveTo(0f, y(values.first()))
+            values.forEachIndexed { i, v -> if (i > 0) lineTo(i * stepX, y(v)) }
+        }
+        val filled = androidx.compose.ui.graphics.Path().apply {
+            addPath(path)
+            lineTo(size.width, size.height)
+            lineTo(0f, size.height)
+            close()
+        }
+        drawPath(filled, DK.gold.copy(alpha = 0.14f))
+        drawPath(path, DK.gold, style = Stroke(width = 2.dp.toPx()))
     }
 }
 

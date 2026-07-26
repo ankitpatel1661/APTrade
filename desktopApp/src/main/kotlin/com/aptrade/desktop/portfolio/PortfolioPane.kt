@@ -55,8 +55,10 @@ import com.aptrade.desktop.designkit.SuperscriptPrice
 import com.aptrade.desktop.designkit.formatPercent
 import com.aptrade.shared.l10n.L10n
 import com.aptrade.desktop.l10n.tr
-import com.aptrade.desktop.l10n.trf
+import com.aptrade.desktop.plans.WizardTextField
 import com.aptrade.shared.domain.AllocationSlice
+import com.aptrade.shared.domain.AmountInput
+import com.aptrade.shared.domain.Money
 
 /** The four content sections beneath the summary header (M10.2 Task 3). Hoisted PUBLIC so
  *  `ui.AppShell`'s sidebar can drive it directly — the sidebar item IS the section picker
@@ -113,9 +115,12 @@ fun PortfolioPane(
     section: PortfolioSection,
     onSetSpan: (PortfolioSpan) -> Unit,
     onSetBenchmark: (String) -> Unit,
+    onSetValueGoal: (Money) -> Unit,
+    onRemoveValueGoal: () -> Unit,
     onOpenDetail: (String) -> Unit,
     onTrade: (symbol: String, side: com.aptrade.shared.domain.TradeSide) -> Unit,
-    onReset: () -> Unit,
+    defaultStartingCash: Money,
+    onReset: (Money) -> Unit,
     onExportCsv: () -> Unit,
     onExportJson: () -> Unit,
     onExportPdf: () -> Unit,
@@ -151,6 +156,8 @@ fun PortfolioPane(
                     state = state,
                     onSetSpan = onSetSpan,
                     onSetBenchmark = onSetBenchmark,
+                    onSetValueGoal = onSetValueGoal,
+                    onRemoveValueGoal = onRemoveValueGoal,
                     modifier = Modifier.padding(horizontal = 24.dp).padding(top = 4.dp, bottom = 20.dp),
                 )
             }
@@ -159,7 +166,8 @@ fun PortfolioPane(
 
     if (showResetConfirm) {
         ResetConfirmDialog(
-            onConfirm = { showResetConfirm = false; onReset() },
+            defaultStartingCash = defaultStartingCash,
+            onConfirm = { amount -> showResetConfirm = false; onReset(amount) },
             onCancel = { showResetConfirm = false },
         )
     }
@@ -696,8 +704,16 @@ private fun EmptyState() {
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-private fun ResetConfirmDialog(onConfirm: () -> Unit, onCancel: () -> Unit) {
+private fun ResetConfirmDialog(
+    defaultStartingCash: Money,
+    onConfirm: (Money) -> Unit,
+    onCancel: () -> Unit,
+) {
     val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
+    // Seeded from the persisted preference, so the common case is "press Reset" and the
+    // uncommon case is "type a different balance" — never "retype your usual number".
+    var amountText by remember { mutableStateOf(defaultStartingCash.amount.toStringExpanded()) }
+    val parsed = AmountInput.parse(amountText, AmountInput.STARTING_BALANCE_RANGE)
     Box(
         Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onCancel() },
@@ -725,12 +741,29 @@ private fun ResetConfirmDialog(onConfirm: () -> Unit, onCancel: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             Text(
-                trf(L10n.Key.StartOverWithFormat, "$100,000"),
-                style = TextStyle(
-                    fontFamily = InterFamily, fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold, color = DK.textPrimary,
-                ),
+                tr(L10n.Key.ResetPortfolioTitle),
+                style = TextStyle(fontFamily = InterFamily, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = DK.textPrimary),
             )
+            Text(
+                tr(L10n.Key.ResetPortfolioBody),
+                style = TextStyle(fontFamily = InterFamily, fontSize = 12.sp, fontWeight = FontWeight.Normal, color = DK.textSecondary),
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    tr(L10n.Key.StartingBalance).uppercase(),
+                    style = TextStyle(fontFamily = InterFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = DK.textTertiary, letterSpacing = 1.sp),
+                )
+                WizardTextField(value = amountText, onValueChange = { amountText = it }, placeholder = "0", fontSize = 20.sp)
+                Text(
+                    tr(L10n.Key.StartingBalanceRange),
+                    style = TextStyle(
+                        fontFamily = InterFamily, fontSize = 10.sp, fontWeight = FontWeight.Medium,
+                        // The hint turns red only once the user has typed something unusable —
+                        // an empty field on open is not an error state.
+                        color = if (parsed == null && amountText.isNotBlank()) DK.down else DK.textTertiary,
+                    ),
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                 Box(
                     contentAlignment = Alignment.Center,
@@ -751,9 +784,14 @@ private fun ResetConfirmDialog(onConfirm: () -> Unit, onCancel: () -> Unit) {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .weight(1f).clip(RoundedCornerShape(50)).background(DK.down.copy(alpha = 0.16f))
-                        .border(1.dp, DK.down.copy(alpha = 0.4f), RoundedCornerShape(50))
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onConfirm() }
+                        .weight(1f).clip(RoundedCornerShape(50))
+                        .background(DK.down.copy(alpha = if (parsed == null) 0.06f else 0.16f))
+                        .border(1.dp, DK.down.copy(alpha = if (parsed == null) 0.18f else 0.4f), RoundedCornerShape(50))
+                        .clickable(
+                            enabled = parsed != null,
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { parsed?.let(onConfirm) }
                         .padding(vertical = 12.dp),
                 ) {
                     Text(
@@ -763,8 +801,8 @@ private fun ResetConfirmDialog(onConfirm: () -> Unit, onCancel: () -> Unit) {
                         // Compose Desktop's in-panel dialog instead of a native sheet.
                         tr(L10n.Key.Reset),
                         style = TextStyle(
-                            fontFamily = InterFamily, fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold, color = DK.down,
+                            fontFamily = InterFamily, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                            color = if (parsed == null) DK.down.copy(alpha = 0.45f) else DK.down,
                         ),
                     )
                 }

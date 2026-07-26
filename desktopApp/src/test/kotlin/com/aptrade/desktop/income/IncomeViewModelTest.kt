@@ -1,8 +1,10 @@
 package com.aptrade.desktop.income
 
 import com.aptrade.desktop.FakeMarketDataRepository
-import com.aptrade.shared.application.PortfolioStore
+import com.aptrade.shared.application.LoadGoals
 import com.aptrade.shared.application.QuoteError
+import com.aptrade.shared.application.RemoveGoal
+import com.aptrade.shared.application.SaveGoal
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.DividendEvent
@@ -23,19 +25,10 @@ import kotlin.test.assertTrue
 
 /** Transcribed from `Tests/APTradeAppTests/IncomeViewModelTests.swift` AS-BUILT, including
  *  the `buildUpcoming` stale-projection regression (a `nextProjected` landing before `asOf`
- *  must never surface). */
+ *  must never surface). Shares [FakePortfolioStore]/[MemoryGoalStore]/`usd`/`qty` with
+ *  [IncomeForecastGoalTest] via the file-level helpers in `IncomeTestSupport.kt` -- see that
+ *  file's KDoc. */
 class IncomeViewModelTest {
-
-    private class FakePortfolioStore(initial: Portfolio) : PortfolioStore {
-        var portfolio: Portfolio = initial
-        override suspend fun load(): Portfolio = portfolio
-        override suspend fun save(portfolio: Portfolio) {
-            this.portfolio = portfolio
-        }
-    }
-
-    private fun usd(s: String): Money = Money(BigDecimal.parseString(s), "USD")
-    private fun qty(s: String): BigDecimal = BigDecimal.parseString(s)
 
     /** 2026-07-20 12:00:00 UTC — a fixed "now" so calendar-year and month-bucket math is
      *  deterministic across runs. Matches the Swift fixture's `fixedNow` exactly. */
@@ -60,11 +53,16 @@ class IncomeViewModelTest {
         market.dividendEventsImpl = { symbol, _ ->
             events[symbol]?.invoke() ?: emptyList()
         }
+        val goals = MemoryGoalStore()
         val vm = IncomeViewModel(
             portfolioStore = store,
             marketDataRepository = market,
             scope = scope,
             nowEpochSeconds = { now },
+            loadGoals = LoadGoals(goals),
+            saveGoal = SaveGoal(goals),
+            removeGoal = RemoveGoal(goals),
+            isDripEnabled = { false },
         )
         return vm to market
     }

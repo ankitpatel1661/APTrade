@@ -3,6 +3,7 @@ package com.aptrade.desktop
 import com.aptrade.desktop.designkit.AccentTheme
 import com.aptrade.desktop.infra.AppSettings
 import com.aptrade.desktop.infra.FileSettingsStore
+import com.aptrade.shared.domain.Money
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -80,6 +81,33 @@ class SettingsPersistTest {
         assertEquals(false, result.marketOpenClose)
         assertEquals(false, result.newsDigest)
         assertEquals(false, result.emailNotifications)
+    }
+
+    // M11.2 Task 9: confirming a portfolio reset with a typed-in amount writes that amount back
+    // as the new remembered `defaultStartingCash` — mirrors the Swift AS-BUILT's reset-confirm
+    // handler (`Sources/APTradeApp/PortfolioView.swift`: `settingsVM.settings.defaultStartingCash
+    // = amount` before `viewModel.reset(startingCash:)`). `Main.kt`'s `onReset` performs exactly
+    // this mutation via `updateNotificationSettings { it.copy(defaultStartingCash = amount) }`,
+    // which routes through this same `persistSettings` seam — pinning the mutation here would
+    // fail if that write-back were ever dropped from the reset call site.
+    @Test
+    fun `a reset with a custom amount persists it as the new default starting cash`() = runTest {
+        val store = tempSettingsStore()
+        val initial = AppSettings(
+            accent = AccentTheme.Amethyst,
+            priceAlerts = false,
+            defaultStartingCash = Money.usd("100000"),
+        )
+        store.save(initial)
+
+        // Exactly the reset dialog's onConfirm mutation for a $25,000 typed-in amount.
+        persistSettings(store) { it.copy(defaultStartingCash = Money.usd("25000")) }
+
+        val result = store.load()
+        assertEquals(Money.usd("25000"), result.defaultStartingCash)
+        // Other fields survive the load-merge-save untouched.
+        assertEquals(AccentTheme.Amethyst, result.accent)
+        assertEquals(false, result.priceAlerts)
     }
 
     @Test
