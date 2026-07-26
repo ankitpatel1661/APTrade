@@ -367,6 +367,12 @@ class DividendForecastTest {
             asOfEpochSeconds = now,
         )
         assertTrue(rows.isNotEmpty())
+        // Review Finding 5: pin the row COUNT and spacing too -- a quarterly payer projected at,
+        // say, a 30-day step (12 rows instead of 4) satisfied every assertion this test had
+        // before. flatQuarterly's cadence is quarterly (91d) and the seed lands at now+64d, so
+        // the 365-day window fits exactly four rows (64, 155, 246, 337 -- the fifth, at 428, is
+        // past the window).
+        assertEquals(4, rows.size)
         assertTrue(rows.all { it.exDateEpochSeconds > now && it.exDateEpochSeconds <= now + 365 * day })
         assertEquals(rows.map { it.exDateEpochSeconds }.sorted(), rows.map { it.exDateEpochSeconds })
         assertEquals(usd("25"), rows.first().estimatedAmount)   // 100 shares x $0.25
@@ -374,10 +380,17 @@ class DividendForecastTest {
 
     @Test
     fun aStaleProjectionIsRolledForwardUntilItIsGenuinelyInTheFuture() {
-        // Last payment two years ago: nextProjected lands in the past and must be rolled.
+        // nextProjected's single step lands in the past (seed = now-300d + 91d = now-209d) and
+        // must be rolled forward three more 91-day steps before it clears `asOf` -- but the last
+        // REAL event (now-300d) still sits inside trailingAnnualPerShare's 365-day window (the
+        // other one, now-391d, does not), so this fixture keeps positive trailing income and
+        // clears the review-Finding-2 guard added to `projectedSchedule`. (A same-shaped fixture
+        // whose last event was instead ~400+ days old would be a DIFFERENT test -- see
+        // [aPayerWhoseLastRealExDateIsBeyondTheTrailingWindowIsExcludedFromTheCalendar] below,
+        // which pins that a payer that stale must NOT be rolled forward at all.)
         val stale = listOf(
-            event("A", now - 820 * day, "0.25"),
-            event("A", now - 729 * day, "0.25"),
+            event("A", now - 391 * day, "0.25"),
+            event("A", now - 300 * day, "0.25"),
         )
         val rows = DividendMath.projectedSchedule(
             positions = listOf(position("A", "100", "50")),
@@ -385,6 +398,10 @@ class DividendForecastTest {
             throughEpochSeconds = now + 365 * day,
             asOfEpochSeconds = now,
         )
+        // Review Finding 5: `all { ... }` passes vacuously on an empty list -- an empty `rows`
+        // (the roll-forward silently producing nothing) would satisfy the assertion below just
+        // as well as a genuinely rolled-forward row does. Pin that there IS something to check.
+        assertTrue(rows.isNotEmpty())
         assertTrue(rows.all { it.exDateEpochSeconds > now })
     }
 
@@ -408,5 +425,49 @@ class DividendForecastTest {
             asOfEpochSeconds = now,
         )
         assertTrue(rows.all { it.perShare == usd("0.25") })
+    }
+
+    /** DISCRIMINATION (review Finding 2). Last real ex-date ~400 days ago -- inside
+     *  `IncomeViewModel`'s 730-day cadence-inference lookback, so a cadence IS inferable, but
+     *  outside [DividendMath.trailingAnnualPerShare]'s 365-day window, so `SummaryCards`, the
+     *  income forecast chart, and the "Upcoming Dividends" list all already value this holding at
+     *  zero. The WRONG implementation this test rejects is `projectedSchedule` rolling a stale
+     *  cadence forward with no staleness bound of its own (`while (next <= asOf) next += step`
+     *  alone, with no trailing-income guard) -- verified to fail (RED) with that guard removed,
+     *  then pass (GREEN) once restored; see the task report's RED/GREEN transcript. Without the
+     *  guard this fixture emits exactly FOUR quarterly $25 rows (100 shares x $0.25) at
+     *  now+55d/+146d/+237d/+328d -- a specific, wrong, non-empty answer, not a vacuous one. */
+    @Test
+    fun aPayerWhoseLastRealExDateIsBeyondTheTrailingWindowIsExcludedFromTheCalendar() {
+        val stale = listOf(
+            event("A", now - 673 * day, "0.25"),
+            event("A", now - 582 * day, "0.25"),
+            event("A", now - 491 * day, "0.25"),
+            event("A", now - 400 * day, "0.25"),
+        )
+        assertEquals(
+            BigDecimal.ZERO,
+            DividendMath.trailingAnnualPerShare(stale, now).amount,
+            "sanity: the trailing window must already read zero for this fixture",
+        )
+        val rows = DividendMath.projectedSchedule(
+            positions = listOf(position("A", "100", "50")),
+            eventsBySymbol = mapOf("A" to stale),
+            throughEpochSeconds = now + 365 * day,
+            asOfEpochSeconds = now,
+        )
+        assertTrue(rows.isEmpty(), "a payer with no trailing income must not resurrect a stale cadence")
+    }
+
+    /** The mirror case: a holding that IS currently paying must not be caught by the new guard. */
+    @Test
+    fun aCurrentlyPayingHoldingStillAppearsOnTheCalendar() {
+        val rows = DividendMath.projectedSchedule(
+            positions = listOf(position("A", "100", "50")),
+            eventsBySymbol = mapOf("A" to flatQuarterly("A")),
+            throughEpochSeconds = now + 365 * day,
+            asOfEpochSeconds = now,
+        )
+        assertTrue(rows.isNotEmpty(), "a currently-paying holding must not be excluded by the trailing-income guard")
     }
 }

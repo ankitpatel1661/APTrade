@@ -173,8 +173,26 @@ object GoalMath {
      * identical span — the two symmetric cards would disagree, and the "> 30 yrs" rule would be
      * satisfied only by caller discipline nothing enforces. Kotlin clamps the crossing itself to
      * [HORIZON_YEARS] so the boundary is provably identical in both projections.
+     *
+     * [hasMeasurableGrowth] (review Finding 3): `false` when NO symbol contributing to [forecast]
+     * has enough history for [DividendMath.dividendGrowthRate] to measure an actual rate — pass
+     * [DividendMath.anyPositionHasMeasurableGrowth]'s result. `DividendMath.dividendGrowthRate`
+     * returns `BigDecimal.ZERO` both for a genuinely flat, seasoned payer AND for a payer with too
+     * little history to measure at all, so a forecast built entirely from unmeasurable symbols is
+     * flat for the SAME reason a value-goal card would report [GoalProjection.InsufficientHistory]
+     * for an equivalently young account — not because nothing is growing, but because nothing
+     * could be measured. Checked only in the uncrossed, non-all-zero fallthrough: when
+     * `hasMeasurableGrowth` is false every contributing symbol's growth is (by construction) the
+     * unmeasurable-default 0.0, so the forecast is provably flat and `last.income > current` can
+     * never fire anyway -- this is a strict refinement of that branch, not a new
+     * decision surface.
      */
-    fun incomeProjection(current: Money, target: Money, forecast: List<ForecastYear>): GoalProjection {
+    fun incomeProjection(
+        current: Money,
+        target: Money,
+        forecast: List<ForecastYear>,
+        hasMeasurableGrowth: Boolean,
+    ): GoalProjection {
         degenerateOrReached(current, target)?.let { return it }
         val last = forecast.lastOrNull() ?: return GoalProjection.InsufficientHistory
         val crossing = forecast.firstOrNull { it.income.amount >= target.amount }
@@ -186,6 +204,7 @@ object GoalMath {
             }
         }
         if (forecast.none { it.income.amount > BigDecimal.ZERO }) return GoalProjection.InsufficientHistory
+        if (!hasMeasurableGrowth) return GoalProjection.InsufficientHistory
         return if (last.income.amount > current.amount) {
             GoalProjection.BeyondHorizon
         } else {

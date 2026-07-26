@@ -231,20 +231,82 @@ object DividendMath {
      * annualization recovers a known true per-payment CAGR exactly (see
      * `dividendGrowthRateRecoversAKnownTruePerPaymentCagr` in the test suite).
      *
+     * RESIDUAL LIMITATION (review Finding 6): count-matched halves are immune to phase relative
+     * to `asOf` (the window-membership aliasing this fix removed) -- they are NOT immune to phase
+     * relative to a payer's OWN cadence when that payer mixes an irregular, much larger payment
+     * into an otherwise-regular schedule. A flat quarterly payer that also makes an annual 5x
+     * special distribution can land that one oversized payment in either half depending on where
+     * the 5-year window happens to start/end, and was measured to read anywhere from 0.0 to
+     * roughly -7%/yr at different phases of the SAME underlying (flat regular + annual special)
+     * series -- same class of artifact as the bug this milestone fixed, one order of magnitude
+     * smaller, and bounded by [MIN_DIVIDEND_GROWTH]/[MAX_DIVIDEND_GROWTH] like everything else this
+     * function returns. Real-world instances: REITs and BDCs that pay a regular quarterly/monthly
+     * rate plus a year-end "top-up" special distribution. Not fixed here; recorded so a future
+     * reader does not mistake this function's phase-immunity for unconditional.
+     *
      * FRACTIONAL EXPONENTIATION (carry-notes §4): ionspin's `BigDecimal.pow` takes Int/Long only,
      * so the n-th root routes through Double exactly as the Swift twin does. Tolerance-covered by
      * the tests; the clamp bounds the blast radius of any Double drift.
+     *
+     * MEASURED-ZERO VS. UNMEASURABLE (review Finding 3): every early-return below reports
+     * `BigDecimal.ZERO` regardless of WHY -- a genuinely flat payer with two full years of history
+     * and a payer with only one payment ever both read identically as 0.0. That conflation is fine
+     * for [incomeForecast] (a forecast that can't measure growth should compound at 0%, same as a
+     * forecast that measured exactly 0% growth), but it is NOT fine for a caller that needs to
+     * distinguish "nothing to report" from "reported a real zero" -- see [hasMeasurableGrowth],
+     * which shares every precondition below via [measuredDividendGrowthRate] so the two functions
+     * cannot drift apart.
      */
-    fun dividendGrowthRate(events: List<DividendEvent>, asOfEpochSeconds: Long): BigDecimal {
+    fun dividendGrowthRate(events: List<DividendEvent>, asOfEpochSeconds: Long): BigDecimal =
+        measuredDividendGrowthRate(events, asOfEpochSeconds) ?: BigDecimal.ZERO
+
+    /**
+     * True when [events] carries enough history for [dividendGrowthRate] to actually MEASURE a
+     * rate, as opposed to defaulting to `BigDecimal.ZERO` purely for want of data (review Finding
+     * 3). Shares [measuredDividendGrowthRate]'s preconditions exactly -- a genuinely flat payer
+     * with sufficient history returns `true` here (with [dividendGrowthRate] reporting a real,
+     * measured `0.0`); a payer with too little history returns `false` (with [dividendGrowthRate]
+     * ALSO reporting `0.0`, indistinguishably, unless this function is consulted separately).
+     *
+     * Lets [incomeProjection][GoalMath.incomeProjection] tell "measured zero growth" (a genuinely
+     * flat, seasoned payer -- legitimately not on track) from "growth could not be measured at
+     * all" (e.g. a payer with only a few months of payment history -- insufficient history, the
+     * same honest reading [GoalMath.valueProjection] already gives an equivalently young account).
+     */
+    fun hasMeasurableGrowth(events: List<DividendEvent>, asOfEpochSeconds: Long): Boolean =
+        measuredDividendGrowthRate(events, asOfEpochSeconds) != null
+
+    /**
+     * True when at least one position [incomeForecast] would actually project (positive trailing
+     * income, positive quantity -- its own identical inclusion test, reproduced here) has
+     * [hasMeasurableGrowth] history for its own events. Lets a caller aggregate the per-symbol
+     * measurability question across an entire portfolio in one call, the same way
+     * [projectedAnnualIncome] aggregates the per-symbol income sum.
+     */
+    fun anyPositionHasMeasurableGrowth(
+        positions: List<Position>,
+        eventsBySymbol: Map<String, List<DividendEvent>>,
+        asOfEpochSeconds: Long,
+    ): Boolean = positions.any { position ->
+        val events = eventsBySymbol[position.asset.symbol] ?: emptyList()
+        trailingAnnualPerShare(events, asOfEpochSeconds).amount > BigDecimal.ZERO &&
+            position.quantity > BigDecimal.ZERO &&
+            hasMeasurableGrowth(events, asOfEpochSeconds)
+    }
+
+    /** The shared body behind [dividendGrowthRate] and [hasMeasurableGrowth]: `null` wherever
+     *  there is too little data to measure honestly, a real (possibly zero) rate otherwise. See
+     *  [dividendGrowthRate]'s KDoc for the full derivation this implements. */
+    private fun measuredDividendGrowthRate(events: List<DividendEvent>, asOfEpochSeconds: Long): BigDecimal? {
         val windowStart = asOfEpochSeconds - (5.0 * SECONDS_PER_YEAR).toLong()
         val window = events
             .filter { it.exDateEpochSeconds in windowStart..asOfEpochSeconds }
             .sortedBy { it.exDateEpochSeconds }
-        if (window.size < 2) return BigDecimal.ZERO
+        if (window.size < 2) return null
 
         val totalSpanYears = (window.last().exDateEpochSeconds - window.first().exDateEpochSeconds).toDouble() /
             SECONDS_PER_YEAR
-        if (totalSpanYears < 2.0) return BigDecimal.ZERO
+        if (totalSpanYears < 2.0) return null
 
         // Count-normalized halves, NOT a day-windowed sum sampled at an instant — see the
         // CARRY-NOTE 6 KDoc above for why that distinction is the entire fix.
@@ -253,18 +315,18 @@ object DividendMath {
         val lateHalf = window.subList(window.size - half, window.size)
         val earlyAvg = averagePerPayment(earlyHalf)
         val lateAvg = averagePerPayment(lateHalf)
-        if (earlyAvg <= 0.0 || lateAvg <= 0.0) return BigDecimal.ZERO
+        if (earlyAvg <= 0.0 || lateAvg <= 0.0) return null
 
         // The annualization exponent's divisor: the elapsed time between what's actually being
         // compared — each half's centroid (mean ex-date) — in years, NOT the total window span
         // (see CARRY-NOTE 6's Finding A addendum above for why that distinction is the fix).
         val centroidGapYears = (meanEpochSeconds(lateHalf) - meanEpochSeconds(earlyHalf)) / SECONDS_PER_YEAR
-        if (centroidGapYears <= 0.0 || !centroidGapYears.isFinite()) return BigDecimal.ZERO
+        if (centroidGapYears <= 0.0 || !centroidGapYears.isFinite()) return null
 
         val ratio = lateAvg / earlyAvg
-        if (ratio <= 0.0) return BigDecimal.ZERO
+        if (ratio <= 0.0) return null
         val rate = ratio.pow(1.0 / centroidGapYears) - 1.0
-        if (!rate.isFinite()) return BigDecimal.ZERO
+        if (!rate.isFinite()) return null
 
         return clampGrowth(BigDecimal.fromDouble(rate))
     }
@@ -384,6 +446,17 @@ object DividendMath {
      *
      * Every emitted row is a projection: the upstream feed exposes no forward-declared dividend
      * dates, so the UI must label each row an estimate (carry-notes §3.7).
+     *
+     * Applies the SAME inclusion test [incomeForecast] does (review Finding 2): a position whose
+     * [trailingAnnualPerShare] is zero contributes nothing to the forecast, `SummaryCards`, or the
+     * "Upcoming Dividends" list -- this calendar must agree, or a holding whose payer has gone
+     * stale/suspended (its last REAL ex-date old enough to have fallen out of the trailing-annual
+     * window, but still recent enough for [inferredCadence] to infer a cadence from) prints
+     * confident dollar rows on the one surface that valued it at zero everywhere else. The
+     * `while (next <= asOfEpochSeconds) next += step` roll-forward below has no staleness bound of
+     * its own -- it will happily roll a payer that stopped paying a year ago into next quarter --
+     * so the zero-trailing-income guard is what actually bounds "how stale is too stale to
+     * project," matching the bound every other income surface already uses.
      */
     fun projectedSchedule(
         positions: List<Position>,
@@ -395,6 +468,7 @@ object DividendMath {
         for (position in positions) {
             if (position.quantity <= BigDecimal.ZERO) continue
             val events = eventsBySymbol[position.asset.symbol] ?: emptyList()
+            if (trailingAnnualPerShare(events, asOfEpochSeconds).amount <= BigDecimal.ZERO) continue
             val seed = nextProjected(events) ?: continue
             val cadence = inferredCadence(events) ?: continue
 

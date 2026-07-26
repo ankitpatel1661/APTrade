@@ -178,7 +178,11 @@ class GoalMathTest {
 
     @Test
     fun incomeProjectionReportsTheCrossingYear() {
-        val projection = GoalMath.incomeProjection(usd("1000"), usd("3000"), forecast("1000", "2000", "3200"))
+        // Crossing is decided before hasMeasurableGrowth is even consulted -- passed `true` here
+        // only because SOME value must be supplied, not because this test exercises that gate.
+        val projection = GoalMath.incomeProjection(
+            usd("1000"), usd("3000"), forecast("1000", "2000", "3200"), hasMeasurableGrowth = true,
+        )
         assertEquals(GoalProjection.Years(3.0), projection)
     }
 
@@ -186,7 +190,9 @@ class GoalMathTest {
     fun incomeProjectionReportsReachedWhenCurrentAlreadyMeetsTarget() {
         assertEquals(
             GoalProjection.Reached,
-            GoalMath.incomeProjection(usd("5000"), usd("3000"), forecast("5000", "5200")),
+            GoalMath.incomeProjection(
+                usd("5000"), usd("3000"), forecast("5000", "5200"), hasMeasurableGrowth = true,
+            ),
         )
     }
 
@@ -198,7 +204,9 @@ class GoalMathTest {
     fun anAllZeroForecastReportsInsufficientHistoryNotNotOnTrack() {
         assertEquals(
             GoalProjection.InsufficientHistory,
-            GoalMath.incomeProjection(usd("0"), usd("6000"), forecast("0", "0", "0")),
+            GoalMath.incomeProjection(
+                usd("0"), usd("6000"), forecast("0", "0", "0"), hasMeasurableGrowth = false,
+            ),
         )
     }
 
@@ -206,7 +214,7 @@ class GoalMathTest {
     fun anEmptyForecastReportsInsufficientHistory() {
         assertEquals(
             GoalProjection.InsufficientHistory,
-            GoalMath.incomeProjection(usd("0"), usd("6000"), emptyList()),
+            GoalMath.incomeProjection(usd("0"), usd("6000"), emptyList(), hasMeasurableGrowth = false),
         )
     }
 
@@ -214,7 +222,9 @@ class GoalMathTest {
     fun aGrowingButUncrossedForecastReportsBeyondHorizon() {
         assertEquals(
             GoalProjection.BeyondHorizon,
-            GoalMath.incomeProjection(usd("1000"), usd("999999"), forecast("1000", "1100", "1200")),
+            GoalMath.incomeProjection(
+                usd("1000"), usd("999999"), forecast("1000", "1100", "1200"), hasMeasurableGrowth = true,
+            ),
         )
     }
 
@@ -222,7 +232,43 @@ class GoalMathTest {
     fun aShrinkingForecastReportsNotOnTrack() {
         assertEquals(
             GoalProjection.NotOnTrack,
-            GoalMath.incomeProjection(usd("1000"), usd("5000"), forecast("1000", "900", "800")),
+            GoalMath.incomeProjection(
+                usd("1000"), usd("5000"), forecast("1000", "900", "800"), hasMeasurableGrowth = true,
+            ),
+        )
+    }
+
+    /** DISCRIMINATION (review Finding 3). A flat-but-positive forecast (income never changes,
+     *  which is EXACTLY what a forecast built entirely from unmeasurable-growth symbols looks
+     *  like, since `dividendGrowthRate` defaults such symbols to 0%) with `hasMeasurableGrowth =
+     *  false` must report [GoalProjection.InsufficientHistory], not [GoalProjection.NotOnTrack] --
+     *  the identical situation [GoalMath.valueProjection] already reports as "needs more history"
+     *  for an equivalently young account (carry-notes §2.4's sibling asymmetry). The WRONG
+     *  implementation this rejects is `incomeProjection` ignoring `hasMeasurableGrowth` entirely
+     *  (the pre-fix signature) -- verified to fail (RED) when the guard line is removed, then pass
+     *  (GREEN) once restored; see the task report's RED/GREEN transcript. */
+    @Test
+    fun aFlatForecastWithUnmeasurableGrowthReportsInsufficientHistoryNotNotOnTrack() {
+        assertEquals(
+            GoalProjection.InsufficientHistory,
+            GoalMath.incomeProjection(
+                usd("500"), usd("6000"), forecast("500", "500", "500"), hasMeasurableGrowth = false,
+            ),
+        )
+    }
+
+    /** The mirror case: the SAME flat forecast with `hasMeasurableGrowth = true` (a genuinely
+     *  flat, SEASONED payer -- growth really was measured, and it really is zero) must still
+     *  report [GoalProjection.NotOnTrack]. This is not a fabricated distinction -- a seasoned flat
+     *  payer and a too-young-to-measure one look identical on the forecast curve, and only
+     *  `hasMeasurableGrowth` tells them apart. */
+    @Test
+    fun aFlatForecastWithMeasuredGrowthStillReportsNotOnTrack() {
+        assertEquals(
+            GoalProjection.NotOnTrack,
+            GoalMath.incomeProjection(
+                usd("500"), usd("6000"), forecast("500", "500", "500"), hasMeasurableGrowth = true,
+            ),
         )
     }
 
@@ -253,6 +299,28 @@ class GoalMathTest {
         )
         assertTrue(exactlyAtHorizon is GoalProjection.Years)
         assertEquals(30.0, (exactlyAtHorizon as GoalProjection.Years).value, 1e-6)
+    }
+
+    /** Review Finding 3, income/value parity: for a young position whose only payer's growth is
+     *  UNMEASURABLE (too little history -- not a genuinely flat, seasoned payer), the income and
+     *  value goal cards must now agree that this is "insufficient history," rather than disagree
+     *  ("not on track" vs. "needs more history") the way carry-notes §2.4 already fixed for the
+     *  all-zero case. */
+    @Test
+    fun incomeAndValueGoalsAgreeForAYoungPositionWithUnmeasurableGrowth() {
+        // Value side: an account 90 days old, well under MINIMUM_HISTORY_DAYS (180).
+        assertEquals(
+            GoalProjection.InsufficientHistory,
+            GoalMath.valueProjection(usd("50125"), usd("500000"), curve(90, "50000", "50125"), 90.0),
+        )
+        // Income side: real trailing income ($125/yr), but too little history (under two years)
+        // for dividendGrowthRate to measure a rate -- hasMeasurableGrowth is false.
+        assertEquals(
+            GoalProjection.InsufficientHistory,
+            GoalMath.incomeProjection(
+                usd("125"), usd("6000"), forecast("125", "125", "125"), hasMeasurableGrowth = false,
+            ),
+        )
     }
 
     // MARK: end-to-end account-age wiring
