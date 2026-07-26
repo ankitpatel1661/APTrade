@@ -280,12 +280,13 @@ Found 2026-07-25 during M11.2 Task 8, confirmed independently by the task review
 
 ## 4e. The recurring failure mode of this milestone: tests that cannot fail
 
-By Task 11 of M11.2 this had been caught **four separate times**, in code that was otherwise correct. It is the single most valuable thing the review layer found, and M11.3 should expect it.
+By the end of M11.2 this had been caught **five separate times**, in code that was otherwise correct. It is the single most valuable thing the review layer found, and M11.3 should expect it.
 
 1. **M11.1 Task 6 / M11.2 Task 5** — every dividend-growth assertion resolved to exactly `0.0` or exactly a clamp bound, so **inverting the annualization root entirely left the whole suite green**. Both platforms had this shape.
 2. **M11.2 Task 7** — the test proving the since-inception return measures from `startingCash` used fixtures where the trade price equalled the first historical close, making `startingCash` *algebraically identical* to the curve's opening value. Both implementations produced bit-identical numbers.
 3. **M11.2 Task 8** — the L10n completeness test called `L10n.string()`, which falls back to `key.english`, so **no missing translation could ever fail it**. See §4d.
 4. **M11.2 Task 11** — the test guarding "the goal ETA must not move when the chart horizon changes" used a fixture whose projection was `BeyondHorizon` at *every* horizon, so it passed identically whether or not the horizon leaked into the goal curve.
+5. **M11.2 whole-branch review** — the test guarding the milestone's *headline* cross-task constraint (toggling DRIP must refresh the income-goal ETA, not just the chart) asserted `beforeProjection != after || beforeProjection is BeyondHorizon`. The fixture's target made `beforeProjection` `BeyondHorizon`, so the second disjunct was unconditionally true and **deleting the entire `refreshGoalProjection()` tail call left it green.** Caught only because the whole-branch review re-derived the fixture's state machine rather than reading the assertion.
 
 **The pattern:** the fixture makes the two behaviours being distinguished produce the same output. The test then documents an intention rather than enforcing it, and reads as coverage in every subsequent review.
 
@@ -294,6 +295,31 @@ By Task 11 of M11.2 this had been caught **four separate times**, in code that w
 - After writing the test, **name the specific wrong implementation it is supposed to reject**, then temporarily introduce that implementation and confirm the test goes red. Revert. Paste the RED output. This "revert-and-confirm" cycle caught three of the four above.
 - Prefer fixtures where the correct and incorrect answers are **numerically distinct by construction**, and state both numbers in a comment so the next reader can see the discrimination without re-deriving it.
 - Be suspicious of any assertion that lands on a clamp bound, a saturated state, an exact zero, or a sealed-class case reachable by several paths — those are where the two behaviours converge.
+- **An assertion containing `||` where one disjunct describes the state *before* the action is documentation, not a guard.** This is the fifth instance's exact shape, and it is the most transferable rule this milestone produced: `assertTrue(before != after || before is SomeCase)` passes unconditionally the moment the fixture makes `before` that case. Assert the **specific** post-action value instead, with no disjunction.
+
+---
+
+## 4f. TWO MORE LIVE SWIFT DEFECTS, found by M11.2's whole-branch review
+
+Both are shipped on `main` in M11.1 right now, and the Kotlin wave has deliberately diverged from both. **Backport owed**, alongside §4c's growth-rate fix.
+
+### 4f.1 The Swift Dividend Calendar resurrects suspended dividends
+
+`Sources/APTradeDomain/DividendMath.swift:267-282` rolls a stale cadence projection forward with **no trailing-income guard**. A holding whose last real ex-date is ~400 days ago — still inside the event lookback, so a cadence is inferable — produces four quarterly calendar rows at the old per-share amount, with month totals, while three neighbouring components on the same screen correctly value it at zero: the summary card's projected-annual (365-day trailing window), the forecast chart (skips `trailing <= 0`), and the Upcoming Dividends list (`nextProjected` lands in the past and is filtered).
+
+The "est." badge disclaims **the date**, not **that the company still pays**. Kotlin now applies `incomeForecast`'s own inclusion test (`trailingAnnualPerShare(events, asOf).amount <= 0` → skip) so one rule governs every income surface.
+
+### 4f.2 The Swift income card gives a confident verdict off an unmeasurable growth rate
+
+`Sources/APTradeDomain/GoalMath.swift:83` has no measurability parameter. `dividendGrowthRate` returns `0` both for a genuinely flat payer **and** when growth cannot be measured (fewer than two payments, or under a two-year span). So a young account with three quarterly payments reads **"Not on track at current rate"** on the income card while the value card, on the same account, reads **"Tracking — needs more history"** — because `valueProjection` has a history floor and `incomeProjection` has none.
+
+This is §2.4's asymmetry, still open on Swift for the has-income-but-unmeasurable-growth case. Kotlin split `measuredDividendGrowthRate(): BigDecimal?` out so `dividendGrowthRate` and `hasMeasurableGrowth` **share one function body** and cannot drift, then gated `incomeProjection` on it.
+
+## 4g. One rule governs every income surface
+
+`trailingAnnualPerShare(events, asOf).amount > 0` is the single staleness/inclusion test for **all four** income surfaces: the multi-year forecast, the summary card's projected annual, the Upcoming Dividends list, and the Dividend Calendar. M11.2 had to add it to the calendar after the whole-branch review found that surface disagreeing with the other three on the same screen.
+
+Any future task adding an income surface must apply the same test. Any task changing it must change it in one place. (Note the all-zero-forecast guard from §2.4 is now *coextensive* with the measurability guard in production — an all-zero forecast implies no position passed this inclusion test. Both are kept for clarity; do not read the overlap as a defect and delete the wrong one.)
 
 ---
 
