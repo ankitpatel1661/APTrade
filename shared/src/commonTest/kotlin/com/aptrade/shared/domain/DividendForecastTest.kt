@@ -180,6 +180,46 @@ class DividendForecastTest {
         assertEquals(trueRate, rate.doubleValue(false), 1e-6)
     }
 
+    /**
+     * Task 6a (M11.2 backport branch) — twin of the Swift discrimination test
+     * `test_growthRate_oddCountWindow_dropsTheMiddleEventFromBothHalves`. Every OTHER fixture in
+     * this file has an even in-window payment count, so `measuredDividendGrowthRate`'s
+     * `lateHalf = window.subList(window.size - half, window.size)` (dropping the middle event
+     * from BOTH halves on an odd count) and the wrong `window.subList(half, window.size)`
+     * (assigning the middle event to the late half) agree everywhere else in this suite — this
+     * is the one fixture that tells them apart.
+     *
+     * Thirteen quarterly (91-day) $0.25 payments, flat except an $0.85 year-end special landing
+     * EXACTLY on the middle (7th) event. Correct implementation (middle dropped from both
+     * halves): both halves average exactly $0.25/payment, ratio 1.0, so the rate is EXACTLY 0.0.
+     * Wrong implementation (middle assigned to the late half): the late half's average is
+     * pulled up by the $0.85 outlier and reads 0.19965989176749388 — a specific, non-clamped,
+     * non-zero artifact, not a vacuous pass.
+     */
+    @Test
+    fun growthRateOddCountWindowDropsTheMiddleEventFromBothHalves() {
+        val events = (0 until 13).map { i ->
+            val offsetDays = (12 - i) * 91
+            event("A", now - offsetDays * day, if (offsetDays == 546) "0.85" else "0.25")
+        }
+        assertEquals(13, events.size)
+        assertEquals(1, events.size % 2, "fixture must carry an ODD count to bite")
+
+        // Confirm the in-window count is genuinely odd AFTER the 5-year window filter
+        // `measuredDividendGrowthRate` actually applies — not merely the constructed count.
+        // Same formula as DividendMath.kt's private `windowStart` (5.0 * 365.25-day years).
+        val windowStart = now - (5.0 * 365.25 * day).toLong()
+        assertTrue(
+            events.all { it.exDateEpochSeconds > windowStart && it.exDateEpochSeconds <= now },
+            "sanity: every event must actually survive the 5-year window filter",
+        )
+
+        // The middle payment must fall out of BOTH halves, not into the late one -- assigning
+        // it to the late half reads 0.19965989176749388 of pure artifact, verified by
+        // temporarily reintroducing that mutation (see the task report's RED/GREEN transcript).
+        assertEquals(0.0, DividendMath.dividendGrowthRate(events, now).doubleValue(false), 1e-9)
+    }
+
     /** Carry-notes §3.6: the per-symbol clamp is −0.20 … 0.25 and is INDEPENDENT of GoalMath's
      *  −0.50 … 1.00 portfolio clamp. Pinned by exact equality so the two cannot be conflated. */
     @Test
