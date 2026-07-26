@@ -73,6 +73,24 @@ class GoalMathTest {
         )
     }
 
+    /** THE CONVERSE OF THE DIVERGENCE, pinned (carry-notes §4a.2 wording-correction addendum):
+     *  measuring account age is an ADDITION to the curve-span floor, not a replacement for it. An
+     *  account well past the 180-day age floor can still be handed a curve spanning only 30 days —
+     *  `performanceSeries`'s all-priced gate truncates the WHOLE curve to the newest-history
+     *  symbol's first candle, so an old account that just bought a recently-listed symbol
+     *  collapses its own curve span. Without this span gate, a 5% move over 30 days annualizes to
+     *  +81.1%/yr (under the +100% clamp) and would render a confident multi-year ETA off ten data
+     *  points — the exact fabrication this type promises never to produce. */
+    @Test
+    fun anOldAccountWithAThinCurveStillReportsInsufficientHistory() {
+        val thinCurve = curve(30, "100000", "105000")
+        assertNull(GoalMath.annualGrowthRate(thinCurve, 400.0))
+        assertEquals(
+            GoalProjection.InsufficientHistory,
+            GoalMath.valueProjection(usd("105000"), usd("500000"), thinCurve, 400.0),
+        )
+    }
+
     @Test
     fun anAccountOlderThanTheFloorMeasuresGrowthOffTheCurve() {
         val rate = GoalMath.annualGrowthRate(curve(365, "100000", "110000"), 400.0)!!
@@ -139,6 +157,17 @@ class GoalMathTest {
             GoalMath.valueProjection(
                 usd("100100"), usd("100000000"), curve(365, "100000", "100100"), 400.0,
             ),
+        )
+    }
+
+    /** A DECLINING curve must never yield a negative or NaN ETA — it reports not-on-track through
+     *  the FULL `valueProjection` path (previously only the clamped rate itself was asserted; the
+     *  projection outcome is pinned here directly). */
+    @Test
+    fun aDecliningCurveReportsNotOnTrackThroughValueProjection() {
+        assertEquals(
+            GoalProjection.NotOnTrack,
+            GoalMath.valueProjection(usd("1000"), usd("5000"), curve(365, "100000", "1000"), 400.0),
         )
     }
 
@@ -210,6 +239,36 @@ class GoalMathTest {
             ),
         )
         assertEquals(GoalProjection.BeyondHorizon, justOver)
+    }
+
+    /** The boundary is INCLUSIVE: exactly 30.0 years reports a concrete ETA, not
+     *  [GoalProjection.BeyondHorizon]. Only "just over" (31 yrs) was previously pinned; this locks
+     *  the other side of the same `years > HORIZON_YEARS` comparison. */
+    @Test
+    fun exactlyThirtyYearsIsInsideTheHorizon() {
+        val exactlyAtHorizon = GoalMath.yearsToTarget(
+            current = BigDecimal.parseString("1"),
+            target = BigDecimal.parseString("2"),
+            annualRate = BigDecimal.fromDouble(2.0.pow(1.0 / GoalMath.HORIZON_YEARS) - 1.0),
+        )
+        assertTrue(exactlyAtHorizon is GoalProjection.Years)
+        assertEquals(30.0, (exactlyAtHorizon as GoalProjection.Years).value, 1e-6)
+    }
+
+    // MARK: end-to-end account-age wiring
+
+    /** The KDoc on [GoalMath.MINIMUM_HISTORY_DAYS] claims [Portfolio.inceptionEpochSeconds] is the
+     *  one shared derivation feeding this floor. Pin that relationship end-to-end, through a real
+     *  `Portfolio`, rather than only through the hand-built `Long?` the other tests pass directly. */
+    @Test
+    fun accountAgeDaysWiresThroughARealPortfoliosInception() {
+        val aapl = Asset("AAPL", "Apple Inc.", AssetKind.Stock)
+        val portfolio = Portfolio.starting(usd("50000"))
+            .buying(aapl, BigDecimal.parseString("10"), usd("100"), now - 200 * day, "txn-1")
+        assertEquals(200.0, GoalMath.accountAgeDays(portfolio.inceptionEpochSeconds(), now)!!, 1e-9)
+
+        val untraded = Portfolio.starting(usd("50000"))
+        assertNull(GoalMath.accountAgeDays(untraded.inceptionEpochSeconds(), now))
     }
 
     // MARK: current-value floor

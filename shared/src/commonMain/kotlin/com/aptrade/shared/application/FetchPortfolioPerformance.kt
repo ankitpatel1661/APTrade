@@ -40,7 +40,7 @@ class FetchPortfolioPerformance(
 
         var series = portfolio.performanceSeries(histories)
         if (sinceInception) {
-            val firstEpoch = portfolio.transactions.minOfOrNull { it.epochSeconds }
+            val firstEpoch = portfolio.inceptionEpochSeconds()
             if (firstEpoch != null) {
                 val inceptionDay = (firstEpoch / 86_400) * 86_400
                 val trimmed = series.filter { it.epochSeconds >= inceptionDay }

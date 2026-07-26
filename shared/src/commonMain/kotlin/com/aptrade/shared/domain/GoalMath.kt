@@ -86,14 +86,22 @@ object GoalMath {
 
     /**
      * Annualized growth of the equity curve, clamped to [MIN_ANNUAL_GROWTH] … [MAX_ANNUAL_GROWTH].
-     * `null` when the account is younger than [MINIMUM_HISTORY_DAYS], or when the curve itself is
-     * too degenerate to measure (fewer than two points, under a day of span, or a non-positive
-     * endpoint).
+     * `null` when the account is younger than [MINIMUM_HISTORY_DAYS], when the priced CURVE ITSELF
+     * spans fewer than [MINIMUM_HISTORY_DAYS], or when the curve is otherwise too degenerate to
+     * measure (fewer than two points, or a non-positive endpoint).
      *
-     * The GATE is account age; the MEASUREMENT is still the curve's own endpoints over the curve's
-     * own span, because that is what actually changed over what actually elapsed. The one-day span
-     * guard plus the clamp bound the exponent for the residual case of an old account with a very
-     * short priced curve.
+     * BOTH GATES ARE REQUIRED (carry-notes §4a.2, wording-correction addendum, 2026-07-25) — this
+     * is not redundancy. Account age is orthogonal to curve span: `performanceSeries`'s
+     * all-priced-symbols gate truncates the WHOLE curve to the newest-history symbol's first
+     * candle, so an account that is 400 days old can still hand this function a curve spanning
+     * only 30 days (e.g. it just bought a recently-listed symbol). Without the span gate, a
+     * portfolio up 5% over that 30-day sliver annualizes to +81.1%/yr — under the +100% clamp —
+     * and renders a confident "1.2 yrs" ETA off ten data points, exactly the fabrication
+     * [MINIMUM_HISTORY_DAYS]'s KDoc says this type promises never to produce. An earlier revision
+     * of this function read the "measure account age INSTEAD of price-history span" ruling as a
+     * replacement rather than an addition and dropped the span floor to 1 day; that was wrong and
+     * is fixed here. Swift already gates on curve span; Kotlin adds the age gate on top of it,
+     * not in place of it.
      *
      * FRACTIONAL EXPONENTIATION (carry-notes §4): ionspin's `BigDecimal.pow` takes Int/Long only,
      * so the annualization routes through Double, as the Swift twin does.
@@ -104,7 +112,7 @@ object GoalMath {
         val first = sorted.firstOrNull() ?: return null
         val last = sorted.lastOrNull() ?: return null
         val spanDays = (last.epochSeconds - first.epochSeconds).toDouble() / SECONDS_PER_DAY
-        if (spanDays < 1.0) return null
+        if (spanDays < MINIMUM_HISTORY_DAYS.toDouble()) return null
         if (first.value.amount <= BigDecimal.ZERO || last.value.amount <= BigDecimal.ZERO) return null
 
         val ratio = last.value.amount.divide(first.value.amount, MONEY_MATH).doubleValue(false)
@@ -155,15 +163,28 @@ object GoalMath {
      *
      * [forecast] must always be exactly [HORIZON_YEARS] long, independent of whatever horizon the
      * chart beside it is displaying (carry-notes §3.3) — a truncated forecast makes an
-     * unreachable goal indistinguishable from one reached in year 31: this function reports
-     * [GoalProjection.BeyondHorizon] for ANY uncrossed-but-growing forecast regardless of its
-     * length, so a caller that hands in a short forecast silently narrows its own horizon.
+     * unreachable goal indistinguishable from one reached in year 31: the uncrossed-but-growing
+     * fallthrough below reports [GoalProjection.BeyondHorizon] for ANY such forecast regardless of
+     * its length, so a caller that hands in a short forecast silently narrows its own horizon.
+     *
+     * DELIBERATE DIVERGENCE FROM SWIFT, BACKPORT CANDIDATE (carry-notes §4a.3): Swift's twin
+     * returns `.years(crossing.yearOffset)` unbounded, so a crossing at year 35 renders a concrete
+     * "35 yrs" while [valueProjection] would report [GoalProjection.BeyondHorizon] for the
+     * identical span — the two symmetric cards would disagree, and the "> 30 yrs" rule would be
+     * satisfied only by caller discipline nothing enforces. Kotlin clamps the crossing itself to
+     * [HORIZON_YEARS] so the boundary is provably identical in both projections.
      */
     fun incomeProjection(current: Money, target: Money, forecast: List<ForecastYear>): GoalProjection {
         degenerateOrReached(current, target)?.let { return it }
         val last = forecast.lastOrNull() ?: return GoalProjection.InsufficientHistory
         val crossing = forecast.firstOrNull { it.income.amount >= target.amount }
-        if (crossing != null) return GoalProjection.Years(crossing.yearOffset.toDouble())
+        if (crossing != null) {
+            return if (crossing.yearOffset.toDouble() > HORIZON_YEARS) {
+                GoalProjection.BeyondHorizon
+            } else {
+                GoalProjection.Years(crossing.yearOffset.toDouble())
+            }
+        }
         if (forecast.none { it.income.amount > BigDecimal.ZERO }) return GoalProjection.InsufficientHistory
         return if (last.income.amount > current.amount) {
             GoalProjection.BeyondHorizon

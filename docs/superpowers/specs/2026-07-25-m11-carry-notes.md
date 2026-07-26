@@ -190,6 +190,16 @@ Consequence to accept deliberately: a genuinely new account gets the insufficien
 
 **This is a real behavioural divergence from Swift, not a transcription slip.** Comment it at the constant, pin it with a Kotlin test that a seasoned-holdings/new-account portfolio returns insufficient-history, and record it as a Swift backport candidate.
 
+⚠️ **WORDING CORRECTION 2026-07-25 — "instead" above caused a real defect.** The M11.2 Task 6 implementer read "measure from the first transaction date **instead**" as *replacing* the 180-day curve-span floor, and reduced the span requirement to 1 day. That reproduced exactly the fabrication this floor exists to prevent: for a 400-day-old account, a 30-day curve up 5% annualizes to **+81.1%/yr**, passes under the +100% clamp, and renders a confident **"1.2 yrs"** ETA. Reachable in production, because `performanceSeries`'s all-priced gate truncates the *entire* curve to the newest-history symbol's first candle — so an old account that buys one recently-listed symbol collapses its own curve span.
+
+**Both gates are required.** Account age ≥ 180 days **and** curve span ≥ 180 days. Changing *what* the primary floor measures was the intent; dropping the span protection was not. Swift already has the span gate — the Kotlin port must keep it and add the age gate on top, not swap one for the other.
+
+### 4a.3 `incomeProjection` enforces the horizon constant (M11.2 addition, backport candidate)
+
+Swift's `incomeProjection` returns `.years(crossing.yearOffset)` unbounded, so a crossing at year 35 renders a concrete "35 yrs" while `valueProjection` returns `.beyondHorizon` for the same span — the two symmetric cards disagree, and the "> 30 yrs" rule is satisfied only by caller discipline that nothing enforces.
+
+Kotlin adds `if (crossing.yearOffset > HORIZON_YEARS) return BeyondHorizon`, making the boundary provably identical in both projections. **Backport candidate** — Swift has the same gap.
+
 ---
 
 ## 4b. A hard requirement M11.3 (Android) inherits from M11.2
