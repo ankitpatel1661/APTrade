@@ -18,14 +18,16 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-private class PerfInMemoryPortfolioStore(var stored: Portfolio? = null) : PortfolioStore {
+// internal, not private: reused by SinceInceptionReturnTest (M11.2 Task 7) rather than
+// duplicating a second fake repository/store — see carry-notes §4 on test-double duplication.
+internal class PerfInMemoryPortfolioStore(var stored: Portfolio? = null) : PortfolioStore {
     override suspend fun load(): Portfolio? = stored
     override suspend fun save(portfolio: Portfolio) {
         stored = portfolio
     }
 }
 
-private class PerfFakeMarketDataRepository(
+internal class PerfFakeMarketDataRepository(
     private val historiesBySymbol: Map<String, List<PricePoint>> = emptyMap(),
     private val failingSymbols: Set<String> = emptySet(),
     private val cancellingSymbols: Set<String> = emptySet(),
