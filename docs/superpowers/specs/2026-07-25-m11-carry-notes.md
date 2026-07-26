@@ -278,6 +278,25 @@ Found 2026-07-25 during M11.2 Task 8, confirmed independently by the task review
 
 ---
 
+## 4e. The recurring failure mode of this milestone: tests that cannot fail
+
+By Task 11 of M11.2 this had been caught **four separate times**, in code that was otherwise correct. It is the single most valuable thing the review layer found, and M11.3 should expect it.
+
+1. **M11.1 Task 6 / M11.2 Task 5** — every dividend-growth assertion resolved to exactly `0.0` or exactly a clamp bound, so **inverting the annualization root entirely left the whole suite green**. Both platforms had this shape.
+2. **M11.2 Task 7** — the test proving the since-inception return measures from `startingCash` used fixtures where the trade price equalled the first historical close, making `startingCash` *algebraically identical* to the curve's opening value. Both implementations produced bit-identical numbers.
+3. **M11.2 Task 8** — the L10n completeness test called `L10n.string()`, which falls back to `key.english`, so **no missing translation could ever fail it**. See §4d.
+4. **M11.2 Task 11** — the test guarding "the goal ETA must not move when the chart horizon changes" used a fixture whose projection was `BeyondHorizon` at *every* horizon, so it passed identically whether or not the horizon leaked into the goal curve.
+
+**The pattern:** the fixture makes the two behaviours being distinguished produce the same output. The test then documents an intention rather than enforcing it, and reads as coverage in every subsequent review.
+
+**The discipline that catches it — apply it in M11.3 to every test whose purpose is to pin a decision:**
+
+- After writing the test, **name the specific wrong implementation it is supposed to reject**, then temporarily introduce that implementation and confirm the test goes red. Revert. Paste the RED output. This "revert-and-confirm" cycle caught three of the four above.
+- Prefer fixtures where the correct and incorrect answers are **numerically distinct by construction**, and state both numbers in a comment so the next reader can see the discrimination without re-deriving it.
+- Be suspicious of any assertion that lands on a clamp bound, a saturated state, an exact zero, or a sealed-class case reachable by several paths — those are where the two behaviours converge.
+
+---
+
 ## 5. Process notes for M11.2
 
 - **Budget a top-tier whole-branch review at close.** Per-task reviews are structurally blind to *seam* defects — every one of §2.2, §2.3, §2.4 and §3.4 lived between two tasks and no single task's review could have seen them. The whole-branch review found all four.
