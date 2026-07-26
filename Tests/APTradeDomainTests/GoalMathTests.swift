@@ -159,6 +159,31 @@ final class GoalMathTests: XCTestCase {
         XCTAssertEqual(GoalMath.minimumHistoryDays, 180)
     }
 
+    /// The ACCOUNT-AGE gate's threshold and comparison direction, mirroring the CURVE-SPAN
+    /// boundary pin in `test_annualGrowthRate_pinsHistoryFloorBoundary`. The curve is held
+    /// seasoned (365 points -> span 364, well past the span floor) so the AGE is the only
+    /// thing crossing the boundary.
+    ///
+    /// The threshold is READ FROM `minimumHistoryDays` rather than written as a literal
+    /// 180, so this pins that the age gate consults THAT constant. A second hardcoded
+    /// threshold — the GC2 violation this branch forbids, and one that would let a 30-day-old
+    /// account get a confident ETA — fails here even though
+    /// `test_minimumHistoryFloorIsOneHundredEightyDays` would still pass, because that test
+    /// pins the constant's value and not who reads it.
+    ///
+    /// The bound is INCLUSIVE, matching the Kotlin twin's `if (accountAgeDays <
+    /// MINIMUM_HISTORY_DAYS) return null` (`GoalMath.kt:110`): an account aged exactly
+    /// `minimumHistoryDays` days passes. A strict `>` would be a silent semantic divergence
+    /// from the reference implementation.
+    func test_annualGrowthRate_pinsAccountAgeFloorBoundary() {
+        let seasonedCurve = curve(start: 100_000, days: 365, dailyRate: 0.0005)
+        let floor = Double(GoalMath.minimumHistoryDays)
+        XCTAssertNil(GoalMath.annualGrowthRate(curve: seasonedCurve, accountAgeDays: floor - 0.1),
+                     "just under the floor must not measure a rate")
+        XCTAssertNotNil(GoalMath.annualGrowthRate(curve: seasonedCurve, accountAgeDays: floor),
+                        "exactly at the floor must measure a rate — the bound is inclusive")
+    }
+
     /// THE DIVERGENCE, pinned: a brand-new account holding a SEASONED symbol inherits that
     /// symbol's full ~365-day price curve — exactly the situation the curve-span floor
     /// alone waves through. The account itself is 20 days old, so the honest answer is
