@@ -512,6 +512,63 @@ Add, satisfying GC4 (Kotlin twins in `GoalMathTest.kt`):
 
 ---
 
+## Task 6 — Close the two Kotlin coverage gaps this branch surfaced
+
+*Added 2026-07-26 during execution. Runs BEFORE Task 5, so Task 5's documentation describes the
+final state.*
+
+**File:** `shared/src/commonTest/kotlin/com/aptrade/shared/domain/DividendForecastTest.kt`,
+`shared/src/commonTest/kotlin/com/aptrade/shared/domain/GoalMathTest.kt`
+
+Tasks 1 and 3 each found a Swift test-coverage gap whose **Kotlin twin has the identical hole**. The
+Kotlin behaviour is correct in both cases and identical to Swift's — these are not divergences and
+CARRY-NOTE 6 does not reopen. But Kotlin is this branch's *authoritative reference*, and leaving it
+with two tests that cannot fail is exactly the failure mode carry-notes §4e names. Swift is now
+better covered than the reference on both points; this task closes that.
+
+**No production Kotlin change. Tests only.** If you find yourself editing a non-test `.kt` file, stop
+and report.
+
+### 6a. Odd-count middle-drop (twin of Swift Task 1's fix)
+
+`measuredDividendGrowthRate` (`DividendMath.kt` ~315-317) drops the middle event from **both** halves
+on an odd-count window. Every fixture in `DividendForecastTest.kt` has an **even** in-window payment
+count, so writing `lateHalf = window.subList(half, window.size)` — assigning the middle event to the
+late half — is a completely silent mutation.
+
+Twin the Swift test `test_growthRate_oddCountWindow_dropsTheMiddleEventFromBothHalves`
+(`Tests/APTradeDomainTests/DividendMathForecastTests.swift`): 13 payments on a 91-day cadence, flat
+`$0.25` except an `$0.85` year-end special landing exactly on the middle event. Correct → **exactly
+0.0**; the wrong half-assignment → **0.19965989176749388**. Assert the count is odd so the fixture
+cannot drift and stop biting.
+
+### 6b. Branch order in `incomeProjection` (twin of Swift Task 3's fix)
+
+Every `hasMeasurableGrowth = false` test in `GoalMathTest.kt` (~224, ~262, ~328, ~348) uses a target
+**no forecast year crosses**, so hoisting the measurability guard above the crossing check is silent.
+A young DRIP payer whose forecast crosses a modest target in year 4 must read `Years(4)`, not
+`InsufficientHistory`.
+
+Twin the Swift test: `current 125`, `target 150`, forecast `["125", "130.30", "159.01"]`,
+`hasMeasurableGrowth = false` → `Years(3)`. Note the Swift implementer specifically rejected
+`target: 200` as non-discriminating — 159.01 never reaches it, so the crossing branch is never
+exercised. Use a target the forecast actually crosses.
+
+### Verification
+
+```
+JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home \
+  ./gradlew :shared:test
+```
+
+Known-red and **out of scope**: `:shared:compileTestKotlinMacosArm64` has failed since ~M8.2 on
+backtick test names containing `()` and `,`. Do not attempt to fix it, and do not name your new tests
+in a way that makes it worse.
+
+**Commit:** `test(shared): pin the odd-count middle-drop and incomeProjection branch order`
+
+---
+
 ## Task 5 — Retire the stale backport-candidate markers in Kotlin
 
 **Files:** `shared/src/commonMain/kotlin/com/aptrade/shared/domain/DividendMath.kt`,
