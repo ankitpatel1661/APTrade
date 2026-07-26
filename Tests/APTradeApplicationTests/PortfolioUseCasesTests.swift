@@ -118,6 +118,53 @@ final class PortfolioUseCasesTests: XCTestCase {
         XCTAssertEqual(portfolioStore.portfolio.position(for: "PIE")?.quantity, Quantity(Decimal(10)))
         XCTAssertEqual(portfolioStore.portfolio.position(for: "AAPL")?.quantity, Quantity(Decimal(1)))
     }
+
+    // MARK: - sinceInception trim (Task 4a.2: one named inception derivation)
+
+    /// `FetchPortfolioPerformanceUseCase`'s `sinceInception` trim used to re-derive the
+    /// first transaction date inline; it now calls `Portfolio.inceptionDate`, the ONE named
+    /// derivation it shares with `GoalMath`'s account-age floor. This pins that the trim
+    /// still starts at the EARLIEST transaction's day.
+    ///
+    /// The transaction log is deliberately OUT OF ORDER (the later buy is appended first),
+    /// which is what a backfilled or externally-merged history looks like. That makes the
+    /// test discriminate: a derivation reading `transactions.first?.date` or `.max()` would
+    /// trim from day 7 and drop two points that belong in the curve.
+    func test_fetchPerformance_sinceInception_trimsAtPortfolioInceptionDate() async throws {
+        let day = { (i: Int) in Date(timeIntervalSince1970: 1_700_000_000 + Double(i) * 86_400) }
+        let msft = Asset(symbol: "MSFT", name: "Microsoft", kind: .stock)
+        let portfolio = try Portfolio.starting(cash: usd("100000"))
+            .buying(msft, quantity: Quantity(Decimal(1)), at: usd("100"), on: day(7))
+            .buying(aapl, quantity: Quantity(Decimal(1)), at: usd("100"), on: day(5))
+        XCTAssertEqual(portfolio.inceptionDate, day(5), "inception is the EARLIEST transaction")
+
+        let store = MemoryStore(portfolio)
+        let sut = FetchPortfolioPerformanceUseCase(repository: TenDayHistoryRepo(), store: store)
+
+        let full = await sut(timeframe: .oneMonth)
+        XCTAssertEqual(full.first?.date, day(0), "untrimmed, the curve starts at the price window's edge")
+
+        let trimmed = await sut(timeframe: .oneMonth, sinceInception: true)
+        let inceptionDay = Calendar.current.startOfDay(for: try XCTUnwrap(portfolio.inceptionDate))
+        XCTAssertEqual(trimmed.first?.date, day(5))
+        XCTAssertEqual(trimmed.count, 5, "days 5...9 survive the trim")
+        XCTAssertTrue(trimmed.allSatisfy { $0.date >= inceptionDay })
+    }
+}
+
+/// Ten consecutive daily closes for every symbol, so `performanceSeries`' all-priced gate
+/// emits every date and the `sinceInception` trim is the only thing that can shorten the
+/// curve.
+private final class TenDayHistoryRepo: MarketDataRepository, @unchecked Sendable {
+    func quote(for symbol: String) async throws -> Quote {
+        Quote(symbol: symbol, price: Money(amount: 100), previousClose: Money(amount: 100))
+    }
+    func history(for symbol: String, timeframe: Timeframe) async throws -> [PricePoint] {
+        (0..<10).map { i in
+            PricePoint(date: Date(timeIntervalSince1970: 1_700_000_000 + Double(i) * 86_400),
+                       close: Money(amount: Decimal(100 + i)))
+        }
+    }
 }
 
 /// Actor-guarded append-only event log shared across concurrently-launched Tasks in a

@@ -11,21 +11,39 @@ public enum GoalProjection: Equatable, Sendable {
 
 /// Progress and honest time-to-target math for portfolio goals. Pure.
 public enum GoalMath {
-    /// Minimum days of equity-curve history (by date span between the first and last
-    /// point, not point count) before a growth rate is trustworthy. A short span
+    /// Minimum days of history before a growth rate is trustworthy. A short span
     /// annualizes via a large exponent, so this floor keeps the extrapolation modest
     /// enough that the clamp remains a meaningful sanity bound rather than a rubber stamp.
+    /// Why 180 and not 30: a 30-day window annualized by `365.25 / days` is a 12.175x
+    /// extrapolation — a portfolio up 5% in its first month reads as +80%/yr, sails under
+    /// the +100% clamp, and renders a confident multi-year ETA, contradicting
+    /// `GoalProjection`'s promise never to fabricate an ETA it cannot support.
     ///
-    /// This guards short PRICE history, not short ACCOUNT history: the curve passed to
-    /// `annualGrowthRate` is the 1-year price window (with a flat pre-inception cash
-    /// point), so its span is ~365 days for any portfolio holding any seasoned symbol —
-    /// this floor only actually fires for an all-cash portfolio or a symbol whose own
-    /// price history is under 180 days.
+    /// `annualGrowthRate` applies this ONE constant as TWO independent gates, and both are
+    /// required — this is not redundancy, because the two quantities are orthogonal:
+    ///
+    /// - **Account age** (days since `Portfolio.inceptionDate`) guards short ACCOUNT
+    ///   history. Without it, a three-week-old account that bought a seasoned symbol
+    ///   inherits that symbol's ~365-day price curve and gets a confident ETA
+    ///   extrapolated from three weeks of the account's own existence. The projection
+    ///   extrapolates THE ACCOUNT'S growth rate, so a user who buys a long-listed
+    ///   position still waits until the account itself has 180 days behind it.
+    /// - **Curve span** (the date span between the curve's first and last point) guards
+    ///   short PRICE history. Without it, an account 400 days old can still be handed a
+    ///   30-day curve: `equitySeries`/`performanceSeries` key the curve off the union of
+    ///   supplied histories, so buying one recently-listed symbol collapses the whole
+    ///   curve to that symbol's first candle. A 5% move over that 30-day sliver
+    ///   annualizes to +81.1%/yr — under the +100% clamp — and would render a confident
+    ///   "1.2 yrs" off ten data points.
+    ///
+    /// Dropping either gate re-opens the exact fabrication the other cannot see.
     public static let minimumHistoryDays = 180
     /// Projections longer than this report `.beyondHorizon`.
     public static let horizonYears = 30.0
     public static let minAnnualGrowth = Decimal(string: "-0.5")!
     public static let maxAnnualGrowth = Decimal(string: "1.0")!
+
+    private static let secondsPerDay = 86_400.0
 
     /// Fraction of the target achieved. May exceed 1. Zero or negative target yields 0.
     /// Result is always finite and non-negative.
@@ -36,12 +54,36 @@ public enum GoalMath {
         return max(value, 0)
     }
 
+    /// Days between the account's inception and `asOf`; `nil` when the account has never
+    /// traded. Floored at 0 so a clock skew or a future-dated transaction reads as a
+    /// brand-new account rather than a negative age.
+    ///
+    /// Feed it `Portfolio.inceptionDate` — never a locally re-derived minimum over
+    /// `transactions`. That property is the one named derivation precisely so this floor
+    /// and `FetchPortfolioPerformanceUseCase`'s `sinceInception` trim cannot drift apart.
+    public static func accountAgeDays(inception: Date?, asOf: Date) -> Double? {
+        guard let inception else { return nil }
+        return max(asOf.timeIntervalSince(inception) / secondsPerDay, 0)
+    }
+
     /// Annualized growth of the equity curve, clamped to
-    /// `minAnnualGrowth ... maxAnnualGrowth`. `nil` when history is too short.
-    public static func annualGrowthRate(curve: [EquityPoint]) -> Decimal? {
+    /// `minAnnualGrowth ... maxAnnualGrowth`. `nil` when the account is younger than
+    /// `minimumHistoryDays`, when the CURVE ITSELF spans fewer than `minimumHistoryDays`,
+    /// or when the curve is too degenerate to measure (fewer than two points, or a
+    /// non-positive endpoint).
+    ///
+    /// BOTH history gates are required and neither substitutes for the other — see
+    /// `minimumHistoryDays` for why account age and curve span are orthogonal.
+    ///
+    /// `accountAgeDays`: pass `GoalMath.accountAgeDays(inception:asOf:)`'s result. There is
+    /// deliberately no default value — an omitted argument would silently disable the age
+    /// gate at any call site that forgot it, which is the failure this gate exists to
+    /// prevent.
+    public static func annualGrowthRate(curve: [EquityPoint], accountAgeDays: Double?) -> Decimal? {
+        guard let accountAgeDays, accountAgeDays >= Double(minimumHistoryDays) else { return nil }
         let sorted = curve.sorted { $0.date < $1.date }
         guard let first = sorted.first, let last = sorted.last else { return nil }
-        let days = last.date.timeIntervalSince(first.date) / 86_400
+        let days = last.date.timeIntervalSince(first.date) / secondsPerDay
         guard days >= Double(minimumHistoryDays) else { return nil }
         guard first.value.amount > 0, last.value.amount > 0 else { return nil }
 
@@ -65,12 +107,19 @@ public enum GoalMath {
     }
 
     /// When the portfolio's value reaches `target` at its historical growth rate.
+    ///
+    /// `accountAgeDays` is forwarded verbatim to `annualGrowthRate` — see there and
+    /// `minimumHistoryDays` for the two history gates. No default value, for the same
+    /// reason.
     public static func valueProjection(current: Money, target: Money,
-                                       curve: [EquityPoint]) -> GoalProjection {
+                                       curve: [EquityPoint],
+                                       accountAgeDays: Double?) -> GoalProjection {
         if let shortCircuit = degenerateOrReachedProjection(current: current, target: target) {
             return shortCircuit
         }
-        guard let rate = annualGrowthRate(curve: curve) else { return .insufficientHistory }
+        guard let rate = annualGrowthRate(curve: curve, accountAgeDays: accountAgeDays) else {
+            return .insufficientHistory
+        }
         return yearsToTarget(current: current.amount, target: target.amount, annualRate: rate)
     }
 

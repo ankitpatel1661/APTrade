@@ -24,56 +24,79 @@ final class GoalMathTests: XCTestCase {
         XCTAssertEqual(GoalMath.progress(current: usd("500"), target: Money(amount: 0)), 0)
     }
 
+    /// `seasonedAge` holds the ACCOUNT-age gate open so a test can pin CURVE-SPAN and rate
+    /// behaviour in isolation. Every existing call site below passes it deliberately:
+    /// passing `nil` would make the age gate short-circuit each of them to `nil` /
+    /// `.insufficientHistory` and silently destroy the coverage they were written for.
+    private let seasonedAge = 500.0
+
     func test_annualGrowthRate_needsSufficientHistory() {
         // days: 100 -> span 99 (well below the 180-day floor); days: 250 -> span 249 (well above).
-        XCTAssertNil(GoalMath.annualGrowthRate(curve: curve(start: 100_000, days: 100, dailyRate: 0.0005)))
-        XCTAssertNotNil(GoalMath.annualGrowthRate(curve: curve(start: 100_000, days: 250, dailyRate: 0.0005)))
+        // The account age is held seasoned so this keeps pinning the CURVE-SPAN gate only.
+        XCTAssertNil(GoalMath.annualGrowthRate(curve: curve(start: 100_000, days: 100, dailyRate: 0.0005),
+                                               accountAgeDays: seasonedAge))
+        XCTAssertNotNil(GoalMath.annualGrowthRate(curve: curve(start: 100_000, days: 250, dailyRate: 0.0005),
+                                                  accountAgeDays: seasonedAge))
     }
 
     func test_annualGrowthRate_pinsHistoryFloorBoundary() {
         // curve(days:) spans (days - 1) days. days: 180 -> span 179 (just under the floor);
-        // days: 181 -> span 180 (exactly at the floor).
-        XCTAssertNil(GoalMath.annualGrowthRate(curve: curve(start: 100_000, days: 180, dailyRate: 0.0005)))
-        XCTAssertNotNil(GoalMath.annualGrowthRate(curve: curve(start: 100_000, days: 181, dailyRate: 0.0005)))
+        // days: 181 -> span 180 (exactly at the floor). CURVE-SPAN boundary only — the
+        // account age is held seasoned so only the span moves across the floor here.
+        XCTAssertNil(GoalMath.annualGrowthRate(curve: curve(start: 100_000, days: 180, dailyRate: 0.0005),
+                                               accountAgeDays: seasonedAge))
+        XCTAssertNotNil(GoalMath.annualGrowthRate(curve: curve(start: 100_000, days: 181, dailyRate: 0.0005),
+                                                  accountAgeDays: seasonedAge))
     }
 
     func test_annualGrowthRate_emptyCurveIsNil() {
-        XCTAssertNil(GoalMath.annualGrowthRate(curve: []))
+        XCTAssertNil(GoalMath.annualGrowthRate(curve: [], accountAgeDays: seasonedAge))
     }
 
     func test_annualGrowthRate_singlePointCurveIsNil() {
-        XCTAssertNil(GoalMath.annualGrowthRate(curve: [EquityPoint(date: day(0), value: usd("50000"))]))
+        XCTAssertNil(GoalMath.annualGrowthRate(curve: [EquityPoint(date: day(0), value: usd("50000"))],
+                                               accountAgeDays: seasonedAge))
     }
 
     func test_annualGrowthRate_clampsExtremeGrowth() {
-        let rate = GoalMath.annualGrowthRate(curve: curve(start: 10_000, days: 200, dailyRate: 0.02))
+        let rate = GoalMath.annualGrowthRate(curve: curve(start: 10_000, days: 200, dailyRate: 0.02),
+                                             accountAgeDays: seasonedAge)
         XCTAssertEqual(rate, Decimal(1.0)) // clamped to +100%/yr
     }
 
     func test_annualGrowthRate_clampsCollapse() {
-        let rate = GoalMath.annualGrowthRate(curve: curve(start: 100_000, days: 200, dailyRate: -0.01))
+        let rate = GoalMath.annualGrowthRate(curve: curve(start: 100_000, days: 200, dailyRate: -0.01),
+                                             accountAgeDays: seasonedAge)
         XCTAssertEqual(rate, Decimal(-0.5)) // clamped to -50%/yr
     }
 
     func test_valueProjection_reachedWhenCurrentMeetsTarget() {
+        // The seasoned age plus a 90-point (span-89) curve means the span gate WOULD return
+        // `.insufficientHistory` if the reached short-circuit did not run first.
         XCTAssertEqual(GoalMath.valueProjection(current: usd("100000"), target: usd("100000"),
-                                                curve: curve(start: 100_000, days: 90, dailyRate: 0.0005)),
+                                                curve: curve(start: 100_000, days: 90, dailyRate: 0.0005),
+                                                accountAgeDays: seasonedAge),
                        .reached)
     }
 
     func test_valueProjection_insufficientHistory() {
+        // Seasoned account, 10-point curve: this keeps pinning the CURVE-SPAN gate.
         XCTAssertEqual(GoalMath.valueProjection(current: usd("50000"), target: usd("100000"),
-                                                curve: curve(start: 50_000, days: 10, dailyRate: 0.0005)),
+                                                curve: curve(start: 50_000, days: 10, dailyRate: 0.0005),
+                                                accountAgeDays: seasonedAge),
                        .insufficientHistory)
     }
 
     func test_valueProjection_flatOrShrinkingIsNotOnTrack() {
-        // days: 181 -> span 180, clears the new history floor.
+        // days: 181 -> span 180, clears the history floor; the account is seasoned so both
+        // gates are open and the flat/shrinking RATE is what produces `.notOnTrack`.
         XCTAssertEqual(GoalMath.valueProjection(current: usd("50000"), target: usd("100000"),
-                                                curve: curve(start: 50_000, days: 181, dailyRate: 0)),
+                                                curve: curve(start: 50_000, days: 181, dailyRate: 0),
+                                                accountAgeDays: seasonedAge),
                        .notOnTrack)
         XCTAssertEqual(GoalMath.valueProjection(current: usd("50000"), target: usd("100000"),
-                                                curve: curve(start: 60_000, days: 181, dailyRate: -0.001)),
+                                                curve: curve(start: 60_000, days: 181, dailyRate: -0.001),
+                                                accountAgeDays: seasonedAge),
                        .notOnTrack)
     }
 
@@ -84,7 +107,8 @@ final class GoalMathTests: XCTestCase {
         // so days: 181 (span 180, clearing the new history floor) reproduces the same
         // ~20%/yr rate and ~3.8-year projection as a shorter window would have.
         let projection = GoalMath.valueProjection(current: usd("50000"), target: usd("100000"),
-                                                  curve: curve(start: 50_000, days: 181, dailyRate: 0.0005))
+                                                  curve: curve(start: 50_000, days: 181, dailyRate: 0.0005),
+                                                  accountAgeDays: seasonedAge)
         guard case let .years(y) = projection else { return XCTFail("expected .years, got \(projection)") }
         XCTAssertGreaterThan(y, 3.0)
         XCTAssertLessThan(y, 5.0)
@@ -94,19 +118,102 @@ final class GoalMathTests: XCTestCase {
         // days: 181 -> span 180, clearing the new history floor (see rationale above:
         // the annualized rate for a constant daily rate is span-independent).
         let projection = GoalMath.valueProjection(current: usd("1000"), target: usd("10000000"),
-                                                  curve: curve(start: 1_000, days: 181, dailyRate: 0.00005))
+                                                  curve: curve(start: 1_000, days: 181, dailyRate: 0.00005),
+                                                  accountAgeDays: seasonedAge)
         XCTAssertEqual(projection, .beyondHorizon)
     }
 
     func test_valueProjection_nonPositiveTargetAgreesWithZeroProgress() {
         // `progress` reads a non-positive target as 0% (never started); `valueProjection`
-        // must not contradict that by claiming `.reached`.
+        // must not contradict that by claiming `.reached`. The seasoned age plus an empty
+        // curve means the history gates WOULD return `.insufficientHistory` if the
+        // degenerate-target short-circuit did not run first, so `.notOnTrack` also pins
+        // that ordering.
         XCTAssertEqual(GoalMath.valueProjection(current: usd("5000"), target: Money(amount: 0),
-                                                curve: []),
+                                                curve: [], accountAgeDays: seasonedAge),
                        .notOnTrack)
         XCTAssertEqual(GoalMath.valueProjection(current: usd("5000"), target: usd("-100"),
-                                                curve: []),
+                                                curve: [], accountAgeDays: seasonedAge),
                        .notOnTrack)
+    }
+
+    // MARK: - Account-age history gate (Task 4, ported from the Kotlin twin)
+
+    func test_accountAgeDays_isNilWithNoTransactions() {
+        XCTAssertNil(GoalMath.accountAgeDays(inception: nil, asOf: day(200)))
+    }
+
+    func test_accountAgeDays_isTheSpanFromTheFirstTransaction() {
+        XCTAssertEqual(GoalMath.accountAgeDays(inception: day(0), asOf: day(200))!, 200.0, accuracy: 1e-9)
+    }
+
+    /// A future-dated transaction (or a clock that jumped backwards) must read as a
+    /// brand-new account, never a negative age — a negative age would still be `< 180` and
+    /// so still gate correctly, but it would be a nonsense value for anything that later
+    /// displays or compares it.
+    func test_accountAgeDays_futureDatedInceptionFloorsAtZero() {
+        XCTAssertEqual(GoalMath.accountAgeDays(inception: day(200), asOf: day(0))!, 0.0, accuracy: 1e-9)
+    }
+
+    func test_minimumHistoryFloorIsOneHundredEightyDays() {
+        XCTAssertEqual(GoalMath.minimumHistoryDays, 180)
+    }
+
+    /// THE DIVERGENCE, pinned: a brand-new account holding a SEASONED symbol inherits that
+    /// symbol's full ~365-day price curve — exactly the situation the curve-span floor
+    /// alone waves through. The account itself is 20 days old, so the honest answer is
+    /// insufficient history. Without the account-age gate this returns a confident rate and
+    /// a concrete ETA extrapolated from three weeks of the account's existence.
+    func test_annualGrowthRate_newAccountHoldingASeasonedSymbol_reportsInsufficientHistory() {
+        let seasonedCurve = curve(start: 100_000, days: 365, dailyRate: 0.0005)
+        let newAccountAge = GoalMath.accountAgeDays(inception: day(180), asOf: day(200))
+        XCTAssertNil(GoalMath.annualGrowthRate(curve: seasonedCurve, accountAgeDays: newAccountAge))
+        XCTAssertEqual(GoalMath.valueProjection(current: usd("130000"), target: usd("500000"),
+                                                curve: seasonedCurve, accountAgeDays: newAccountAge),
+                       .insufficientHistory)
+    }
+
+    /// THE CONVERSE, pinned: measuring account age is an ADDITION to the curve-span floor,
+    /// never a replacement for it. An account well past the 180-day age floor can still be
+    /// handed a 30-day curve — `equitySeries` keys the curve off the union of the supplied
+    /// price histories, so an old account that just bought a recently-listed symbol
+    /// collapses its own curve span. Without the span gate, this 5%-over-30-days curve
+    /// annualizes to +81.1%/yr (under the +100% clamp) and would render a confident ~1.2yr
+    /// ETA off thirty points — the exact fabrication `GoalProjection` promises never to
+    /// produce, and the exact mistake made once already on the Kotlin side.
+    func test_annualGrowthRate_oldAccountWithAThinCurve_reportsInsufficientHistory() {
+        // 30 points -> span 29 days; +0.163%/day compounds to ~+5% over the window.
+        let thinCurve = curve(start: 100_000, days: 30, dailyRate: 0.00168)
+        XCTAssertNil(GoalMath.annualGrowthRate(curve: thinCurve, accountAgeDays: 400))
+        XCTAssertEqual(GoalMath.valueProjection(current: usd("105000"), target: usd("500000"),
+                                                curve: thinCurve, accountAgeDays: 400),
+                       .insufficientHistory)
+    }
+
+    /// `GoalMath.accountAgeDays`'s doc claims `Portfolio.inceptionDate` is the one shared
+    /// derivation feeding this floor. Pin that end-to-end through a real `Portfolio`, not
+    /// only through the hand-built `Date`s the tests above pass directly.
+    func test_accountAgeDays_wiresThroughARealPortfoliosInception() throws {
+        let aapl = Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock)
+        let portfolio = try Portfolio.starting(cash: usd("50000"))
+            .buying(aapl, quantity: Quantity(Decimal(10)), at: usd("100"), on: day(0))
+        XCTAssertEqual(GoalMath.accountAgeDays(inception: portfolio.inceptionDate, asOf: day(200))!,
+                       200.0, accuracy: 1e-9)
+
+        let untraded = Portfolio.starting(cash: usd("50000"))
+        XCTAssertNil(GoalMath.accountAgeDays(inception: untraded.inceptionDate, asOf: day(200)))
+    }
+
+    /// `inceptionDate` is the EARLIEST transaction, not the latest or the first appended —
+    /// pinned with an out-of-order transaction log, which is what a backfilled or
+    /// externally-merged history looks like.
+    func test_inceptionDate_isTheEarliestTransactionRegardlessOfOrder() throws {
+        let aapl = Asset(symbol: "AAPL", name: "Apple Inc.", kind: .stock)
+        let msft = Asset(symbol: "MSFT", name: "Microsoft", kind: .stock)
+        let portfolio = try Portfolio.starting(cash: usd("50000"))
+            .buying(aapl, quantity: Quantity(Decimal(1)), at: usd("100"), on: day(150))
+            .buying(msft, quantity: Quantity(Decimal(1)), at: usd("100"), on: day(30))
+        XCTAssertEqual(portfolio.inceptionDate, day(30))
     }
 
     func test_progress_negativeCurrentClampsToZero() {

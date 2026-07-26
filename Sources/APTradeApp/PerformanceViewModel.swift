@@ -117,11 +117,27 @@ final class PerformanceViewModel {
         refreshValueProjection()
     }
 
+    /// Recomputes the value-goal card from the CURRENT goal / value / curve snapshot.
+    ///
+    /// The account age fed to `GoalMath` is derived FRESH on every call from a fresh
+    /// `fetchPortfolio()` read — never cached and never gated on a first-load flag —
+    /// because `ResetPortfolioUseCase` can clear the portfolio (and its goals) out from
+    /// under this view model, and `onAppear()` re-reads the goal on every appearance for
+    /// exactly that reason. A cached age would let a reset portfolio keep projecting off
+    /// the age of the account it replaced.
     private func refreshValueProjection() {
         guard let goal = valueGoal else { valueGoalProjection = nil; return }
+        // ACCOUNT age, not the price window's span: fed from the ONE named derivation
+        // `Portfolio.inceptionDate`, the same signal `FetchPortfolioPerformanceUseCase`'s
+        // `sinceInception` trim uses, so the metric and the floor cannot drift apart. A
+        // brand-new account holding a seasoned symbol therefore honestly reports
+        // insufficient history instead of extrapolating three weeks of price movement.
+        let accountAgeDays = GoalMath.accountAgeDays(inception: fetchPortfolio().inceptionDate,
+                                                     asOf: now())
         valueGoalProjection = GoalMath.valueProjection(current: currentValue,
                                                        target: goal.target,
-                                                       curve: equityCurve)
+                                                       curve: equityCurve,
+                                                       accountAgeDays: accountAgeDays)
     }
 
     func setValueGoal(_ target: Money) {
