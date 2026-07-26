@@ -196,23 +196,40 @@ object DividendMath {
      *
      * Compares the AVERAGE PER-PAYMENT amount across the oldest half of the window against the
      * newest half (payment-count-normalized) rather than a raw day-windowed sum sampled at two
-     * instants, so a cadence change (e.g. quarterly -> monthly) doesn't read as growth.
+     * instants, so a cadence change (e.g. quarterly -> monthly) doesn't read as growth. The
+     * annualization exponent's divisor is the elapsed time between the two quantities actually
+     * being compared: the gap, in years, between each half's CENTROID (mean ex-date) — not the
+     * window's total first-to-last span.
      *
      * CARRY-NOTE 6 (recorded divergence from the Swift AS-BUILT, pending backport — human ruling,
-     * M11.2 Task 5 review Finding 1): the original transcription compared [trailingAnnualPerShare]
-     * sampled at two instants (`asOf`, and `window.first() + 1 year`). That is an aliasing bug:
-     * whether a rolling 365-day window catches 4 or 5 payments of an exact quarterly (91-day)
-     * cadence depends entirely on where `asOf` happens to fall relative to an ex-date — four
-     * 91-day gaps span only 364 days, one day short of the window — so a genuinely FLAT payer
-     * could read anywhere from −20%…+25%/yr purely from ex-date phase, compounding to a ~45x
-     * divergence in reported income at a 30-year horizon. Comparing per-payment AVERAGES over
-     * count-matched halves of the window is immune to this: a flat payer's early-half and
-     * late-half averages are equal regardless of which instant `asOf` happens to be, because no
-     * day-count window boundary is computed at all. (The original approach also had a second,
-     * compounding defect: its early anchor was offset by `SECONDS_PER_YEAR` = 365.25 days while
-     * [trailingAnnualPerShare]'s window is a strict 365 days — a structural 21,600-second/6-hour
-     * mismatch that could exclude the anchor's own boundary event. That class of bug cannot recur
-     * here, since no window-membership cutoff is computed by this function at all.)
+     * M11.2 Task 5 review Finding 1, corrected by Finding A): the original transcription compared
+     * [trailingAnnualPerShare] sampled at two instants (`asOf`, and `window.first() + 1 year`).
+     * That is an aliasing bug: whether a rolling 365-day window catches 4 or 5 payments of an
+     * exact quarterly (91-day) cadence depends entirely on where `asOf` happens to fall relative
+     * to an ex-date — four 91-day gaps span only 364 days, one day short of the window — so a
+     * genuinely FLAT payer could read anywhere from −20%…+25%/yr purely from ex-date phase,
+     * compounding to a ~45x divergence in reported income at a 30-year horizon. Comparing
+     * per-payment AVERAGES over count-matched halves of the window is immune to this: a flat
+     * payer's early-half and late-half averages are equal regardless of which instant `asOf`
+     * happens to be, because no day-count window boundary is computed at all. (The original
+     * approach also had a second, compounding defect: its early anchor was offset by
+     * `SECONDS_PER_YEAR` = 365.25 days while [trailingAnnualPerShare]'s window is a strict 365
+     * days — a structural 21,600-second/6-hour mismatch that could exclude the anchor's own
+     * boundary event. That class of bug cannot recur here, since no window-membership cutoff is
+     * computed by this function at all.)
+     *
+     * The FIRST cut of this fix (Finding 1) removed the aliasing but kept `totalSpanYears - 1.0`
+     * as the annualization divisor — a holdover from the OLD design, where the early anchor
+     * genuinely sat one year after the first event, so `span − 1` really was the gap between the
+     * two sampled points. Comparing half-window CENTROIDS instead (Finding A) changed what is
+     * being compared without updating the divisor to match: centroids are separated by roughly
+     * `span / 2`, not `span − 1`, and those coincide only at exactly a 2-year span. Off that one
+     * point the result was systematically biased (further off from a 2-year span, and flipping
+     * sign at exactly 2 years) — silent and calibrated-looking, unlike the aliasing artifact it
+     * replaced, and just as capable of compounding to a multiple-x divergence at a 30-year
+     * horizon. The divisor is now the actual measured interval — the centroid gap — so the
+     * annualization recovers a known true per-payment CAGR exactly (see
+     * `dividendGrowthRateRecoversAKnownTruePerPaymentCagr` in the test suite).
      *
      * FRACTIONAL EXPONENTIATION (carry-notes §4): ionspin's `BigDecimal.pow` takes Int/Long only,
      * so the n-th root routes through Double exactly as the Swift twin does. Tolerance-covered by
@@ -228,19 +245,25 @@ object DividendMath {
         val totalSpanYears = (window.last().exDateEpochSeconds - window.first().exDateEpochSeconds).toDouble() /
             SECONDS_PER_YEAR
         if (totalSpanYears < 2.0) return BigDecimal.ZERO
-        val spanYears = totalSpanYears - 1.0
-        if (spanYears < 1.0) return BigDecimal.ZERO
 
         // Count-normalized halves, NOT a day-windowed sum sampled at an instant — see the
         // CARRY-NOTE 6 KDoc above for why that distinction is the entire fix.
         val half = window.size / 2
-        val earlyAvg = averagePerPayment(window.subList(0, half))
-        val lateAvg = averagePerPayment(window.subList(window.size - half, window.size))
+        val earlyHalf = window.subList(0, half)
+        val lateHalf = window.subList(window.size - half, window.size)
+        val earlyAvg = averagePerPayment(earlyHalf)
+        val lateAvg = averagePerPayment(lateHalf)
         if (earlyAvg <= 0.0 || lateAvg <= 0.0) return BigDecimal.ZERO
+
+        // The annualization exponent's divisor: the elapsed time between what's actually being
+        // compared — each half's centroid (mean ex-date) — in years, NOT the total window span
+        // (see CARRY-NOTE 6's Finding A addendum above for why that distinction is the fix).
+        val centroidGapYears = (meanEpochSeconds(lateHalf) - meanEpochSeconds(earlyHalf)) / SECONDS_PER_YEAR
+        if (centroidGapYears <= 0.0 || !centroidGapYears.isFinite()) return BigDecimal.ZERO
 
         val ratio = lateAvg / earlyAvg
         if (ratio <= 0.0) return BigDecimal.ZERO
-        val rate = ratio.pow(1.0 / spanYears) - 1.0
+        val rate = ratio.pow(1.0 / centroidGapYears) - 1.0
         if (!rate.isFinite()) return BigDecimal.ZERO
 
         return clampGrowth(BigDecimal.fromDouble(rate))
@@ -255,6 +278,14 @@ object DividendMath {
         var total = BigDecimal.ZERO
         for (event in events) total += event.amountPerShare.amount
         return total.divide(BigDecimal.fromInt(events.size), MONEY_MATH).doubleValue(false)
+    }
+
+    /** Mean ex-date (epoch seconds) across [events] (assumed non-empty), as a Double — the
+     *  "centroid" [dividendGrowthRate] compares between its early and late halves. */
+    private fun meanEpochSeconds(events: List<DividendEvent>): Double {
+        var total = 0.0
+        for (event in events) total += event.exDateEpochSeconds.toDouble()
+        return total / events.size
     }
 
     private fun clampGrowth(value: BigDecimal): BigDecimal = when {

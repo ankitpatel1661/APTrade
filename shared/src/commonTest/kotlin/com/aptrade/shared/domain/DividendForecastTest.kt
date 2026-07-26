@@ -1,6 +1,7 @@
 package com.aptrade.shared.domain
 
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
+import kotlin.math.pow
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -95,9 +96,9 @@ class DividendForecastTest {
     @Test
     fun aDoublingOverTwoYearsAnnualizesAndClampsToTheUpperBound() {
         // Early quarterly $0.25/payment -> late quarterly $0.50/payment (per-payment average
-        // doubles). Raw annualized rate is ~43.37% (2.0^(1/1.9243) - 1, spanYears ~1.9243 from a
-        // ~2.9243-year first-to-last span) — comfortably past MAX_DIVIDEND_GROWTH, so this is a
-        // clamp-engagement test, not a literal "doubles in two years" (~41%) scenario.
+        // doubles). Raw annualized rate is ~37.50% (2.0^(1/centroidGapYears) - 1; the early/late
+        // half-centroid gap here is ~2.0 years) — comfortably past MAX_DIVIDEND_GROWTH, so this
+        // is a clamp-engagement test, not a literal "doubles in two years" scenario.
         val early = (0 until 4).map { i -> event("A", now - (1095 - i * 91) * day, "0.25") }
         val late = (0 until 4).map { i -> event("A", now - (300 - i * 91) * day, "0.50") }
         val rate = DividendMath.dividendGrowthRate(early + late, now)
@@ -107,7 +108,7 @@ class DividendForecastTest {
     @Test
     fun aCollapsingHistoryClampsToTheLowerBound() {
         // Early quarterly $1.00/payment -> late quarterly $0.05/payment (per-payment average
-        // falls to 1/20th). Raw annualized rate is roughly -79% — far past MIN_DIVIDEND_GROWTH,
+        // falls to 1/20th). Raw annualized rate is roughly -74.75% — far past MIN_DIVIDEND_GROWTH,
         // so this is a clamp-engagement test, not a literal decay-rate scenario.
         val early = (0 until 4).map { i -> event("A", now - (1095 - i * 91) * day, "1.00") }
         val late = (0 until 4).map { i -> event("A", now - (300 - i * 91) * day, "0.05") }
@@ -117,23 +118,65 @@ class DividendForecastTest {
     /**
      * Task 5 review Finding 2: every other growth-rate assertion in this file resolves to
      * exactly 0.0, MIN, or MAX, so the single most delicate line in the function — the
-     * annualization exponent — was completely uncovered (replacing `pow(1.0 / spanYears)` with
-     * `pow(spanYears)`, or `spanYears = totalSpanYears` instead of `totalSpanYears - 1.0`, left
-     * all 18 tests green). This fixture engineers an EXACT 3.0-year first-to-last span (so
-     * `spanYears = totalSpanYears - 1.0 = 2.0` exactly) and an exact $0.36/$0.25 = 1.44
-     * early/late per-payment ratio, so `1.44^(1/2) - 1 = 0.20` exactly (up to Double rounding) —
-     * comfortably inside both clamps, so a wrong exponent fails loudly instead of silently
-     * clamping.
+     * annualization exponent — was completely uncovered. This fixture engineers an EXACT
+     * 2.0-year gap between the early-half and late-half CENTROIDS (mean ex-date) and an exact
+     * $0.36/$0.25 = 1.44 early/late per-payment ratio, so `1.44^(1/2) - 1 = 0.20` exactly (up to
+     * Double rounding) — comfortably inside both clamps, so a wrong exponent fails loudly instead
+     * of silently clamping.
+     *
+     * Finding A correction: the FIRST version of this fixture was tuned to the pre-Finding-A
+     * denominator (`totalSpanYears - 1.0`) and asserted 0.20 against a fixture whose actual
+     * centroid gap was 2.2526 years (true centroid-correct rate 0.1757) — it would have reddened
+     * the moment Finding A landed. This version's centroid gap is verified to be exactly 2.0
+     * years, so 0.20 is the fixture's real value under the current (correct) algorithm, not an
+     * artifact of a since-removed denominator.
      */
     @Test
     fun dividendGrowthRateAnnualizesAMidRangeRatioPrecisely() {
         val yearSeconds = (365.25 * 86_400.0).toLong()
         val newestOffset = 27 * day
-        val oldestOffset = newestOffset + 3 * yearSeconds
+        // Engineered so the early-half centroid sits EXACTLY 2.0 years before the late-half
+        // centroid (late centroid = mean(300, 209, 118, 27) days = 163.5 days before `now`; this
+        // oldest-early offset places the early centroid at 163.5 + 730.5 = 894.0 + 136.5... see
+        // the exact arithmetic verified independently in Python, reproduced in the review report).
+        val oldestOffset = (1030.5 * 86_400.0).toLong()
         val early = (0 until 4).map { i -> event("A", now - (oldestOffset - i * 91 * day), "0.25") }
         val late = (0 until 4).map { i -> event("A", now - (newestOffset + (3 - i) * 91 * day), "0.36") }
         val rate = DividendMath.dividendGrowthRate(early + late, now)
         assertEquals(0.20, rate.doubleValue(false), 1e-6)
+
+        // Must fail loudly under either mutation this fixture exists to catch.
+        val ratio = 0.36 / 0.25
+        val mutatedInvertedExponent = ratio.pow(2.0) - 1.0 // pow(gap) instead of pow(1/gap)
+        val mutatedTotalSpanDenominator = ratio.pow(1.0 / ((oldestOffset - newestOffset).toDouble() / yearSeconds)) - 1.0
+        assertTrue(kotlin.math.abs(mutatedInvertedExponent - 0.20) > 1e-3)
+        assertTrue(kotlin.math.abs(mutatedTotalSpanDenominator - 0.20) > 1e-3)
+    }
+
+    /**
+     * Task 5 review Finding B: the pre-Finding-A algorithm satisfied a "true-rate recovery"
+     * property that the count-normalized-average rewrite did not check, and Finding A's own
+     * defect (systematic denominator bias) would NOT have been caught by any existing test —
+     * every prior assertion resolved to exactly 0.0, MIN, or MAX. This fixture constructs 12
+     * quarterly payments whose amount grows CONTINUOUSLY at a known true annual rate (10%),
+     * sampled every 91 days. Because the late half is an EXACT rigid time-translate of the early
+     * half (same 91-day spacing, same count), the early/late average ratio equals
+     * `(1 + trueRate) ^ centroidGapYears` exactly — no averaging bias — so this recovers the true
+     * rate to within double-precision noise (independently verified in Python: recovered
+     * 0.10000000000000009 against a true rate of 0.10).
+     */
+    @Test
+    fun dividendGrowthRateRecoversAKnownTruePerPaymentCagr() {
+        val trueRate = 0.10
+        val newestOffset = 27L
+        val offsetsDays = (0 until 12).map { i -> newestOffset + 91L * (11 - i) } // oldest .. newest
+        val oldestOffsetDays = offsetsDays.first()
+        val events = offsetsDays.map { offsetDays ->
+            val amount = 0.25 * Math.pow(1.0 + trueRate, (oldestOffsetDays - offsetDays) / 365.25)
+            event("A", now - offsetDays * day, amount.toString())
+        }
+        val rate = DividendMath.dividendGrowthRate(events, now)
+        assertEquals(trueRate, rate.doubleValue(false), 1e-6)
     }
 
     /** Carry-notes §3.6: the per-symbol clamp is −0.20 … 0.25 and is INDEPENDENT of GoalMath's
@@ -280,7 +323,7 @@ class DividendForecastTest {
      * early/late ratio (same shape as [growthCompoundsFromYearTwoOnward]) again clamps to
      * MAX_DIVIDEND_GROWTH regardless of the exact raw value. Five-year series independently
      * re-derived (Python, same recurrence as [DividendMath.incomeForecast]):
-     *  - with DRIP:    100, 125.833333, 158.340278, 199.244907, 250.716...
+     *  - with DRIP:    100, 125.833333, 158.340278, 199.244850, 250.716436
      *  - without DRIP: 100, 125,        156.25,     195.3125,   244.140625
      */
     @Test
@@ -301,11 +344,15 @@ class DividendForecastTest {
         val growth = DividendMath.dividendGrowthRate(early + late, now)
         assertEquals(DividendMath.MAX_DIVIDEND_GROWTH, growth)
 
-        val expectedWithDrip = listOf(100.0, 125.833333, 158.340278, 199.244907, 250.716436)
+        val expectedWithDrip = listOf(100.0, 125.833333, 158.340278, 199.244850, 250.716436)
         val expectedWithoutDrip = listOf(100.0, 125.0, 156.25, 195.3125, 244.140625)
 
-        run(true).zip(expectedWithDrip).forEach { (actual, expected) -> assertEquals(expected, actual, 1e-3) }
-        run(false).zip(expectedWithoutDrip).forEach { (actual, expected) -> assertEquals(expected, actual, 1e-9) }
+        val withDrip = run(true)
+        val withoutDrip = run(false)
+        assertEquals(5, withDrip.size)
+        assertEquals(5, withoutDrip.size)
+        withDrip.zip(expectedWithDrip).forEach { (actual, expected) -> assertEquals(expected, actual, 1e-3) }
+        withoutDrip.zip(expectedWithoutDrip).forEach { (actual, expected) -> assertEquals(expected, actual, 1e-9) }
     }
 
     // MARK: projectedSchedule

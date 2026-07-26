@@ -218,12 +218,31 @@ The existing Swift tests cannot detect it: every growth assertion resolves to ex
 
 **USER RULING 2026-07-25: fix it properly in Kotlin, then backport to Swift.** The Kotlin fix normalizes by payment count so the rate reflects per-payment growth rather than window-membership accident; a flat payer must read exactly 0.0 regardless of ex-date phase.
 
+### 4c.1 The first fix introduced its own defect — the annualization denominator was never updated to match
+
+The payment-count-normalization fix above (round 1) removed the aliasing but kept `spanYears = totalSpanYears - 1.0` as the annualization exponent's divisor — a holdover from the OLD design, where the early anchor genuinely sat one year after the first event, so `span − 1` really was the gap between the two sampled points.
+
+The round-1 rewrite compares **half-window centroids** (mean ex-date of the oldest half vs. the newest half) instead, and those are separated by roughly `span / 2`, not `span − 1`. The two coincide only at exactly a 2-year span; off that one point the result is **systematically biased**, flipping direction at exactly 2 years:
+
+| true g | span 2y | 3y | 4y | 5y |
+|---|---|---|---|---|
+| 3%  | 3.764  | 2.620  | 2.242  | 1.990 |
+| 5%  | 6.289  | 4.362  | 3.727  | 3.306 |
+| 10% | 12.653 | 8.697  | 7.410  | 6.560 |
+| 15% | 19.089 | 13.008 | 11.051 | 9.765 |
+
+A true 10% grower with 5 years of history reported 6.560% under the round-1 fix — over 29 compounding years that is 6.31× versus the true 15.86×, a **2.51× divergence in reported income**. Silent and calibrated-looking, unlike the aliasing artifact it replaced, and caught only because the round-2 review independently re-derived the exponent's calibration rather than re-testing only the fixtures the round-1 fix already passed.
+
+**USER RULING 2026-07-25 (round 2): the annualization divisor must be the actual elapsed time between what's being compared** — the gap, in years, between each half's centroid (mean ex-date), not the total window span and not `span − 1`. This is now implemented (`DividendMath.kt`'s `dividendGrowthRate`, CARRY-NOTE 6) and verified to recover a known true per-payment CAGR exactly (`dividendGrowthRateRecoversAKnownTruePerPaymentCagr`).
+
 **Backport checklist for Swift (`Sources/APTradeDomain/DividendMath.swift`), owed and not yet done:**
-1. Port the payment-count normalization from the Kotlin `dividendGrowthRate`.
-2. Add the test the Kotlin fix added: the aliasing fixture (newest event exactly at `asOf`, exact 91-day spacing) must read **0.0**, not 13.7%.
-3. Add a **mid-range** growth test that pins the annualization exponent — without one, an inverted root is undetectable.
-4. Add a **DRIP-with-non-zero-growth** test. Swift has the same gap: every DRIP test uses growth 0 and every growth test has DRIP off, so the reinvestment-price-grows-at-dividend-rate choice is entirely uncovered on both platforms.
-5. Correct the Swift equivalents of the two clamp tests whose comments state raw rates the code does not actually compute.
+1. Port the payment-count normalization from the Kotlin `dividendGrowthRate` — compare average per-payment amount across count-matched oldest/newest halves of the window, not a raw day-windowed sum sampled at two instants.
+2. **Port the centroid-gap annualization divisor, not `span − 1`.** The divisor is `(late-half centroid − early-half centroid) / SECONDS_PER_YEAR`, where each half's centroid is the mean ex-date (epoch seconds) of its events. Porting step 1 without this step reproduces a *different*, still-wrong bias (see 4c.1 above) — do these together, not in sequence.
+3. Add the test the round-1 Kotlin fix added: the aliasing fixture (newest event exactly at `asOf`, exact 91-day spacing) must read **0.0**, not 13.7%.
+4. Add a **mid-range** growth test that pins the annualization exponent to the centroid-gap divisor specifically — a test tuned only to `span − 1` would falsely appear to validate step 2's *absence* (this is exactly how the round-1 Kotlin mid-range test passed while carrying the round-2 defect; see `dividendGrowthRateAnnualizesAMidRangeRatioPrecisely`'s corrected version for the engineering technique: force an exact centroid gap, not an exact total span).
+5. Add a **true-rate-recovery** test: a series with a known per-payment CAGR must be recovered within tolerance (`dividendGrowthRateRecoversAKnownTruePerPaymentCagr`). This is the property that would have caught 4c.1 immediately and is the strongest single regression guard for this function.
+6. Add a **DRIP-with-non-zero-growth** test. Swift has the same gap: every DRIP test uses growth 0 and every growth test has DRIP off, so the reinvestment-price-grows-at-dividend-rate choice is entirely uncovered on both platforms.
+7. Correct the Swift equivalents of the two clamp tests whose comments state raw rates the code does not actually compute.
 
 Until step 1 lands, Kotlin and Swift will report **different growth rates for identical data** — a deliberate, recorded divergence, not a transcription slip.
 
