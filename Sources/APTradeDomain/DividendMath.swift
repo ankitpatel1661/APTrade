@@ -188,7 +188,10 @@ public enum DividendMath {
     /// per-payment CAGR exactly (`test_growthRate_recoversAKnownTruePerPaymentCagr`).
     ///
     /// On an odd-count window the middle event is dropped from BOTH halves. That is deliberate:
-    /// assigning it to either half reintroduces an asymmetry between the two payment counts.
+    /// assigning it to either half reintroduces an asymmetry between the two payment counts, and
+    /// with it the artifact this algorithm exists to remove — a flat payer carrying one year-end
+    /// special reads +19.97%/yr the moment that special lands on the middle event. Pinned by
+    /// `test_growthRate_oddCountWindow_dropsTheMiddleEventFromBothHalves`.
     ///
     /// RESIDUAL LIMITATION: count-matched halves are immune to phase relative to `asOf` — they are
     /// NOT immune to phase relative to a payer's own cadence when that payer mixes an irregular,

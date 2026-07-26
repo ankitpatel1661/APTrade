@@ -125,6 +125,37 @@ final class DividendMathForecastTests: XCTestCase {
                        "a flat payer must read 0.0 at every ex-date phase, not 0.13678039345929127")
     }
 
+    /// GC4 — the specific wrong implementation this rejects: `let lateHalf = Array(window[half...])`,
+    /// i.e. assigning the middle event of an ODD-count window to the late half instead of dropping
+    /// it from both halves. That is the natural "simplification" a future reader reaches for, and
+    /// it differs from the shipped code ONLY when `window.count` is odd — every other fixture in
+    /// this file has an even in-window count (16, 16, 16, 16, 4, 16, 12, 8, 12, 16, 12, 4, 16), so
+    /// without this test the mutation is completely silent. An odd count is ordinary in production
+    /// (19 quarterly payments fit inside the five-year window), and the count asymmetry it
+    /// reintroduces between the two halves is the exact class of defect this algorithm exists to
+    /// remove.
+    ///
+    /// Thirteen payments on a 91-day cadence, newest on `asOf`, flat $0.25 except a $0.85 year-end
+    /// special sitting exactly on the middle event (546 days back) — the REIT/BDC pattern named in
+    /// `dividendGrowthRate`'s residual-limitation note. Dropping the middle from both halves
+    /// leaves six flat $0.25 payments on each side:
+    ///   * correct (middle dropped from both) — ratio 1.0 over a 1.7440109514031485-year centroid
+    ///     gap → **exactly 0.0**
+    ///   * middle assigned to the late half — seven late payments averaging $0.3357142857142857,
+    ///     ratio 1.342857142857143 over a 1.619438740588638-year centroid gap →
+    ///     **0.19965989176749388**
+    /// Nearly 20 points of pure half-assignment artifact for a payer whose regular rate never moved.
+    func test_growthRate_oddCountWindow_dropsTheMiddleEventFromBothHalves() {
+        let events = (0..<13).map { i -> DividendEvent in
+            let offsetDays = Double(12 - i) * 91
+            return growthEvent(offsetDays, offsetDays == 546 ? "0.85" : "0.25")
+        }
+        XCTAssertEqual(events.count % 2, 1, "fixture must carry an ODD in-window count to bite")
+        XCTAssertEqual(DividendMath.dividendGrowthRate(events: events, asOf: growthNow), 0,
+                       "the middle payment must fall out of BOTH halves, not into the late one — "
+                       + "assigning it to the late half reads 0.19965989176749388 of pure artifact")
+    }
+
     /// GC4 — every other growth assertion in this file resolves to exactly 0.0, exactly
     /// `minDividendGrowth`, or exactly `maxDividendGrowth`, so the single most delicate line in
     /// the function — the annualization exponent — was uncovered; a reviewer confirmed that
