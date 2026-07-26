@@ -68,12 +68,16 @@ import kotlin.test.assertTrue
  * cost-basis pricing; Task 12's brief predates that flag and has no caption copy for it, and no
  * existing key fit (`EstimatedCost`/`EstimatedProceeds`/`IncomeEstimatedBadge` are all short badge
  * words, not a sentence explaining a price fallback). Bringing the total to 411.
+ * M11.3 Task 1 (the portfolio header strip's GOAL label) added 1 more: `GoalShort` (English
+ * "Goal" — deliberately distinct from `ValueGoal`'s "Value Goal", which titles the goal card;
+ * `GoalShort` is the short uppercase word the strip shows alongside CASH/HOLDINGS/UNREALIZED).
+ * Bringing the total to 412.
  */
 class L10nCatalogTest {
 
     @Test
-    fun `catalog has exactly 411 keys (410 pre-Task_12 + 1 ForecastPricesEstimatedCaption key added by M11_2 Task 12)`() {
-        assertEquals(411, L10n.Key.entries.size)
+    fun `catalog has exactly 412 keys (411 pre-Task_1 + 1 GoalShort key added by M11_3 Task 1)`() {
+        assertEquals(412, L10n.Key.entries.size)
     }
 
     @Test
