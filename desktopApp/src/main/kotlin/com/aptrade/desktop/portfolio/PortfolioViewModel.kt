@@ -20,6 +20,7 @@ import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.AllocationSlice
 import com.aptrade.shared.domain.DividendEvent
 import com.aptrade.shared.domain.DividendMath
+import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.domain.PortfolioExport
 import com.aptrade.shared.domain.PortfolioPerformancePoint
@@ -310,12 +311,13 @@ class PortfolioViewModel(
         }
     }
 
-    fun reset() {
+    /** Opens a fresh portfolio at [startingCash] (the reset dialog's validated amount) and clears
+     *  every goal — `ResetPortfolio` does the clearing; this re-reads so Performance's value-goal
+     *  card can't keep rendering a deleted goal with a progress bar and ETA computed against the
+     *  pre-reset curve (carry-notes §3.4). */
+    fun reset(startingCash: Money) {
         scope.launch {
-            // M11.2 Task 9 wires desktop's own validated-amount UI here; until then the reset
-            // opens at the named default rather than a bare literal, so the M11.2 hardcoded-
-            // balance grep finds this call site instead of a hidden number.
-            portfolio = resetPortfolio.execute(Portfolio.DEFAULT_STARTING_CASH)
+            portfolio = resetPortfolio.execute(startingCash)
             quotes = emptyMap()
             _state.update {
                 it.copy(
@@ -323,6 +325,7 @@ class PortfolioViewModel(
                     performancePoints = emptyList(),
                     benchmarkTwinValues = null,
                     metrics = null,
+                    // valueGoal = null,   // added by Task 13 once PortfolioUiState carries it
                 )
             }
             publish(loading = false)

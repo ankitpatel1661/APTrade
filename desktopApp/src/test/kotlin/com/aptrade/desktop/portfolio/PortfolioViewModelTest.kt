@@ -36,8 +36,11 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-private class InMemoryPortfolioStore(initial: Portfolio? = null) : PortfolioStore {
+internal class InMemoryPortfolioStore(initial: Portfolio? = null) : PortfolioStore {
     var stored: Portfolio? = initial
+    // Alias read by PortfolioResetAmountTest.kt (Task 9) via the shared fixture below —
+    // `stored` stays the name every pre-existing case in this file already uses.
+    val portfolio: Portfolio? get() = stored
     override suspend fun load(): Portfolio? = stored
     override suspend fun save(portfolio: Portfolio) { stored = portfolio }
 }
@@ -77,6 +80,34 @@ private fun vm(
     zoneId = zoneId,
     notifyOrderFill = notifyOrderFill,
     fetchDividendEvents = fetchDividendEvents,
+)
+
+/** A fully-built [PortfolioViewModel] plus the in-memory store backing it, so a test can both
+ *  drive the VM and inspect what it persisted. Shared with `PortfolioResetAmountTest.kt`
+ *  (M11.2 Task 9) — the brief asks that suite to reuse this file's VM-construction helper
+ *  verbatim rather than forking a second fixture. */
+internal class PortfolioViewModelFixture(
+    val viewModel: PortfolioViewModel,
+    val portfolioStore: InMemoryPortfolioStore,
+)
+
+internal fun portfolioViewModelFixture(
+    // TestScope, not the bare CoroutineScope every non-VM helper here takes: the VM's own
+    // `start()` launches an infinite `while (isActive) { ... delay(tickMillis) }` poll loop, so
+    // it must run on `scope.backgroundScope` (auto-cancelled when the test body returns) rather
+    // than on the test's own scope — every existing case in this file passes `backgroundScope`
+    // for exactly this reason; a fixture that took `this` at face value would leave that loop's
+    // Job un-joined and fail every caller with `UncompletedCoroutinesError`.
+    scope: kotlinx.coroutines.test.TestScope,
+    repo: FakeMarketDataRepository = FakeMarketDataRepository(),
+    store: InMemoryPortfolioStore = InMemoryPortfolioStore(),
+    nowEpochSeconds: () -> Long = { 0L },
+    zoneId: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+    notifyOrderFill: suspend (TradeSide, String, String, String) -> Unit = { _, _, _, _ -> },
+    fetchDividendEvents: FetchDividendEvents? = null,
+): PortfolioViewModelFixture = PortfolioViewModelFixture(
+    viewModel = vm(repo, store, scope.backgroundScope, nowEpochSeconds, zoneId, notifyOrderFill, fetchDividendEvents),
+    portfolioStore = store,
 )
 
 class PortfolioViewModelTest {
@@ -486,7 +517,7 @@ class PortfolioViewModelTest {
         assertTrue(vm.state.value.performancePoints.isNotEmpty())
         assertTrue(vm.state.value.performanceValues.isNotEmpty())
 
-        vm.reset(); runCurrent()
+        vm.reset(Portfolio.DEFAULT_STARTING_CASH); runCurrent()
 
         val s = vm.state.value
         assertTrue(s.holdings.isEmpty())

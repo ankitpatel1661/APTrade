@@ -46,6 +46,9 @@ import com.aptrade.shared.application.HomeUpcomingDividend
 import com.aptrade.shared.application.IncomeSummaryMath
 import com.aptrade.shared.application.LoadAlerts
 import com.aptrade.shared.application.LoadBookmarks
+import com.aptrade.shared.application.LoadGoals
+import com.aptrade.shared.application.SaveGoal
+import com.aptrade.shared.application.RemoveGoal
 import com.aptrade.shared.application.ContributeToPie
 import com.aptrade.shared.application.DeletePie
 import com.aptrade.shared.application.ExecuteDueContributions
@@ -108,6 +111,8 @@ class AppGraph(
     // Portfolio goals (M11.2 Task 3/4) — same whole-blob JSON-file shape as every other store
     // here, its own file per GoalStore's own KDoc (Carry-notes §2.5: ported the Swift AS-BUILT's
     // own-key-not-embedded shape, not the spec sentence that said "alongside portfolio state").
+    /** Portfolio goals (M11.2). Public like `settingsStore`/`pieStore` because the goal use cases
+     *  below and the reset use case all read from this ONE instance. */
     val goalStore: GoalStore = FileGoalStore(resolveConfigDir().resolve("goals.json")),
     // Constructed once here (not via rememberTrayState() in Main.kt) so the SAME instance
     // backs both the Tray composable (which renders the OS tray icon) and TrayNotifier
@@ -145,6 +150,9 @@ class AppGraph(
     val buyAsset = BuyAsset(repository, portfolioStore, portfolioMutex)
     val sellAsset = SellAsset(repository, portfolioStore, portfolioMutex)
     val resetPortfolio = ResetPortfolio(portfolioStore, portfolioMutex, goalStore)
+    val loadGoals = LoadGoals(goalStore)
+    val saveGoal = SaveGoal(goalStore)
+    val removeGoal = RemoveGoal(goalStore)
     val fetchPortfolioPerformance = FetchPortfolioPerformance(repository, portfolioStore)
     val fetchPerformanceReport = FetchPerformanceReport(repository, fetchPortfolioPerformance)
 

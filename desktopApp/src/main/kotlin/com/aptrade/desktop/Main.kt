@@ -655,7 +655,8 @@ private fun AppRoot(
                             )
                             onOpenTrade(TradeTarget(asset, side, row?.priceText))
                         },
-                        onReset = portfolioViewModel::reset,
+                        defaultStartingCash = notificationSettings.defaultStartingCash,
+                        onReset = { amount -> portfolioViewModel.reset(amount) },
                         onExportCsv = {
                             exportScope.launch { saveTextFile("portfolio.csv", portfolioViewModel.exportCsv()) }
                         },
