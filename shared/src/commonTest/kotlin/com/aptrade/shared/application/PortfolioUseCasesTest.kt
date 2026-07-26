@@ -7,7 +7,6 @@ import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.Pie
 import com.aptrade.shared.domain.PieSlice
 import com.aptrade.shared.domain.Portfolio
-import com.aptrade.shared.domain.PortfolioGoal
 import com.aptrade.shared.domain.PricePoint
 import com.aptrade.shared.domain.Quote
 import com.aptrade.shared.domain.Timeframe
@@ -31,17 +30,6 @@ private class InMemoryPortfolioStore : PortfolioStore {
     override suspend fun save(portfolio: Portfolio) {
         stored = portfolio
         saveCount++
-    }
-}
-
-/** Trivial in-memory [GoalStore] fake for [ResetPortfolio] construction sites in this file that
- *  don't otherwise care about goal-clearing behavior (that's covered end-to-end by
- *  ResetPortfolioTest) — just needs to satisfy the now-required constructor parameter. */
-private class InMemoryGoalStore : GoalStore {
-    var goals: List<PortfolioGoal> = emptyList()
-    override suspend fun load() = goals
-    override suspend fun save(goals: List<PortfolioGoal>) {
-        this.goals = goals
     }
 }
 
@@ -194,7 +182,7 @@ class PortfolioUseCasesTest {
     fun resetSavesAndReturnsStarting() = runTest {
         val bought = Portfolio.starting().buying(aapl, BigDecimal.parseString("1"), Money.usd("100.00"), 1000L, "txn-1")
         val store = InMemoryPortfolioStore().apply { stored = bought }
-        val result = ResetPortfolio(store, Mutex(), InMemoryGoalStore()).execute(Portfolio.DEFAULT_STARTING_CASH)
+        val result = ResetPortfolio(store, Mutex()).execute(Portfolio.DEFAULT_STARTING_CASH)
         assertEquals(Portfolio.starting(), result)
         assertEquals(Portfolio.starting(), store.stored)
         assertEquals(1, store.saveCount)
@@ -462,7 +450,7 @@ class PortfolioUseCasesTest {
             quotesBySymbol = mapOf("AAPL" to Quote("AAPL", Money.usd("100.00"), Money.usd("99.00"), 1.0)),
         )
         val sharedMutex = Mutex()
-        val resetPortfolio = ResetPortfolio(store, sharedMutex, InMemoryGoalStore())
+        val resetPortfolio = ResetPortfolio(store, sharedMutex)
         val contributeToPie = ContributeToPie(pieStore, store, repository, sharedMutex)
 
         // The reset enters the mutex first, computes the fresh starting portfolio, then hangs

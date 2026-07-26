@@ -206,11 +206,13 @@ final class PerformanceViewModelTests: XCTestCase {
 
     // MARK: - Whole-branch review fix 3: onAppear re-reads the goal even when not `.idle`.
 
-    /// `ResetPortfolioUseCase` clears goals as a side effect of resetting the portfolio,
-    /// and the macOS portfolio destination reloads only `PortfolioViewModel` — never this
-    /// view model — on a reset. Before the fix, `onAppear()` gated ALL of its work
-    /// (including the goal read) on `state == .idle`, so returning to an already-loaded
-    /// Performance screen after a reset kept showing a goal that no longer existed.
+    /// A goal can be removed out from under this view model by a DIFFERENT instance of it —
+    /// the iOS pill host and the macOS sidebar shell each own their own `PerformanceViewModel`
+    /// over the same store — so a removal on one surface must not linger on the other. (Until
+    /// M11.1 UAT F1 a portfolio reset was the motivating case; a reset no longer clears goals,
+    /// but the cross-instance case is unchanged.) Before the fix, `onAppear()` gated ALL of its
+    /// work (including the goal read) on `state == .idle`, so returning to an already-loaded
+    /// Performance screen kept showing a goal that no longer existed.
     @MainActor
     func test_onAppear_reReadsGoal_evenWhenNotIdle_afterExternalReset() async {
         let goalStore = InMemoryGoalStore([PortfolioGoal(kind: .value, target: Money(amount: 250_000),
@@ -220,9 +222,9 @@ final class PerformanceViewModelTests: XCTestCase {
         XCTAssertNotEqual(vm.state, .idle)
         XCTAssertEqual(vm.valueGoal?.target, Money(amount: 250_000))
 
-        // Simulate `ResetPortfolioUseCase` clearing goals out from under the view model —
-        // nothing routes through `setValueGoal`/`removeValueGoal` here, mirroring a reset
-        // that happened via a completely different view model.
+        // Simulate the goal being cleared out from under the view model — nothing routes
+        // through this instance's `setValueGoal`/`removeValueGoal`, mirroring a removal that
+        // happened on a completely different view model over the same store.
         goalStore.save([])
 
         await vm.onAppear()

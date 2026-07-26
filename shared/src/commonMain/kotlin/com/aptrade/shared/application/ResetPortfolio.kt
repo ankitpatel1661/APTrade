@@ -6,7 +6,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /** Discards the current portfolio and persists a fresh [Portfolio.starting] opened at
- *  [startingCash], then clears every goal.
+ *  [startingCash]. Goals are deliberately NOT touched.
  *
  *  Serialized like [BuyAsset] — under the SAME [portfolioMutex] instance every other
  *  portfolio/pie writer holds (see [BuyAsset]'s co-holder doc). A reset overwriting the portfolio
@@ -17,20 +17,20 @@ import kotlinx.coroutines.sync.withLock
  *  (`Sources/APTradeApplication/PortfolioUseCases.swift`), which wraps the same save in its
  *  `TradeSerializer.run`.
  *
- *  [goalStore] is REQUIRED, unlike the Swift twin's `goalStore: GoalStore? = nil` (which exists
- *  there only so pre-goals construction sites kept compiling). Carry-notes §4 records a no-op
- *  goal store silently discarding saves as a live hazard: a construction site that forgets to
- *  inject the real store must fail to COMPILE here, not fail silently at runtime. */
+ *  This use case took a [GoalStore] until M11.1 UAT F1 and cleared every goal on reset. The user
+ *  ruled that wrong on 2026-07-27: resetting starting capital is "start over with more money",
+ *  not "abandon my plan" — a $120,000 value goal survives a reset to $1,000,000 and simply reads
+ *  as reached. The dependency is REMOVED rather than left unused so the clearing cannot be
+ *  re-armed by a later edit; `ResetPortfolioTest.resetLeavesEveryGoalIntact` is the behavioural
+ *  record. The Swift twin (`Sources/APTradeApplication/PortfolioUseCases.swift`) dropped its own
+ *  `goalStore` parameter in the same change. */
 class ResetPortfolio(
     private val store: PortfolioStore,
     private val portfolioMutex: Mutex,
-    private val goalStore: GoalStore,
 ) {
     suspend fun execute(startingCash: Money): Portfolio = portfolioMutex.withLock {
         val fresh = Portfolio.starting(startingCash)
         store.save(fresh)
-        // A fresh practice run must not inherit targets set against the old balance.
-        goalStore.save(emptyList())
         fresh
     }
 }

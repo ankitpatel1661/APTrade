@@ -135,5 +135,12 @@ final class PortfolioViewModelTests: XCTestCase {
                        "confirm still persists the new default starting cash")
         XCTAssertEqual(performanceVM.currentValue, Money(amount: 1_000_000),
                        "the reset must reach the Performance screen's own view model")
+        // The plan's end-to-end target, at the view-model seam: the $120,000 goal survives
+        // (F1) and the card recomputes against the NEW balance rather than the old one. The
+        // projection assertion is what makes this non-vacuous — `.reached` is only reachable
+        // once `currentValue` has actually moved to $1,000,000; with the old `.idle` gate it
+        // would still be $100,000 against a $120,000 target.
+        XCTAssertEqual(performanceVM.valueGoal?.target, Money(amount: 120_000))
+        XCTAssertEqual(performanceVM.valueGoalProjection, .reached)
     }
 }

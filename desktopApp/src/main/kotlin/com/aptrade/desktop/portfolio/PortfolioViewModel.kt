@@ -374,26 +374,33 @@ class PortfolioViewModel(
         }
     }
 
-    /** Opens a fresh portfolio at [startingCash] (the reset dialog's validated amount) and clears
-     *  every goal — `ResetPortfolio` does the clearing; this re-reads so Performance's value-goal
-     *  card can't keep rendering a deleted goal with a progress bar and ETA computed against the
-     *  pre-reset curve (carry-notes §3.4). */
+    /** Opens a fresh portfolio at [startingCash] (the reset dialog's validated amount). Goals
+     *  SURVIVE (M11.1 UAT F1, user ruling 2026-07-27): resetting starting capital is "start over
+     *  with more money", not "abandon my plan". `ResetPortfolio` no longer takes a `GoalStore`, so
+     *  this must not null the goal out either — that would hide from the screen a goal still
+     *  sitting intact on disk, which is the Swift twin's exact UAT bug in mirror image.
+     *
+     *  What the card MUST do is recompute against the fresh snapshot: current value from the new
+     *  balance, the pre-reset equity curve discarded. A $120,000 target after a reset to
+     *  $1,000,000 then reads as reached, never as a percentage of a curve that no longer applies.
+     *  The goal is re-read from the store rather than kept from memory for the same reason
+     *  [loadPerformanceReport] re-reads it — another surface may have changed it meanwhile. */
     fun reset(startingCash: Money) {
         scope.launch {
             portfolio = resetPortfolio.execute(startingCash)
             quotes = emptyMap()
-            valueGoal = null
             equityCurve = emptyList()
             currentValue = portfolio.goalCurrentValueFloor()
+            valueGoal = loadGoals.execute().firstOrNull { it.kind == GoalKind.Value }
             _state.update {
                 it.copy(
                     performanceValues = emptyList(),
                     performancePoints = emptyList(),
                     benchmarkTwinValues = null,
                     metrics = null,
-                    valueGoal = null,
                 )
             }
+            refreshValueProjection()
             publish(loading = false)
         }
     }

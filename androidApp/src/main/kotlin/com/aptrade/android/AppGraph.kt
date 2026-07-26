@@ -139,7 +139,6 @@ object AppGraph {
             FilePieStore(configDir().resolve("pies.json")),
             schedulerStateStore,
             isDripEnabled = { settingsStore.load().dripEnabled },
-            goalStore = goalStore,
         )
     }
 
@@ -160,7 +159,11 @@ object AppGraph {
     val settingsStore by lazy { FileSettingsStore(configDir().resolve("settings.json")) }
     val bookmarkStore by lazy { FileBookmarkStore(configDir().resolve("bookmarks.json")) }
     // Portfolio goals (M11.2 Task 4) — same lazily-backed, configDir-rooted shape as every
-    // other store above; own file per GoalStore's own KDoc (Carry-notes §2.5).
+    // other store above; own file per GoalStore's own KDoc (Carry-notes §2.5). Currently wired
+    // to no Android consumer: `ResetPortfolio` stopped taking a GoalStore in M11.1 UAT F1 (a
+    // reset must NOT clear goals) and Android's own goal surfaces land in M11.3, which reads
+    // this val. Kept — and deliberately not injected anywhere — so the file path/format stays
+    // the single definition the goal screens will pick up, not so a use case can quietly clear it.
     val goalStore: GoalStore by lazy { FileGoalStore(configDir().resolve("goals.json")) }
 
     // Market-activity scheduler markers (Task 8) — same filename desktop's AppGraph uses
@@ -602,11 +605,6 @@ class PortfolioGraph(
     // mirroring desktop AppGraph's flat wiring exactly.
     stateStore: SchedulerStateStore,
     isDripEnabled: suspend () -> Boolean,
-    // Portfolio goals (M11.2 Task 4) — REQUIRED, mirroring ResetPortfolio's own required
-    // goalStore param: a construction site that forgets it must fail to compile, not silently
-    // discard goal saves (carry-notes §4). Arrives as a constructor param from AppGraph (which
-    // owns `goalStore`), the same shape `stateStore`/`isDripEnabled` already use above.
-    goalStore: GoalStore,
 ) {
     val fetchPortfolio = FetchPortfolio(portfolioStore)
 
@@ -618,7 +616,7 @@ class PortfolioGraph(
     private val portfolioMutex = Mutex()
     val buyAsset = BuyAsset(repository, portfolioStore, portfolioMutex)
     val sellAsset = SellAsset(repository, portfolioStore, portfolioMutex)
-    val resetPortfolio = ResetPortfolio(portfolioStore, portfolioMutex, goalStore)
+    val resetPortfolio = ResetPortfolio(portfolioStore, portfolioMutex)
     val fetchPortfolioPerformance = FetchPortfolioPerformance(repository, portfolioStore)
     val fetchPerformanceReport = FetchPerformanceReport(repository, fetchPortfolioPerformance)
 

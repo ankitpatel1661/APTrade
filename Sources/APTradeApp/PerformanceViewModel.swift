@@ -133,10 +133,11 @@ final class PerformanceViewModel {
     ///
     /// The account age fed to `GoalMath` is derived FRESH on every call from a fresh
     /// `fetchPortfolio()` read — never cached and never gated on a first-load flag —
-    /// because `ResetPortfolioUseCase` can clear the portfolio (and its goals) out from
-    /// under this view model, and `onAppear()` re-reads the goal on every appearance for
-    /// exactly that reason. A cached age would let a reset portfolio keep projecting off
-    /// the age of the account it replaced.
+    /// because `ResetPortfolioUseCase` can replace the portfolio out from under this view
+    /// model, and `onAppear()` reloads on every appearance for exactly that reason. A cached
+    /// age would let a reset portfolio keep projecting off the age of the account it
+    /// replaced. (The GOAL itself survives a reset since M11.1 UAT F1 — it is the age and
+    /// the current value that must not.)
     private func refreshValueProjection() {
         guard let goal = valueGoal else { valueGoalProjection = nil; return }
         // ACCOUNT age, not the price window's span: fed from the ONE named derivation
