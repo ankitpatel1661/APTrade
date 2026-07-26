@@ -178,14 +178,26 @@ object GoalMath {
      * has enough history for [DividendMath.dividendGrowthRate] to measure an actual rate — pass
      * [DividendMath.anyPositionHasMeasurableGrowth]'s result. `DividendMath.dividendGrowthRate`
      * returns `BigDecimal.ZERO` both for a genuinely flat, seasoned payer AND for a payer with too
-     * little history to measure at all, so a forecast built entirely from unmeasurable symbols is
-     * flat for the SAME reason a value-goal card would report [GoalProjection.InsufficientHistory]
+     * little history to measure at all, so a forecast built entirely from unmeasurable symbols
+     * reads for the SAME reason a value-goal card would report [GoalProjection.InsufficientHistory]
      * for an equivalently young account — not because nothing is growing, but because nothing
-     * could be measured. Checked only in the uncrossed, non-all-zero fallthrough: when
-     * `hasMeasurableGrowth` is false every contributing symbol's growth is (by construction) the
-     * unmeasurable-default 0.0, so the forecast is provably flat and `last.income > current` can
-     * never fire anyway -- this is a strict refinement of that branch, not a new
-     * decision surface.
+     * could be measured.
+     *
+     * Checked in the uncrossed, non-all-zero fallthrough. Residual review, Finding C: this IS a
+     * new decision surface, NOT a strict refinement of that branch -- a prior version of this
+     * KDoc claimed the forecast is "provably flat" whenever `hasMeasurableGrowth` is false, which
+     * is false with DRIP enabled. Reinvestment compounds shares -- and therefore income -- even at
+     * an exactly-0% MEASURED per-share growth rate, so [forecast] can be genuinely increasing
+     * (e.g. $125 → $130.30 → $159.01) purely from share count while `hasMeasurableGrowth` is still
+     * false. Absent this guard, that shape falls through to `last.income > current` and reports
+     * [GoalProjection.BeyondHorizon]; WITH the guard it reports [GoalProjection.InsufficientHistory]
+     * instead. For a DRIP-on young payer this is a real behaviour change, not a no-op -- defensible
+     * on the merits (the growth rate genuinely could not be measured, so declining to project a
+     * horizon is the honest answer for the SAME reason the all-zero and flat-forecast cases above
+     * decline to), but it must be described as what it is: a case this guard can flip, not one it
+     * merely confirms. Pinned by
+     * `aDripCompoundedForecastWithUnmeasurableGrowthReportsInsufficientHistoryNotBeyondHorizon` in
+     * `GoalMathTest`.
      */
     fun incomeProjection(
         current: Money,

@@ -199,13 +199,20 @@ class GoalMathTest {
     /** Carry-notes §2.4, BINDING: a brand-new user with NO holdings has an all-zero forecast. That
      *  is an ABSENCE of data, not a failing rate — and the value goal in the identical situation
      *  says "needs more history". The two cards are deliberately symmetric and always visible, so
-     *  the copy must agree. Checked BEFORE the not-on-track fallthrough. */
+     *  the copy must agree. Checked BEFORE the not-on-track fallthrough.
+     *
+     *  Residual review, Finding B: `hasMeasurableGrowth = true` here (NOT `false`) is deliberate.
+     *  With `false`, the `!hasMeasurableGrowth` guard at `GoalMath.kt:207` would ALSO return
+     *  `InsufficientHistory` for this exact input, so the all-zero guard this test claims to pin
+     *  could be deleted entirely and the assertion would still pass — it would no longer be
+     *  discriminating. `hasMeasurableGrowth = true` keeps that second guard out of the way, so a
+     *  RED result here can only mean the all-zero guard itself is gone. */
     @Test
     fun anAllZeroForecastReportsInsufficientHistoryNotNotOnTrack() {
         assertEquals(
             GoalProjection.InsufficientHistory,
             GoalMath.incomeProjection(
-                usd("0"), usd("6000"), forecast("0", "0", "0"), hasMeasurableGrowth = false,
+                usd("0"), usd("6000"), forecast("0", "0", "0"), hasMeasurableGrowth = true,
             ),
         )
     }
@@ -319,6 +326,26 @@ class GoalMathTest {
             GoalProjection.InsufficientHistory,
             GoalMath.incomeProjection(
                 usd("125"), usd("6000"), forecast("125", "125", "125"), hasMeasurableGrowth = false,
+            ),
+        )
+    }
+
+    /** Residual review, Finding C. Unlike the flat forecast above, this one is genuinely
+     *  INCREASING — mirroring a DRIP-on young payer, where reinvestment compounds shares (and so
+     *  income) even though the measured per-share growth rate is exactly 0% ($125 → $130.30 →
+     *  $159.01). `hasMeasurableGrowth = false` must still win over the rising curve and report
+     *  [GoalProjection.InsufficientHistory] — NOT [GoalProjection.BeyondHorizon], which is what the
+     *  `last.income > current` fallthrough would report if this guard were absent (see
+     *  `aGrowingButUncrossedForecastReportsBeyondHorizon` above for that exact fallthrough with
+     *  `hasMeasurableGrowth = true`). This is the real behaviour change the `hasMeasurableGrowth`
+     *  guard's KDoc now documents honestly: it can flip an otherwise-BeyondHorizon result for a
+     *  DRIP-on young payer, not merely confirm one. */
+    @Test
+    fun aDripCompoundedForecastWithUnmeasurableGrowthReportsInsufficientHistoryNotBeyondHorizon() {
+        assertEquals(
+            GoalProjection.InsufficientHistory,
+            GoalMath.incomeProjection(
+                usd("125"), usd("999999"), forecast("125", "130.30", "159.01"), hasMeasurableGrowth = false,
             ),
         )
     }

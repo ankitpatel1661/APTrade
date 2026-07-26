@@ -444,10 +444,19 @@ class FileSettingsStoreTest {
      *  THIRD "100000" literal planted here would be invisible to that sweep. Pin the DTO's own
      *  default against [Portfolio.DEFAULT_STARTING_CASH] directly (the one sanctioned literal),
      *  never a locally re-typed "100000", so a drift shows up as a failing assertion inside the
-     *  very source set the earlier sweep could not reach. */
+     *  very source set the earlier sweep could not reach.
+     *
+     *  Residual review, Finding A: a MISSING file is the wrong fixture for this -- `load()`
+     *  returns `AppSettings()` at `FileSettingsStore.kt:69` before any `SettingsDTO` is ever
+     *  constructed, so a missing-file load never reads `DEFAULT_STARTING_CASH_TEXT` at all.
+     *  Reverting that constant to a wrong literal left the previous version of this test green.
+     *  Use a file that EXISTS but OMITS the `defaultStartingCash` key instead (same shape as
+     *  `aPreM11SettingsFileWithNoStartingCashKeyLoadsTheDefault` above), so `SettingsDTO`'s own
+     *  default parameter -- the thing this test claims to pin -- is genuinely exercised. */
     @Test
-    fun defaultStartingCashOnAMissingFileAgreesWithThePortfolioDefaultLiteral() = runBlocking {
+    fun defaultStartingCashOnAFileThatOmitsTheKeyAgreesWithThePortfolioDefaultLiteral() = runBlocking {
         val file = Files.createTempDirectory("aptrade-settings").resolve("settings.json")
+        file.writeText("""{"accent":"ChampagneGold"}""")
         assertEquals(Portfolio.DEFAULT_STARTING_CASH, FileSettingsStore(file).load().defaultStartingCash)
     }
 }
