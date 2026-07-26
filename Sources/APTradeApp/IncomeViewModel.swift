@@ -239,6 +239,12 @@ final class IncomeViewModel: ObservableObject {
 
     private func refreshGoalProjection() {
         guard let goal = incomeGoal else { incomeGoalProjection = nil; return }
+        // One `now()` reading for all three derivations below, so the "same snapshot"
+        // claim on `hasMeasurableGrowth` is exact rather than merely near-exact: three
+        // independent `now()` calls would hand each derivation an `asOf` microseconds
+        // apart, and a trailing-window or five-year-window boundary can in principle fall
+        // inside that gap.
+        let asOf = now()
         // Always project against a full-horizon curve — independent of the chart's
         // `horizon` pill selection — so the goal's ETA doesn't change when the user
         // flips between 5y/10y/20y/30y views. Exactly `GoalMath.horizonYears` long, so an
@@ -249,19 +255,20 @@ final class IncomeViewModel: ObservableObject {
                                                eventsBySymbol: lastEventsBySymbol,
                                                years: Int(GoalMath.horizonYears),
                                                dripEnabled: isDripEnabled(),
-                                               asOf: now())
+                                               asOf: asOf)
         // Trailing-twelve-month rate, no growth — the SAME measure as `forecast`'s
         // `yearOffset == 1` entry (both are `DividendMath.projectedAnnualIncome`'s sum of
         // `trailingAnnualPerShare` × shares), so the goal's progress % and ETA agree with
         // what the forecast chart shows for year 1.
         let current = DividendMath.projectedAnnualIncome(positions: lastPositions,
                                                          eventsBySymbol: lastEventsBySymbol,
-                                                         asOf: now())
-        // Same positions/events `full` above was built from, so measurability and the
-        // forecast it gates can never disagree about which portfolio snapshot they describe.
+                                                         asOf: asOf)
+        // Same positions/events AND the same `asOf` instant `full` above was built from, so
+        // measurability and the forecast it gates can never disagree about which portfolio
+        // snapshot they describe.
         let hasMeasurableGrowth = DividendMath.anyPositionHasMeasurableGrowth(positions: lastPositions,
                                                                               eventsBySymbol: lastEventsBySymbol,
-                                                                              asOf: now())
+                                                                              asOf: asOf)
         incomeGoalProjection = GoalMath.incomeProjection(current: current,
                                                          target: goal.target,
                                                          forecast: full,
