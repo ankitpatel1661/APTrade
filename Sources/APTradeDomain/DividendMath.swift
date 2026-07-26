@@ -382,6 +382,18 @@ public enum DividendMath {
 
     /// Rolls each holding's inferred payment cadence forward from its last real event,
     /// emitting estimated payments in `(asOf, through]`, ascending by date.
+    ///
+    /// Applies the SAME inclusion test `incomeProjection`/the summary cards/the "Upcoming
+    /// Dividends" list all use (carry-notes §4g): `trailingAnnualPerShare(events, asOf).amount > 0`
+    /// is the single staleness/inclusion test for all four income surfaces. A payer whose last
+    /// REAL ex-date has aged out of the trailing-annual window — but is still recent enough for
+    /// `inferredCadence` to infer a cadence from — must read as zero here too, or this calendar
+    /// alone would print confident dollar rows for a holding every other surface values at zero.
+    /// The `while next <= asOf { next += step }` roll-forward below has no staleness bound of its
+    /// own: it will happily roll a payer that stopped paying a year ago into next quarter. The
+    /// zero-trailing-income guard is what actually bounds "how stale is too stale to project."
+    /// Any future income surface should apply the same test; any task changing the test changes
+    /// it in this one place.
     public static func projectedSchedule(positions: [Position],
                                          eventsBySymbol: [String: [DividendEvent]],
                                          through: Date,
@@ -391,6 +403,7 @@ public enum DividendMath {
             let shares = position.quantity.amount
             guard shares > 0 else { continue }
             let events = eventsBySymbol[position.asset.symbol] ?? []
+            guard trailingAnnualPerShare(events: events, asOf: asOf).amount > 0 else { continue }
             guard let seed = nextProjected(events: events),
                   let cadence = inferredCadence(events: events) else { continue }
 
