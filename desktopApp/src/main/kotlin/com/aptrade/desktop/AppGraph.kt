@@ -39,6 +39,7 @@ import com.aptrade.shared.application.FetchPortfolioPerformance
 import com.aptrade.shared.application.FetchProfile
 import com.aptrade.shared.application.FetchSearch
 import com.aptrade.shared.application.FetchWatchlist
+import com.aptrade.shared.application.GoalStore
 import com.aptrade.shared.application.HomeFeedAssembler
 import com.aptrade.shared.application.HomeIncomeSummary
 import com.aptrade.shared.application.HomeUpcomingDividend
@@ -75,6 +76,7 @@ import com.aptrade.shared.domain.Pie
 import com.aptrade.shared.domain.SP500Symbols
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.domain.WatchlistEntry
+import com.aptrade.shared.infrastructure.FileGoalStore
 import com.aptrade.shared.infrastructure.FilePieStore
 import com.aptrade.shared.infrastructure.FilePortfolioStore
 import com.aptrade.shared.infrastructure.FileScreenStore
@@ -103,6 +105,10 @@ class AppGraph(
     // reads it directly for the edit wizard's raw-Pie lookup (mirrors macOS's
     // `CompositionRoot.pieStore.load()` — see PlansPane.kt).
     val pieStore: PieStore = FilePieStore(resolveConfigDir().resolve("pies.json")),
+    // Portfolio goals (M11.2 Task 3/4) — same whole-blob JSON-file shape as every other store
+    // here, its own file per GoalStore's own KDoc (Carry-notes §2.5: ported the Swift AS-BUILT's
+    // own-key-not-embedded shape, not the spec sentence that said "alongside portfolio state").
+    val goalStore: GoalStore = FileGoalStore(resolveConfigDir().resolve("goals.json")),
     // Constructed once here (not via rememberTrayState() in Main.kt) so the SAME instance
     // backs both the Tray composable (which renders the OS tray icon) and TrayNotifier
     // (which posts to it) — one tray, one notifier, one process, matching every other
@@ -138,7 +144,7 @@ class AppGraph(
     val portfolioMutex = Mutex()
     val buyAsset = BuyAsset(repository, portfolioStore, portfolioMutex)
     val sellAsset = SellAsset(repository, portfolioStore, portfolioMutex)
-    val resetPortfolio = ResetPortfolio(portfolioStore, portfolioMutex)
+    val resetPortfolio = ResetPortfolio(portfolioStore, portfolioMutex, goalStore)
     val fetchPortfolioPerformance = FetchPortfolioPerformance(repository, portfolioStore)
     val fetchPerformanceReport = FetchPerformanceReport(repository, fetchPortfolioPerformance)
 

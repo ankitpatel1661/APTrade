@@ -7,6 +7,7 @@ import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchPerformanceReport
 import com.aptrade.shared.application.FetchPortfolio
 import com.aptrade.shared.application.FetchPortfolioPerformance
+import com.aptrade.shared.application.GoalStore
 import com.aptrade.shared.application.PortfolioStore
 import com.aptrade.shared.application.QuoteError
 import com.aptrade.shared.application.ResetPortfolio
@@ -15,6 +16,7 @@ import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.DividendEvent
 import com.aptrade.shared.domain.Money
+import com.aptrade.shared.domain.PortfolioGoal
 import com.aptrade.shared.domain.PricePoint
 import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.domain.Position
@@ -40,6 +42,15 @@ private class InMemoryPortfolioStore(initial: Portfolio? = null) : PortfolioStor
     override suspend fun save(portfolio: Portfolio) { stored = portfolio }
 }
 
+/** Trivial in-memory [GoalStore] fake — this VM test suite doesn't assert on goal-clearing
+ *  behavior (that's covered by ResetPortfolioTest in :shared), just needs to satisfy the
+ *  now-required ResetPortfolio constructor parameter. */
+private class InMemoryGoalStore : GoalStore {
+    var goals: List<PortfolioGoal> = emptyList()
+    override suspend fun load(): List<PortfolioGoal> = goals
+    override suspend fun save(goals: List<PortfolioGoal>) { this.goals = goals }
+}
+
 private val aapl = Asset("AAPL", "Apple Inc.", AssetKind.Stock)
 private val btcUsd = Asset("BTC-USD", "Bitcoin USD", AssetKind.Crypto)
 
@@ -59,7 +70,7 @@ private fun vm(
     fetchMarketQuotes = FetchMarketQuotes(repo),
     buyAsset = BuyAsset(repo, store, Mutex()),
     sellAsset = SellAsset(repo, store, Mutex()),
-    resetPortfolio = ResetPortfolio(store, Mutex()),
+    resetPortfolio = ResetPortfolio(store, Mutex(), InMemoryGoalStore()),
     fetchPerformanceReport = FetchPerformanceReport(repo, FetchPortfolioPerformance(repo, store)),
     scope = scope,
     nowEpochSeconds = nowEpochSeconds,

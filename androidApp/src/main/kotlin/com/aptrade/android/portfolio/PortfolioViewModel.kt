@@ -320,7 +320,10 @@ class PortfolioViewModel(
 
     fun reset() {
         viewModelScope.launch {
-            portfolio = resetPortfolio.execute()
+            // M11.3 wires Android's own amount field here; until then the reset opens at the
+            // named default rather than a bare literal, so the M11.2 hardcoded-balance grep
+            // finds this call site instead of a hidden number.
+            portfolio = resetPortfolio.execute(Portfolio.DEFAULT_STARTING_CASH)
             quotes = emptyMap()
             _state.update {
                 it.copy(
