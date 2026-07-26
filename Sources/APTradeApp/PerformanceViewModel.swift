@@ -84,8 +84,14 @@ final class PerformanceViewModel {
     /// and `ComputePerformanceMetricsUseCase` swallows every failure into an EMPTY report
     /// (`try?`), so cancelling a same-selection load would let the cancelled task's empty
     /// result pass `load()`'s requested-vs-current guard and blank a good report. The guard
-    /// is what makes concurrent loads safe; SwiftUI's `.task` cancellation is what bounds
-    /// this one's lifetime.
+    /// is what keeps a SUPERSEDED result from landing; SwiftUI's `.task` cancellation is what
+    /// bounds this one's lifetime.
+    ///
+    /// The guard does NOT dedupe. Two concurrent loads for the SAME timeframe/benchmark — a
+    /// timeframe reload still in flight when the view re-appears — both run the full network
+    /// fan-out and both write state. They compute the same report, so the outcome is correct,
+    /// but do not read the guard as a de-duplicator: it only rejects results whose selection
+    /// no longer matches.
     func onAppear() async {
         valueGoal = loadGoals().first { $0.kind == .value }
         refreshValueProjection()
@@ -93,6 +99,16 @@ final class PerformanceViewModel {
     }
 
     /// Recomputes the report for the current timeframe/benchmark selection.
+    ///
+    /// ⚠️ This method does not poll `Task.isCancelled`, and `ComputePerformanceMetricsUseCase`
+    /// swallows a cancellation into `PerformanceReport.empty` like any other failure. So a
+    /// `.task`-cancelled load (view dismissed mid-flight) still runs to completion and writes
+    /// `.empty` plus a cash-floor `currentValue` over whatever good report was there. That
+    /// pre-dates this milestone; what makes it self-heal today is F3 — `onAppear()` reloads
+    /// unconditionally, so the next appearance repairs the state. **Re-introducing an
+    /// `.idle`-style gate "for performance" would therefore resurrect a stale-value bug this
+    /// method has always had.** The durable fix is a cancellation check here, deliberately not
+    /// bundled into the UAT fixes.
     func load() async {
         state = .loading
         let requestedTimeframe = timeframe

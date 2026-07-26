@@ -46,6 +46,16 @@ struct PerformanceSection: View {
     /// `ProgressView()` for `.idle`/`.loading`, so the card the doc comment above promised
     /// did not exist at all until the first report landed — the user saw a spinner where the
     /// goal card should be on every cold launch.
+    ///
+    /// ⚠️ NOTHING IN THE TEST SUITE GUARDS THIS BODY. `PerformanceSectionTests` pins
+    /// `reportBody(for:)`; no test can observe a SwiftUI view hierarchy without ViewInspector
+    /// or snapshot testing, neither of which this project has (a tooling decision, not taken
+    /// here). Restoring the old state-switch above the goal card was verified in review to
+    /// leave all 720 tests green. The card's placement is therefore defended by exactly two
+    /// things: this comment, and the fact that `content` takes no state at all — putting the
+    /// defect back means deliberately re-introducing a `switch viewModel.state` here, not
+    /// forgetting something. Acceptance row "card visible before the load completes" is
+    /// UAT-only and is carried as an owed on-device check.
     private var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {

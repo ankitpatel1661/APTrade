@@ -55,12 +55,25 @@ final class GoalUseCasesTests: XCTestCase {
     /// capital is "start over with more money", not "abandon my plan": a $120,000 value goal
     /// set before a reset to $1,000,000 survives and simply recomputes as reached.
     ///
-    /// Rejects the shipped `self.goalStore?.save([])` inside `callAsFunction`. Note
-    /// `ResetPortfolioUseCase` no longer TAKES a `GoalStore` — the optional dependency was
-    /// removed rather than left unused (it defaulted to `nil` "so existing construction sites
-    /// keep compiling", the re-armable pattern this project has been burned by), so goal
-    /// clearing is now unreachable by construction. This test is the behavioural record of
-    /// why, and it deliberately never hands the store to the use case.
+    /// ⚠️ WHAT THIS TEST DOES AND DOES NOT GUARD — read before trusting it.
+    ///
+    /// It does NOT reject `self.goalStore?.save([])` being put back. It cannot:
+    /// `ResetPortfolioUseCase` no longer TAKES a `GoalStore`, so this test never hands it one,
+    /// and re-adding that line alone leaves these assertions green. That was verified in review
+    /// — the literal old implementation was restored and this test still passed.
+    ///
+    /// The real guarantee is STRUCTURAL, not behavioural: the dependency is gone, so the
+    /// clearing has nothing to call. Re-arming it takes three deliberate edits (re-add the
+    /// property, re-add the init parameter, re-wire `CompositionRoot`) — none of which a unit
+    /// test can catch, and none of which happen by accident. That is precisely why the plan
+    /// required deleting the parameter instead of leaving an unused `GoalStore? = nil`.
+    ///
+    /// What this test IS: the executable record of the ruling, so the inverted expectation is
+    /// discoverable from the suite rather than only from a doc — plus a live check that the
+    /// reset still does its own job (the cash assertions below fail if it is gutted). The
+    /// behaviourally discriminating goal-survival coverage lives where a reset actually flows
+    /// past a real `GoalStore`: `PortfolioResetAmountTest.resetKeepsTheValueGoalAndRecomputes…`
+    /// on the Kotlin desktop.
     func test_reset_leavesGoalsIntact() async {
         let goalStore = InMemoryGoalStore([
             PortfolioGoal(kind: .value, target: Money(amount: 120_000), createdAt: epoch),

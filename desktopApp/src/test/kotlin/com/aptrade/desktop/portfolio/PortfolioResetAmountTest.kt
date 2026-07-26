@@ -32,12 +32,20 @@ class PortfolioResetAmountTest {
      *  `resetClearsTheValueGoalSoAStaleTargetCannotSurvive`, which asserted `assertNull` here.
      *  Resetting starting capital is "start over with more money", not "abandon my plan".
      *
-     *  Rejects TWO wrong implementations, one per layer: `ResetPortfolio` clearing the goal store
-     *  (caught by the `goalStore.goals` assertion) and `PortfolioViewModel.reset()` setting
-     *  `valueGoal = null` / publishing `valueGoal = null` (caught by the card assertions — the
-     *  goal would then sit intact on disk while vanishing from the screen). The card must also
-     *  RECOMPUTE: measured against the fresh $1,000,000 balance with the pre-reset equity curve
-     *  discarded, a $120,000 target reads as reached, never as a percentage of the old curve. */
+     *  Rejects — proven RED — `PortfolioViewModel.reset()` setting `valueGoal = null` / publishing
+     *  `valueGoal = null`: the goal would then sit intact on disk while vanishing from the screen,
+     *  the Swift UAT bug in mirror image. The card must also RECOMPUTE: measured against the fresh
+     *  $1,000,000 balance with the pre-reset equity curve discarded, a $120,000 target reads as
+     *  reached, never as a percentage of the old curve.
+     *
+     *  The `goalStore.goals` assertion is a WEAKER guard and is not claimed as proof: it catches a
+     *  re-armed `ResetPortfolio` goal-clear only if whoever re-arms it also wires this package's
+     *  `goalStore` into the `ResetPortfolio(...)` construction in `PortfolioViewModelTest.vm()`
+     *  (plausible — the fixture has one in scope — but not guaranteed). This is nonetheless the
+     *  closest thing in the branch to behavioural coverage of goal survival, because it is the one
+     *  reset path that runs with a real `GoalStore` in the graph. See
+     *  `shared` `ResetPortfolioTest.resetLeavesEveryGoalIntact` for why the use-case-level
+     *  guarantee is structural rather than testable. */
     @Test
     fun resetKeepsTheValueGoalAndRecomputesItAgainstTheFreshBalance() = runTest {
         val fixture = portfolioViewModelFixture(scope = this)

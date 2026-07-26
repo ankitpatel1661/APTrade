@@ -140,9 +140,12 @@ in `PerformanceViewModel.onAppear()` and re-ran this test:
 
 Reverted (`git checkout` of the source file), GREEN as pasted above.
 
-**What remains untested:** that each of the two *hosts* passes the closure. That is a SwiftUI view-body
-construction; with no ViewInspector in this project it is unreachable from unit tests. The extraction
-shrinks the untested surface to one argument per host, and both are commented so a reader sees the pair.
+**What remains untested — and why it no longer matters:** that each of the two *hosts* passes the closure
+is a SwiftUI view-body construction, unreachable from unit tests. Review showed that being untestable was
+not the real problem: with `onDidReset` defaulting to `nil`, deleting the iOS argument compiled clean and
+kept 720/720 green, reintroducing the exact UAT bug on the exact platform it was found on. It is now a
+**required** parameter (`let onDidReset: () async -> Void`), so omission is a compile error rather than a
+silent regression. See the review-response section at the end of this report.
 
 ---
 
@@ -235,8 +238,11 @@ is assigned only in the report load, so re-reading the goal alone is not enough.
 
 `test_reset_clearsGoals` → **`test_reset_leavesGoalsIntact`**.
 
-**Wrong implementation it rejects:** `self.goalStore?.save([])` inside `callAsFunction`. RED was produced
-by writing the inverted assertions while still constructing the use case the old way
+**What it rejects — corrected after review:** *not* `self.goalStore?.save([])` being put back. Review
+reintroduced that literal line and this test stayed green, because the use case no longer takes a store to
+hand it. The guarantee is structural (the dependency is gone); this test is the executable record of the
+ruling plus a check that the reset still does its own job. The RED below was produced against the *shipped*
+implementation, by writing the inverted assertions while still constructing the use case the old way
 (`ResetPortfolioUseCase(store:serializer:goalStore:)`), i.e. against the shipped implementation:
 
 ```
@@ -269,8 +275,9 @@ resets the portfolio) is now part of `test_reset_leavesGoalsIntact` above, and i
 
 `resetClearsEveryGoal` → **`resetLeavesEveryGoalIntact`**.
 
-**Wrong implementation it rejects:** `goalStore.save(emptyList())` in `ResetPortfolio.execute`. Same
-technique — inverted assertions run against the shipped implementation first:
+**What it rejects — corrected after review:** same as the Swift twin, and same correction: it does not
+reject `goalStore.save(emptyList())` being re-added (verified green by review). The RED below is against
+the *shipped* implementation, which still had the store wired:
 
 ```
 ResetPortfolioTest[jvm] > resetLeavesEveryGoalIntact[jvm] FAILED
@@ -316,8 +323,9 @@ com.aptrade.desktop.portfolio.PortfolioResetAmountTest tests 3 failures 0 errors
    PASSED resetKeepsTheValueGoalAndRecomputesItAgainstTheFreshBalance
 ```
 
-Arm (a) of the same test was proven by the `ResetPortfolioTest` RED above (identical wrong
-implementation, one layer down); I did not re-run it a second time from the desktop test.
+Arm (a) — the `goalStore.goals` assertion — is a **weaker guard and is no longer claimed as proof**: it
+catches a re-armed `ResetPortfolio` clear only if whoever re-arms it also wires the fixture's `goalStore`
+into `PortfolioViewModelTest.vm()`'s `ResetPortfolio(...)` call. The test comment now says exactly that.
 
 ### Comment-only test change — `Tests/APTradeAppTests/PerformanceViewModelTests.swift:207-232`
 
@@ -419,17 +427,137 @@ androidApp 282 tests, 0 failures
 2. **Android `PortfolioGraph.goalStore` parameter removed** (not mentioned in the plan). It became an
    unused constructor parameter, which is the same class of latent hazard F1 is about. `AppGraph.goalStore`
    itself is kept for M11.3 with a comment explaining that it is intentionally unwired.
-3. **F4 has no structural test.** No ViewInspector in this project; view hierarchy is not observable from
-   XCTest. Mitigated by making the state→body decision a named, exhaustive, tested function and by leaving
-   `content` state-free. Stated as a limit rather than papered over.
+3. **F4 has no structural test — and the mapping tests do not partially cover it either.** No
+   ViewInspector or snapshot testing in this project; a SwiftUI view hierarchy is not observable from
+   XCTest. Review verified this by restoring the original `content` state-switch verbatim: all 720 tests
+   stayed green. `PerformanceSectionTests` guards the *mapping only*. The card's placement is defended by
+   a warning comment on `content` and by `content` taking no state at all. Adopting ViewInspector or
+   snapshot tests is the option that would close it; that is a tooling decision, flagged and not taken
+   here.
 4. **Host wiring of `onDidReset` (two call sites) is untested** for the same reason. Both are wired and
    cross-referenced in comments.
 5. **Kotlin baseline is 712, not the plan's 711.** Measured before any edit. Deltas are reported against
    the measured number.
 6. **UAT of the running app was not performed** — per the standing project note, the iPhone/desktop build
-   can't be driven from here. The plan's three-row acceptance table is covered at the view-model seam
-   (`test_applyReset_notifiesTheHostAfterTheFreshPortfolioIsPersisted` asserts rows 1 and 2 including
-   `.reached`; row 3 — card visible before the load completes — is the F4 mapping tests plus the
-   state-free `content`), but the on-device confirmation is still owed to the user.
+   can't be driven from here. Rows 1 and 2 of the plan's acceptance table are covered at the view-model
+   seam by `test_applyReset_notifiesTheHostAfterTheFreshPortfolioIsPersisted` (including `.reached`).
+   **Row 3 — "Relaunch, before load completes: Value Goal card visible, not a bare spinner" — has NO seam
+   coverage and is UAT-only.** (An earlier draft of this report credited the F4 mapping tests with
+   covering it; that was wrong — see deviation 3.) It is carried as an owed on-device check.
 7. **Not touched, as instructed:** the Home-screen mixed decimal/comma formatting (recorded as out of
    scope in the plan) and everything PR #3 already changed.
+
+---
+
+# Review response (2026-07-27) — three Important findings, two Minors
+
+All five addressed. The body of this report above has been corrected in place where it overclaimed;
+this section records what changed and the evidence.
+
+## IMPORTANT 1 — `onDidReset` is now REQUIRED, so omission is a compile error
+
+**Finding:** with `var onDidReset: (() async -> Void)? = nil` (`PortfolioView.swift:240`), review deleted
+the argument at the iOS host (`:51`) — reintroducing the reported UAT bug on the platform it was found on
+— and it compiled clean with 720/720 green. Untestable was not the problem; **omittable** was. Same
+`= nil`-for-compile-convenience pattern this branch removed from `ResetPortfolioUseCase` two commits later.
+
+**Fix** (`Sources/APTradeApp/PortfolioView.swift`):
+- `:247` — `var onDidReset: (() async -> Void)? = nil` → **`let onDidReset: () async -> Void`**.
+- `:312` — `applyReset`'s parameter → non-optional `() async -> Void` (Minor 4).
+- `:315` — `await onDidReset?()` → `await onDidReset()`.
+- Doc comment records why the optional was the hazard, and that a future host with nothing to refresh
+  writes `onDidReset: {}` explicitly.
+
+Behaviour-neutral: both hosts already passed it. Proof that omission is now rejected — I deleted the same
+iOS argument the reviewer did and built:
+
+```
+/Users/ap/.../Sources/APTradeApp/PortfolioView.swift:52:62: error: missing argument for parameter 'onDidReset' in call
+    |                                                              `- error: missing argument for parameter 'onDidReset' in call
+```
+
+Restored; `swift build` clean, 720/720 green.
+
+## IMPORTANT 2 — the vacuous F1 tests now say what they actually guard
+
+**Finding:** `GoalUseCasesTests.test_reset_leavesGoalsIntact` and `ResetPortfolioTest.resetLeavesEveryGoalIntact`
+both build a goal store and never hand it to the use case; review reintroduced the literal
+`goalStore?.save([])` / `goalStore.save(emptyList())` and both stayed green. Their comments claimed
+behavioural rejection. The Kotlin one also asserted only that an untouched object was untouched.
+
+**Decision:** I took the "say exactly that" branch rather than manufacturing discrimination. A removed
+dependency cannot be probed behaviourally — any test that could catch a re-armed clear would have to hand
+the use case a `GoalStore`, which is the very thing that no longer exists. Inventing a seam to restore
+testability would re-create the coupling F1 deleted.
+
+**Changes:**
+- `Tests/APTradeApplicationTests/GoalUseCasesTests.swift:58-77` — comment rewritten: states plainly that it
+  does NOT reject the old line, that review proved this, that the guarantee is structural (three deliberate
+  edits to re-arm), and what the test *is* (executable record of the ruling + live check the reset still
+  works). Points at the desktop test for behavioural coverage.
+- `shared/.../ResetPortfolioTest.kt:50-85` — same comment correction, **plus the test is no longer
+  vacuous**: it now names its portfolio store and asserts `fresh.cash`, `fresh.startingCash`, and the
+  persisted `store.portfolio?.cash` are all `$25,000`. It can no longer pass if `ResetPortfolio` is gutted.
+- `desktopApp/.../PortfolioResetAmountTest.kt:31-47` — comment corrected: the `goalStore.goals` arm is
+  labelled a **weaker guard, not proof** (it only catches a re-armed clear if the re-armer also wires the
+  fixture's store into `PortfolioViewModelTest.vm()`), while the VM arm keeps its proven-RED claim.
+
+No RED is claimed for anything newly asserted here: the added Kotlin assertions duplicate coverage that
+`resetsToTheCallerSuppliedBalanceAndRecordsItAsStartingCash` and `resetPersistsTheFreshPortfolio` already
+hold in the same file (they are anti-vacuity ballast, not new guarantees), and the comment edits assert
+nothing. All three files re-run green.
+
+## IMPORTANT 3 — F4's coverage claim withdrawn
+
+**Finding:** review restored the original `content` state-switch verbatim (bare `ProgressView()` for
+`.idle`/`.loading`, goal card gone) and all 720 tests stayed green. The mapping tests cannot see `content`.
+
+**Changes:**
+- Report deviation 3 and limit 6 rewritten (above). Acceptance row 3 is now stated as **UAT-only, no seam
+  coverage**, carried as an owed on-device check.
+- `Sources/APTradeApp/PerformanceSection.swift:49-58` — a ⚠️ comment on `content` says outright that
+  nothing in the suite guards this body, that the restore-the-switch mutation was verified green, and that
+  the placement rests on the comment plus `content` taking no state. ViewInspector/snapshot testing is
+  named as the option that would close it and explicitly not taken here (separate tooling decision).
+
+## Minor 1 — the guard discards, it does not dedupe
+
+`Sources/APTradeApp/PerformanceViewModel.swift:83-93` — added: two concurrent loads for the *same*
+timeframe/benchmark both run the full network fan-out and both write; the requested-vs-current guard only
+rejects results whose selection no longer matches. Correct outcome, no de-duplication — do not read it as
+one.
+
+## Minor 2 — F3 is now load-bearing for a pre-existing cancellation bug
+
+`Sources/APTradeApp/PerformanceViewModel.swift:107-117` (on `load()`) — added: a `.task`-cancelled load
+still completes and writes `.empty` + a cash-floor `currentValue` over a good report, because `load()`
+never polls `Task.isCancelled` and the compute use case swallows cancellation into an empty result. It
+self-heals **only because F3 removed the gate**, so re-introducing an `.idle`-style gate "for performance"
+would resurrect a stale-value bug this method has always had. The durable fix is a cancellation check,
+deliberately not bundled into the UAT fixes.
+
+## Untouched, as instructed
+
+The `applyReset` extraction, the F1 dependency removal across all three graphs, the Kotlin desktop
+`reset()` fix, and everything from PR #3.
+
+## Suites after the review fixes
+
+| Suite | Before review fixes | After | Failures |
+|---|---|---|---|
+| `swift test` | 720 | **720** | 0 |
+| `:shared:jvmTest` | 712 | **712** | 0 |
+| `:desktopApp:test` | 391 | **391** | 0 |
+| `:androidApp:testDebugUnitTest` | 282 | **282** | 0 |
+
+```
+	 Executed 720 tests, with 0 failures (0 unexpected) in 5.154 (5.229) seconds
+
+BUILD SUCCESSFUL in 14s
+shared jvmTest 712 tests, 0 failures
+desktopApp 391 tests, 0 failures
+androidApp 282 tests, 0 failures
+```
+
+Counts are unchanged by design: every change here is a comment, a type signature, or extra assertions
+inside an existing test.
