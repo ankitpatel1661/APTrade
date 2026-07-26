@@ -62,12 +62,18 @@ import kotlin.test.assertTrue
  * introduced by M11.2 kickoff decision 4a.1). Swift's `estimatedShort` was NOT transcribed — the
  * existing `IncomeEstimatedBadge` already carries exactly that word in all four languages, so it
  * is reused rather than near-duplicated. That brings the total to 410.
+ * M11.2 Task 12 (desktop Income UI) added 1 more: `ForecastPricesEstimatedCaption`. Task 11 added
+ * `State.forecastPricesAreEstimated` (a Kotlin-only signal — Swift has no equivalent) to flag when
+ * a total quote-fetch failure forces the income forecast's DRIP compounding to fall back to
+ * cost-basis pricing; Task 12's brief predates that flag and has no caption copy for it, and no
+ * existing key fit (`EstimatedCost`/`EstimatedProceeds`/`IncomeEstimatedBadge` are all short badge
+ * words, not a sentence explaining a price fallback). Bringing the total to 411.
  */
 class L10nCatalogTest {
 
     @Test
-    fun `catalog has exactly 410 keys (389 pre-M11_2 + 21 goals_calendar_forecast_reset keys from the M11_2 Task 8 Kotlin L10n port)`() {
-        assertEquals(410, L10n.Key.entries.size)
+    fun `catalog has exactly 411 keys (410 pre-Task_12 + 1 ForecastPricesEstimatedCaption key added by M11_2 Task 12)`() {
+        assertEquals(411, L10n.Key.entries.size)
     }
 
     @Test
