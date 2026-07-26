@@ -303,6 +303,25 @@ final class GoalMathTests: XCTestCase {
         XCTAssertEqual(projection, .insufficientHistory)
     }
 
+    /// PIN THE BRANCH ORDER (review Important 1). The crossing check (step 3) MUST run
+    /// BEFORE the `hasMeasurableGrowth` guard (step 5) — a young DRIP payer whose
+    /// reinvested shares alone push income past a modest, in-horizon target is validly
+    /// "on track" and must report the concrete crossing year, even though the same
+    /// forecast's per-share growth rate could not be measured. Same DRIP-compounded
+    /// fixture as the test above ($125 -> $130.30 -> $159.01), but with `target: 150` —
+    /// crossed at year 3 — instead of an uncrossable `999999`, so the crossing check
+    /// actually has something to find. Rejects hoisting `guard hasMeasurableGrowth ...`
+    /// to sit immediately after the `forecast.last` guard (i.e. above the crossing check):
+    /// under that hoist this test alone goes RED while the rest of the 32-test file stays
+    /// green, because it is the only existing test that combines `hasMeasurableGrowth:
+    /// false` with a within-horizon crossing.
+    func test_incomeProjection_dripCompoundedWithUnmeasurableGrowth_crossingWithinHorizonStillWins() {
+        let projection = GoalMath.incomeProjection(current: usd("125"), target: usd("150"),
+                                                   forecast: forecast(["125", "130.30", "159.01"]),
+                                                   hasMeasurableGrowth: false)
+        XCTAssertEqual(projection, .years(3))
+    }
+
     /// §4a.3 horizon clamp. A crossing year strictly BEYOND `horizonYears` must report
     /// `.beyondHorizon`, not a concrete `.years(35)` — Swift previously returned the raw,
     /// unbounded crossing year here, disagreeing with `valueProjection`'s horizon-bounded

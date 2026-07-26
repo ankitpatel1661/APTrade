@@ -422,6 +422,45 @@ final class IncomeViewModelTests: XCTestCase {
                        "current must equal the trailing-12mo rate (year 1), matching the forecast chart")
     }
 
+    // MARK: - (k.2) gap coverage: §4f.2 live defect — measurability must actually reach the ViewModel
+
+    /// §4f.2 (review Important 2). `quarterlyHistory` spans under two years (four payments,
+    /// 2025-08-14 -> 2026-05-14, ~9 months) — too little history for
+    /// `DividendMath.hasMeasurableGrowth` to measure an actual rate, so it reports `false`
+    /// and the forecast compounds at a defaulted 0%: flat at year 1's $200 for all 30
+    /// years. A target the flat forecast never crosses (5,000, well above $200) must
+    /// therefore read `.insufficientHistory` — "needs more history," the SAME reading
+    /// `valueProjection` already gives an equivalently young account — not `.notOnTrack`,
+    /// which would misreport an absence of data as a failing rate. This is the actual
+    /// user-visible defect §4f.2 fixes: before the fix, the income card read "Not on
+    /// track at current rate" for exactly this young-account shape while the value card
+    /// read "Tracking — needs more history" for the identical situation.
+    ///
+    /// Proves the ViewModel actually WIRES `DividendMath.anyPositionHasMeasurableGrowth`
+    /// into `GoalMath.incomeProjection` — the four `GoalMathTests` added for §4f.2 only
+    /// prove `GoalMath.incomeProjection` itself is correct; nothing else in this file
+    /// exercises `refreshGoalProjection()`'s `hasMeasurableGrowth` argument at all — the
+    /// wrong implementation this rejects is the call site's argument being a literal
+    /// `true` (i.e. `DividendMath.anyPositionHasMeasurableGrowth`'s result never actually
+    /// reaching `GoalMath.incomeProjection`).
+    @MainActor
+    func test_incomeGoalProjection_unmeasurableGrowth_isInsufficientHistory_notNotOnTrack() async {
+        let events = quarterlyHistory("AAA", "0.50")   // spans ~9 months — under the 2-year floor
+        let vm = makeSUT(holdings: [("AAA", "100")], events: ["AAA": events])
+        await vm.load()
+
+        // Sanity: year 1 income really is $200, and the forecast really is flat (0%
+        // measured growth), so the ONLY thing that can make this insufficient vs.
+        // not-on-track is hasMeasurableGrowth, not a crossing or a genuinely declining rate.
+        XCTAssertEqual(vm.forecast.first { $0.yearOffset == 1 }?.income, Money(amount: 200))
+        XCTAssertEqual(vm.forecast.last?.income, Money(amount: 200))
+
+        vm.setIncomeGoal(Money(amount: 5_000))
+        XCTAssertEqual(vm.incomeGoalProjection, .insufficientHistory,
+                       "a young payer's unmeasurable growth must gate the income goal the same way "
+                       + "it already gates the value goal, not report .notOnTrack")
+    }
+
     // MARK: - (l) gap coverage: carried constraint 1 — pricesBySymbol must reach incomeForecast
 
     /// Carried constraint 1: dropping `pricesBySymbol` silently reverts DRIP reinvestment
