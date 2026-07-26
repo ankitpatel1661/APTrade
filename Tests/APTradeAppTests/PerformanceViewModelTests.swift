@@ -226,8 +226,39 @@ final class PerformanceViewModelTests: XCTestCase {
         goalStore.save([])
 
         await vm.onAppear()
-        XCTAssertNil(vm.valueGoal, "a goal cleared by an external reset must not linger after re-appearing")
+        XCTAssertNil(vm.valueGoal, "a goal removed elsewhere must not linger after re-appearing")
         XCTAssertNil(vm.valueGoalProjection)
+    }
+
+    // MARK: - M11.1 UAT F3: `onAppear()` reloads the REPORT, not just the goal.
+
+    /// Rejects the shipped implementation
+    /// `func onAppear() { valueGoal = …; refreshValueProjection(); if case .idle = state { await load() } }`.
+    /// `currentValue` (and the whole metric grid) is assigned ONLY inside `load()`, so with
+    /// the `.idle` gate a second appearance after the portfolio was replaced underneath —
+    /// exactly what `ResetPortfolioUseCase` does — left the value-goal card showing the
+    /// PRE-reset dollar figure. This is the reported UAT defect: storage held $500,000 while
+    /// the card rendered "$100,115.77 / $1,200,000 · 8%".
+    ///
+    /// Discrimination: the first `onAppear()` leaves `state == .empty` (all-cash portfolio),
+    /// never `.idle`, so the gated implementation skips the second `load()` entirely and
+    /// `currentValue` stays at $100,000. Only an ungated reload reads $1,000,000.
+    @MainActor
+    func test_onAppear_afterFirstLoad_reloadsCurrentValue_notJustTheGoal() async {
+        let store = MemoryStore(.starting(cash: Money(amount: 100_000)))
+        let vm = PerformanceViewModel(
+            compute: ComputePerformanceMetricsUseCase(repository: RisingRepo(), store: store),
+            fetchPortfolio: FetchPortfolioUseCase(store: store))
+        await vm.onAppear()
+        XCTAssertEqual(vm.currentValue, Money(amount: 100_000))
+        XCTAssertNotEqual(vm.state, .idle, "the gate can only be discriminating once state has left .idle")
+
+        // The portfolio is replaced out from under this view model (what a reset does).
+        store.save(.starting(cash: Money(amount: 1_000_000)))
+
+        await vm.onAppear()
+        XCTAssertEqual(vm.currentValue, Money(amount: 1_000_000),
+                       "re-appearing must reload the report, not only re-read the goal")
     }
 
     // MARK: - Account-age history gate wiring (Task 4d)
