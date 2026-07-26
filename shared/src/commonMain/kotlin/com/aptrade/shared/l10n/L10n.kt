@@ -521,7 +521,7 @@ object L10n {
      * `table`. English is intentionally absent here — it resolves via [Key.english] in
      * [string], matching how the Swift `tr(_:)` falls back to `key.rawValue`.
      */
-    private val table: Map<AppLanguage, Map<Key, String>> = mapOf(
+    internal val table: Map<AppLanguage, Map<Key, String>> = mapOf(
         AppLanguage.German to mapOf(
             Key.Watchlist to "Beobachtungsliste",
             Key.Portfolio to "Portfolio",
@@ -1821,7 +1821,7 @@ object L10n {
             Key.SidebarSearch to "Buscar",
             Key.SidebarSettings to "Ajustes",
             Key.DividendCalendarTitle to "Calendario de dividendos",
-            Key.NoDividendPayersHeld to "Aún no tienes valores que paguen dividendos.",
+            Key.NoDividendPayersHeld to "Aún no tienes valores con dividendos.",
             Key.IncomeForecastTitle to "Previsión de ingresos",
             Key.ForecastCaption to "Supone que continúa el crecimiento histórico de dividendos; capitalización DRIP donde esté activada.",
             Key.IncomeGoal to "Objetivo de ingresos",

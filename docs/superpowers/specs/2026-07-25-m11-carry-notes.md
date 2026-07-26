@@ -258,6 +258,26 @@ Until steps 1 **and** 2 both land, Kotlin and Swift will report **different grow
 
 ---
 
+## 4d. The Kotlin L10n completeness test was toothless — and I repeated the wrong claim all milestone
+
+Found 2026-07-25 during M11.2 Task 8, confirmed independently by the task review.
+
+**Both M11 plans, this document, and every task brief I wrote asserted that a completeness test "enforces" four-language coverage and "will fail otherwise." For Kotlin that was false.**
+
+- `L10n.string(key, language)` ends in `?: key.english` (`shared/.../l10n/L10n.kt:1852-1853`). A missing row, or a present-but-blank row, silently resolves to the always-non-blank English literal.
+- `L10nCatalogTest`'s completeness test called `string()`, so the value under test was *always* mediated by that fallback. It could not fail for a genuinely missing translation. All 410 keys were unprotected.
+- Worse, a sibling test *documents* the fallback, which reads as certification that the masking is intended.
+
+**Swift's equivalent test is genuine** and shows the correct pattern: `Tests/APTradeAppTests/L10nTests.swift:7-18` reads `L10n.table[key]` **directly** and asserts each language is non-nil and non-empty, never routing through `tr()`. So `tr()`'s own English fallback (`L10n.swift:1463`) cannot mask a gap on that side.
+
+**Fix applied in M11.2:** `table` widened from `private` to `internal` (visible to the module's test compilations in KMP), and the completeness test rewritten to assert against the raw map, mirroring Swift's failure messages. Proven to have teeth by deleting a non-English row, watching it fail by name, and restoring.
+
+**Lesson for M11.3 and beyond:** do not assert that a test enforces something without reading what it asserts. "There is a completeness test" and "completeness is enforced" are different claims, and the gap between them hid for at least four milestones' worth of key additions.
+
+**Also pre-existing and still open (deferred):** `./gradlew :shared:compileTestKotlinMacosArm64` fails because backtick test names in the shared suite contain `()` and `,` ("Name contains illegal characters"). Pervasive convention since M8.2; needs its own rename sweep, or an explicit decision that macOS ARM64 is excluded from CI, documented.
+
+---
+
 ## 5. Process notes for M11.2
 
 - **Budget a top-tier whole-branch review at close.** Per-task reviews are structurally blind to *seam* defects — every one of §2.2, §2.3, §2.4 and §3.4 lived between two tasks and no single task's review could have seen them. The whole-branch review found all four.

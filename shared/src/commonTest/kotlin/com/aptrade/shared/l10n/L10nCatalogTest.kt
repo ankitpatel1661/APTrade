@@ -3,6 +3,7 @@ package com.aptrade.shared.l10n
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -70,11 +71,20 @@ class L10nCatalogTest {
     }
 
     @Test
-    fun `every key resolves to a non-blank string for all four languages`() {
+    fun `every key has a non-blank table row for every non-English language`() {
+        // Asserts against L10n.table directly, NOT L10n.string(...) — mirrors
+        // Tests/APTradeAppTests/L10nTests.swift:7-18, which reads its table directly for the
+        // same reason: string()/tr()'s own English fallback would silently mask a missing or
+        // blank row, so going through it here would make this test unable to fail no matter
+        // what is (or isn't) in the table. English has no table row by design (it resolves via
+        // Key.english — see the KDoc above `table`), so only the translated languages are
+        // checked here.
         for (key in L10n.Key.entries) {
             for (language in AppLanguage.entries) {
-                val value = L10n.string(key, language)
-                assertFalse(value.isBlank(), "blank resolution for $key in $language")
+                if (language == AppLanguage.English) continue
+                val row = assertNotNull(L10n.table[language], "missing table for $language")
+                val value = assertNotNull(row[key], "missing $language translation for $key")
+                assertFalse(value.isBlank(), "blank $language translation for $key")
             }
         }
     }
