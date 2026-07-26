@@ -80,7 +80,7 @@ private fun vm(
     fetchMarketQuotes = FetchMarketQuotes(repo),
     buyAsset = BuyAsset(repo, store, Mutex()),
     sellAsset = SellAsset(repo, store, Mutex()),
-    resetPortfolio = ResetPortfolio(store, Mutex(), goalStore),
+    resetPortfolio = ResetPortfolio(store, Mutex()),
     fetchPerformanceReport = FetchPerformanceReport(repo, FetchPortfolioPerformance(repo, store)),
     scope = scope,
     nowEpochSeconds = nowEpochSeconds,

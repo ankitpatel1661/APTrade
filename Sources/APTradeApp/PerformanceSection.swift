@@ -13,28 +13,57 @@ struct PerformanceSection: View {
             .task { await viewModel.onAppear() }
     }
 
+    /// Which of the three mutually exclusive bodies renders BELOW the always-present goal
+    /// card. Naming the mapping (rather than switching inline) makes it unit-testable and,
+    /// being exhaustive over `PerformanceViewModel.State`, makes it a compile error to add a
+    /// state that quietly takes the whole section away from the goal card again.
+    enum ReportBody: Equatable {
+        case spinner
+        case empty
+        case report(PerformanceReport)
+    }
+
+    /// `.idle`/`.loading` drive only the SPINNER — never the empty state: since M11.1 UAT F3
+    /// every appearance re-enters `.loading`, so mapping it to `emptyState` would flash
+    /// "Not enough history yet" over a portfolio that has plenty.
+    static func reportBody(for state: PerformanceViewModel.State) -> ReportBody {
+        switch state {
+        case .idle, .loading: return .spinner
+        case .empty: return .empty
+        case .loaded(let report): return .report(report)
+        }
+    }
+
     /// The value-goal card (M11.1 Task 13) is the section's own reachability floor: unlike
     /// the metric grid/chart/diversification, it must render even before the user holds a
     /// single position — someone who has only deposited cash setting a value goal ahead of
     /// their first trade is the common case, not an edge case. Mirrors `IncomeSection`'s
-    /// `content` (`IncomeSection.swift:57-77`): the goal card sits in the same ScrollView
-    /// always, switching only the report portion BELOW it between the loading/empty/loaded
-    /// states — rather than the old all-or-nothing `emptyState`/`loaded` split, which hid
-    /// the card entirely for an all-cash portfolio.
-    @ViewBuilder
+    /// `content` (`IncomeSection.swift:62-81`): the goal card sits in the same ScrollView
+    /// always, and the ONLY state switch left in this section is the one inside `reportBody`
+    /// BELOW it.
+    ///
+    /// M11.1 UAT F4: `content` itself used to switch on the state and render a bare
+    /// `ProgressView()` for `.idle`/`.loading`, so the card the doc comment above promised
+    /// did not exist at all until the first report landed — the user saw a spinner where the
+    /// goal card should be on every cold launch.
+    ///
+    /// ⚠️ NOTHING IN THE TEST SUITE GUARDS THIS BODY. `PerformanceSectionTests` pins
+    /// `reportBody(for:)`; no test can observe a SwiftUI view hierarchy without ViewInspector
+    /// or snapshot testing, neither of which this project has (a tooling decision, not taken
+    /// here). Restoring the old state-switch above the goal card was verified in review to
+    /// leave all 720 tests green. The card's placement is therefore defended by exactly two
+    /// things: this comment, and the fact that `content` takes no state at all — putting the
+    /// defect back means deliberately re-introducing a `switch viewModel.state` here, not
+    /// forgetting something. Acceptance row "card visible before the load completes" is
+    /// UAT-only and is carried as an owed on-device check.
     private var content: some View {
-        switch viewModel.state {
-        case .idle, .loading:
-            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-        case .empty, .loaded:
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    goalCard
-                    reportBody
-                }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 16)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                goalCard
+                reportBody
             }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
         }
     }
 
@@ -50,7 +79,14 @@ struct PerformanceSection: View {
 
     @ViewBuilder
     private var reportBody: some View {
-        if case .loaded(let report) = viewModel.state {
+        switch Self.reportBody(for: viewModel.state) {
+        case .spinner:
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 60)
+        case .empty:
+            emptyState
+        case .report(let report):
             metricGrid(report.metrics)
             benchmarkPicker
             if !report.benchmarkCurve.isEmpty {
@@ -60,8 +96,6 @@ struct PerformanceSection: View {
                     .font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
             }
             diversification(report)
-        } else {
-            emptyState
         }
     }
 

@@ -43,7 +43,14 @@ struct PortfolioView: View {
             ZStack {
                 Theme.background.ignoresSafeArea()
                 VStack(spacing: 0) {
-                    PortfolioSummaryHeader(viewModel: viewModel, settingsVM: settingsVM, onExport: onExport)
+                    // `onDidReset` (M11.1 UAT F2): `performanceVM` is a SEPARATE instance
+                    // from `viewModel` and nothing else observes the portfolio store, so a
+                    // reset done from the header — which sits above the section picker, i.e.
+                    // reachable without leaving Performance — must be pushed to it explicitly.
+                    // `RootView.macBody`'s header wires the identical closure.
+                    PortfolioSummaryHeader(viewModel: viewModel, settingsVM: settingsVM,
+                                           onExport: onExport,
+                                           onDidReset: { await performanceVM.onAppear() })
                     // Always visible, not gated on holdings — Activity and Performance are
                     // useful reads even with zero holdings, so the picker doesn't wait on them.
                     sectionPicker
@@ -221,6 +228,23 @@ struct PortfolioSummaryHeader: View {
     /// callers that don't wire export (none currently) degrade silently rather than
     /// showing a dead button.
     var onExport: (() -> Void)? = nil
+    /// M11.1 UAT F2: fired AFTER a reset has persisted, so the host can refresh the OTHER
+    /// view models it owns beside this header. `PortfolioViewModel.reset()` clears only its
+    /// own state and nothing else observes the portfolio store, so without this the
+    /// Performance section's separate `PerformanceViewModel` keeps rendering the pre-reset
+    /// value-goal figure and metric grid — and since this header sits ABOVE the section
+    /// picker, the reset is reachable WITHOUT leaving Performance, so no view lifecycle
+    /// event ever fires to paper over it.
+    ///
+    /// REQUIRED, deliberately: no `?`, no `= nil`. Both hosts (`PortfolioView` and
+    /// `RootView.macBody`) own a `PerformanceViewModel` and both must refresh it; wiring one
+    /// and not the other recreates exactly the platform asymmetry this bug came from, and a
+    /// defaulted optional is precisely what makes that omission legal and silent — a review
+    /// deleted the iOS argument and the build stayed green with 720/720 tests passing. It is
+    /// the same `= nil`-for-compile-convenience pattern this branch removed from
+    /// `ResetPortfolioUseCase`: omission must be a COMPILE ERROR, not a UAT finding. A future
+    /// host with genuinely nothing to refresh writes `onDidReset: {}` and says so out loud.
+    let onDidReset: () async -> Void
     @State private var showChart = false
     @State private var showResetSheet = false
     @State private var resetAmountText = ""
@@ -264,10 +288,31 @@ struct PortfolioSummaryHeader: View {
         }
         .sheet(isPresented: $showResetSheet) {
             ResetPortfolioSheet(amountText: $resetAmountText) { amount in
-                settingsVM.settings.defaultStartingCash = amount
-                Task { await viewModel.reset(startingCash: amount) }
+                Task {
+                    await Self.applyReset(amount: amount, viewModel: viewModel,
+                                          settingsVM: settingsVM, onDidReset: onDidReset)
+                }
             }
         }
+    }
+
+    /// The reset flow itself, lifted out of the sheet's confirm closure so it is reachable
+    /// from tests — a closure inside a SwiftUI view body is not. Order is load-bearing:
+    /// `onDidReset` fires only after the AWAITED reset has persisted the fresh portfolio,
+    /// otherwise a listener would re-read the old one and re-freeze the screen it exists to
+    /// unfreeze.
+    ///
+    /// `onDidReset` is non-optional here for the same reason the stored property is: an
+    /// optional parameter would let a future caller of this function skip the notification
+    /// without the compiler saying a word.
+    @MainActor
+    static func applyReset(amount: Money,
+                           viewModel: PortfolioViewModel,
+                           settingsVM: SettingsViewModel,
+                           onDidReset: () async -> Void) async {
+        settingsVM.settings.defaultStartingCash = amount
+        await viewModel.reset(startingCash: amount)
+        await onDidReset()
     }
 
     private var expandedChart: some View {

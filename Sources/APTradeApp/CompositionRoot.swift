@@ -134,7 +134,7 @@ enum CompositionRoot {
         return PortfolioViewModel(
             fetchPortfolio: FetchPortfolioUseCase(store: portfolioStore),
             fetchQuotes: FetchQuotesUseCase(repository: repo),
-            resetPortfolio: ResetPortfolioUseCase(store: portfolioStore, serializer: tradeSerializer, goalStore: goalStore),
+            resetPortfolio: ResetPortfolioUseCase(store: portfolioStore, serializer: tradeSerializer),
             recordSnapshot: RecordPortfolioSnapshotUseCase(store: portfolioHistoryStore),
             fetchHistory: FetchPortfolioHistoryUseCase(store: portfolioHistoryStore),
             clearHistory: ClearPortfolioHistoryUseCase(store: portfolioHistoryStore),

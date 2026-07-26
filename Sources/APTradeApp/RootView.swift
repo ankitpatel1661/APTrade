@@ -431,9 +431,14 @@ public struct RootView: View {
                     // that `PortfolioView` shows above its own section picker on iOS. Restored
                     // here using the SAME hoisted header (`PortfolioSummaryHeader`, Task 7) —
                     // no section picker beside it, since the sidebar itself is that picker.
+                    // `onDidReset` (M11.1 UAT F2): the SAME wiring `PortfolioView` gives its
+                    // header — `portfolioPerformanceVM` is a separate instance nothing else
+                    // notifies, and wiring only one of the two hosts would leave this shell
+                    // showing a stale value-goal card after a reset.
                     PortfolioSummaryHeader(viewModel: portfolioViewModel,
                                            settingsVM: settingsVM,
-                                           onExport: { showExportDialog = true })
+                                           onExport: { showExportDialog = true },
+                                           onDidReset: { await portfolioPerformanceVM.onAppear() })
                     Divider().overlay(Theme.hairline)
                     PortfolioSectionContent(section: section, viewModel: portfolioViewModel,
                                             performanceVM: portfolioPerformanceVM,

@@ -66,21 +66,49 @@ final class PerformanceViewModel {
         self.now = now
     }
 
-    /// Loads the expensive report once on first appearance (no-op if already
-    /// loaded/loading), but ALWAYS re-reads the goal — cheap (a single store read) and
-    /// necessary regardless of the `.idle` gate: `ResetPortfolioUseCase` clears goals as a
-    /// side effect of resetting the portfolio, and the macOS portfolio destination reloads
-    /// only `PortfolioViewModel`, never this view model. Without this, returning to
-    /// Performance after a reset would keep showing a goal (with a progress % and ETA)
-    /// that no longer exists — `IncomeSection` doesn't have this bug because it reloads
-    /// via `.task` on every appearance.
+    /// Reloads EVERYTHING on every appearance — deliberately ungated, matching
+    /// `IncomeSection`'s ungated `.task { await viewModel.load() }` (`IncomeSection.swift:46`).
+    ///
+    /// The previous `if case .idle = state { await load() }` gate re-read only the goal:
+    /// `currentValue`, the equity curve, and the whole metric grid are assigned ONLY inside
+    /// `load()`, so once the first load had left `.idle` they froze forever. A portfolio
+    /// reset (or any other out-of-band change to the portfolio) then left the value-goal
+    /// card quoting a dollar figure from a portfolio that no longer existed — the M11.1 UAT
+    /// defect where storage held $500,000 while the card rendered "$100,115.77 / $1,200,000".
+    ///
+    /// The goal is re-read up front, before the (network-bound) recompute, so the card
+    /// corrects itself immediately rather than a round-trip later; `load()` re-reads it
+    /// again at the end, which is harmless.
+    ///
+    /// No `loadTask?.cancel()` here on purpose: `load()` does not poll `Task.isCancelled`
+    /// and `ComputePerformanceMetricsUseCase` swallows every failure into an EMPTY report
+    /// (`try?`), so cancelling a same-selection load would let the cancelled task's empty
+    /// result pass `load()`'s requested-vs-current guard and blank a good report. The guard
+    /// is what keeps a SUPERSEDED result from landing; SwiftUI's `.task` cancellation is what
+    /// bounds this one's lifetime.
+    ///
+    /// The guard does NOT dedupe. Two concurrent loads for the SAME timeframe/benchmark — a
+    /// timeframe reload still in flight when the view re-appears — both run the full network
+    /// fan-out and both write state. They compute the same report, so the outcome is correct,
+    /// but do not read the guard as a de-duplicator: it only rejects results whose selection
+    /// no longer matches.
     func onAppear() async {
         valueGoal = loadGoals().first { $0.kind == .value }
         refreshValueProjection()
-        if case .idle = state { await load() }
+        await load()
     }
 
     /// Recomputes the report for the current timeframe/benchmark selection.
+    ///
+    /// ⚠️ This method does not poll `Task.isCancelled`, and `ComputePerformanceMetricsUseCase`
+    /// swallows a cancellation into `PerformanceReport.empty` like any other failure. So a
+    /// `.task`-cancelled load (view dismissed mid-flight) still runs to completion and writes
+    /// `.empty` plus a cash-floor `currentValue` over whatever good report was there. That
+    /// pre-dates this milestone; what makes it self-heal today is F3 — `onAppear()` reloads
+    /// unconditionally, so the next appearance repairs the state. **Re-introducing an
+    /// `.idle`-style gate "for performance" would therefore resurrect a stale-value bug this
+    /// method has always had.** The durable fix is a cancellation check here, deliberately not
+    /// bundled into the UAT fixes.
     func load() async {
         state = .loading
         let requestedTimeframe = timeframe
@@ -121,10 +149,11 @@ final class PerformanceViewModel {
     ///
     /// The account age fed to `GoalMath` is derived FRESH on every call from a fresh
     /// `fetchPortfolio()` read — never cached and never gated on a first-load flag —
-    /// because `ResetPortfolioUseCase` can clear the portfolio (and its goals) out from
-    /// under this view model, and `onAppear()` re-reads the goal on every appearance for
-    /// exactly that reason. A cached age would let a reset portfolio keep projecting off
-    /// the age of the account it replaced.
+    /// because `ResetPortfolioUseCase` can replace the portfolio out from under this view
+    /// model, and `onAppear()` reloads on every appearance for exactly that reason. A cached
+    /// age would let a reset portfolio keep projecting off the age of the account it
+    /// replaced. (The GOAL itself survives a reset since M11.1 UAT F1 — it is the age and
+    /// the current value that must not.)
     private func refreshValueProjection() {
         guard let goal = valueGoal else { valueGoalProjection = nil; return }
         // ACCOUNT age, not the price window's span: fed from the ONE named derivation

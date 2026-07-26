@@ -53,16 +53,22 @@ public struct SellAssetUseCase: Sendable {
 public struct ResetPortfolioUseCase: Sendable {
     private let store: PortfolioStore
     private let serializer: TradeSerializer
-    private let goalStore: GoalStore?
 
-    /// `goalStore` defaults to `nil` so existing construction sites keep compiling; when
-    /// provided, a reset also clears goals, since a fresh practice run shouldn't inherit
-    /// targets set against the old balance.
-    public init(store: PortfolioStore, serializer: TradeSerializer, goalStore: GoalStore? = nil) {
+    public init(store: PortfolioStore, serializer: TradeSerializer) {
         self.store = store
         self.serializer = serializer
-        self.goalStore = goalStore
     }
+    /// Opens a fresh portfolio at `startingCash`. Goals are deliberately NOT touched.
+    ///
+    /// This use case took a `goalStore: GoalStore? = nil` and cleared every goal until M11.1
+    /// UAT F1. The user ruled that wrong on 2026-07-27: resetting starting capital is "start
+    /// over with more money", not "abandon my plan" — a $120,000 value goal survives a reset
+    /// to $1,000,000 and simply reads as reached. The dependency is REMOVED rather than left
+    /// unused: an optional defaulting to `nil` for compile convenience is exactly how goal
+    /// clearing could be re-armed by a later edit. `GoalUseCasesTests.test_reset_leavesGoalsIntact`
+    /// is the behavioural record; the Kotlin twin (`shared/.../application/ResetPortfolio.kt`)
+    /// dropped its own `goalStore` in the same change.
+    ///
     /// Serialized like `BuyAssetUseCase` — a reset overwriting the portfolio while a
     /// buy/sell/pie mutation is mid-flight would otherwise silently discard it (or vice
     /// versa).
@@ -70,7 +76,6 @@ public struct ResetPortfolioUseCase: Sendable {
         await serializer.run {
             let fresh = Portfolio.starting(cash: startingCash)
             self.store.save(fresh)
-            self.goalStore?.save([])
             return fresh
         }
     }

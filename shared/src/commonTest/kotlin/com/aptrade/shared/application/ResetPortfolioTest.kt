@@ -33,7 +33,7 @@ class ResetPortfolioTest {
                 BigDecimal.parseString("1"), Money.usd("100"), 1_000L, "txn-1",
             ),
         )
-        val fresh = ResetPortfolio(store, Mutex(), MemoryGoalStore()).execute(Money.usd("25000"))
+        val fresh = ResetPortfolio(store, Mutex()).execute(Money.usd("25000"))
         assertEquals(Money.usd("25000"), fresh.cash)
         assertEquals(Money.usd("25000"), fresh.startingCash)
         assertTrue(fresh.positions.isEmpty())
@@ -43,20 +43,50 @@ class ResetPortfolioTest {
     @Test
     fun resetPersistsTheFreshPortfolio() = runTest {
         val store = MemoryPortfolioStore()
-        ResetPortfolio(store, Mutex(), MemoryGoalStore()).execute(Money.usd("25000"))
+        ResetPortfolio(store, Mutex()).execute(Money.usd("25000"))
         assertEquals(Money.usd("25000"), store.portfolio?.cash)
     }
 
-    /** A fresh practice run must not inherit targets set against the old balance. */
+    /** USER RULING 2026-07-27 — this test is the INVERSION of `resetClearsEveryGoal`, which
+     *  asserted the opposite until M11.1 UAT F1. Resetting starting capital is "start over with
+     *  more money", not "abandon my plan": a $120,000 value goal set before a reset to $1,000,000
+     *  must survive and simply recompute as reached.
+     *
+     *  ⚠️ WHAT THIS TEST DOES AND DOES NOT GUARD — read before trusting it.
+     *
+     *  It does NOT reject `goalStore.save(emptyList())` being put back. It cannot:
+     *  [ResetPortfolio] no longer TAKES a [GoalStore], so this test never hands it one, and
+     *  re-adding that line alone leaves the goal assertion green. That was verified in review —
+     *  the literal old implementation was restored and this test still passed.
+     *
+     *  The real guarantee is STRUCTURAL: the dependency is gone, so the clearing has nothing to
+     *  call, and re-arming it means re-adding a constructor parameter and re-wiring three graphs
+     *  (desktop, Android, and the test fixtures) — deliberate edits, not accidents. That is why
+     *  the plan required deleting the parameter rather than leaving it unused.
+     *
+     *  What this test IS: the executable record of the ruling, plus a real check that the reset
+     *  still performs its own job — the portfolio assertions below fail if [ResetPortfolio] is
+     *  gutted, so it cannot pass by merely observing that an untouched object was untouched. The
+     *  behaviourally discriminating goal-survival coverage lives one layer up, where a reset does
+     *  flow past a real `GoalStore`: `desktopApp`'s
+     *  `PortfolioResetAmountTest.resetKeepsTheValueGoalAndRecomputesItAgainstTheFreshBalance`. */
     @Test
-    fun resetClearsEveryGoal() = runTest {
+    fun resetLeavesEveryGoalIntact() = runTest {
         val goals = MemoryGoalStore(
             listOf(
                 PortfolioGoal(GoalKind.Value, Money.usd("500000"), 1L),
                 PortfolioGoal(GoalKind.Income, Money.usd("6000"), 2L),
             ),
         )
-        ResetPortfolio(MemoryPortfolioStore(), Mutex(), goals).execute(Money.usd("25000"))
-        assertTrue(goals.goals.isEmpty())
+        val store = MemoryPortfolioStore()
+        val fresh = ResetPortfolio(store, Mutex()).execute(Money.usd("25000"))
+        assertEquals(
+            listOf(Money.usd("500000"), Money.usd("6000")),
+            goals.goals.map { it.target },
+        )
+        // The reset itself still happened — this test must not be able to pass by doing nothing.
+        assertEquals(Money.usd("25000"), fresh.cash)
+        assertEquals(Money.usd("25000"), fresh.startingCash)
+        assertEquals(Money.usd("25000"), store.portfolio?.cash)
     }
 }

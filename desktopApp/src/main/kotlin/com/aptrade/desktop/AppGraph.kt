@@ -149,7 +149,7 @@ class AppGraph(
     val portfolioMutex = Mutex()
     val buyAsset = BuyAsset(repository, portfolioStore, portfolioMutex)
     val sellAsset = SellAsset(repository, portfolioStore, portfolioMutex)
-    val resetPortfolio = ResetPortfolio(portfolioStore, portfolioMutex, goalStore)
+    val resetPortfolio = ResetPortfolio(portfolioStore, portfolioMutex)
     val loadGoals = LoadGoals(goalStore)
     val saveGoal = SaveGoal(goalStore)
     val removeGoal = RemoveGoal(goalStore)

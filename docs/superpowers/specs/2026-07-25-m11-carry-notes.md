@@ -92,7 +92,7 @@ The plan's `incomeProjection` had no "no income at all" branch. A brand-new user
 
 ### 2.5 Goal persistence diverges from the spec — the as-built is better, keep it
 
-The spec says goals "persist in the portfolio store alongside portfolio state." The as-built persists them in a **separate store under their own key** (`UserDefaultsGoalStore` behind a `GoalStore` port). This turned out to matter: because `PortfolioGoal` is never embedded in another Codable payload, a pre-goals payload simply has no key and degrades to an empty list — the lenient-decoding problem never arises. Reset clears goals explicitly via the use case.
+The spec says goals "persist in the portfolio store alongside portfolio state." The as-built persists them in a **separate store under their own key** (`UserDefaultsGoalStore` behind a `GoalStore` port). This turned out to matter: because `PortfolioGoal` is never embedded in another Codable payload, a pre-goals payload simply has no key and degrades to an empty list — the lenient-decoding problem never arises. **Reset does NOT touch goals** — it did until M11.1 UAT F1 (2026-07-27), when the user ruled that resetting starting capital is "start over with more money," not "abandon my plan"; `ResetPortfolioUseCase`/`ResetPortfolio` no longer take a `GoalStore` at all, on both platforms, so the clearing cannot be re-armed.
 
 Port the **as-built** shape, not the spec sentence.
 
@@ -139,7 +139,15 @@ The equivalence holds only because no held position can have a non-positive quan
 
 ### 3.4 Goal state must re-read on every appearance
 
-Reset clears goals. If a screen gates its reload on a first-load flag, it will keep showing a deleted goal with a progress bar and ETA computed against the pre-reset curve. The Swift wave had exactly this asymmetry — one screen self-healed, its symmetric twin did not.
+The conclusion stands; the original reason ("reset clears goals") no longer applies — since M11.1
+UAT F1 a reset leaves goals alone (§2.5). The real reason is the **current value**, not the goal: a
+reset (or any out-of-band portfolio change) replaces the balance the card measures the goal against,
+and if a screen gates its reload on a first-load flag it keeps rendering a **stale dollar figure and
+therefore a wrong percentage** — UAT saw `$100,115.77 / $1,200,000 · 8%` on a $500,000 portfolio.
+A goal edited on one surface while a second instance of the same screen holds its own copy is the
+other case. Re-reading the goal alone is not enough: the whole report must reload, because
+`currentValue` is only assigned there. The Swift wave had exactly this asymmetry — one screen
+self-healed, its symmetric twin did not.
 
 ### 3.5 The projection type must distinguish all five outcomes
 

@@ -112,10 +112,12 @@ final class IncomeViewModel: ObservableObject {
     private let now: () -> Date
 
     /// Inert default for `loadGoals`/`saveGoal`/`removeGoal` so existing construction
-    /// sites (tests predating goals) keep compiling without wiring a real `GoalStore`.
-    /// Mirrors `ResetPortfolioUseCase`'s `goalStore: GoalStore? = nil` rationale — goals
-    /// simply read back empty and writes are discarded until a real store is supplied
-    /// (always the case in production via `CompositionRoot`).
+    /// sites (tests predating goals) keep compiling without wiring a real `GoalStore`:
+    /// goals read back empty and writes are discarded until a real store is supplied
+    /// (always the case in production via `CompositionRoot`). This is a READ/WRITE seam for
+    /// a view model whose whole job includes goals, not a hidden optional on a use case that
+    /// merely had one — `ResetPortfolioUseCase`'s `goalStore: GoalStore? = nil` was the
+    /// latter and was removed outright in M11.1 UAT F1, so this no longer mirrors it.
     private struct NoOpGoalStore: GoalStore {
         func load() -> [PortfolioGoal] { [] }
         func save(_ goals: [PortfolioGoal]) {}
