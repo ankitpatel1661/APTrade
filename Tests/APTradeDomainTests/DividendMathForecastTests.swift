@@ -54,9 +54,9 @@ final class DividendMathForecastTests: XCTestCase {
     ///
     /// GC4 — this assertion is now tight enough (1e-6) to reject all three wrong implementations,
     /// which the previous 0.015 tolerance accepted:
-    ///   * old instant-sampled algorithm .......... 0.0997255792150729  (2.9e-4 off)
+    ///   * old instant-sampled algorithm .......... 0.0997255792150726  (2.9e-4 off)
     ///   * count-matched halves, `span − 1` divisor  0.0718262523213566  (2.8e-2 off)
-    ///   * inverted root (pow(gap) not pow(1/gap)) . 0.4640044907031498  (3.6e-1 off)
+    ///   * inverted root (pow(gap) not pow(1/gap)) . raw 0.4640044907031498, clamps to 0.25
     func test_growthRate_recoversTenPercentGrowth() {
         let events = quarterly(symbol: "AAA", startYear: 2021, years: 4,
                                startAmount: Decimal(string: "0.25")!,
@@ -174,9 +174,9 @@ final class DividendMathForecastTests: XCTestCase {
     /// come back to double-precision noise (0.10000000000000009 in an independent check).
     ///
     /// Wrong implementations this rejects, on this fixture:
-    ///   * old instant-sampled algorithm ................. 0.1002061561578218 (2.1e-4 off)
-    ///   * count-matched halves, `span − 1` divisor ....... 0.0852985017150911 (1.5e-2 off)
-    ///   * inverted root .................................. clamps to 0.25    (1.5e-1 off)
+    ///   * old instant-sampled algorithm ................. 0.1002061561580262 (2.1e-4 off)
+    ///   * count-matched halves, `span − 1` divisor ....... 0.0852985017150716 (1.5e-2 off)
+    ///   * inverted root (pow(gap) not pow(1/gap)) ........ 0.2373631213240801 (1.4e-1 off)
     /// Kotlin twin: `dividendGrowthRateRecoversAKnownTruePerPaymentCagr`.
     func test_growthRate_recoversAKnownTruePerPaymentCagr() {
         let trueRate = 0.10
@@ -358,7 +358,7 @@ final class DividendMathForecastTests: XCTestCase {
     ///   y4 103.0301 × 1.953125 = $201.2306640625
     ///
     /// The wrong implementations this rejects, on this fixture:
-    ///   * price frozen while the dividend grows → y3 = $159.78515625, y4 = $202.6501…
+    ///   * price frozen while the dividend grows → y3 = $159.78515625, y4 = $202.8522491455078125
     ///   * growth applied to year 1              → y1 = $125
     ///   * DRIP ignored                          → y3 = $156.25, y4 = $195.3125
     func test_forecast_dripWithNonZeroGrowth_reinvestsAtAPriceGrowingWithTheDividend() {
