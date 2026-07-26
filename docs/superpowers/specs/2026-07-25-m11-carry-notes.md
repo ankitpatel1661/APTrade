@@ -192,6 +192,43 @@ Consequence to accept deliberately: a genuinely new account gets the insufficien
 
 ---
 
+## 4b. A hard requirement M11.3 (Android) inherits from M11.2
+
+**Android's reset ignores `AppSettings.defaultStartingCash` when M11.2 ships. M11.3 must close it.**
+
+M11.2 scopes Android to compile-fixes only, so `androidApp/.../portfolio/PortfolioViewModel.kt`'s `fun reset()` takes no amount and calls `resetPortfolio.execute(Portfolio.DEFAULT_STARTING_CASH)` — the hardcoded $100,000 — even though the preference now exists and the Windows desktop honours it (M11.2 Task 9 replaces the same placeholder there and pre-fills the reset dialog from the setting).
+
+Consequence to be aware of: between M11.2 and M11.3, **a user who sets a starting balance sees Windows respect it and Android silently ignore it.** That is a real cross-platform inconsistency, not a cosmetic one — it was accepted deliberately because Android UI is out of M11.2's scope, and it is verified as genuinely owned by M11.3 rather than orphaned.
+
+M11.3's plan must include, as an explicit task step: give Android's `reset()` a `startingCash: Money` parameter, thread the configured default into its reset affordance, and pre-fill it the way desktop does. Pin it with a test that a configured non-default balance actually reaches `resetPortfolio.execute`.
+
+---
+
+## 4c. A REAL DEFECT IN THE SHIPPED SWIFT CODE — found during M11.2, backport owed
+
+**`DividendMath.dividendGrowthRate` manufactures growth from ex-date phase alone. This is live in M11.1 on `main` right now.**
+
+Found 2026-07-25 by the M11.2 Task 5 review, which re-derived it independently in Python and reproduced the failing value byte-for-byte (`0.13678039345929127`).
+
+The function derives a growth rate by dividing two rolling **365-day** dividend sums. But a 365-day window contains **5 quarterly ex-dates sometimes and 4 other times** (4 × 91 = 364 < 365). So a genuinely *flat* quarterly payer reads anywhere from −20% to +25%/yr purely on where its ex-dates happen to sit relative to `asOf`. Compounded over the 30-year horizon pill that is roughly a **45× divergence** in reported income — and it feeds both the income-goal ETA and the forecast chart, i.e. specific dollar figures on screen.
+
+A second structural contributor: the early comparison anchor is `first + SECONDS_PER_YEAR` (365.25 days) while the trailing window is 365 days, so the early window **structurally excludes its own first event by exactly 21,600 seconds** (6 hours).
+
+The existing Swift tests cannot detect it: every growth assertion resolves to exactly 0.0, exactly the clamp maximum, or exactly the clamp minimum. The reviewer verified that **inverting the annualization root entirely** — `ratio.pow(spanYears)` instead of `ratio.pow(1.0 / spanYears)` — leaves every test green. The Swift suite has the same shape and the same blind spot.
+
+**USER RULING 2026-07-25: fix it properly in Kotlin, then backport to Swift.** The Kotlin fix normalizes by payment count so the rate reflects per-payment growth rather than window-membership accident; a flat payer must read exactly 0.0 regardless of ex-date phase.
+
+**Backport checklist for Swift (`Sources/APTradeDomain/DividendMath.swift`), owed and not yet done:**
+1. Port the payment-count normalization from the Kotlin `dividendGrowthRate`.
+2. Add the test the Kotlin fix added: the aliasing fixture (newest event exactly at `asOf`, exact 91-day spacing) must read **0.0**, not 13.7%.
+3. Add a **mid-range** growth test that pins the annualization exponent — without one, an inverted root is undetectable.
+4. Add a **DRIP-with-non-zero-growth** test. Swift has the same gap: every DRIP test uses growth 0 and every growth test has DRIP off, so the reinvestment-price-grows-at-dividend-rate choice is entirely uncovered on both platforms.
+5. Correct the Swift equivalents of the two clamp tests whose comments state raw rates the code does not actually compute.
+
+Until step 1 lands, Kotlin and Swift will report **different growth rates for identical data** — a deliberate, recorded divergence, not a transcription slip.
+
+---
+
 ## 5. Process notes for M11.2
 
 - **Budget a top-tier whole-branch review at close.** Per-task reviews are structurally blind to *seam* defects — every one of §2.2, §2.3, §2.4 and §3.4 lived between two tasks and no single task's review could have seen them. The whole-branch review found all four.
