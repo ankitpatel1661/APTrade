@@ -1,9 +1,27 @@
 package com.aptrade.shared.domain
 
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
+import kotlin.math.pow
 
 /** How frequently a security pays dividends, inferred from historical ex-dates. */
 enum class DividendCadence { Monthly, Quarterly, SemiAnnual, Annual }
+
+/** One projected year of dividend income.
+ *
+ *  [yearOffset] 1 is the trailing twelve-month rate carried forward with NO growth applied — a
+ *  deliberately conservative first year. Growth compounds from [yearOffset] 2 onward. (The Swift
+ *  wave shipped a comment claiming the opposite and had to correct it; carry-notes §3.2.) */
+data class ForecastYear(val yearOffset: Int, val income: Money)
+
+/** One projected dividend payment for a held symbol. ESTIMATED, never declared — the upstream
+ *  data contains historical ex-dates only, so nothing in naming, comments, or UI copy derived
+ *  from this type may imply an announced date (carry-notes §3.7). */
+data class ScheduledDividend(
+    val symbol: String,
+    val exDateEpochSeconds: Long,
+    val perShare: Money,
+    val estimatedAmount: Money,
+)
 
 private const val SECONDS_PER_DAY = 86_400L
 
@@ -95,18 +113,24 @@ object DividendMath {
         // matching Swift's `events.max(by: { $0.exDate < $1.exDate })` semantics exactly.
         val last = events.maxByOrNull { it.exDateEpochSeconds } ?: return null
 
-        val intervalDays = when (cadence) {
-            DividendCadence.Monthly -> 30L
-            DividendCadence.Quarterly -> 91L
-            DividendCadence.SemiAnnual -> 182L
-            DividendCadence.Annual -> 365L
-        }
+        val intervalDays = cadenceIntervalDays(cadence)
 
         return DividendEvent(
             symbol = last.symbol,
             exDateEpochSeconds = last.exDateEpochSeconds + intervalDays * SECONDS_PER_DAY,
             amountPerShare = last.amountPerShare,
         )
+    }
+
+    /** Calendar interval in DAYS for a cadence bucket (Monthly 30, Quarterly 91, SemiAnnual 182,
+     *  Annual 365). Shared by [nextProjected] and [projectedSchedule] so the step sizes are
+     *  defined in exactly one place — the M8 "next projected" path already owned these constants
+     *  inline and a second copy is explicitly forbidden. */
+    private fun cadenceIntervalDays(cadence: DividendCadence): Long = when (cadence) {
+        DividendCadence.Monthly -> 30L
+        DividendCadence.Quarterly -> 91L
+        DividendCadence.SemiAnnual -> 182L
+        DividendCadence.Annual -> 365L
     }
 
     /**
@@ -150,6 +174,182 @@ object DividendMath {
             total = (total ?: Money(BigDecimal.ZERO, contribution.currencyCode)) + contribution
         }
         return total ?: Money(BigDecimal.ZERO, "USD")
+    }
+
+    /** Lower bound on per-symbol annual dividend growth used by forecasts. */
+    val MIN_DIVIDEND_GROWTH: BigDecimal = BigDecimal.parseString("-0.20")
+
+    /** Upper bound on per-symbol annual dividend growth used by forecasts.
+     *
+     *  NOTE (carry-notes §3.6): these two are INDEPENDENT of `GoalMath.MIN/MAX_ANNUAL_GROWTH`
+     *  (−0.50 … 1.00), which clamp a whole portfolio's value growth. They are easy to conflate
+     *  and were deliberately kept separate; both pairs are pinned by exact-equality tests. */
+    val MAX_DIVIDEND_GROWTH: BigDecimal = BigDecimal.parseString("0.25")
+
+    private const val SECONDS_PER_YEAR = 365.25 * 86_400.0
+
+    /**
+     * Annualized growth of a symbol's dividend, measured over at most the last five years of
+     * history and clamped to [MIN_DIVIDEND_GROWTH] … [MAX_DIVIDEND_GROWTH]. Returns 0 when there
+     * is too little history to measure honestly (fewer than two years spanned, or fewer than two
+     * payments).
+     *
+     * The trailing-year rate is compared at EACH END of the window rather than raw per-payment
+     * amounts, so a cadence change (e.g. quarterly -> monthly) doesn't read as growth.
+     *
+     * FRACTIONAL EXPONENTIATION (carry-notes §4): ionspin's `BigDecimal.pow` takes Int/Long only,
+     * so the n-th root routes through Double exactly as the Swift twin does. Tolerance-covered by
+     * the tests; the clamp bounds the blast radius of any Double drift.
+     */
+    fun dividendGrowthRate(events: List<DividendEvent>, asOfEpochSeconds: Long): BigDecimal {
+        val windowStart = asOfEpochSeconds - (5.0 * SECONDS_PER_YEAR).toLong()
+        val window = events
+            .filter { it.exDateEpochSeconds in windowStart..asOfEpochSeconds }
+            .sortedBy { it.exDateEpochSeconds }
+        if (window.size < 2) return BigDecimal.ZERO
+
+        val years = (window.last().exDateEpochSeconds - window.first().exDateEpochSeconds).toDouble() /
+            SECONDS_PER_YEAR
+        if (years < 2.0) return BigDecimal.ZERO
+
+        val early = trailingAnnualPerShare(window, window.first().exDateEpochSeconds + SECONDS_PER_YEAR.toLong())
+        val late = trailingAnnualPerShare(window, asOfEpochSeconds)
+        if (early.amount <= BigDecimal.ZERO || late.amount <= BigDecimal.ZERO) return BigDecimal.ZERO
+
+        val spanYears = years - 1.0
+        if (spanYears < 1.0) return BigDecimal.ZERO
+
+        val ratio = late.amount.divide(early.amount, MONEY_MATH).doubleValue(false)
+        if (ratio <= 0.0) return BigDecimal.ZERO
+        val rate = ratio.pow(1.0 / spanYears) - 1.0
+        if (!rate.isFinite()) return BigDecimal.ZERO
+
+        return clampGrowth(BigDecimal.fromDouble(rate))
+    }
+
+    private fun clampGrowth(value: BigDecimal): BigDecimal = when {
+        value < MIN_DIVIDEND_GROWTH -> MIN_DIVIDEND_GROWTH
+        value > MAX_DIVIDEND_GROWTH -> MAX_DIVIDEND_GROWTH
+        else -> value
+    }
+
+    /**
+     * Projects annual dividend income forward, per holding, summed.
+     *
+     * Year 1 ([ForecastYear.yearOffset] 1) holds each symbol at its current trailing
+     * twelve-month per-share rate — NO growth applied yet, a deliberately conservative choice, and
+     * numerically identical to [projectedAnnualIncome] so a goal card's progress and a forecast
+     * chart never disagree (carry-notes §3.1/§3.2). From year 2 each symbol grows at its clamped
+     * historical [dividendGrowthRate].
+     *
+     * With DRIP on, each year's dividends buy more shares at that symbol's QUOTED price
+     * ([pricesBySymbol]), with the assumed price itself growing at the same rate — a stated
+     * simplification the UI surfaces as a caption.
+     *
+     * [pricesBySymbol] IS REQUIRED AND SITS SECOND, BESIDE [positions] — BINDING (carry-notes
+     * §1.1/§5). It is not defaulted and never trails: with it omitted, every symbol would silently
+     * reinvest at cost basis, so a holding bought at $50 and now trading at $150 would buy THREE
+     * TIMES too many shares per year and overstate year-30 income by roughly 66%. The per-symbol
+     * `?: averageCost` fallback below is for a symbol genuinely missing a quote — it must never
+     * become the behaviour for every symbol via an omitted argument. A defaulted parameter whose
+     * omission is a correctness bug is not a default; it is a re-armed bug with a compiler that
+     * will never complain.
+     */
+    fun incomeForecast(
+        positions: List<Position>,
+        pricesBySymbol: Map<String, Money>,
+        eventsBySymbol: Map<String, List<DividendEvent>>,
+        years: Int,
+        dripEnabled: Boolean,
+        asOfEpochSeconds: Long,
+    ): List<ForecastYear> {
+        if (years <= 0) return emptyList()
+
+        class Projection(
+            var shares: BigDecimal,
+            var perShare: BigDecimal,
+            var price: BigDecimal,
+            val growth: BigDecimal,
+        )
+
+        val projections = mutableListOf<Projection>()
+        var currency = "USD"
+        for (position in positions) {
+            val events = eventsBySymbol[position.asset.symbol] ?: emptyList()
+            val trailing = trailingAnnualPerShare(events, asOfEpochSeconds)
+            // The `quantity > 0` guard is inert while the portfolio model forbids a zero-quantity
+            // position (selling removes the position at zero; overselling is rejected) — which is
+            // exactly what makes year 1 equal projectedAnnualIncome. Keep it: if that model ever
+            // changes, this is where the divergence would start (carry-notes §3.1).
+            if (trailing.amount <= BigDecimal.ZERO || position.quantity <= BigDecimal.ZERO) continue
+            currency = trailing.currencyCode
+            projections += Projection(
+                shares = position.quantity,
+                perShare = trailing.amount,
+                price = pricesBySymbol[position.asset.symbol]?.amount ?: position.averageCost.amount,
+                growth = dividendGrowthRate(events, asOfEpochSeconds),
+            )
+        }
+
+        val out = mutableListOf<ForecastYear>()
+        for (offset in 1..years) {
+            var total = BigDecimal.ZERO
+            for (projection in projections) {
+                if (offset > 1) {
+                    val factor = BigDecimal.ONE + projection.growth
+                    projection.perShare = projection.perShare * factor
+                    projection.price = projection.price * factor
+                }
+                val income = projection.shares * projection.perShare
+                total += income
+                if (dripEnabled && projection.price > BigDecimal.ZERO) {
+                    projection.shares += income.divide(projection.price, MONEY_MATH)
+                }
+            }
+            out += ForecastYear(offset, Money(total, currency))
+        }
+        return out
+    }
+
+    /**
+     * Rolls each holding's inferred payment cadence forward from its last real event, emitting
+     * ESTIMATED payments in `(asOf, through]`, ascending by ex-date.
+     *
+     * Every emitted row is a projection: the upstream feed exposes no forward-declared dividend
+     * dates, so the UI must label each row an estimate (carry-notes §3.7).
+     */
+    fun projectedSchedule(
+        positions: List<Position>,
+        eventsBySymbol: Map<String, List<DividendEvent>>,
+        throughEpochSeconds: Long,
+        asOfEpochSeconds: Long,
+    ): List<ScheduledDividend> {
+        val out = mutableListOf<ScheduledDividend>()
+        for (position in positions) {
+            if (position.quantity <= BigDecimal.ZERO) continue
+            val events = eventsBySymbol[position.asset.symbol] ?: emptyList()
+            val seed = nextProjected(events) ?: continue
+            val cadence = inferredCadence(events) ?: continue
+
+            val step = cadenceIntervalDays(cadence) * SECONDS_PER_DAY
+            var next = seed.exDateEpochSeconds
+            // Roll a stale projection forward until it is genuinely in the future.
+            while (next <= asOfEpochSeconds) next += step
+
+            while (next <= throughEpochSeconds) {
+                out += ScheduledDividend(
+                    symbol = position.asset.symbol,
+                    exDateEpochSeconds = next,
+                    perShare = seed.amountPerShare,
+                    estimatedAmount = Money(
+                        seed.amountPerShare.amount * position.quantity,
+                        seed.amountPerShare.currencyCode,
+                    ),
+                )
+                next += step
+            }
+        }
+        return out.sortedBy { it.exDateEpochSeconds }
     }
 
     // --- UTC epoch-day civil-date math (private copy) -------------------------------------
