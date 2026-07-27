@@ -83,9 +83,20 @@ private func signedMoney(_ money: Money) -> String {
     money.amount > 0 ? "+" + money.formatted : money.formatted
 }
 
-private func signedPercent1dp(_ value: Double) -> String {
-    let sign = value > 0 ? "+" : ""
-    return "\(sign)\(value.formatted(.number.precision(.fractionLength(1))))%"
+/// The Home hero tile's total-return string. `fraction` comes straight off
+/// `HomeViewModel.totalReturnFraction` / `PerformanceMetrics.totalReturnFraction`, so it is
+/// a FRACTION — `0.12` means 12% — and is scaled to percentage points here, once.
+///
+/// Routed through `Percentage.formatted` rather than a bespoke helper on purpose: that is
+/// the same pinned-`en_US`, 2-decimal formatter the day-change `ChangePill` beside this
+/// tile already uses, so the two hero numbers finally agree on decimal separator and
+/// precision as well as on scale. The helper this replaced (`signedPercent1dp`) had no
+/// `× 100`, formatted at 1 decimal place, and used the device locale's separator — it
+/// rendered a 12% total return as "+0.1%" (or "+0,1%" in German). `PerformanceSection`'s
+/// own grid, which always had the `× 100`, showed "12.00%" for the same portfolio at the
+/// same moment; `HomeReturnTileTests` now pins the two against each other.
+func homeTotalReturnText(fraction: Double) -> String {
+    Percentage(value: Decimal(fraction * 100)).formatted
 }
 
 @MainActor
@@ -314,7 +325,7 @@ private func homeStatTile(title: String, value: String, color: Color) -> some Vi
 @ViewBuilder
 private func homeStatsRow(vm: HomeViewModel) -> some View {
     HStack(alignment: .top, spacing: 22) {
-        homeStatTile(title: tr(.totalReturn), value: signedPercent1dp(vm.totalReturnPercent), color: returnColor(vm.totalReturnPercent))
+        homeStatTile(title: tr(.totalReturn), value: homeTotalReturnText(fraction: vm.totalReturnFraction), color: returnColor(vm.totalReturnFraction))
         homeStatTile(title: tr(.cashLabel), value: vm.cash.formatted, color: Theme.textPrimary)
         homeStatTile(title: tr(.incomeYtdLabel), value: vm.incomeYTD.formatted, color: Theme.textPrimary)
     }
@@ -696,7 +707,7 @@ struct HomeViewMac: View {
 
     private var statsCard: some View {
         HStack(spacing: 22) {
-            homeStatTile(title: tr(.totalReturn), value: signedPercent1dp(vm.totalReturnPercent), color: returnColor(vm.totalReturnPercent))
+            homeStatTile(title: tr(.totalReturn), value: homeTotalReturnText(fraction: vm.totalReturnFraction), color: returnColor(vm.totalReturnFraction))
             homeStatTile(title: tr(.cashLabel), value: vm.cash.formatted, color: Theme.textPrimary)
             homeStatTile(title: tr(.incomeYtdLabel), value: vm.incomeYTD.formatted, color: Theme.textPrimary)
         }

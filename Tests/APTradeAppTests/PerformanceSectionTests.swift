@@ -18,8 +18,9 @@ import APTradeDomain
 final class PerformanceSectionTests: XCTestCase {
     private var loadedReport: PerformanceReport {
         PerformanceReport(
-            metrics: PerformanceMetrics(totalReturn: 0.12, annualizedReturn: 0.10, volatility: 0.2,
-                                        maxDrawdown: -0.05, sharpe: 0.4, beta: 1.0, alpha: 0.01),
+            metrics: PerformanceMetrics(totalReturnFraction: 0.12, annualizedReturnFraction: 0.10,
+                                        volatilityFraction: 0.2, maxDrawdownFraction: -0.05,
+                                        sharpe: 0.4, beta: 1.0, alphaFraction: 0.01),
             equityCurve: [EquityPoint(date: Date(timeIntervalSince1970: 0), value: Money(amount: 1_000))],
             benchmarkCurve: [], benchmarkSymbol: "SPY",
             concentration: 0.5, effectiveHoldings: 2, warnings: [], isEmpty: false)

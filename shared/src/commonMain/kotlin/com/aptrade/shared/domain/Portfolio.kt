@@ -29,7 +29,7 @@ data class Portfolio(
      *  RECORDED DIVERGENCE FROM SWIFT (M11.2 kickoff decision 4a.1, carry-notes §2.1): the Swift
      *  twin carries this field with NO reader — total return there derives from the equity
      *  curve's own first point, and the reset flow reads `AppSettings.defaultStartingCash`.
-     *  Kotlin ports it AND gives it a real consumer: `PerformanceMetrics.sinceInceptionReturn`
+     *  Kotlin ports it AND gives it a real consumer: `PerformanceMetrics.sinceInceptionReturnFraction`
      *  (see `FetchPerformanceReport`), which measures return against the balance the user
      *  actually chose rather than against whatever value the priced curve happened to open at.
      *  A $10k practice run and a $1M one must not both report return against the same baseline.

@@ -18,6 +18,40 @@ struct ChartStatItem: Identifiable {
     let color: Color
 }
 
+/// Same idiom as `Money.formatted`/`Percentage.formatted`/`ScreenerView.formatPlain`: a
+/// `NumberFormatter` pinned to `en_US` so the decimal separator doesn't follow the device
+/// region. Returns the unsigned magnitude only — sign, currency symbol, and "%" are
+/// composed by the caller, unlike `Percentage`/`Money` which own the whole string.
+private func formatPlainMagnitude(_ value: Double) -> String {
+    let f = NumberFormatter()
+    f.locale = Locale(identifier: "en_US")
+    f.numberStyle = .decimal
+    f.minimumFractionDigits = 2
+    f.maximumFractionDigits = 2
+    return f.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)
+}
+
+/// The expanded chart's "change" line under its headline value — see `ValueChangeStyle`.
+/// Extracted to a free function (rather than staying a `private var` on the view) so it is
+/// directly testable, matching `homeTotalReturnText` in `HomeView.swift`.
+///
+/// `Double.formatted(.number…)` with no explicit `.locale(...)` follows
+/// `Locale.autoupdatingCurrent` — the device region — not the app's fixed `en_US` display
+/// convention, so under e.g. a German region this printed "+12,30" instead of "+12.30".
+/// Routed through `formatPlainMagnitude` above, which pins the locale explicitly.
+func expandedValueChangeText(changeAmount: Double, changePercent: Double, style: ValueChangeStyle) -> String {
+    let signed = changeAmount >= 0 ? "+" : "−"
+    switch style {
+    case .money:
+        let amount = abs(changeAmount)
+        let pct = changePercent
+        let pctSign = pct >= 0 ? "+" : "−"
+        return "\(signed)$\(formatPlainMagnitude(amount)) (\(pctSign)\(formatPlainMagnitude(abs(pct)))%)"
+    case .percentagePoints:
+        return "\(signed)\(formatPlainMagnitude(abs(changeAmount)))%"
+    }
+}
+
 /// The expanded value chart, rendered **inline** (full width, in the content flow)
 /// rather than as a floating popup — tapping the collapsed sparkline grows this in
 /// place. It carries axes, a hover crosshair, and a headline: either the value at the
@@ -153,16 +187,7 @@ struct ExpandedValueCard: View {
     }
 
     private var changeText: String {
-        let signed = changeAmount >= 0 ? "+" : "−"
-        switch changeStyle {
-        case .money:
-            let amount = abs(changeAmount)
-            let pct = changePercent
-            let pctSign = pct >= 0 ? "+" : "−"
-            return "\(signed)$\(amount.formatted(.number.precision(.fractionLength(2)))) (\(pctSign)\(abs(pct).formatted(.number.precision(.fractionLength(2))))%)"
-        case .percentagePoints:
-            return "\(signed)\(abs(changeAmount).formatted(.number.precision(.fractionLength(2))))%"
-        }
+        expandedValueChangeText(changeAmount: changeAmount, changePercent: changePercent, style: changeStyle)
     }
 
     private var timeLabel: String? {

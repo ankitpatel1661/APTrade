@@ -109,10 +109,13 @@ data class TransactionRowUi(
     val dateText: String,
 )
 
-/** Percent metrics via `formatPercent` (e.g. "+4.84%", "—" only if a percent field were
+/** Percent metrics via [percentMetric] (e.g. "+4.84%", "—" only if a percent field were
  *  nullable — currently all four are always computable, even if 0.0). Sharpe/beta/alpha are
  *  plain 2-decimal text (no "%", no sign forcing) and "—" when the underlying stat is null
- *  (insufficient data / degenerate variance — see RiskMetrics). */
+ *  (insufficient data / degenerate variance — see RiskMetrics).
+ *
+ *  These are DISPLAY STRINGS, already scaled and suffixed. The `…Fraction` sources they come
+ *  from are fractions; [percentMetric] is the one place that conversion happens. */
 data class MetricTexts(
     val totalReturn: String,
     val annualizedReturn: String,
@@ -130,6 +133,19 @@ data class MetricTexts(
 
 private fun plainMetric(value: Double?): String =
     if (value == null) "—" else String.format(Locale.US, "%.2f", value)
+
+/** Renders a `PerformanceMetrics.…Fraction` value for display.
+ *
+ *  `formatPercent` takes percentage POINTS (`formatPercent(4.84) == "+4.84%"`) but every
+ *  `…Fraction` field carries a FRACTION (`0.0484`), so the `× 100` here is the whole point of
+ *  this function existing. Passing a fraction straight into `formatPercent` is the M11.4 defect:
+ *  a 50% gain rendered "+0.50%" on both the Home tile and the Performance grid.
+ *
+ *  Do NOT reach for this with an already-points value — the `…PP` suffix (`totalReturnPP`,
+ *  `targetWeightPP`) marks those, and they go into `formatPercent` directly. And never route
+ *  `sharpe`/`beta` through here: they are dimensionless ratios, not percentages. */
+private fun percentMetric(fraction: Double?): String =
+    if (fraction == null) "—" else formatPercent(fraction * 100.0)
 
 /** One point on the P&L chart scrubber, derived from the same `PerformanceReport`/`points`
  *  list that feeds `performanceValues`. `valueText` and `deltaText` are PRE-FORMATTED,
@@ -482,15 +498,14 @@ class PortfolioViewModel(
             try {
                 val report = fetchPerformanceReport.execute(span.timeframe, benchmark, portfolioSnapshot)
                 val metrics = MetricTexts(
-                    totalReturn = formatPercent(report.metrics.totalReturn),
-                    annualizedReturn = formatPercent(report.metrics.annualizedReturn),
-                    volatility = formatPercent(report.metrics.volatility),
-                    maxDrawdown = formatPercent(report.metrics.maxDrawdown),
+                    totalReturn = percentMetric(report.metrics.totalReturnFraction),
+                    annualizedReturn = percentMetric(report.metrics.annualizedReturnFraction),
+                    volatility = percentMetric(report.metrics.volatilityFraction),
+                    maxDrawdown = percentMetric(report.metrics.maxDrawdownFraction),
                     sharpe = plainMetric(report.metrics.sharpe),
                     beta = plainMetric(report.metrics.beta),
-                    alpha = plainMetric(report.metrics.alpha),
-                    sinceInception = report.metrics.sinceInceptionReturn
-                        ?.let { formatPercent(it) } ?: "—",
+                    alpha = plainMetric(report.metrics.alphaFraction),
+                    sinceInception = percentMetric(report.metrics.sinceInceptionReturnFraction),
                 )
                 equityCurve = report.points
                 // The curve's LAST point is the true current total account value (cash +

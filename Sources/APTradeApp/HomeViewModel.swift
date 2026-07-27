@@ -37,7 +37,10 @@ final class HomeViewModel {
     private(set) var totalValue = Money(amount: 0)
     private(set) var dayChange = Money(amount: 0)
     private(set) var dayChangePercent = Percentage(value: 0)
-    private(set) var totalReturnPercent: Double = 0
+    /// Copied straight off `PerformanceMetrics.totalReturnFraction`, so it is a FRACTION —
+    /// `0.12` means 12%. It was called `totalReturnPercent` while holding exactly this, and
+    /// the Home hero tile believed the name and rendered "+0.1%" for a 12% gain.
+    private(set) var totalReturnFraction: Double = 0
     private(set) var cash = Money(amount: 0)
     private(set) var incomeYTD = Money(amount: 0)
     private(set) var sparkValues: [Double] = []
@@ -59,7 +62,7 @@ final class HomeViewModel {
     /// `loadPortfolio` above, so a portfolio-load failure never blocks the movers row.
     private let ownSymbols: @Sendable () async -> Set<String>
     /// The Performance tab's own equity-curve reconstruction — reused verbatim for both
-    /// `totalReturnPercent` and (trailing ≤30 points of) `sparkValues`.
+    /// `totalReturnFraction` and (trailing ≤30 points of) `sparkValues`.
     private let fetchPerformanceReport: @Sendable () async throws -> PerformanceReport
     /// Wraps the SAME pipeline `IncomeViewModel` runs (YTD + next upcoming payout).
     private let loadIncomeSummary: @Sendable () async throws -> HomeIncomeSummary
@@ -211,12 +214,12 @@ final class HomeViewModel {
     private func refreshEquityCurve() async {
         do {
             let report = try await fetchPerformanceReport()
-            totalReturnPercent = report.metrics.totalReturn
+            totalReturnFraction = report.metrics.totalReturnFraction
             sparkValues = report.equityCurve.suffix(30).map { ($0.value.amount as NSDecimalNumber).doubleValue }
         } catch is CancellationError {
             return
         } catch {
-            totalReturnPercent = 0
+            totalReturnFraction = 0
             sparkValues = []
         }
     }

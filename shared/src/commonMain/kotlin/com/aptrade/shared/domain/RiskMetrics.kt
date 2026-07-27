@@ -4,7 +4,13 @@ import kotlin.math.pow
 import kotlin.math.sqrt
 
 /** Pure risk/return statistics, transcribed from Sources/APTradeDomain/RiskMetrics.swift.
- *  Double domain (statistics, not money). 252 trading periods per year. */
+ *  Double domain (statistics, not money). 252 trading periods per year.
+ *
+ *  ⚠️ Every return-like value here is a FRACTION (`0.5` means 50%), never percentage points.
+ *  They flow into [com.aptrade.shared.application.PerformanceMetrics]' `…Fraction` fields
+ *  unchanged — see that type for why the scale is spelled out in the names, and note that
+ *  `formatPercent` on both UI modules takes percentage POINTS, so a display caller owes the
+ *  `× 100`. [sharpe] and [beta] are the exceptions: dimensionless ratios, not percentages. */
 object RiskMetrics {
     const val TRADING_DAYS_PER_YEAR = 252
 
@@ -16,6 +22,8 @@ object RiskMetrics {
         }
     }
 
+    /** Cumulative (time-weighted) return as a fraction: last / first − 1 (`0.5` = 50%).
+     *  Degenerate input → 0. */
     fun totalReturn(values: List<Double>): Double {
         val first = values.firstOrNull() ?: return 0.0
         val last = values.lastOrNull() ?: return 0.0
@@ -23,6 +31,7 @@ object RiskMetrics {
         return last / first - 1.0
     }
 
+    /** Compound annual growth rate over the series' span, as a fraction (`0.5` = 50%). */
     fun annualizedReturn(values: List<Double>): Double {
         if (values.size < 2) return 0.0
         val total = totalReturn(values)
@@ -30,6 +39,8 @@ object RiskMetrics {
         return (1.0 + total).pow(TRADING_DAYS_PER_YEAR.toDouble() / periods) - 1.0
     }
 
+    /** Sample standard deviation of daily returns, annualized by √252, as a fraction
+     *  (`0.2` = 20%). */
     fun annualizedVolatility(values: List<Double>): Double {
         val returns = dailyReturns(values)
         if (returns.size < 2) return 0.0
@@ -52,14 +63,17 @@ object RiskMetrics {
         return worst
     }
 
+    /** Risk-adjusted excess return — a dimensionless RATIO, not a percentage. Never percent-format
+     *  it. `null` when volatility is zero (undefined). */
     fun sharpe(values: List<Double>, riskFree: Double = 0.04): Double? {
         val vol = annualizedVolatility(values)
         if (vol == 0.0) return null
         return (annualizedReturn(values) - riskFree) / vol
     }
 
-    /** Index-paired from the END (recency pairing — macOS parity; documented calendar
-     *  limitation for crypto-heavy portfolios, ported as-is). */
+    /** Regression slope vs the benchmark — a dimensionless RATIO, not a percentage. Never
+     *  percent-format it. Index-paired from the END (recency pairing — macOS parity; documented
+     *  calendar limitation for crypto-heavy portfolios, ported as-is). */
     fun beta(portfolioValues: List<Double>, benchmarkValues: List<Double>): Double? {
         val p = dailyReturns(portfolioValues)
         val b = dailyReturns(benchmarkValues)
@@ -79,6 +93,8 @@ object RiskMetrics {
         return cov / varB
     }
 
+    /** CAPM alpha as a fraction (`0.01` = 1%): actual annualized return minus what beta predicts
+     *  from the benchmark. */
     fun alpha(portfolioValues: List<Double>, benchmarkValues: List<Double>, riskFree: Double = 0.04): Double? {
         val b = beta(portfolioValues, benchmarkValues) ?: return null
         val rp = annualizedReturn(portfolioValues)

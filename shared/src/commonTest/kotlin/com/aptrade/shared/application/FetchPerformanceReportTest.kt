@@ -68,10 +68,10 @@ class FetchPerformanceReportTest {
         assertEquals(3, report.points.size)
         val values = report.points.map { it.value.amount.doubleValue(false) }
 
-        assertEquals(RiskMetrics.totalReturn(values), report.metrics.totalReturn)
-        assertEquals(RiskMetrics.maxDrawdown(values), report.metrics.maxDrawdown)
-        assertEquals(RiskMetrics.annualizedReturn(values), report.metrics.annualizedReturn)
-        assertEquals(RiskMetrics.annualizedVolatility(values), report.metrics.volatility)
+        assertEquals(RiskMetrics.totalReturn(values), report.metrics.totalReturnFraction)
+        assertEquals(RiskMetrics.maxDrawdown(values), report.metrics.maxDrawdownFraction)
+        assertEquals(RiskMetrics.annualizedReturn(values), report.metrics.annualizedReturnFraction)
+        assertEquals(RiskMetrics.annualizedVolatility(values), report.metrics.volatilityFraction)
     }
 
     @Test
@@ -99,7 +99,7 @@ class FetchPerformanceReportTest {
         assertNotNull(report.benchmarkCloses)
         assertEquals(spyHistory.map { it.close.amount.doubleValue(false) }, report.benchmarkCloses)
         assertNotNull(report.metrics.beta)
-        assertNotNull(report.metrics.alpha)
+        assertNotNull(report.metrics.alphaFraction)
     }
 
     @Test
@@ -176,11 +176,11 @@ class FetchPerformanceReportTest {
 
         assertNull(report.benchmarkCloses)
         assertNull(report.metrics.beta)
-        assertNull(report.metrics.alpha)
+        assertNull(report.metrics.alphaFraction)
         assertEquals(2, report.points.size)
         val values = report.points.map { it.value.amount.doubleValue(false) }
-        assertEquals(RiskMetrics.totalReturn(values), report.metrics.totalReturn)
-        assertEquals(RiskMetrics.maxDrawdown(values), report.metrics.maxDrawdown)
+        assertEquals(RiskMetrics.totalReturn(values), report.metrics.totalReturnFraction)
+        assertEquals(RiskMetrics.maxDrawdown(values), report.metrics.maxDrawdownFraction)
     }
 
     @Test
@@ -224,13 +224,13 @@ class FetchPerformanceReportTest {
 
         assertEquals(emptyList(), report.points)
         assertNull(report.benchmarkCloses)
-        assertEquals(0.0, report.metrics.totalReturn)
-        assertEquals(0.0, report.metrics.annualizedReturn)
-        assertEquals(0.0, report.metrics.volatility)
-        assertEquals(0.0, report.metrics.maxDrawdown)
+        assertEquals(0.0, report.metrics.totalReturnFraction)
+        assertEquals(0.0, report.metrics.annualizedReturnFraction)
+        assertEquals(0.0, report.metrics.volatilityFraction)
+        assertEquals(0.0, report.metrics.maxDrawdownFraction)
         assertNull(report.metrics.sharpe)
         assertNull(report.metrics.beta)
-        assertNull(report.metrics.alpha)
+        assertNull(report.metrics.alphaFraction)
         assertTrue(!benchmarkFetched, "empty portfolio must short-circuit before fetching the benchmark")
     }
 

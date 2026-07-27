@@ -519,8 +519,14 @@ class PortfolioViewModelTest {
         assertNotNull(s.metrics)
         // Only 2 points -> 1 daily return -> volatility needs >=2 returns -> sharpe is null -> "—"
         assertEquals("—", s.metrics!!.sharpe)
-        assertNotNull(s.metrics!!.totalReturn)
-        assertTrue(s.metrics!!.totalReturn.endsWith("%"))
+        // FULL STRING, never a suffix. This assertion used to read
+        // `assertTrue(s.metrics!!.totalReturn.endsWith("%"))`, which "0.12%" and "12.00%" both
+        // satisfy — so it could not fail for ANY scaling error, and that is exactly how a
+        // 100x-too-small percentage shipped on every Kotlin surface (M11.4).
+        //   curve: 99,000 cash + 10 AAPL @ $100 = $100,000  ->  99,000 + 10 @ $110 = $100,100
+        //   totalReturnFraction = 100,100 / 100,000 - 1 = 0.001  ->  0.10 points  ->  "+0.10%"
+        // Feeding the fraction straight to formatPercent (the defect) rounds to "0.00%" instead.
+        assertEquals("+0.10%", s.metrics!!.totalReturn)
     }
 
     @Test
