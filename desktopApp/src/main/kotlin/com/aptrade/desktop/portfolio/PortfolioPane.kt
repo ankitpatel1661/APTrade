@@ -53,12 +53,15 @@ import com.aptrade.desktop.designkit.LiveBadge
 import com.aptrade.desktop.designkit.StatTile
 import com.aptrade.desktop.designkit.SuperscriptPrice
 import com.aptrade.desktop.designkit.formatPercent
+import com.aptrade.desktop.goals.GoalCardUi
+import com.aptrade.desktop.goals.ProgressBar
 import com.aptrade.shared.l10n.L10n
 import com.aptrade.desktop.l10n.tr
 import com.aptrade.desktop.plans.WizardTextField
 import com.aptrade.shared.domain.AllocationSlice
 import com.aptrade.shared.domain.AmountInput
 import com.aptrade.shared.domain.Money
+import kotlin.math.roundToInt
 
 /** The four content sections beneath the summary header (M10.2 Task 3). Hoisted PUBLIC so
  *  `ui.AppShell`'s sidebar can drive it directly — the sidebar item IS the section picker
@@ -175,6 +178,80 @@ fun PortfolioPane(
 
 // MARK: - Summary
 
+/** Everything the header's goal strip renders, and nothing else (M11.3 Task 3; Swift twin:
+ *  `PortfolioSummaryHeader.GoalStrip`, Task 2). Three primitives, deliberately, so this shape
+ *  can be mirrored on Android (Task 6) without carrying a Compose- or Swift-specific type.
+ *
+ *  Carries **no current value**: the header already shows TOTAL VALUE in display type two lines
+ *  above, so repeating it here would be the same number twice.
+ */
+internal data class GoalStrip(
+    /** Bar width, **clamped** to `0..1` — a portfolio at 833% of its target must fill the bar,
+     *  never overflow it. */
+    val barFraction: Double,
+    /** Whole percent, **unclamped**: 833 stays 833. The clamp belongs to the bar's geometry,
+     *  not to the reading. Rounded (never truncated) so it matches [GoalCard]'s
+     *  `(ui.fraction * 100).roundToInt()` digit for digit (GC2) — a strip reading 832% beside a
+     *  card reading 833% would be a defect. */
+    val percent: Int,
+    /** The target, via [GoalCardUi.targetText] — no compact "$1.2M" abbreviation. */
+    val targetText: String,
+)
+
+/** Maps the value goal's already-computed card state to the strip's payload, or `null` when no
+ *  value goal is set — in which case the header renders **nothing**: no empty bar, no "Set a
+ *  goal" prompt, no click target. The header is a readout; setting a goal stays on the
+ *  Performance card, where the affordance already exists.
+ *
+ *  GC2 (binding): consumes [GoalCardUi.fraction] — already computed exactly once via
+ *  `GoalMath.progress` inside `goalCardUi(...)` — and never re-derives a second fraction from
+ *  raw current/target values. There IS no raw current/target here to re-derive from; that is
+ *  the point of taking [GoalCardUi] rather than `(PortfolioGoal?, Money)` as Swift's twin does.
+ */
+internal fun goalStrip(valueGoal: GoalCardUi?): GoalStrip? {
+    if (valueGoal == null) return null
+    val fraction = valueGoal.fraction
+    return GoalStrip(
+        barFraction = fraction.coerceAtMost(1.0),
+        percent = (fraction * 100).roundToInt(),
+        targetText = valueGoal.targetText,
+    )
+}
+
+/** `GOAL ▬▬▬▬░░░░ $120,000 833%`. Hidden entirely when [goalStrip] returns `null`. Reuses
+ *  [ProgressBar] (`goals/GoalCard.kt`) rather than drawing a second bar. */
+@Composable
+private fun GoalStripRow(strip: GoalStrip) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            tr(L10n.Key.GoalShort).uppercase(),
+            style = TextStyle(
+                fontFamily = InterFamily, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                color = DK.textTertiary, letterSpacing = 1.sp,
+            ),
+        )
+        Box(Modifier.weight(1f)) {
+            ProgressBar(strip.barFraction)
+        }
+        Text(
+            strip.targetText,
+            style = TextStyle(
+                fontFamily = InterFamily, fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                color = DK.textSecondary, fontFeatureSettings = "tnum",
+            ),
+            maxLines = 1,
+        )
+        Text(
+            "${strip.percent}%",
+            style = TextStyle(
+                fontFamily = InterFamily, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                color = DK.gold, fontFeatureSettings = "tnum",
+            ),
+            maxLines = 1,
+        )
+    }
+}
+
 @Composable
 private fun SummaryHeader(
     state: PortfolioUiState,
@@ -244,6 +321,7 @@ private fun SummaryHeader(
                 valueColor = signColor(state.realizedPositive),
             )
         }
+        goalStrip(state.valueGoal)?.let { strip -> GoalStripRow(strip) }
     }
 }
 
