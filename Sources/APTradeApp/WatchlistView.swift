@@ -1,6 +1,18 @@
 import SwiftUI
 import APTradeDomain
 
+/// The expanded average-day-change sparkline's per-point label. `value` is already in
+/// percentage points (e.g. `3.21` means `3.21%`), matching `changeStyle: .percentagePoints`
+/// at both call sites below. Routed through `Percentage.formatted` — the same idiom as
+/// `HomeView.homeTotalReturnText` and `ScreenerView.formatSignedPercent` — rather than
+/// `Double.formatted(.number…)`, which has no explicit `.locale(...)` and so followed the
+/// device region: under e.g. a German region it printed "+3,21%" instead of "+3.21%".
+/// Extracted to a named function (rather than staying an inline closure literal at each
+/// `#if os` branch) so it is directly testable via `@testable import`.
+func watchlistAverageDayChangeText(_ value: Double) -> String {
+    Percentage(value: Decimal(value)).formatted
+}
+
 struct WatchlistView: View {
     var onOpenSearch: (() -> Void)? = nil
     var onOpenAccount: (() -> Void)? = nil
@@ -35,7 +47,7 @@ struct WatchlistView: View {
                             title: tr(.avgDayChangeTitle),
                             values: viewModel.averageSpark,
                             color: Theme.changeColor(viewModel.averageChange),
-                            format: { "\($0 >= 0 ? "+" : "")\($0.formatted(.number.precision(.fractionLength(2))))%" },
+                            format: watchlistAverageDayChangeText,
                             changeStyle: .percentagePoints,
                             onClose: { withAnimation(chartSpring) { showChart = false } }
                         )
@@ -110,7 +122,7 @@ struct WatchlistView: View {
                     title: tr(.avgDayChangeTitle),
                     values: viewModel.averageSpark,
                     color: Theme.changeColor(viewModel.averageChange),
-                    format: { "\($0 >= 0 ? "+" : "")\($0.formatted(.number.precision(.fractionLength(2))))%" },
+                    format: watchlistAverageDayChangeText,
                     changeStyle: .percentagePoints,
                     onClose: { withAnimation(chartSpring) { showChart = false } }
                 )
