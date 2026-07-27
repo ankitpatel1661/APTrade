@@ -117,13 +117,13 @@ struct PerformanceSection: View {
     private func metricGrid(_ m: PerformanceMetrics) -> some View {
         let columns = [GridItem(.adaptive(minimum: 150), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
-            MetricCard(title: tr(.totalReturn), value: percent(m.totalReturn), positive: m.totalReturn >= 0)
-            MetricCard(title: tr(.annualizedReturn), value: percent(m.annualizedReturn), positive: m.annualizedReturn >= 0)
-            MetricCard(title: tr(.volatility), value: percent(m.volatility), positive: nil)
-            MetricCard(title: tr(.maxDrawdown), value: percent(m.maxDrawdown), positive: false)
+            MetricCard(title: tr(.totalReturn), value: Self.percent(m.totalReturnFraction), positive: m.totalReturnFraction >= 0)
+            MetricCard(title: tr(.annualizedReturn), value: Self.percent(m.annualizedReturnFraction), positive: m.annualizedReturnFraction >= 0)
+            MetricCard(title: tr(.volatility), value: Self.percent(m.volatilityFraction), positive: nil)
+            MetricCard(title: tr(.maxDrawdown), value: Self.percent(m.maxDrawdownFraction), positive: false)
             MetricCard(title: tr(.sharpe), value: ratio(m.sharpe), positive: (m.sharpe ?? 0) >= 0)
             MetricCard(title: tr(.beta), value: ratio(m.beta), positive: nil)
-            MetricCard(title: tr(.alpha), value: m.alpha.map { percent($0) } ?? "—", positive: (m.alpha ?? 0) >= 0)
+            MetricCard(title: tr(.alpha), value: m.alphaFraction.map { Self.percent($0) } ?? "—", positive: (m.alphaFraction ?? 0) >= 0)
         }
     }
 
@@ -176,9 +176,9 @@ struct PerformanceSection: View {
     private func warningText(_ w: ConcentrationWarning) -> String {
         switch w {
         case .singleName(let label, let weight):
-            return String(format: tr(.concentrationWarningFormat), label, percent(weight))
+            return String(format: tr(.concentrationWarningFormat), label, Self.percent(weight))
         case .assetClass(let kind, let weight):
-            return String(format: tr(.concentrationWarningFormat), assetClassLabel(kind), percent(weight))
+            return String(format: tr(.concentrationWarningFormat), assetClassLabel(kind), Self.percent(weight))
         }
     }
 
@@ -196,7 +196,12 @@ struct PerformanceSection: View {
 
     // MARK: Formatting helpers
 
-    private func percent(_ v: Double) -> String { String(format: "%.2f%%", v * 100) }
+    /// Renders a FRACTION (`0.12` → "12.00%") — the `× 100` is the whole point, and this
+    /// grid has always had it. Exposed (`static`, non-private) purely so a test can assert
+    /// the full rendered string against the Home hero tile's, which for years disagreed
+    /// with this one by exactly 100×. `String(format:)` takes no locale, so the decimal
+    /// separator is "." on every device — deliberately, and not a Task-3 formatter.
+    static func percent(_ v: Double) -> String { String(format: "%.2f%%", v * 100) }
     private func ratio(_ v: Double?) -> String { v.map { String(format: "%.2f", $0) } ?? "—" }
 
     /// Rebase a value series to 100 at its first point for a like-for-like overlay.

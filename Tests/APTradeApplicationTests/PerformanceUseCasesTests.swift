@@ -67,7 +67,7 @@ final class PerformanceUseCasesTests: XCTestCase {
         let report = await useCase(timeframe: .oneYear, benchmark: "SPY")
         XCTAssertFalse(report.isEmpty)
         XCTAssertGreaterThan(report.equityCurve.count, 1)
-        XCTAssertGreaterThan(report.metrics.totalReturn, 0)          // rising prices
+        XCTAssertGreaterThan(report.metrics.totalReturnFraction, 0)          // rising prices
         XCTAssertNotNil(report.metrics.beta)                          // benchmark available
         XCTAssertEqual(report.benchmarkSymbol, "SPY")
         XCTAssertFalse(report.benchmarkCurve.isEmpty)
@@ -78,9 +78,9 @@ final class PerformanceUseCasesTests: XCTestCase {
         let useCase = ComputePerformanceMetricsUseCase(repository: RisingRepo(benchmarkFails: true), store: MemoryStore(portfolioWithAAPL()))
         let report = await useCase(timeframe: .oneYear, benchmark: "SPY")
         XCTAssertFalse(report.isEmpty)
-        XCTAssertGreaterThan(report.metrics.totalReturn, 0)
+        XCTAssertGreaterThan(report.metrics.totalReturnFraction, 0)
         XCTAssertNil(report.metrics.beta)            // no benchmark → no beta
-        XCTAssertNil(report.metrics.alpha)
+        XCTAssertNil(report.metrics.alphaFraction)
         XCTAssertTrue(report.benchmarkCurve.isEmpty)
     }
 

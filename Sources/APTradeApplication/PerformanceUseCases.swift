@@ -27,8 +27,9 @@ public struct PerformanceReport: Equatable, Sendable {
     }
 
     public static let empty = PerformanceReport(
-        metrics: PerformanceMetrics(totalReturn: 0, annualizedReturn: 0, volatility: 0,
-                                    maxDrawdown: 0, sharpe: nil, beta: nil, alpha: nil),
+        metrics: PerformanceMetrics(totalReturnFraction: 0, annualizedReturnFraction: 0,
+                                    volatilityFraction: 0, maxDrawdownFraction: 0,
+                                    sharpe: nil, beta: nil, alphaFraction: nil),
         equityCurve: [], benchmarkCurve: [], benchmarkSymbol: "",
         concentration: 0, effectiveHoldings: 0, warnings: [], isEmpty: true)
 }
@@ -99,13 +100,14 @@ public struct ComputePerformanceMetricsUseCase: Sendable {
             }
         }
 
+        // `RiskMetrics` already returns fractions, so these map across 1:1 with no scaling.
         let metrics = PerformanceMetrics(
-            totalReturn: RiskMetrics.totalReturn(values),
-            annualizedReturn: annual,
-            volatility: vol,
-            maxDrawdown: RiskMetrics.maxDrawdown(values),
+            totalReturnFraction: RiskMetrics.totalReturn(values),
+            annualizedReturnFraction: annual,
+            volatilityFraction: vol,
+            maxDrawdownFraction: RiskMetrics.maxDrawdown(values),
             sharpe: RiskMetrics.sharpe(annualizedReturn: annual, annualizedVolatility: vol, riskFree: riskFreeRate),
-            beta: beta, alpha: alpha)
+            beta: beta, alphaFraction: alpha)
 
         let weights = currentWeights(portfolio: portfolio, histories: histories)
         let rawWeights = weights.map(\.weight)

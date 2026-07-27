@@ -39,14 +39,16 @@ final class HomeViewModelTests: XCTestCase {
         Quote(symbol: symbol, price: usd(price), previousClose: usd(previousClose))
     }
 
-    private func report(totalReturn: Double, curveValues: [Double]) -> PerformanceReport {
+    private func report(totalReturnFraction: Double, curveValues: [Double]) -> PerformanceReport {
         let curve = curveValues.enumerated().map { index, value in
             EquityPoint(date: Date(timeIntervalSince1970: TimeInterval(index) * 86_400),
                        value: Money(amount: Decimal(value)))
         }
         return PerformanceReport(
-            metrics: PerformanceMetrics(totalReturn: totalReturn, annualizedReturn: 0, volatility: 0,
-                                        maxDrawdown: 0, sharpe: nil, beta: nil, alpha: nil),
+            metrics: PerformanceMetrics(totalReturnFraction: totalReturnFraction,
+                                        annualizedReturnFraction: 0, volatilityFraction: 0,
+                                        maxDrawdownFraction: 0, sharpe: nil, beta: nil,
+                                        alphaFraction: nil),
             equityCurve: curve, benchmarkCurve: [], benchmarkSymbol: "SPY",
             concentration: 0, effectiveHoldings: 0, warnings: [], isEmpty: false)
     }
@@ -333,19 +335,20 @@ final class HomeViewModelTests: XCTestCase {
 
     func test_sparkValues_takesAtMostTrailing30Points() async {
         let values = (0..<50).map(Double.init) // 50 points: 0...49
-        let perfReport = report(totalReturn: 0.12, curveValues: values)
+        let perfReport = report(totalReturnFraction: 0.12, curveValues: values)
         let vm = makeVM(performanceReport: { perfReport })
 
         await vm.refresh()
 
         XCTAssertEqual(vm.sparkValues.count, 30)
         XCTAssertEqual(vm.sparkValues, Array((20..<50).map(Double.init))) // the trailing 30
-        XCTAssertEqual(vm.totalReturnPercent, 0.12)
+        // Carried across UNSCALED — the view model holds the domain's fraction verbatim.
+        XCTAssertEqual(vm.totalReturnFraction, 0.12)
     }
 
     func test_sparkValues_fewerThan30_passesThroughAllPoints() async {
         let values: [Double] = [10, 11, 12]
-        let perfReport = report(totalReturn: 0, curveValues: values)
+        let perfReport = report(totalReturnFraction: 0, curveValues: values)
         let vm = makeVM(performanceReport: { perfReport })
 
         await vm.refresh()
