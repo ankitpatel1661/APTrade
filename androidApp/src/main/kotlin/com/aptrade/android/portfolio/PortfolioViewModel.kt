@@ -2,6 +2,8 @@ package com.aptrade.android.portfolio
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.aptrade.android.goals.GoalCardUi
+import com.aptrade.android.goals.goalCardUi
 import com.aptrade.android.l10n.tr
 import com.aptrade.android.ui.formatPercent
 import com.aptrade.android.ui.formatShares
@@ -13,22 +15,31 @@ import com.aptrade.shared.application.FetchDividendEvents
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchPerformanceReport
 import com.aptrade.shared.application.FetchPortfolio
+import com.aptrade.shared.application.LoadGoals
 import com.aptrade.shared.application.QuoteError
+import com.aptrade.shared.application.RemoveGoal
 import com.aptrade.shared.application.ResetPortfolio
+import com.aptrade.shared.application.SaveGoal
 import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.domain.AllocationSlice
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.DividendEvent
 import com.aptrade.shared.domain.DividendMath
+import com.aptrade.shared.domain.GoalKind
+import com.aptrade.shared.domain.GoalMath
+import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.Portfolio
 import com.aptrade.shared.domain.PortfolioExport
+import com.aptrade.shared.domain.PortfolioGoal
+import com.aptrade.shared.domain.PortfolioPerformancePoint
 import com.aptrade.shared.domain.Quote
 import com.aptrade.shared.domain.Timeframe
 import com.aptrade.shared.domain.TradeError
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.domain.allocationByHolding
 import com.aptrade.shared.domain.allocationByKind
+import com.aptrade.shared.domain.goalCurrentValueFloor
 import com.aptrade.shared.domain.realizedPnL
 import com.aptrade.shared.domain.renderCsv
 import com.aptrade.shared.domain.renderJson
@@ -141,6 +152,9 @@ data class PortfolioUiState(
     val performanceValueTexts: List<String> = emptyList(),
     val performanceDates: List<Long> = emptyList(),
     val metrics: MetricTexts? = null,
+    /** `null` when no value goal is set. The card still RENDERS (carry-notes §1.3) — this only
+     *  selects between its progress body and its "Set a goal" affordance. */
+    val valueGoal: GoalCardUi? = null,
     val error: String? = null,
     val tradeError: String? = null,
 )
@@ -197,6 +211,9 @@ class PortfolioViewModel(
     private val sellAsset: SellAsset,
     private val resetPortfolio: ResetPortfolio,
     private val fetchPerformanceReport: FetchPerformanceReport,
+    private val loadGoals: LoadGoals,
+    private val saveGoal: SaveGoal,
+    private val removeGoal: RemoveGoal,
     private val nowEpochSeconds: () -> Long,
     private val tickMillis: Long = 15_000,
     private val zoneId: ZoneId = ZoneId.systemDefault(),
@@ -210,6 +227,13 @@ class PortfolioViewModel(
     private var portfolio: Portfolio = Portfolio.starting()
     private var quotes: Map<String, Quote> = emptyMap()
     private var pollJob: Job? = null
+
+    // Value-goal inputs, kept off [PortfolioUiState] because they are model values, not display
+    // text: the state exposes only the mapped [GoalCardUi]. Refreshed together by
+    // [loadPerformanceReport] so a projection is never computed from a mix of snapshots.
+    private var equityCurve: List<PortfolioPerformancePoint> = emptyList()
+    private var currentValue: Money = Money.usd("0")
+    private var valueGoal: PortfolioGoal? = null
 
     /** Starts the load + 15s quote poll. Idempotent: a second call while already running is a
      *  no-op. The performance report is a ONE-SHOT on tick 0 — never refetched on later ticks. */
@@ -252,6 +276,46 @@ class PortfolioViewModel(
         if (_state.value.benchmark == symbol) return
         _state.update { it.copy(benchmark = symbol) }
         loadPerformanceReport()
+    }
+
+    /** Sets (or replaces) the whole-portfolio value goal shown on Performance. Persists FIRST,
+     *  then recomputes the card's projection against the CURRENT curve/current-value snapshot —
+     *  the same order desktop `PortfolioViewModel.setValueGoal` uses, so a save failure can never
+     *  leave the screen showing a goal that isn't on disk. */
+    fun setValueGoal(target: Money) {
+        val goal = PortfolioGoal(GoalKind.Value, target, nowEpochSeconds())
+        viewModelScope.launch {
+            saveGoal.execute(goal)
+            valueGoal = goal
+            refreshValueProjection()
+        }
+    }
+
+    fun removeValueGoal() {
+        viewModelScope.launch {
+            removeGoal.execute(GoalKind.Value)
+            valueGoal = null
+            _state.update { it.copy(valueGoal = null) }
+        }
+    }
+
+    /** Recomputes the value-goal card's progress/projection from the CURRENT [valueGoal] /
+     *  [currentValue] / [equityCurve] snapshot. Called after every load, set and remove so the
+     *  card never shows a projection computed against stale inputs. */
+    private fun refreshValueProjection() {
+        val goal = valueGoal
+        if (goal == null) {
+            _state.update { it.copy(valueGoal = null) }
+            return
+        }
+        // ACCOUNT AGE, not the price window's span (M11.2 kickoff decision 4a.2): fed from the ONE
+        // named derivation `Portfolio.inceptionEpochSeconds()`, the same signal
+        // FetchPortfolioPerformance's sinceInception trim uses, so the metric and the floor cannot
+        // drift apart. A brand-new account holding a seasoned symbol therefore honestly reports
+        // insufficient history instead of extrapolating three weeks of price movement.
+        val accountAgeDays = GoalMath.accountAgeDays(portfolio.inceptionEpochSeconds(), nowEpochSeconds())
+        val projection = GoalMath.valueProjection(currentValue, goal.target, equityCurve, accountAgeDays)
+        _state.update { it.copy(valueGoal = goalCardUi(goal, currentValue, projection)) }
     }
 
     fun buy(asset: Asset, quantityText: String) {
@@ -416,6 +480,16 @@ class PortfolioViewModel(
                     beta = plainMetric(report.metrics.beta),
                     alpha = plainMetric(report.metrics.alpha),
                 )
+                equityCurve = report.points
+                // The curve's LAST point is the true current total account value (cash +
+                // holdings). When there is no curve at all, fall back to cash + every position's
+                // OWN cost basis — never a hardcoded zero (carry-notes §2.3). The curve is empty
+                // in two distinct situations and only one is exotic: genuinely all-cash
+                // (FetchPortfolioPerformance returns emptyList() for a position-less portfolio),
+                // and positions-exist-but-history-failed, which every offline or rate-limited
+                // session hits. Neither may fabricate a dollar figure nobody's portfolio holds.
+                currentValue = report.points.lastOrNull()?.value ?: portfolioSnapshot.goalCurrentValueFloor()
+                valueGoal = loadGoals.execute().firstOrNull { it.kind == GoalKind.Value }
                 _state.update {
                     it.copy(
                         performanceValues = report.points.map { p -> p.value.amount.doubleValue(false) },
@@ -426,10 +500,15 @@ class PortfolioViewModel(
                         metrics = metrics,
                     )
                 }
+                refreshValueProjection()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: QuoteError) {
-                // Portfolio-side history failure: leave prior report state as last-good.
+                // Portfolio-side history failure: leave prior report state as last-good, but the
+                // goal card must still show an honest current value rather than nothing.
+                if (equityCurve.isEmpty()) currentValue = portfolioSnapshot.goalCurrentValueFloor()
+                valueGoal = loadGoals.execute().firstOrNull { it.kind == GoalKind.Value }
+                refreshValueProjection()
             }
         }
     }

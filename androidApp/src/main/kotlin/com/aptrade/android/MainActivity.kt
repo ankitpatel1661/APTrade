@@ -40,6 +40,9 @@ import com.aptrade.android.settings.SettingsScreen
 import com.aptrade.android.settings.SettingsViewModel
 import com.aptrade.android.ui.theme.APTradeTheme
 import com.aptrade.shared.application.FetchDividendEvents
+import com.aptrade.shared.application.LoadGoals
+import com.aptrade.shared.application.RemoveGoal
+import com.aptrade.shared.application.SaveGoal
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -156,6 +159,13 @@ fun AppNavHost(settingsViewModel: SettingsViewModel) {
             sellAsset = portfolio.sellAsset,
             resetPortfolio = portfolio.resetPortfolio,
             fetchPerformanceReport = portfolio.fetchPerformanceReport,
+            // M11.3 Task 4: the three goal use cases, all built over AppGraph's ONE `goalStore`
+            // (filesDir/aptrade/goals.json) — the store that has sat there deliberately unwired
+            // since M11.2 Task 4 precisely so this wave would pick up its path and format rather
+            // than invent a second one.
+            loadGoals = LoadGoals(AppGraph.goalStore),
+            saveGoal = SaveGoal(AppGraph.goalStore),
+            removeGoal = RemoveGoal(AppGraph.goalStore),
             nowEpochSeconds = { System.currentTimeMillis() / 1000 },
             notifyOrderFill = AppGraph.notifyOrderFill,
             fetchDividendEvents = FetchDividendEvents(portfolio.repository),

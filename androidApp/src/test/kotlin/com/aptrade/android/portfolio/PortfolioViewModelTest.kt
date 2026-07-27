@@ -2,25 +2,32 @@ package com.aptrade.android.portfolio
 
 import com.aptrade.android.FakeMarketDataRepository
 import com.aptrade.android.FakePortfolioStore
+import com.aptrade.android.ui.money
 import com.aptrade.shared.application.BuyAsset
 import com.aptrade.shared.application.FetchDividendEvents
 import com.aptrade.shared.application.FetchMarketQuotes
 import com.aptrade.shared.application.FetchPerformanceReport
 import com.aptrade.shared.application.FetchPortfolio
 import com.aptrade.shared.application.FetchPortfolioPerformance
+import com.aptrade.shared.application.GoalStore
+import com.aptrade.shared.application.LoadGoals
 import com.aptrade.shared.application.QuoteError
+import com.aptrade.shared.application.RemoveGoal
 import com.aptrade.shared.application.ResetPortfolio
+import com.aptrade.shared.application.SaveGoal
 import com.aptrade.shared.application.SellAsset
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.AssetKind
 import com.aptrade.shared.domain.DividendEvent
 import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.Portfolio
+import com.aptrade.shared.domain.PortfolioGoal
 import com.aptrade.shared.domain.Position
 import com.aptrade.shared.domain.PricePoint
 import com.aptrade.shared.domain.Quote
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.domain.Transaction
+import com.aptrade.shared.domain.goalCurrentValueFloor
 import com.ionspin.kotlin.bignum.decimal.BigDecimal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -39,13 +46,148 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+/** Trivial in-memory [GoalStore] fake. `internal` at file scope (M11.3 Task 4) so `ValueGoalTest`
+ *  — a different file in this same package — can inspect what a VM actually persisted, mirroring
+ *  desktop `PortfolioViewModelTest.kt`'s `InMemoryGoalStore`. */
+internal class InMemoryGoalStore : GoalStore {
+    var goals: List<PortfolioGoal> = emptyList()
+    override suspend fun load(): List<PortfolioGoal> = goals
+    override suspend fun save(goals: List<PortfolioGoal>) { this.goals = goals }
+}
+
+// `internal`, not file-private: ValueGoalTest (same package, different file) reuses these rather
+// than declaring a second AAPL/quote pair that could drift from the one this fixture seeds.
+internal val aapl = Asset("AAPL", "Apple Inc.", AssetKind.Stock)
+private val btcUsd = Asset("BTC-USD", "Bitcoin USD", AssetKind.Crypto)
+
+internal fun quote(symbol: String, price: String, change: Double = 0.0) =
+    Quote(symbol, Money.usd(price), Money.usd(price), change)
+
+/** The ONE `PortfolioViewModel` construction helper for this package — hoisted to file scope in
+ *  M11.3 Task 4 (it was a private member of [PortfolioViewModelTest] before) so `ValueGoalTest`
+ *  reuses it rather than forking a second builder that could drift in its wiring. */
+internal fun vm(
+    store: FakePortfolioStore,
+    repo: FakeMarketDataRepository,
+    now: () -> Long = { 1_700_000_000L },
+    notifyOrderFill: suspend (TradeSide, String, String, String) -> Unit = { _, _, _, _ -> },
+    fetchDividendEvents: FetchDividendEvents? = null,
+    goalStore: GoalStore = InMemoryGoalStore(),
+    zoneId: ZoneId = ZoneId.of("UTC"),
+): PortfolioViewModel {
+    val perf = FetchPortfolioPerformance(repo, store)
+    return PortfolioViewModel(
+        fetchPortfolio = FetchPortfolio(store),
+        fetchMarketQuotes = FetchMarketQuotes(repo),
+        buyAsset = BuyAsset(repo, store, Mutex()),
+        sellAsset = SellAsset(repo, store, Mutex()),
+        resetPortfolio = ResetPortfolio(store, Mutex()),
+        fetchPerformanceReport = FetchPerformanceReport(repo, perf),
+        loadGoals = LoadGoals(goalStore),
+        saveGoal = SaveGoal(goalStore),
+        removeGoal = RemoveGoal(goalStore),
+        nowEpochSeconds = now,
+        tickMillis = 15_000,
+        zoneId = zoneId,
+        notifyOrderFill = notifyOrderFill,
+        fetchDividendEvents = fetchDividendEvents,
+    )
+}
+
+/** A fully-built [PortfolioViewModel] plus the in-memory stores behind it, so a test can both
+ *  drive the VM and inspect what it persisted. Android twin of desktop's
+ *  `PortfolioViewModelFixture`. */
+internal class PortfolioViewModelFixture(
+    val viewModel: PortfolioViewModel,
+    val portfolioStore: FakePortfolioStore,
+    val goalStore: InMemoryGoalStore,
+    /** [money] text of cash + every seeded position's OWN cost basis, precomputed from the SAME
+     *  holdings/cash this fixture built via the identical `goalCurrentValueFloor()` extension the
+     *  view model itself falls back on — so a test can assert against it without re-deriving the
+     *  arithmetic (carry-notes §2.3). */
+    val expectedCostBasisFloorText: String,
+)
+
+/** Days of ACCOUNT age the fixture's seeded transaction carries by default — comfortably past
+ *  `GoalMath.MINIMUM_HISTORY_DAYS` (180) so a caller that doesn't care about the projection gate
+ *  gets an account old enough to clear it. */
+private const val FIXTURE_DEFAULT_ACCOUNT_AGE_DAYS = 400L
+
+/** Default single holding: 10 AAPL at $100 average cost — a $1,000 cost basis on top of the
+ *  fixture's fixed $100,000 cash. */
+private fun fixtureDefaultHoldings(): List<Position> =
+    listOf(Position(aapl, BigDecimal.parseString("10"), Money.usd("100.00"), Money.usd("0")))
+
+/** Builds a VM over a seeded portfolio whose account age, holdings, and price history are each
+ *  independently controllable — the knobs the value-goal projection actually branches on.
+ *  Transcribed from desktop `portfolioViewModelFixture` (M11.2 Task 13). */
+internal fun portfolioViewModelFixture(
+    repo: FakeMarketDataRepository = FakeMarketDataRepository(),
+    nowEpochSeconds: () -> Long = { 1_782_000_000L },
+    /** Every symbol's price-history fetch throws, simulating an offline/rate-limited session.
+     *  `FetchPortfolioPerformance`'s own per-symbol `catch (Exception)` degrades that to an empty
+     *  curve, so the empty-curve fallback is exercised via the VM's ordinary SUCCESS branch. */
+    failHistory: Boolean = false,
+    /** Overrides the seeded positions. `emptyList()` builds a genuinely all-cash portfolio — no
+     *  Buy transaction is seeded either, matching the real all-cash case where
+     *  `Portfolio.inceptionEpochSeconds()` is `null`. */
+    holdings: List<Position> = fixtureDefaultHoldings(),
+    /** How many days before [nowEpochSeconds] the seeded Buy transaction is dated — this is what
+     *  `Portfolio.inceptionEpochSeconds()` reads, and therefore the ONLY input to GoalMath's
+     *  account-age gate. */
+    accountAgeDays: Long = FIXTURE_DEFAULT_ACCOUNT_AGE_DAYS,
+    /** `false` builds a FLAT 250-day price series (zero measurable growth → `NotOnTrack`); `true`
+     *  builds a steeply rising one over the same 250 days (a measurable rate → a concrete
+     *  `Years` ETA). Both clear GoalMath's curve-SPAN gate on their own, independent of
+     *  [accountAgeDays], so a test that overrides only the age exercises ONLY the age gate. */
+    risingCurve: Boolean = false,
+): PortfolioViewModelFixture {
+    val now = nowEpochSeconds()
+    val cash = Money.usd("100000")
+    val transactions = holdings.mapIndexed { index, position ->
+        Transaction(
+            id = "seed-${position.asset.symbol}-$index",
+            symbol = position.asset.symbol,
+            side = TradeSide.Buy,
+            quantity = position.quantity,
+            price = position.averageCost,
+            epochSeconds = now - accountAgeDays * 86_400L,
+        )
+    }
+    val seeded = Portfolio(cash = cash, positions = holdings, transactions = transactions, startingCash = cash)
+    val store = FakePortfolioStore().apply { loadImpl = { saved ?: seeded } }
+    val goalStore = InMemoryGoalStore()
+
+    if (failHistory) {
+        repo.historyImpl = { _, _ -> throw QuoteError.RateLimited }
+    } else {
+        repo.historyImpl = { symbol, _ ->
+            if (holdings.none { it.asset.symbol == symbol }) {
+                emptyList()
+            } else {
+                (0..250L).map { daysAgo ->
+                    val price = if (risingCurve) 100L + (250L - daysAgo) * 40L else 100L
+                    PricePoint(now - daysAgo * 86_400L, Money.usd(price.toString()))
+                }.sortedBy { it.epochSeconds }
+            }
+        }
+    }
+    repo.quotesImpl = { symbols -> symbols.map { quote(it, "100.00") } }
+
+    return PortfolioViewModelFixture(
+        viewModel = vm(store = store, repo = repo, now = nowEpochSeconds, goalStore = goalStore),
+        portfolioStore = store,
+        goalStore = goalStore,
+        expectedCostBasisFloorText = money(seeded.goalCurrentValueFloor().amountText),
+    )
+}
+
 /** NOTE ON SCHEDULER DISCIPLINE: the VM's poll loop is an infinite `while(isActive)` with a
  *  15s delay, so `advanceUntilIdle()` would advance virtual time forever (the scheduler never
  *  goes idle). Tests therefore use `runCurrent()` for zero-time work and `advanceTimeBy` for
  *  ticks, and call `vm.stop()` before returning so no poll coroutine outlives the test. */
 class PortfolioViewModelTest {
     private val dispatcher = StandardTestDispatcher()
-    private val utc = ZoneId.of("UTC")
 
     @BeforeTest
     fun setUp() = Dispatchers.setMain(dispatcher)
@@ -53,40 +195,11 @@ class PortfolioViewModelTest {
     @AfterTest
     fun tearDown() = Dispatchers.resetMain()
 
-    private fun quote(symbol: String, price: String, change: Double = 0.0) =
-        Quote(symbol, Money.usd(price), Money.usd(price), change)
-
-    private val aapl = Asset("AAPL", "Apple Inc.", AssetKind.Stock)
-    private val btcUsd = Asset("BTC-USD", "Bitcoin USD", AssetKind.Crypto)
-
     /** A portfolio holding 100 AAPL @ $300 avg, $70,000 cash. */
     private fun heldPortfolio(): Portfolio = Portfolio(
         cash = Money.usd("70000"),
         positions = listOf(Position(aapl, BigDecimal.parseString("100"), Money.usd("300"), Money.usd("0"))),
     )
-
-    private fun vm(
-        store: FakePortfolioStore,
-        repo: FakeMarketDataRepository,
-        now: () -> Long = { 1_700_000_000L },
-        notifyOrderFill: suspend (TradeSide, String, String, String) -> Unit = { _, _, _, _ -> },
-        fetchDividendEvents: FetchDividendEvents? = null,
-    ): PortfolioViewModel {
-        val perf = FetchPortfolioPerformance(repo, store)
-        return PortfolioViewModel(
-            fetchPortfolio = FetchPortfolio(store),
-            fetchMarketQuotes = FetchMarketQuotes(repo),
-            buyAsset = BuyAsset(repo, store, Mutex()),
-            sellAsset = SellAsset(repo, store, Mutex()),
-            resetPortfolio = ResetPortfolio(store, Mutex()),
-            fetchPerformanceReport = FetchPerformanceReport(repo, perf),
-            nowEpochSeconds = now,
-            tickMillis = 15_000,
-            zoneId = utc,
-            notifyOrderFill = notifyOrderFill,
-            fetchDividendEvents = fetchDividendEvents,
-        )
-    }
 
     @Test
     fun summaryMathFromStoreAndQuotes() = runTest(dispatcher.scheduler) {
