@@ -42,6 +42,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -344,6 +345,62 @@ class PortfolioViewModelTest {
         assertNull(s.benchmarkTwinValues)
         assertNotNull(s.metrics)
         vm.stop()
+    }
+
+    /**
+     * M11.4. Every percent tile the Performance grid and the Home return tile render, pinned as
+     * FULL formatted strings — the assertion shape that can actually fail for a scaling error.
+     * Android had no metric-text assertion at all before this (only `assertNotNull(s.metrics)`),
+     * which is why a 100x-too-small percentage shipped here unchallenged.
+     *
+     * `PerformanceMetrics`' `…Fraction` fields are FRACTIONS; `formatPercent` takes percentage
+     * POINTS. The fixture's rising curve makes the difference impossible to miss:
+     *   first curve point = $100,000 cash + 10 AAPL @ $100    = $101,000
+     *   last curve point  = $100,000 cash + 10 AAPL @ $10,100 = $201,000
+     *   totalReturnFraction = 201,000 / 101,000 - 1 = 0.990099...  ->  99.0099... points
+     * so the tile must read "+99.01%". The defect — handing the FRACTION to `formatPercent` —
+     * renders "+0.99%" instead. maxDrawdown is 0 on a monotonically rising curve, which pins the
+     * unsigned zero rendering in the same pass.
+     *
+     * SCHEDULER DISCIPLINE (see this file's note above): state is captured, then `stop()` runs,
+     * and only then does anything assert. A failing assertion ahead of `stop()` would skip it and
+     * leave `runTest` advancing virtual time into an infinite poll loop — a ~20-minute build hang
+     * instead of a red test.
+     */
+    @Test
+    fun everyPercentMetricRendersAsAFullFormattedPercentageNotAFraction() = runTest(dispatcher.scheduler) {
+        val f = portfolioViewModelFixture(risingCurve = true)
+        f.viewModel.start()
+        runCurrent()
+
+        val metrics = f.viewModel.state.value.metrics
+        f.viewModel.stop()
+
+        assertNotNull(metrics)
+        assertEquals("+99.01%", metrics.totalReturn)
+        assertEquals("0.00%", metrics.maxDrawdown)
+        // Sharpe/beta are dimensionless RATIOS, never percent-formatted — no "%" may appear.
+        assertFalse(metrics.sharpe.contains("%"), "sharpe must never be percent-formatted")
+        assertFalse(metrics.beta.contains("%"), "beta must never be percent-formatted")
+    }
+
+    /** The zero-return companion to the case above, on the SAME fixture with its FLAT price
+     *  series. Needed because a scaling error is invisible at 0 — and, conversely, 0 is the only
+     *  value stable against a flat curve — so neither case discriminates on its own. */
+    @Test
+    fun aFlatCurveRendersUnsignedZeroPercentAcrossTheGrid() = runTest(dispatcher.scheduler) {
+        val f = portfolioViewModelFixture(risingCurve = false)
+        f.viewModel.start()
+        runCurrent()
+
+        val metrics = f.viewModel.state.value.metrics
+        f.viewModel.stop()
+
+        assertNotNull(metrics)
+        assertEquals("0.00%", metrics.totalReturn)
+        assertEquals("0.00%", metrics.annualizedReturn)
+        assertEquals("0.00%", metrics.volatility)
+        assertEquals("0.00%", metrics.maxDrawdown)
     }
 
     /** UAT round 2 (defect 2, follow-the-finger crosshair on the portfolio chart): the

@@ -332,9 +332,14 @@ private fun HeroChartMessage(text: String) {
  *  and Portfolio tab's risk-metric grid already share) rather than `HomeState`, which carries
  *  no total-return field — `HomeFeedAssembler` (Task 1, shared, out of this task's scope)
  *  aggregates hero-stat/feed data only, not the performance report's own metrics. This mirrors
- *  Swift's own `HomeViewModel.totalReturnPercent`, which is likewise sourced from a
- *  `PerformanceReport.metrics.totalReturn` fetch — just the SAME shared fetch here, rather
- *  than a second, Home-only one. */
+ *  Swift's own `HomeViewModel.totalReturnFraction`, which is likewise sourced from a
+ *  `PerformanceReport.metrics.totalReturnFraction` fetch — just the SAME shared fetch here,
+ *  rather than a second, Home-only one.
+ *
+ *  Sharing the Portfolio tab's already-formatted [MetricTexts] is also why this tile could not
+ *  drift from that grid the way Swift's Home tile did (M11.4): there is exactly one `× 100`
+ *  in the Kotlin path, in `PortfolioViewModel.percentMetric`, and both surfaces read its
+ *  output. Keep it that way — do not re-derive a percent string here from a raw fraction. */
 @Composable
 private fun StatsCard(homeState: HomeState?, portfolioState: PortfolioUiState) {
     val totalReturnText = portfolioState.metrics?.totalReturn ?: "—"

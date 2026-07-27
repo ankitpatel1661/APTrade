@@ -42,7 +42,7 @@ class SinceInceptionReturnTest {
         val performance = FetchPortfolioPerformance(repository, store)
         val result = FetchPerformanceReport(repository, performance)
             .execute(Timeframe.OneYear, "SPY", portfolio)
-        assertEquals(0.20, result.metrics.sinceInceptionReturn!!, 1e-9)
+        assertEquals(0.20, result.metrics.sinceInceptionReturnFraction!!, 1e-9)
     }
 
     /** M11.2 Task 7 review Finding 1 (Critical): the ORIGINAL version of this fixture bought at
@@ -78,7 +78,7 @@ class SinceInceptionReturnTest {
             .execute(Timeframe.OneYear, "SPY", portfolio)
         // 100,000 cash - 10,000 spent + 20,000 holdings (100 * $200) = 110,000 -> +10% from
         // startingCash. (From the curve's own $80 opening it would instead be +12.24%.)
-        assertEquals(0.10, result.metrics.sinceInceptionReturn!!, 1e-9)
+        assertEquals(0.10, result.metrics.sinceInceptionReturnFraction!!, 1e-9)
     }
 
     @Test
@@ -89,7 +89,7 @@ class SinceInceptionReturnTest {
         val performance = FetchPortfolioPerformance(repository, store)
         val result = FetchPerformanceReport(repository, performance)
             .execute(Timeframe.OneYear, "SPY", portfolio)
-        assertNull(result.metrics.sinceInceptionReturn)
+        assertNull(result.metrics.sinceInceptionReturnFraction)
     }
 
     @Test
@@ -107,7 +107,7 @@ class SinceInceptionReturnTest {
         val performance = FetchPortfolioPerformance(repository, store)
         val result = FetchPerformanceReport(repository, performance)
             .execute(Timeframe.OneYear, "SPY", portfolio)
-        assertNull(result.metrics.sinceInceptionReturn)
+        assertNull(result.metrics.sinceInceptionReturnFraction)
     }
 
     /** The `sinceInception` flag was implemented but had ZERO callers passing `true`. This is its
@@ -131,6 +131,6 @@ class SinceInceptionReturnTest {
         assertTrue(trimmed.points.size < untrimmed.points.size)
         assertTrue(trimmed.points.all { it.epochSeconds >= (1_000_000L + 100 * day) / day * day })
         // The metric is span-independent: it reads the LATEST value either way.
-        assertEquals(untrimmed.metrics.sinceInceptionReturn, trimmed.metrics.sinceInceptionReturn)
+        assertEquals(untrimmed.metrics.sinceInceptionReturnFraction, trimmed.metrics.sinceInceptionReturnFraction)
     }
 }
