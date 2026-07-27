@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Share
@@ -28,6 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -49,6 +51,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -66,6 +69,7 @@ import com.aptrade.android.ui.localizedLabel
 import com.aptrade.android.ui.theme.GainGreen
 import com.aptrade.android.ui.theme.LossRed
 import com.aptrade.shared.domain.AllocationSlice
+import com.aptrade.shared.domain.AmountInput
 import com.aptrade.shared.domain.Asset
 import com.aptrade.shared.domain.GoalKind
 import com.aptrade.shared.domain.Money
@@ -125,6 +129,8 @@ fun PortfolioScreen(
     onBack: () -> Unit,
     onOpenDetail: (String) -> Unit,
     confirmTrades: Boolean,
+    defaultStartingCash: Money,
+    onReset: (Money) -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
     PortfolioContent(
@@ -139,7 +145,12 @@ fun PortfolioScreen(
         onRemoveValueGoal = viewModel::removeValueGoal,
         onBuy = viewModel::buy,
         onSell = viewModel::sell,
-        onReset = viewModel::reset,
+        // NOT `viewModel::reset` (M11.3 Task 7): the caller wraps it so a typed-in amount also
+        // becomes the remembered `AppSettings.defaultStartingCash`, exactly as desktop `Main.kt`'s
+        // `onReset` and the Swift AS-BUILT's reset handler do. Otherwise every later reset would
+        // silently revert to the old default the next time this dialog opened.
+        onReset = onReset,
+        defaultStartingCash = defaultStartingCash,
         exportCsv = viewModel::exportCsv,
         exportJson = viewModel::exportJson,
         confirmTrades = confirmTrades,
@@ -160,7 +171,8 @@ private fun PortfolioContent(
     onRemoveValueGoal: () -> Unit,
     onBuy: (Asset, String) -> Unit,
     onSell: (String, String) -> Unit,
-    onReset: () -> Unit,
+    onReset: (Money) -> Unit,
+    defaultStartingCash: Money,
     exportCsv: suspend () -> String,
     exportJson: suspend () -> String,
     confirmTrades: Boolean,
@@ -327,16 +339,10 @@ private fun PortfolioContent(
     }
 
     if (showResetConfirm) {
-        AlertDialog(
-            onDismissRequest = { showResetConfirm = false },
-            title = { Text("Reset portfolio") },
-            text = { Text("Start over with $100,000?") },
-            confirmButton = {
-                TextButton(onClick = { showResetConfirm = false; onReset() }) { Text("Reset") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showResetConfirm = false }) { Text("Cancel") }
-            },
+        ResetConfirmDialog(
+            defaultStartingCash = defaultStartingCash,
+            onConfirm = { amount -> showResetConfirm = false; onReset(amount) },
+            onCancel = { showResetConfirm = false },
         )
     }
 
@@ -359,6 +365,63 @@ private fun PortfolioContent(
             },
         )
     }
+}
+
+/** Reset confirmation, with the opening-balance field this dialog lacked until M11.3 Task 7
+ *  (carry-notes §4b). Before it, Android's dialog had no amount at all — its body was the literal
+ *  "Start over with $100,000?" and it reset to [com.aptrade.shared.domain.Portfolio.DEFAULT_STARTING_CASH]
+ *  whatever the user had configured, while Windows and macOS honoured the setting.
+ *
+ *  Three things it deliberately does NOT invent:
+ *  - The BOUNDS. [AmountInput.STARTING_BALANCE_RANGE] is the one shared $1,000–$10,000,000
+ *    definition every platform's reset field validates against; restating the numbers here would
+ *    be a fourth copy to drift. The hint text is likewise the catalog's own
+ *    [L10n.Key.StartingBalanceRange], so the range the user reads and the range enforced cannot
+ *    disagree.
+ *  - The PARSER. Same shared [AmountInput.parse] the goal-target field uses (`GoalCard.kt`), so
+ *    "1,000" and "1 000" are accepted identically on every screen and platform.
+ *  - The SEED. [defaultStartingCash] comes from `AppSettings.defaultStartingCash`, so the common
+ *    case is "press Reset" and the uncommon case is "type a different balance" — never "retype
+ *    your usual number". Mirrors desktop `PortfolioPane.kt`'s `ResetConfirmDialog`. */
+@Composable
+private fun ResetConfirmDialog(
+    defaultStartingCash: Money,
+    onConfirm: (Money) -> Unit,
+    onCancel: () -> Unit,
+) {
+    var amountText by remember { mutableStateOf(defaultStartingCash.amount.toStringExpanded()) }
+    val parsed = AmountInput.parse(amountText, AmountInput.STARTING_BALANCE_RANGE)
+    // An empty field on open is not an error state — only text the user has typed and that the
+    // parser rejects turns the field red (desktop's identical rule).
+    val isInvalid = parsed == null && amountText.isNotBlank()
+
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(tr(L10n.Key.ResetPortfolioTitle)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(tr(L10n.Key.ResetPortfolioBody), style = MaterialTheme.typography.bodyMedium)
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = { amountText = it },
+                    label = { Text(tr(L10n.Key.StartingBalance)) },
+                    singleLine = true,
+                    isError = isInvalid,
+                    supportingText = { Text(tr(L10n.Key.StartingBalanceRange)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = parsed != null, onClick = { parsed?.let(onConfirm) }) {
+                Text(tr(L10n.Key.Reset))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel) { Text(tr(L10n.Key.Cancel)) }
+        },
+    )
 }
 
 /** Everything the header's goal strip renders, and nothing else (M11.3 Task 6; twin of desktop's

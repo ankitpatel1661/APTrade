@@ -382,13 +382,31 @@ class PortfolioViewModel(
         }
     }
 
-    fun reset() {
+    /** Opens a fresh portfolio at [startingCash] — the reset dialog's validated amount, seeded
+     *  from `AppSettings.defaultStartingCash`. Byte-for-byte the desktop `PortfolioViewModel.reset`
+     *  body (M11.3 Task 7, closing carry-notes §4b): until this task Android ignored the
+     *  configured balance entirely and hardcoded `Portfolio.DEFAULT_STARTING_CASH`, so a user who
+     *  chose $250,000 saw Windows honour it and Android silently open at $100,000.
+     *
+     *  Goals SURVIVE (M11.1 UAT F1, user ruling 2026-07-27): resetting starting capital is "start
+     *  over with more money", not "abandon my plan". So this must not null [valueGoal] out — that
+     *  would hide from the screen a goal still sitting intact on disk, the Swift twin's exact UAT
+     *  bug in mirror image. The goal is RE-READ from the store rather than kept from memory, for
+     *  the same reason [loadPerformanceReport] re-reads it: another surface may have changed it.
+     *
+     *  What the card MUST do is recompute against the fresh snapshot — current value from the new
+     *  balance, the pre-reset equity curve discarded — so a $120,000 target after a reset to
+     *  $1,000,000 reads as reached, never as a percentage of a curve that no longer applies.
+     *  [refreshValueProjection] is what makes both goal surfaces (the Performance card and the
+     *  header strip) recompute immediately instead of holding their pre-reset numbers until the
+     *  next report load. */
+    fun reset(startingCash: Money) {
         viewModelScope.launch {
-            // M11.3 wires Android's own amount field here; until then the reset opens at the
-            // named default rather than a bare literal, so the M11.2 hardcoded-balance grep
-            // finds this call site instead of a hidden number.
-            portfolio = resetPortfolio.execute(Portfolio.DEFAULT_STARTING_CASH)
+            portfolio = resetPortfolio.execute(startingCash)
             quotes = emptyMap()
+            equityCurve = emptyList()
+            currentValue = portfolio.goalCurrentValueFloor()
+            valueGoal = loadGoals.execute().firstOrNull { it.kind == GoalKind.Value }
             _state.update {
                 it.copy(
                     performanceValues = emptyList(),
@@ -398,6 +416,7 @@ class PortfolioViewModel(
                     metrics = null,
                 )
             }
+            refreshValueProjection()
             publish(loading = false)
         }
     }

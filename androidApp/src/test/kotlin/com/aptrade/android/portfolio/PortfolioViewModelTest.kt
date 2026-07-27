@@ -454,7 +454,7 @@ class PortfolioViewModelTest {
         // Reset persists the fresh portfolio; make load() return what was last saved so the
         // store and the VM stay coherent from here on.
         store.loadImpl = { store.saved }
-        vm.reset()
+        vm.reset(Portfolio.DEFAULT_STARTING_CASH)
         runCurrent()
 
         val s = vm.state.value

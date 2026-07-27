@@ -246,6 +246,18 @@ fun AppNavHost(settingsViewModel: SettingsViewModel) {
                         onBack = {},                        // tab root: no back
                         onOpenDetail = { symbol -> navController.navigate("detail/$symbol") },
                         confirmTrades = settings.confirmTrades,
+                        defaultStartingCash = settings.defaultStartingCash,
+                        // M11.3 Task 7, mirroring desktop `Main.kt`'s `onReset` and the Swift
+                        // AS-BUILT's reset handler (`settingsVM.settings.defaultStartingCash =
+                        // amount` before `viewModel.reset(startingCash:)`): the typed-in amount
+                        // becomes the new remembered default, not just this one reset's balance —
+                        // otherwise every future reset would silently revert to the old default
+                        // the next time the dialog opened, and the Account Settings row would keep
+                        // reporting a balance the user had already replaced.
+                        onReset = { amount ->
+                            settingsViewModel.update { it.copy(defaultStartingCash = amount) }
+                            portfolioViewModel.reset(amount)
+                        },
                     )
                     ShellTab.Invest -> InvestScreen(
                         padding = padding,
