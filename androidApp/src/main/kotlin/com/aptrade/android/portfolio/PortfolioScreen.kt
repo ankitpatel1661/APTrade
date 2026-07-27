@@ -283,7 +283,7 @@ private fun PortfolioContent(
                             horizontalArrangement = Arrangement.End,
                         ) {
                             TextButton(onClick = { showResetConfirm = true }) {
-                                Text("Reset portfolio…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(tr(L10n.Key.ResetPortfolioEllipsis), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -445,10 +445,24 @@ private fun GoalStripRow(strip: GoalStrip) {
  *
  *  M11.3 Task 6: the goal strip sits after the two metric rows below, matching every other
  *  platform's placement (desktop `PortfolioPane.kt`'s `SummaryHeader`, Swift's
- *  `PortfolioSummaryHeader`). */
+ *  `PortfolioSummaryHeader`).
+ *
+ *  M11.3 Task 8: two pre-existing divergences from the other three platforms, both fixed here.
+ *  First, the TOTAL VALUE label above the figure — present on Swift/Windows/desktop already,
+ *  absent here — is restored using [L10n.Key.TotalValue], letterspaced/uppercased the same way
+ *  desktop's twin renders it (`PortfolioPane.kt`'s `SummaryHeader`). Second, [SummaryMetric]'s
+ *  four labels below were hardcoded English literals ("Cash"/"Holdings"/"Unrealized"/"Realized")
+ *  while desktop's `StatTile` already localized theirs via `tr(L10n.Key.…)` — in German the goal
+ *  strip (Task 6) would have read "ZIEL" beside a hardcoded "CASH". All four now route through
+ *  the same existing keys desktop uses. */
 @Composable
 private fun SummaryHeader(state: PortfolioUiState, onExportClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            tr(L10n.Key.TotalValue).uppercase(Locale.US),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 state.totalValueText ?: "—",
@@ -465,12 +479,12 @@ private fun SummaryHeader(state: PortfolioUiState, onExportClick: () -> Unit) {
         }
         Spacer(Modifier.height(4.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            SummaryMetric("Cash", state.cashText, null, Modifier.weight(1f))
-            SummaryMetric("Holdings", state.holdingsValueText, null, Modifier.weight(1f))
+            SummaryMetric(tr(L10n.Key.CashLabel), state.cashText, null, Modifier.weight(1f))
+            SummaryMetric(tr(L10n.Key.HoldingsSection), state.holdingsValueText, null, Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            SummaryMetric("Unrealized", state.unrealizedText, state.unrealizedPositive, Modifier.weight(1f))
-            SummaryMetric("Realized", state.realizedText, state.realizedPositive, Modifier.weight(1f))
+            SummaryMetric(tr(L10n.Key.UnrealizedPnL), state.unrealizedText, state.unrealizedPositive, Modifier.weight(1f))
+            SummaryMetric(tr(L10n.Key.RealizedPnL), state.realizedText, state.realizedPositive, Modifier.weight(1f))
         }
         goalStrip(state.valueGoal)?.let { strip -> GoalStripRow(strip) }
     }
