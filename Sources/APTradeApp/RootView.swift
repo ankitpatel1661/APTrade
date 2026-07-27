@@ -435,8 +435,13 @@ public struct RootView: View {
                     // header — `portfolioPerformanceVM` is a separate instance nothing else
                     // notifies, and wiring only one of the two hosts would leave this shell
                     // showing a stale value-goal card after a reset.
+                    // `performanceVM` (M11.3 Task 2): the SAME `portfolioPerformanceVM` this
+                    // shell already hands `PortfolioSectionContent` below and refreshes via
+                    // `onDidReset` — so the header's goal strip and the Performance card
+                    // beneath it read one goal, not two.
                     PortfolioSummaryHeader(viewModel: portfolioViewModel,
                                            settingsVM: settingsVM,
+                                           performanceVM: portfolioPerformanceVM,
                                            onExport: { showExportDialog = true },
                                            onDidReset: { await portfolioPerformanceVM.onAppear() })
                     Divider().overlay(Theme.hairline)

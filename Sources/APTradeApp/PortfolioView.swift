@@ -48,7 +48,12 @@ struct PortfolioView: View {
                     // reset done from the header — which sits above the section picker, i.e.
                     // reachable without leaving Performance — must be pushed to it explicitly.
                     // `RootView.macBody`'s header wires the identical closure.
+                    // `performanceVM` (M11.3 Task 2): the SAME instance `onDidReset` below
+                    // refreshes and `PortfolioSectionContent` renders the goal card from, so
+                    // the header strip and the Performance card can never disagree about
+                    // whether a goal exists.
                     PortfolioSummaryHeader(viewModel: viewModel, settingsVM: settingsVM,
+                                           performanceVM: performanceVM,
                                            onExport: onExport,
                                            onDidReset: { await performanceVM.onAppear() })
                     // Always visible, not gated on holdings — Activity and Performance are
@@ -222,6 +227,19 @@ struct PortfolioSummaryHeader: View {
     /// `IncomeSection`, except the whole view model is needed here (not just one bound field)
     /// because confirm both reads `defaultStartingCash` to seed the field and writes it back.
     let settingsVM: SettingsViewModel
+    /// M11.3 Task 2: the goal strip's data source. The value goal lives on
+    /// `PerformanceViewModel` (`valueGoal`/`currentValue`) — `PortfolioViewModel` has no goal
+    /// state at all — and both hosts already own the very instance this header must read:
+    /// `PortfolioView`'s `@State performanceVM` and `RootView.macBody`'s
+    /// `portfolioPerformanceVM`, the same two instances `onDidReset` below already refreshes.
+    /// Reading THAT instance (rather than constructing a private one) is what makes the strip
+    /// disappear the moment the goal is removed on the Performance card beneath it.
+    ///
+    /// REQUIRED, deliberately: no `?`, no `= nil` — the identical rule `onDidReset` documents
+    /// below, for the identical reason. A defaulted optional would let a host omit the
+    /// argument, compile clean, keep 720/720 tests green, and silently ship a header with no
+    /// goal strip on that one platform. Omission must be a COMPILE ERROR.
+    let performanceVM: PerformanceViewModel
     /// M10.1 Task 8: the export entry point (re-homed from the account "⋯" menu), rendered
     /// as a circular button — matches `HomeView`'s `bellButton`/`RootView`'s
     /// `themeToggleButton` idiom — beside `resetMenu`. Optional and hidden when nil so
@@ -313,6 +331,78 @@ struct PortfolioSummaryHeader: View {
         settingsVM.settings.defaultStartingCash = amount
         await viewModel.reset(startingCash: amount)
         await onDidReset()
+    }
+
+    // MARK: - Goal strip (M11.3 Task 2)
+
+    /// Everything the header's goal strip renders, and nothing else. Deliberately carries
+    /// **no current value**: the header shows TOTAL VALUE in display type two lines above,
+    /// so repeating it here would be the same number twice — target plus percentage is the
+    /// whole payload, and dropping the third figure is what lets the row fit at 375pt.
+    ///
+    /// Three fields, all primitives, so Windows (`SummaryHeader`, Task 3) and Android
+    /// (Task 6) can mirror the same shape without inheriting a Swift-only type.
+    struct GoalStrip: Equatable {
+        /// Bar width, **clamped** to `0...1` — a portfolio at 833% of its target must fill
+        /// the bar, never overflow it.
+        let barFraction: Double
+        /// Whole percent, **unclamped**: 833 stays 833. The clamp belongs to the bar's
+        /// geometry, not to the reading. Rounded (never truncated) so it matches
+        /// `GoalCard.progressContent`'s `Int((fraction * 100).rounded())` digit for digit —
+        /// a strip reading 832% beside a card reading 833% is a defect (GC2).
+        let percent: Int
+        /// The target, via `Money.formatted` — no compact "$1.2M" abbreviation exists on any
+        /// platform and this design does not introduce one (GC4).
+        let targetText: String
+    }
+
+    /// Maps `(valueGoal, currentValue)` to the strip's payload, or `nil` when no value goal
+    /// is set — in which case the header renders **nothing**: no empty bar, no "Set a goal"
+    /// prompt, no tap target. The header is a readout; setting a goal stays on the
+    /// Performance card, where the affordance already exists.
+    ///
+    /// A free-standing pure function rather than logic inline in `body` for the same reason
+    /// `applyReset` is one: a SwiftUI view hierarchy is not inspectable from tests here (no
+    /// ViewInspector, no snapshot harness — an open decision, not this task's to make), so
+    /// the decision worth pinning is lifted to somewhere a test can reach it.
+    ///
+    /// The fraction comes from `GoalMath.progress` and is **never re-derived** (GC2): a
+    /// second `current.amount / target.amount` here would diverge on exactly the inputs
+    /// `GoalMath` guards — a zero or negative target yields `0`, where a hand-rolled
+    /// division yields NaN and crashes `Int(_:)`.
+    static func goalStrip(valueGoal: PortfolioGoal?, currentValue: Money) -> GoalStrip? {
+        guard let valueGoal else { return nil }
+        let fraction = GoalMath.progress(current: currentValue, target: valueGoal.target)
+        return GoalStrip(barFraction: min(fraction, 1.0),
+                         percent: Int((fraction * 100).rounded()),
+                         targetText: valueGoal.target.formatted)
+    }
+
+    /// `GOAL ▬▬▬▬░░░░ $120,000 833%`. Hidden entirely when `goalStrip` is `nil`.
+    /// The label reuses `metric(...)`'s exact 10pt/semibold/1.0-tracking/tertiary treatment
+    /// so it reads as one of the metric labels beside it rather than as new chrome.
+    @ViewBuilder
+    private var goalStripRow: some View {
+        if let strip = Self.goalStrip(valueGoal: performanceVM.valueGoal,
+                                      currentValue: performanceVM.currentValue) {
+            HStack(alignment: .center, spacing: 10) {
+                Text(tr(.goalShort).uppercased())
+                    .font(.system(size: 10, weight: .semibold)).tracking(1.0)
+                    .foregroundStyle(Theme.textTertiary)
+                    .fixedSize()
+                ProgressView(value: strip.barFraction)
+                    .tint(Theme.gold)
+                    .frame(maxWidth: .infinity)
+                Text(strip.targetText)
+                    .font(.system(size: 12, weight: .medium).monospacedDigit())
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1).fixedSize()
+                Text("\(strip.percent)%")
+                    .font(.system(size: 12, weight: .bold).monospacedDigit())
+                    .foregroundStyle(Theme.gold)
+                    .lineLimit(1).fixedSize()
+            }
+        }
     }
 
     private var expandedChart: some View {
@@ -419,6 +509,13 @@ struct PortfolioSummaryHeader: View {
                 }
                 .buttonStyle(.plain)
             }
+            // M11.3 Task 2: sits directly above the paper-trading footer, i.e. below the
+            // WHOLE metrics block. On iPhone the sparkline is a separate full-width row only
+            // because the three metrics need the full width (see the comment above); on
+            // macOS it lives inside the metric HStack itself. Anchoring the strip below both
+            // therefore puts it in the same place relative to the header's content on either
+            // platform, which is also where Windows (Task 3) and Android (Task 6) place it.
+            goalStripRow
             #else
             HStack(alignment: .center, spacing: 22) {
                 metric(label: tr(.dayPnL), money: viewModel.valuation.dayChange, colored: true)
@@ -432,6 +529,9 @@ struct PortfolioSummaryHeader: View {
                     ) { withAnimation(chartSpring) { showChart.toggle() } }
                 }
             }
+            // Same row, same position, same conditions as the iOS branch above — the strip
+            // must appear and disappear identically on every platform (GC1).
+            goalStripRow
             #endif
             Text(tr(.simulatedPaperTradingFooter))
                 .font(.system(size: 10, weight: .semibold)).tracking(0.6)
