@@ -435,8 +435,13 @@ public struct RootView: View {
                     // header — `portfolioPerformanceVM` is a separate instance nothing else
                     // notifies, and wiring only one of the two hosts would leave this shell
                     // showing a stale value-goal card after a reset.
+                    // `performanceVM` (M11.3 Task 2): the SAME `portfolioPerformanceVM` this
+                    // shell already hands `PortfolioSectionContent` below and refreshes via
+                    // `onDidReset` — so the header's goal strip and the Performance card
+                    // beneath it read one goal, not two.
                     PortfolioSummaryHeader(viewModel: portfolioViewModel,
                                            settingsVM: settingsVM,
+                                           performanceVM: portfolioPerformanceVM,
                                            onExport: { showExportDialog = true },
                                            onDidReset: { await portfolioPerformanceVM.onAppear() })
                     Divider().overlay(Theme.hairline)
@@ -452,6 +457,14 @@ public struct RootView: View {
                 await portfolioViewModel.onAppear()
                 await portfolioViewModel.runLiveUpdates()
             }
+            // M11.3 whole-branch review: the IDENTICAL wiring `PortfolioView` gains, for the
+            // identical reason — nothing in this shell loaded `portfolioPerformanceVM` unless
+            // the sidebar happened to be on Portfolio → Performance, so the header's goal
+            // strip stayed hidden on a cold launch even with a goal set on disk. Separate
+            // `.task` because `runLiveUpdates()` above never returns. Wiring one host and not
+            // the other would recreate exactly the platform asymmetry this branch exists to
+            // close.
+            .task { await portfolioPerformanceVM.onAppear() }
             .onAppear { portfolioViewModel.reload() }
         case .invest(let section):
             // `.id(section)` (M10.1 UAT U5): without it, switching Invest sections (e.g.

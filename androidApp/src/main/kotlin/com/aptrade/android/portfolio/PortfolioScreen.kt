@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Share
@@ -28,6 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -49,10 +51,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.aptrade.android.goals.GoalCard
+import com.aptrade.android.goals.GoalCardUi
 import com.aptrade.android.l10n.tr
 import com.aptrade.android.ui.chart.ChartLegend
 import com.aptrade.android.ui.chart.CrosshairTooltip
@@ -64,11 +69,15 @@ import com.aptrade.android.ui.localizedLabel
 import com.aptrade.android.ui.theme.GainGreen
 import com.aptrade.android.ui.theme.LossRed
 import com.aptrade.shared.domain.AllocationSlice
+import com.aptrade.shared.domain.AmountInput
 import com.aptrade.shared.domain.Asset
+import com.aptrade.shared.domain.GoalKind
+import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.l10n.L10n
 import kotlinx.coroutines.launch
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /** The holding row a [TradeSheet] is opened against, plus the side the user tapped. */
 private data class TradeTarget(val row: HoldingRowUi, val side: TradeSide)
@@ -120,6 +129,8 @@ fun PortfolioScreen(
     onBack: () -> Unit,
     onOpenDetail: (String) -> Unit,
     confirmTrades: Boolean,
+    defaultStartingCash: Money,
+    onReset: (Money) -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
     PortfolioContent(
@@ -130,9 +141,16 @@ fun PortfolioScreen(
         onOpenDetail = onOpenDetail,
         onSetSpan = viewModel::setSpan,
         onSetBenchmark = viewModel::setBenchmark,
+        onSetValueGoal = viewModel::setValueGoal,
+        onRemoveValueGoal = viewModel::removeValueGoal,
         onBuy = viewModel::buy,
         onSell = viewModel::sell,
-        onReset = viewModel::reset,
+        // NOT `viewModel::reset` (M11.3 Task 7): the caller wraps it so a typed-in amount also
+        // becomes the remembered `AppSettings.defaultStartingCash`, exactly as desktop `Main.kt`'s
+        // `onReset` and the Swift AS-BUILT's reset handler do. Otherwise every later reset would
+        // silently revert to the old default the next time this dialog opened.
+        onReset = onReset,
+        defaultStartingCash = defaultStartingCash,
         exportCsv = viewModel::exportCsv,
         exportJson = viewModel::exportJson,
         confirmTrades = confirmTrades,
@@ -149,9 +167,12 @@ private fun PortfolioContent(
     onOpenDetail: (String) -> Unit,
     onSetSpan: (PortfolioSpan) -> Unit,
     onSetBenchmark: (String) -> Unit,
+    onSetValueGoal: (Money) -> Unit,
+    onRemoveValueGoal: () -> Unit,
     onBuy: (Asset, String) -> Unit,
     onSell: (String, String) -> Unit,
-    onReset: () -> Unit,
+    onReset: (Money) -> Unit,
+    defaultStartingCash: Money,
     exportCsv: suspend () -> String,
     exportJson: suspend () -> String,
     confirmTrades: Boolean,
@@ -258,6 +279,8 @@ private fun PortfolioContent(
                                     state = state,
                                     onSetSpan = onSetSpan,
                                     onSetBenchmark = onSetBenchmark,
+                                    onSetValueGoal = onSetValueGoal,
+                                    onRemoveValueGoal = onRemoveValueGoal,
                                 )
                             }
                         }
@@ -272,7 +295,7 @@ private fun PortfolioContent(
                             horizontalArrangement = Arrangement.End,
                         ) {
                             TextButton(onClick = { showResetConfirm = true }) {
-                                Text("Reset portfolio…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(tr(L10n.Key.ResetPortfolioEllipsis), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -316,16 +339,10 @@ private fun PortfolioContent(
     }
 
     if (showResetConfirm) {
-        AlertDialog(
-            onDismissRequest = { showResetConfirm = false },
-            title = { Text("Reset portfolio") },
-            text = { Text("Start over with $100,000?") },
-            confirmButton = {
-                TextButton(onClick = { showResetConfirm = false; onReset() }) { Text("Reset") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showResetConfirm = false }) { Text("Cancel") }
-            },
+        ResetConfirmDialog(
+            defaultStartingCash = defaultStartingCash,
+            onConfirm = { amount -> showResetConfirm = false; onReset(amount) },
+            onCancel = { showResetConfirm = false },
         )
     }
 
@@ -350,6 +367,134 @@ private fun PortfolioContent(
     }
 }
 
+/** Reset confirmation, with the opening-balance field this dialog lacked until M11.3 Task 7
+ *  (carry-notes §4b). Before it, Android's dialog had no amount at all — its body was the literal
+ *  "Start over with $100,000?" and it reset to [com.aptrade.shared.domain.Portfolio.DEFAULT_STARTING_CASH]
+ *  whatever the user had configured, while Windows and macOS honoured the setting.
+ *
+ *  Three things it deliberately does NOT invent:
+ *  - The BOUNDS. [AmountInput.STARTING_BALANCE_RANGE] is the one shared $1,000–$10,000,000
+ *    definition every platform's reset field validates against; restating the numbers here would
+ *    be a fourth copy to drift. The hint text is likewise the catalog's own
+ *    [L10n.Key.StartingBalanceRange], so the range the user reads and the range enforced cannot
+ *    disagree.
+ *  - The PARSER. Same shared [AmountInput.parse] the goal-target field uses (`GoalCard.kt`), so
+ *    "1,000" and "1 000" are accepted identically on every screen and platform.
+ *  - The SEED. [defaultStartingCash] comes from `AppSettings.defaultStartingCash`, so the common
+ *    case is "press Reset" and the uncommon case is "type a different balance" — never "retype
+ *    your usual number". Mirrors desktop `PortfolioPane.kt`'s `ResetConfirmDialog`. */
+@Composable
+private fun ResetConfirmDialog(
+    defaultStartingCash: Money,
+    onConfirm: (Money) -> Unit,
+    onCancel: () -> Unit,
+) {
+    var amountText by remember { mutableStateOf(defaultStartingCash.amount.toStringExpanded()) }
+    val parsed = AmountInput.parse(amountText, AmountInput.STARTING_BALANCE_RANGE)
+    // An empty field on open is not an error state — only text the user has typed and that the
+    // parser rejects turns the field red (desktop's identical rule).
+    val isInvalid = parsed == null && amountText.isNotBlank()
+
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(tr(L10n.Key.ResetPortfolioTitle)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(tr(L10n.Key.ResetPortfolioBody), style = MaterialTheme.typography.bodyMedium)
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = { amountText = it },
+                    label = { Text(tr(L10n.Key.StartingBalance)) },
+                    singleLine = true,
+                    isError = isInvalid,
+                    supportingText = { Text(tr(L10n.Key.StartingBalanceRange)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = parsed != null, onClick = { parsed?.let(onConfirm) }) {
+                Text(tr(L10n.Key.Reset))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel) { Text(tr(L10n.Key.Cancel)) }
+        },
+    )
+}
+
+/** Everything the header's goal strip renders, and nothing else (M11.3 Task 6; twin of desktop's
+ *  `PortfolioPane.kt` `GoalStrip`/`goalStrip` — Task 3 — and Swift's `PortfolioSummaryHeader
+ *  .GoalStrip`, Task 2). Three primitives, deliberately platform-neutral, so this shape is
+ *  mirrored rather than reinvented per platform.
+ *
+ *  Carries **no current value**: the header already shows TOTAL VALUE in display type above it,
+ *  so repeating it here would be the same number twice. */
+internal data class GoalStrip(
+    /** Bar width, **clamped** to `0..1` — a portfolio at 833% of its target must fill the bar,
+     *  never overflow it. */
+    val barFraction: Double,
+    /** Whole percent, **unclamped**: 833 stays 833. The clamp belongs to the bar's geometry, not
+     *  to the reading. Rounded (never truncated) so it matches [GoalCard]'s
+     *  `(ui.fraction * 100).roundToInt()` digit for digit — a strip reading 832% beside a card
+     *  reading 833% would be a defect. */
+    val percent: Int,
+    /** The target, via [GoalCardUi.targetText] — no compact "$1.2M" abbreviation. */
+    val targetText: String,
+)
+
+/** Maps the value goal's already-computed card state to the strip's payload, or `null` when no
+ *  value goal is set — in which case the header renders **nothing**: no empty bar, no "Set a
+ *  goal" prompt, no click target. The header is a readout; setting a goal stays on the
+ *  Performance card, where the affordance already exists.
+ *
+ *  GC2 (binding): consumes [GoalCardUi.fraction] — already computed exactly once via
+ *  `GoalMath.progress` inside `goalCardUi(...)` — and never re-derives a second fraction from raw
+ *  current/target values. */
+internal fun goalStrip(valueGoal: GoalCardUi?): GoalStrip? {
+    if (valueGoal == null) return null
+    val fraction = valueGoal.fraction
+    return GoalStrip(
+        barFraction = fraction.coerceAtMost(1.0),
+        percent = (fraction * 100).roundToInt(),
+        targetText = valueGoal.targetText,
+    )
+}
+
+/** `GOAL ▬▬▬▬░░░░ $120,000 833%`. Hidden entirely when [goalStrip] returns `null`. Reuses this
+ *  screen's existing [LinearProgressIndicator] idiom (the same one [GoalCard] and the Allocation
+ *  section's bars already use) rather than drawing a third bar. */
+@Composable
+private fun GoalStripRow(strip: GoalStrip) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            tr(L10n.Key.GoalShort).uppercase(Locale.US),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        LinearProgressIndicator(
+            progress = { strip.barFraction.toFloat() },
+            modifier = Modifier.weight(1f).height(6.dp),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+        )
+        Text(
+            strip.targetText,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+        Text(
+            "${strip.percent}%",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1,
+        )
+    }
+}
+
 /** The Holdings/summary header, now carrying the Export entry point (M10.3 Task 5, the
  *  settings-honesty pass — desktop `PortfolioPane.kt`'s Task 7 twin): Export used to be a
  *  plain trailing text button in the footer row below every section; it re-homes here, right
@@ -359,10 +504,28 @@ private fun PortfolioContent(
  *  minimum touch target is 48dp, matching the desktop twin's circular Export affordance
  *  without hardcoding a size. `contentDescription` carries [L10n.Key.ExportPortfolioData] so
  *  the icon-only button still reads correctly to accessibility tooling, mirroring desktop's
- *  `ExportButton.semantics { contentDescription = label }`. */
+ *  `ExportButton.semantics { contentDescription = label }`.
+ *
+ *  M11.3 Task 6: the goal strip sits after the two metric rows below, matching every other
+ *  platform's placement (desktop `PortfolioPane.kt`'s `SummaryHeader`, Swift's
+ *  `PortfolioSummaryHeader`).
+ *
+ *  M11.3 Task 8: two pre-existing divergences from the other three platforms, both fixed here.
+ *  First, the TOTAL VALUE label above the figure — present on Swift/Windows/desktop already,
+ *  absent here — is restored using [L10n.Key.TotalValue], letterspaced/uppercased the same way
+ *  desktop's twin renders it (`PortfolioPane.kt`'s `SummaryHeader`). Second, [SummaryMetric]'s
+ *  four labels below were hardcoded English literals ("Cash"/"Holdings"/"Unrealized"/"Realized")
+ *  while desktop's `StatTile` already localized theirs via `tr(L10n.Key.…)` — in German the goal
+ *  strip (Task 6) would have read "ZIEL" beside a hardcoded "CASH". All four now route through
+ *  the same existing keys desktop uses. */
 @Composable
 private fun SummaryHeader(state: PortfolioUiState, onExportClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            tr(L10n.Key.TotalValue).uppercase(Locale.US),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 state.totalValueText ?: "—",
@@ -379,13 +542,14 @@ private fun SummaryHeader(state: PortfolioUiState, onExportClick: () -> Unit) {
         }
         Spacer(Modifier.height(4.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            SummaryMetric("Cash", state.cashText, null, Modifier.weight(1f))
-            SummaryMetric("Holdings", state.holdingsValueText, null, Modifier.weight(1f))
+            SummaryMetric(tr(L10n.Key.CashLabel), state.cashText, null, Modifier.weight(1f))
+            SummaryMetric(tr(L10n.Key.HoldingsSection), state.holdingsValueText, null, Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            SummaryMetric("Unrealized", state.unrealizedText, state.unrealizedPositive, Modifier.weight(1f))
-            SummaryMetric("Realized", state.realizedText, state.realizedPositive, Modifier.weight(1f))
+            SummaryMetric(tr(L10n.Key.UnrealizedPnL), state.unrealizedText, state.unrealizedPositive, Modifier.weight(1f))
+            SummaryMetric(tr(L10n.Key.RealizedPnL), state.realizedText, state.realizedPositive, Modifier.weight(1f))
         }
+        goalStrip(state.valueGoal)?.let { strip -> GoalStripRow(strip) }
     }
 }
 
@@ -452,6 +616,8 @@ private fun PerformanceSection(
     state: PortfolioUiState,
     onSetSpan: (PortfolioSpan) -> Unit,
     onSetBenchmark: (String) -> Unit,
+    onSetValueGoal: (Money) -> Unit,
+    onRemoveValueGoal: () -> Unit,
 ) {
     // On MAX, a portfolio that has traded but has fewer than two performance points is day-one:
     // the tracking curve fills in from the first market close, not instantly. Mirrors desktop.
@@ -460,6 +626,18 @@ private fun PerformanceSection(
     val chartRenders = !maxDayOne && state.performanceValues.size >= 2 && state.benchmarkTwinValues != null
 
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // UNCONDITIONAL (carry-notes §1.3, M11.3 Task 5): the value-goal card sits ABOVE
+        // everything the report's load state governs — first element, every composition,
+        // whether or not the portfolio holds anything. Matching desktop
+        // (`PerformanceSection.kt:93`) and Swift (`PerformanceSection.swift:70`): a goal is a
+        // plan, most useful before you hold anything, not an edge case gated by holdings.
+        GoalCard(
+            title = tr(L10n.Key.ValueGoal),
+            kind = GoalKind.Value,
+            ui = state.valueGoal,
+            onSet = onSetValueGoal,
+            onRemove = onRemoveValueGoal,
+        )
         SectionHeaderInline("PERFORMANCE")
 
         PortfolioSpanSelector(selected = state.span, onSelect = onSetSpan)

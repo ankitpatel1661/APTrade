@@ -181,8 +181,12 @@ fun goalProjectionText(projection: GoalProjection?): String = when (projection) 
     }
 }
 
+/** `internal`, not `private` (M11.3 Task 3): the portfolio header's goal strip
+ *  (`portfolio.PortfolioPane.kt`'s `GoalStripRow`) reuses this exact bar rather than drawing a
+ *  second one — this codebase has been bitten before by duplicated progress-bar rendering
+ *  drifting out of sync. */
 @Composable
-private fun ProgressBar(fraction: Double) {
+internal fun ProgressBar(fraction: Double) {
     val clamped = fraction.coerceIn(0.0, 1.0).toFloat()
     Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(50)).background(DK.hairline)) {
         Box(Modifier.fillMaxWidth(clamped).height(6.dp).clip(RoundedCornerShape(50)).background(DK.gold))

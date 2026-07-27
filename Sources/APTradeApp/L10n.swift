@@ -375,6 +375,7 @@ enum L10n {
         case goalNeedsHistory = "Tracking — needs more history"
         case goalBeyondHorizon = "More than %@ yrs at this rate"
         case goalYearsFormat = "About %@ yrs at this rate"
+        case goalShort = "Goal"
         case noUpcomingDividends = "No dividend payers held yet."
         // MARK: Asset detail (dividends)
         case assetDividendSection = "Dividends"
@@ -1250,6 +1251,8 @@ enum L10n {
                            .german: "Etwa %@ Jahre bei diesem Tempo",
                            .italian: "Circa %@ anni a questo ritmo",
                            .spanish: "Unos %@ años a este ritmo"],
+        .goalShort: [.english: "Goal", .german: "Ziel",
+                     .italian: "Obiettivo", .spanish: "Objetivo"],
         .noUpcomingDividends: [.english: "No dividend payers held yet.",
                                .german: "Noch keine Dividendenzahler im Bestand.",
                                .italian: "Nessun titolo con dividendi in portafoglio.",

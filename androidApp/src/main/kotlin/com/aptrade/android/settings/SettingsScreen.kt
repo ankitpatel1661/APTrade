@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aptrade.android.l10n.LocalizationManager
 import com.aptrade.android.l10n.tr
+import com.aptrade.android.ui.money
 import com.aptrade.android.ui.theme.deep
 import com.aptrade.android.ui.theme.light
 import com.aptrade.android.ui.theme.mid
@@ -460,10 +461,13 @@ private fun ProfilePage() {
 
 // MARK: - Account Settings
 
-/** Account Settings page — five decorative detail rows, including the static
- *  "Enabled — Touch ID" biometric row: macOS/desktop display static text here too, NOT
- *  bound to the Security page's Biometric Login toggle. Starting Balance and Display
- *  Currency values stay literal, same as both references. Default Tab's value follows the
+/** Account Settings page — five detail rows, including the static "Enabled — Touch ID" biometric
+ *  row: macOS/desktop display static text here too, NOT bound to the Security page's Biometric
+ *  Login toggle. Display Currency stays literal (USD-only per the milestone constraint), but
+ *  Starting Balance no longer does: through M11.3 Task 6 it rendered the hardcoded string
+ *  "$100,000.00" while the reset dialog wrote a user-chosen amount into
+ *  `AppSettings.defaultStartingCash` — so a user who reset at $250,000 read $100,000 back on this
+ *  page. It now reads the live setting (carry-notes §4b). Default Tab's value follows the
  *  M10 IA restructure: the four-tab shell's landing destination is Home now, not the old
  *  Watchlist tab — a stale carry-over fixed here (M10.3 Task 5, mirroring desktop
  *  `AccountPanel.kt`'s identical Task 7 fix). Below them, the Finnhub key-entry field — the
@@ -475,14 +479,15 @@ private fun ProfilePage() {
  *  M10.2 Task 7's Android twin): the toggle re-homes to
  *  [com.aptrade.android.income.IncomeScreen]'s header card — same reasoning as desktop's
  *  `AccountPanel.kt` doc comment: DRIP changes money behavior (cash vs. reinvest on dividend
- *  receipt), and Income is where that behavior is felt, not this settings list. This page is
- *  now purely decorative detail fields again, no bound toggle — [viewModel]'s `settings` flow
- *  is no longer read here for that reason. */
+ *  receipt), and Income is where that behavior is felt, not this settings list. There is still no
+ *  bound TOGGLE on this page; [viewModel]'s `settings` flow is read only to display the live
+ *  starting balance above. */
 @Composable
 private fun AccountSettingsPage(viewModel: SettingsViewModel) {
+    val settings by viewModel.settings.collectAsState()
     DetailField(label = tr(L10n.Key.TradingMode), value = tr(L10n.Key.SimulatedPaperTrading))
     Spacer(Modifier.height(14.dp))
-    DetailField(label = tr(L10n.Key.StartingBalance), value = "$100,000.00")
+    DetailField(label = tr(L10n.Key.StartingBalance), value = money(settings.defaultStartingCash.amountText))
     Spacer(Modifier.height(14.dp))
     DetailField(label = tr(L10n.Key.DisplayCurrency), value = "USD ($)")
     Spacer(Modifier.height(14.dp))
