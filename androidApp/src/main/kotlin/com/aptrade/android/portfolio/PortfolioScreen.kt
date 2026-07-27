@@ -54,6 +54,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aptrade.android.goals.GoalCard
+import com.aptrade.android.goals.GoalCardUi
 import com.aptrade.android.l10n.tr
 import com.aptrade.android.ui.chart.ChartLegend
 import com.aptrade.android.ui.chart.CrosshairTooltip
@@ -72,6 +73,7 @@ import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.l10n.L10n
 import kotlinx.coroutines.launch
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /** The holding row a [TradeSheet] is opened against, plus the side the user tapped. */
 private data class TradeTarget(val row: HoldingRowUi, val side: TradeSide)
@@ -359,6 +361,77 @@ private fun PortfolioContent(
     }
 }
 
+/** Everything the header's goal strip renders, and nothing else (M11.3 Task 6; twin of desktop's
+ *  `PortfolioPane.kt` `GoalStrip`/`goalStrip` — Task 3 — and Swift's `PortfolioSummaryHeader
+ *  .GoalStrip`, Task 2). Three primitives, deliberately platform-neutral, so this shape is
+ *  mirrored rather than reinvented per platform.
+ *
+ *  Carries **no current value**: the header already shows TOTAL VALUE in display type above it,
+ *  so repeating it here would be the same number twice. */
+internal data class GoalStrip(
+    /** Bar width, **clamped** to `0..1` — a portfolio at 833% of its target must fill the bar,
+     *  never overflow it. */
+    val barFraction: Double,
+    /** Whole percent, **unclamped**: 833 stays 833. The clamp belongs to the bar's geometry, not
+     *  to the reading. Rounded (never truncated) so it matches [GoalCard]'s
+     *  `(ui.fraction * 100).roundToInt()` digit for digit — a strip reading 832% beside a card
+     *  reading 833% would be a defect. */
+    val percent: Int,
+    /** The target, via [GoalCardUi.targetText] — no compact "$1.2M" abbreviation. */
+    val targetText: String,
+)
+
+/** Maps the value goal's already-computed card state to the strip's payload, or `null` when no
+ *  value goal is set — in which case the header renders **nothing**: no empty bar, no "Set a
+ *  goal" prompt, no click target. The header is a readout; setting a goal stays on the
+ *  Performance card, where the affordance already exists.
+ *
+ *  GC2 (binding): consumes [GoalCardUi.fraction] — already computed exactly once via
+ *  `GoalMath.progress` inside `goalCardUi(...)` — and never re-derives a second fraction from raw
+ *  current/target values. */
+internal fun goalStrip(valueGoal: GoalCardUi?): GoalStrip? {
+    if (valueGoal == null) return null
+    val fraction = valueGoal.fraction
+    return GoalStrip(
+        barFraction = fraction.coerceAtMost(1.0),
+        percent = (fraction * 100).roundToInt(),
+        targetText = valueGoal.targetText,
+    )
+}
+
+/** `GOAL ▬▬▬▬░░░░ $120,000 833%`. Hidden entirely when [goalStrip] returns `null`. Reuses this
+ *  screen's existing [LinearProgressIndicator] idiom (the same one [GoalCard] and the Allocation
+ *  section's bars already use) rather than drawing a third bar. */
+@Composable
+private fun GoalStripRow(strip: GoalStrip) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            tr(L10n.Key.GoalShort).uppercase(Locale.US),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        LinearProgressIndicator(
+            progress = { strip.barFraction.toFloat() },
+            modifier = Modifier.weight(1f).height(6.dp),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+        )
+        Text(
+            strip.targetText,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+        Text(
+            "${strip.percent}%",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1,
+        )
+    }
+}
+
 /** The Holdings/summary header, now carrying the Export entry point (M10.3 Task 5, the
  *  settings-honesty pass — desktop `PortfolioPane.kt`'s Task 7 twin): Export used to be a
  *  plain trailing text button in the footer row below every section; it re-homes here, right
@@ -368,7 +441,11 @@ private fun PortfolioContent(
  *  minimum touch target is 48dp, matching the desktop twin's circular Export affordance
  *  without hardcoding a size. `contentDescription` carries [L10n.Key.ExportPortfolioData] so
  *  the icon-only button still reads correctly to accessibility tooling, mirroring desktop's
- *  `ExportButton.semantics { contentDescription = label }`. */
+ *  `ExportButton.semantics { contentDescription = label }`.
+ *
+ *  M11.3 Task 6: the goal strip sits after the two metric rows below, matching every other
+ *  platform's placement (desktop `PortfolioPane.kt`'s `SummaryHeader`, Swift's
+ *  `PortfolioSummaryHeader`). */
 @Composable
 private fun SummaryHeader(state: PortfolioUiState, onExportClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -395,6 +472,7 @@ private fun SummaryHeader(state: PortfolioUiState, onExportClick: () -> Unit) {
             SummaryMetric("Unrealized", state.unrealizedText, state.unrealizedPositive, Modifier.weight(1f))
             SummaryMetric("Realized", state.realizedText, state.realizedPositive, Modifier.weight(1f))
         }
+        goalStrip(state.valueGoal)?.let { strip -> GoalStripRow(strip) }
     }
 }
 
