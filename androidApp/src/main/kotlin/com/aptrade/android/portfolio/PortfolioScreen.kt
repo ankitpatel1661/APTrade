@@ -53,6 +53,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.aptrade.android.goals.GoalCard
 import com.aptrade.android.l10n.tr
 import com.aptrade.android.ui.chart.ChartLegend
 import com.aptrade.android.ui.chart.CrosshairTooltip
@@ -65,6 +66,8 @@ import com.aptrade.android.ui.theme.GainGreen
 import com.aptrade.android.ui.theme.LossRed
 import com.aptrade.shared.domain.AllocationSlice
 import com.aptrade.shared.domain.Asset
+import com.aptrade.shared.domain.GoalKind
+import com.aptrade.shared.domain.Money
 import com.aptrade.shared.domain.TradeSide
 import com.aptrade.shared.l10n.L10n
 import kotlinx.coroutines.launch
@@ -130,6 +133,8 @@ fun PortfolioScreen(
         onOpenDetail = onOpenDetail,
         onSetSpan = viewModel::setSpan,
         onSetBenchmark = viewModel::setBenchmark,
+        onSetValueGoal = viewModel::setValueGoal,
+        onRemoveValueGoal = viewModel::removeValueGoal,
         onBuy = viewModel::buy,
         onSell = viewModel::sell,
         onReset = viewModel::reset,
@@ -149,6 +154,8 @@ private fun PortfolioContent(
     onOpenDetail: (String) -> Unit,
     onSetSpan: (PortfolioSpan) -> Unit,
     onSetBenchmark: (String) -> Unit,
+    onSetValueGoal: (Money) -> Unit,
+    onRemoveValueGoal: () -> Unit,
     onBuy: (Asset, String) -> Unit,
     onSell: (String, String) -> Unit,
     onReset: () -> Unit,
@@ -258,6 +265,8 @@ private fun PortfolioContent(
                                     state = state,
                                     onSetSpan = onSetSpan,
                                     onSetBenchmark = onSetBenchmark,
+                                    onSetValueGoal = onSetValueGoal,
+                                    onRemoveValueGoal = onRemoveValueGoal,
                                 )
                             }
                         }
@@ -452,6 +461,8 @@ private fun PerformanceSection(
     state: PortfolioUiState,
     onSetSpan: (PortfolioSpan) -> Unit,
     onSetBenchmark: (String) -> Unit,
+    onSetValueGoal: (Money) -> Unit,
+    onRemoveValueGoal: () -> Unit,
 ) {
     // On MAX, a portfolio that has traded but has fewer than two performance points is day-one:
     // the tracking curve fills in from the first market close, not instantly. Mirrors desktop.
@@ -460,6 +471,18 @@ private fun PerformanceSection(
     val chartRenders = !maxDayOne && state.performanceValues.size >= 2 && state.benchmarkTwinValues != null
 
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // UNCONDITIONAL (carry-notes §1.3, M11.3 Task 5): the value-goal card sits ABOVE
+        // everything the report's load state governs — first element, every composition,
+        // whether or not the portfolio holds anything. Matching desktop
+        // (`PerformanceSection.kt:93`) and Swift (`PerformanceSection.swift:70`): a goal is a
+        // plan, most useful before you hold anything, not an edge case gated by holdings.
+        GoalCard(
+            title = tr(L10n.Key.ValueGoal),
+            kind = GoalKind.Value,
+            ui = state.valueGoal,
+            onSet = onSetValueGoal,
+            onRemove = onRemoveValueGoal,
+        )
         SectionHeaderInline("PERFORMANCE")
 
         PortfolioSpanSelector(selected = state.span, onSelect = onSetSpan)
