@@ -309,4 +309,106 @@ final class PerformanceViewModelTests: XCTestCase {
         XCTAssertNotNil(vm.valueGoalProjection)
         XCTAssertNotEqual(vm.valueGoalProjection, .insufficientHistory)
     }
+
+    // MARK: - M11.3 whole-branch review (minor): no zero-value window around the goal.
+
+    /// `onAppear()` publishes `valueGoal` BEFORE awaiting the network-bound `load()` — that
+    /// is M11.1 UAT F3 and must stay. The defect was that `currentValue` was assigned only
+    /// inside `load()`, so for the whole duration of the fetch a cold-launched app had a goal
+    /// against a `Money(amount: 0)` current value: the M11.3 header strip rendered
+    /// `GOAL ▬ $120,000 0%` on a funded portfolio, and the goal card mis-projected alongside
+    /// it. Pre-existing, and invisible until this branch wired the hosts to load the view
+    /// model at all.
+    ///
+    /// Observed MID-FLIGHT rather than after the fact: `GatedHistoryRepo` parks inside the
+    /// history fetch, so this reads exactly the state SwiftUI would render during the fetch.
+    /// Asserting after `await onAppear()` would prove nothing — by then `load()` has assigned
+    /// `currentValue` and every implementation looks identical.
+    ///
+    /// Rejects TWO wrong implementations, deliberately:
+    /// 1. The shipped `onAppear()` — goal read with no seed. `currentValue` reads $0 here.
+    /// 2. "Fixing" it by moving the goal read BELOW the `await` — `valueGoal` would be nil
+    ///    here, failing the first assertion. That shape trades this flash for the M11.1 UAT
+    ///    F3 regression (a reset would no longer correct a stale goal until the fetch
+    ///    returned), so the test forbids it rather than accepting it as an alternative fix.
+    @MainActor
+    func test_onAppear_neverPublishesTheGoalAgainstAZeroCurrentValue() async {
+        let aapl = Asset(symbol: "AAPL", name: "Apple", kind: .stock)
+        // $100,000 cash, then 10 shares at $100 moves $1,000 into the position at the same
+        // price — so cash ($99,000) + cost basis ($1,000) floors at the original $100,000.
+        let portfolio = try! Portfolio.starting(cash: Money(amount: 100_000))
+            .buying(aapl, quantity: Quantity(Decimal(10)), at: Money(amount: 100),
+                    on: Date(timeIntervalSince1970: 0))
+        let store = MemoryStore(portfolio)
+        let repo = GatedHistoryRepo()
+        // Target deliberately BELOW the $100,000 floor. Mid-flight the equity curve is still
+        // empty, so `annualGrowthRate` returns nil and every not-yet-reached goal reads
+        // `.insufficientHistory` whatever `currentValue` holds — a target above the floor
+        // would make the projection assertion below vacuous. Below the floor,
+        // `degenerateOrReachedProjection` short-circuits on `current >= target`, so the
+        // seeded value reads `.reached` and an unseeded $0 reads `.insufficientHistory`:
+        // the card's own user-visible consequence, discriminated.
+        let goalStore = InMemoryGoalStore([PortfolioGoal(kind: .value, target: Money(amount: 50_000),
+                                                         createdAt: Date(timeIntervalSince1970: 1))])
+        let vm = PerformanceViewModel(
+            compute: ComputePerformanceMetricsUseCase(repository: repo, store: store),
+            loadGoals: LoadGoalsUseCase(store: goalStore),
+            fetchPortfolio: FetchPortfolioUseCase(store: store),
+            now: { Date(timeIntervalSince1970: 1_000_000) })
+        XCTAssertEqual(vm.currentValue, Money(amount: 0),
+                       "precondition: a freshly constructed view model has computed nothing")
+
+        let appearing = Task { await vm.onAppear() }
+        await repo.entered.wait()   // parked inside the history fetch, mid-`load()`
+
+        XCTAssertNotNil(vm.valueGoal,
+                        "the goal must still be published before the fetch returns (M11.1 UAT F3)")
+        XCTAssertEqual(vm.currentValue, Money(amount: 100_000),
+                       "…and never against a zero value: the strip would read 0% for the whole fetch")
+        XCTAssertEqual(vm.valueGoalProjection, .reached,
+                       "a zero current value would read '.insufficientHistory' on a goal already met")
+
+        await repo.proceed.open()
+        await appearing.value
+        XCTAssertNotNil(vm.valueGoal, "the seed is a floor, not a substitute — the real load still ran")
+    }
+}
+
+/// One-shot gate. `wait()` suspends until someone calls `open()`; opening twice is a no-op and
+/// waiting after opening returns immediately, so neither side can lose the race.
+private actor Latch {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func open() {
+        guard !isOpen else { return }
+        isOpen = true
+        let resumable = waiters
+        waiters.removeAll()
+        for waiter in resumable { waiter.resume() }
+    }
+
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+}
+
+/// Parks inside `history(for:timeframe:)` — the suspension point every `load()` passes through
+/// — so a test can read the view model's published state DURING the fetch rather than only
+/// after it. `entered` opens once the fetch is reached; the fetch then blocks on `proceed`
+/// until the test releases it.
+private final class GatedHistoryRepo: MarketDataRepository, @unchecked Sendable {
+    let entered = Latch()
+    let proceed = Latch()
+
+    func quote(for symbol: String) async throws -> Quote {
+        Quote(symbol: symbol, price: Money(amount: 110), previousClose: Money(amount: 100))
+    }
+
+    func history(for symbol: String, timeframe: Timeframe) async throws -> [PricePoint] {
+        await entered.open()
+        await proceed.wait()
+        return []
+    }
 }

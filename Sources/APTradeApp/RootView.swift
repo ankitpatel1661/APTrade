@@ -457,6 +457,14 @@ public struct RootView: View {
                 await portfolioViewModel.onAppear()
                 await portfolioViewModel.runLiveUpdates()
             }
+            // M11.3 whole-branch review: the IDENTICAL wiring `PortfolioView` gains, for the
+            // identical reason — nothing in this shell loaded `portfolioPerformanceVM` unless
+            // the sidebar happened to be on Portfolio → Performance, so the header's goal
+            // strip stayed hidden on a cold launch even with a goal set on disk. Separate
+            // `.task` because `runLiveUpdates()` above never returns. Wiring one host and not
+            // the other would recreate exactly the platform asymmetry this branch exists to
+            // close.
+            .task { await portfolioPerformanceVM.onAppear() }
             .onAppear { portfolioViewModel.reload() }
         case .invest(let section):
             // `.id(section)` (M10.1 UAT U5): without it, switching Invest sections (e.g.

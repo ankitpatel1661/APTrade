@@ -76,6 +76,25 @@ struct PortfolioView: View {
                 await viewModel.onAppear()
                 await viewModel.runLiveUpdates()
             }
+            // M11.3 whole-branch review: the header's goal strip reads `performanceVM`, but
+            // NOTHING here used to load it — `PerformanceSection`'s own `.task` was the only
+            // non-reset caller of `onAppear()`, and that section is one of four, not the
+            // default. So on a cold launch Portfolio → Holdings rendered the header with
+            // `valueGoal == nil` and hid the strip even with a goal set on disk; it appeared
+            // only after visiting Performance once. That is the whole deliverable — see your
+            // goal without digging into Performance — missing in the default state, and the
+            // exact platform divergence GC1 forbids (both Kotlin shells call
+            // `PortfolioViewModel.start()` at shell root, whose tick-0 report publishes the
+            // goal regardless of which section is showing).
+            //
+            // A SEPARATE `.task` from the one above, deliberately: `runLiveUpdates()` never
+            // returns, so anything appended after it would never run.
+            //
+            // Double-loading when the user does open Performance (whose `.task` calls this
+            // too) is safe and intended — `load()`'s own doc states `onAppear()` reloads
+            // unconditionally by design, and re-introducing a gate to avoid the second load
+            // is precisely what caused M11.1 UAT F3.
+            .task { await performanceVM.onAppear() }
             .refreshable { await viewModel.refresh() }
         }
         #if os(macOS)

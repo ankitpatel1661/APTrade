@@ -92,10 +92,43 @@ final class PerformanceViewModel {
     /// fan-out and both write state. They compute the same report, so the outcome is correct,
     /// but do not read the guard as a de-duplicator: it only rejects results whose selection
     /// no longer matches.
+    /// M11.3 whole-branch review (minor): the seed on the first line is load-bearing and must
+    /// stay ABOVE the goal read. `valueGoal` is published here, before the network-bound
+    /// `load()`; `currentValue` was assigned only inside `load()`, so on a COLD LAUNCH there
+    /// was a whole fetch's worth of time where a goal existed against a `currentValue` still
+    /// sitting at its `Money(amount: 0)` initial value. The header strip rendered
+    /// `GOAL ▬ $120,000 0%` and the goal card rendered "not on track" (`yearsToTarget` bails
+    /// on `current > 0`) for the duration — on a funded portfolio, on every launch. Neither
+    /// Kotlin platform shows this: both publish `state.valueGoal` only after the current value
+    /// is set.
+    ///
+    /// Seeding — rather than moving the goal read below the `await` — is what keeps this
+    /// method's contract intact. The early goal read is not incidental: it is M11.1 UAT F3, so
+    /// a reset (which reaches this method via `onDidReset`) corrects a stale goal immediately
+    /// instead of a network round-trip later. Deferring it would trade this flash for that
+    /// regression. Seeding fixes both readings at once and costs one synchronous store read.
+    ///
+    /// Guarded on `== 0` so it can only ever fill in a value that was never computed: on a
+    /// re-appearance `currentValue` already holds a real (curve-derived) figure and must not
+    /// be clobbered by the lower cost-basis floor, which would flicker the number downwards.
+    /// A genuinely empty portfolio floors to 0 as well, so the seed is a no-op there rather
+    /// than a fabrication.
     func onAppear() async {
+        if currentValue.amount == 0 { currentValue = costBasisFloor() }
         valueGoal = loadGoals().first { $0.kind == .value }
         refreshValueProjection()
         await load()
+    }
+
+    /// Cash plus every position's OWN cost basis — the honest floor under the account's value
+    /// when no priced equity curve is available. Extracted so `load()`'s empty-curve branch
+    /// and `onAppear()`'s cold-launch seed cannot drift into two different floors; see
+    /// `load()` for why this figure, and never a hardcoded zero, is the right fallback.
+    private func costBasisFloor() -> Money {
+        let portfolio = fetchPortfolio()
+        return portfolio.positions.reduce(portfolio.cash) {
+            $0 + $1.marketValue(at: $1.averageCost)
+        }
     }
 
     /// Recomputes the report for the current timeframe/benchmark selection.
@@ -136,10 +169,7 @@ final class PerformanceViewModel {
         if let last = report.equityCurve.last {
             currentValue = last.value
         } else {
-            let portfolio = fetchPortfolio()
-            currentValue = portfolio.positions.reduce(portfolio.cash) {
-                $0 + $1.marketValue(at: $1.averageCost)
-            }
+            currentValue = costBasisFloor()
         }
         valueGoal = loadGoals().first { $0.kind == .value }
         refreshValueProjection()
