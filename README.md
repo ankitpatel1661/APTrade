@@ -15,7 +15,7 @@ An ultra-premium **native investing platform across four OSes** — a SwiftUI fl
 ![Swift](https://img.shields.io/badge/Swift-6.0-D4A94E?logo=swift)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Multiplatform-D4A94E?logo=kotlin)
 ![Architecture](https://img.shields.io/badge/architecture-Clean-D4A94E)
-![Tests](https://img.shields.io/badge/macOS%20tests-677%20passing-46C98A)
+![Tests](https://img.shields.io/badge/macOS%20tests-739%20passing-46C98A)
 
 </div>
 
@@ -209,7 +209,7 @@ The app ships as a bare SwiftPM executable. Launching the built binary directly 
 DEVELOPER_DIR=/Applications/Xcode.app swift test
 ```
 
-> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **677 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction, the all-priced gate + benchmark head-trim), the market calendar and earnings calendar, use cases, the market-activity planner (incl. earnings-check and Pie-contribution-check scheduling), alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the Finnhub earnings mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, the view models, the IA restructure (Home dashboard, four-destination sidebar with Markets/Portfolio/Invest, macOS sidebar + master-detail, Alerts center), Investment Plans (`PieMath` distribution/drift, `PieSchedule` cadence math, `PieBacktest` DCA-vs-lump-sum, contribution/rebalance use cases and catch-up, the `UserDefaultsPieStore`, and the coordinator's contribution notifications), the dividend & income engine (`DividendMath` shares-held/trailing-rate/cadence math, `ProcessDueDividends` backfill/dedup/DRIP-with-cash-fallback, the Income view model, and the export renderer's two new income rows), the technical screener (`ScreenerMath`'s per-symbol snapshot and cross-flag math, the 9 preset screens and custom AND-evaluation, `ScreenerScanEngine`'s throttled batching/backoff/failure-isolation, the file-backed snapshot and screen stores, and the screener view model), and Goals & Income Depth (M11.1: the configurable-starting-balance reset flow, `PortfolioGoal`/`GoalMath` progress and projection math, the `UserDefaultsGoalStore`, and `DividendMath.incomeForecast`'s multi-year DRIP-compounding projection).
+> `DEVELOPER_DIR` must point at a full Xcode (not the Command Line Tools) so XCTest is available. **739 tests** cover the domain math (money, percentages, indicators, realized-P&L, performance reconstruction, the all-priced gate + benchmark head-trim), the market calendar and earnings calendar, use cases, the market-activity planner (incl. earnings-check and Pie-contribution-check scheduling), alert/order-fill gating, the Yahoo mapper, the Finnhub news mapper, the Finnhub earnings mapper, the caching repository, the portfolio export renderers, settings round-trips, the bookmark store, the localization catalog and language manager, the view models, the IA restructure (Home dashboard, four-destination sidebar with Markets/Portfolio/Invest, macOS sidebar + master-detail, Alerts center), Investment Plans (`PieMath` distribution/drift, `PieSchedule` cadence math, `PieBacktest` DCA-vs-lump-sum, contribution/rebalance use cases and catch-up, the `UserDefaultsPieStore`, and the coordinator's contribution notifications), the dividend & income engine (`DividendMath` shares-held/trailing-rate/cadence math, `ProcessDueDividends` backfill/dedup/DRIP-with-cash-fallback, the Income view model, and the export renderer's two new income rows), the technical screener (`ScreenerMath`'s per-symbol snapshot and cross-flag math, the 9 preset screens and custom AND-evaluation, `ScreenerScanEngine`'s throttled batching/backoff/failure-isolation, the file-backed snapshot and screen stores, and the screener view model), and Goals & Income Depth (M11.1: the configurable-starting-balance reset flow, `PortfolioGoal`/`GoalMath` progress and projection math, the `UserDefaultsGoalStore`, and `DividendMath.incomeForecast`'s multi-year DRIP-compounding projection).
 
 ### Building the shared Kotlin core
 
@@ -550,6 +550,69 @@ reference has no such ceiling and simply keeps going. **Recorded divergence:** t
 renders as a **`Dialog` rather than a sheet**, matching desktop's existing dialog-based
 convention (the Pie wizard, rebalance preview) instead of macOS's sheet presentation.
 Suites at merge: macOS 560 / shared 587 / desktop 340 / android 267 (M9.3 complete).
+
+## Continuous Integration
+
+CI lives in **GitLab** (`gitlab.com/aptrade-group/APTrade-project`), configured entirely in
+[`.gitlab-ci.yml`](.gitlab-ci.yml). Every job runs on a **self-hosted Mac runner** tagged
+`self-hosted-mac` — the same machine the app is developed on, which already has Xcode, JDK 17,
+and the Android SDK installed. There is no Docker image and no hosted-runner minute cost.
+
+### Pipeline
+
+Two stages. The four test tracks run in parallel; only the xcframework build is gated on `main`.
+
+| Stage | Job | What it runs | Runs on |
+|-------|-----|--------------|---------|
+| `test` | `kmp-xcframework-test` | `:shared:assembleSharedXCFramework` — produces the binary `swift build` needs | every branch + MR |
+| `test` | `swift-test` | `swift build` + `swift test --parallel` (needs the xcframework artifact) | every branch + MR |
+| `test` | `kmp-jvm-test` | `:shared:jvmTest` — the KMP shared core | every branch + MR |
+| `test` | `desktop-jvm-test` | `:desktopApp:test` — Compose Desktop | every branch + MR |
+| `test` | `android-unit-test` | `:androidApp:testDebugUnitTest` | every branch + MR |
+| `build` | `kmp-xcframework` | `Shared.xcframework` (iosArm64, iosSimulatorArm64, macosArm64), kept 7 days | `main` only |
+
+`JAVA_HOME` is pinned as a CI variable because the shell executor runs **bash**, not zsh, so
+`~/.zshrc` is never sourced and Gradle would otherwise fall back to the system JDK (Corretto 11).
+
+### What the pipeline reports
+
+Every test job publishes a **JUnit XML report**, so results are structured data rather than
+scrollback:
+
+- **Merge request test widget** — names the tests that newly failed, fixed, or started erroring
+  in that MR, instead of only "job failed".
+- **Pipeline → Tests tab** — per-suite pass/fail counts and per-test durations across all four
+  platforms in one view.
+- **Browsable HTML reports** — the Gradle jobs also upload `build/reports/tests/…` as artifacts,
+  so a red run can be diagnosed from the pipeline UI without reproducing it locally.
+
+Reports upload with `when: always`; without that, GitLab drops artifacts from failed jobs — exactly
+the runs worth inspecting. Swift needs `--parallel` for `--xunit-output` to emit an XCTest report at
+all (non-parallel runs write only an empty swift-testing file).
+
+Pipeline-level settings keep the single Mac runner honest:
+
+- **One pipeline per change** — `workflow:rules` suppresses the duplicate branch pipeline when the
+  branch already has an open MR.
+- **Superseded pipelines auto-cancel** — `auto_cancel.on_new_commit` plus `interruptible: true`, so
+  the queue always reflects the newest commit.
+- **`retry` is infrastructure-only** — runner death, stuck jobs, scheduler failures. Test failures
+  are never retried, so a flaky test stays visible.
+- **45-minute job timeout** — a hung Xcode or Gradle job releases the runner instead of blocking it.
+
+Trends live under **Analyze → CI/CD analytics** (success rate and pipeline duration over time) and
+**Build → Pipelines → Job artifacts**. Neither needs configuration beyond the file above.
+
+A pipeline status badge is available at
+`https://gitlab.com/aptrade-group/APTrade-project/badges/main/pipeline.svg` — note that it only
+renders for anonymous readers if the project's pipeline visibility is public.
+
+### Scope
+
+This is **build-time** observability. APTrade has no server component — the four apps talk directly
+to Yahoo Finance and Finnhub, and all persistence is local — so there is no deployment to monitor,
+no runtime tracing or metrics backend, and no error-tracking integration wired up. The pipeline is
+the only system to observe, and it is fully described by `.gitlab-ci.yml`.
 
 ## Project Structure
 
