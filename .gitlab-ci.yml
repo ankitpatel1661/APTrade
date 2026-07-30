@@ -10,7 +10,8 @@
 #   • Desktop JVM (self-hosted Mac) — test the Compose Desktop app on JVM
 #   • Android (self-hosted Mac) — run androidApp debug unit tests
 #
-# A fifth job assembles the Shared.xcframework on macOS, only on main.
+# A sixth job re-publishes the Shared.xcframework with longer retention on
+# main — it reuses the test stage's artifact rather than rebuilding it.
 # ──────────────────────────────────────────────────────────────────────────────
 
 stages:
@@ -219,17 +220,34 @@ android-unit-test:
 # STAGE: build
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── KMP: assemble Shared.xcframework ─────────────────────────────────────────
-# Assembles the Shared.xcframework (iosArm64, iosSimulatorArm64, macosArm64).
-# Only runs on main — expensive and only needed for integration / release.
-# Artifact kept for 7 days for download from the pipeline UI.
+# ── KMP: publish Shared.xcframework ──────────────────────────────────────────
+# This job does NOT rebuild. kmp-xcframework-test already assembled the exact
+# same framework from the exact same commit in the test stage — rebuilding it
+# cost ~6.5 minutes to change nothing but the artifact's retention. Instead it
+# pulls that artifact down via needs and re-publishes it for 7 days, so the
+# framework is still downloadable from the pipeline UI after a main build.
+#
+# needs lists EVERY test job (artifacts: false for the ones whose output we do
+# not want) so a published framework still implies a fully green test stage —
+# the same gate a sequential build stage gave us.
 kmp-xcframework:
-  extends: .gradle-base
+  extends: .mac-base
   stage: build
-  cache:
-    <<: *gradle-cache
+  needs:
+    - job: kmp-xcframework-test
+      artifacts: true
+    - job: swift-test
+      artifacts: false
+    - job: kmp-jvm-test
+      artifacts: false
+    - job: desktop-jvm-test
+      artifacts: false
+    - job: android-unit-test
+      artifacts: false
   script:
-    - ./gradlew :shared:assembleSharedXCFramework --no-daemon
+    # Fail loudly rather than publish an empty artifact if the hand-off breaks.
+    - test -d shared/build/XCFrameworks/release/Shared.xcframework
+    - du -sh shared/build/XCFrameworks/release/Shared.xcframework
   artifacts:
     name: "Shared-XCFramework-${CI_COMMIT_SHORT_SHA}"
     paths:
