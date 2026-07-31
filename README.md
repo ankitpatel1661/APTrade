@@ -576,17 +576,20 @@ Two stages. The four test tracks are independent; only the xcframework publish i
 
 ### Pipeline cost
 
-The runner is configured with `concurrent = 2`, so two jobs execute at a time. Beyond that the
-machine (8 cores, 16 GB, and also the development machine) starts trading wall-clock for thrash —
-`swift test --parallel` alone already saturates every core.
+The critical path is `kmp-xcframework-test` → `swift-test`; the three Gradle test jobs finish
+inside that window. The `build` stage does **not** rebuild the framework: `kmp-xcframework` pulls
+the test stage's artifact through `needs` and re-publishes it with longer retention. That is the
+one unambiguous saving — **6:34 → 0:41** on `main` — and it still lists every test job in `needs`,
+so a published framework implies a fully green test stage.
 
-The critical path is `kmp-xcframework-test` → `swift-test`; the three Gradle test jobs finish well
-inside that window, so they are effectively free. The `build` stage does **not** rebuild the
-framework: `kmp-xcframework` pulls the test stage's artifact through `needs` and re-publishes it
-with longer retention, which takes seconds rather than the ~6½ minutes a second assemble cost. It
-still lists every test job in `needs`, so a published framework implies a fully green test stage.
-
-Together those two changes took a `main` pipeline from **18:34 to 11:00**.
+The runner is set to `concurrent = 2`, with a caveat worth knowing before tuning it further: on a
+shell executor each concurrency slot is a **separate workspace** (`~/builds/<token>/<slot>/…`), so
+incremental Gradle and Kotlin/Native state is per-slot and a newly added slot starts cold. The
+first `main` pipeline after this change happened to run `kmp-xcframework-test` in the new slot,
+which recompiled three architectures from scratch and took 13:54 instead of the usual ~7:00 —
+making that pipeline 16:15 rather than the 11:00 measured on a warm slot. Whether two slots beat
+one in steady state depends on both staying warm; it is worth re-measuring rather than assuming.
+Going beyond 2 is not worth trying here — `swift test --parallel` already saturates all 8 cores.
 
 ### What the pipeline reports
 
