@@ -560,7 +560,7 @@ and the Android SDK installed. There is no Docker image and no hosted-runner min
 
 ### Pipeline
 
-Two stages. The four test tracks run in parallel; only the xcframework build is gated on `main`.
+Two stages. The four test tracks are independent; only the xcframework publish is gated on `main`.
 
 | Stage | Job | What it runs | Runs on |
 |-------|-----|--------------|---------|
@@ -569,10 +569,24 @@ Two stages. The four test tracks run in parallel; only the xcframework build is 
 | `test` | `kmp-jvm-test` | `:shared:jvmTest` — the KMP shared core | every branch + MR |
 | `test` | `desktop-jvm-test` | `:desktopApp:test` — Compose Desktop | every branch + MR |
 | `test` | `android-unit-test` | `:androidApp:testDebugUnitTest` | every branch + MR |
-| `build` | `kmp-xcframework` | `Shared.xcframework` (iosArm64, iosSimulatorArm64, macosArm64), kept 7 days | `main` only |
+| `build` | `kmp-xcframework` | Re-publishes the test stage's `Shared.xcframework` with 7-day retention — **no rebuild** | `main` only |
 
 `JAVA_HOME` is pinned as a CI variable because the shell executor runs **bash**, not zsh, so
 `~/.zshrc` is never sourced and Gradle would otherwise fall back to the system JDK (Corretto 11).
+
+### Pipeline cost
+
+The runner is configured with `concurrent = 2`, so two jobs execute at a time. Beyond that the
+machine (8 cores, 16 GB, and also the development machine) starts trading wall-clock for thrash —
+`swift test --parallel` alone already saturates every core.
+
+The critical path is `kmp-xcframework-test` → `swift-test`; the three Gradle test jobs finish well
+inside that window, so they are effectively free. The `build` stage does **not** rebuild the
+framework: `kmp-xcframework` pulls the test stage's artifact through `needs` and re-publishes it
+with longer retention, which takes seconds rather than the ~6½ minutes a second assemble cost. It
+still lists every test job in `needs`, so a published framework implies a fully green test stage.
+
+Together those two changes took a `main` pipeline from **18:34 to 11:00**.
 
 ### What the pipeline reports
 
